@@ -8,7 +8,7 @@
       </version>
     </reapack>
   </category>
-  <category name="FX/FX Modulator Linking">
+  <category name="FX Modulator Linking">
     <reapack name="4-in-1-out Modulator.jsfx" type="effect" desc="4-in-1-out Modulator">
       <version name="1.0" author="Saxmand" time="2025-04-19T03:24:28Z">
         <source>https://github.com/saxmand/Saxmand-ReaPack/raw/094c3e9b193e88915360dd0a439e6870b3f7882c/FX/FX%20Modulator%20Linking/4-in-1-out%20Modulator.jsfx</source>
