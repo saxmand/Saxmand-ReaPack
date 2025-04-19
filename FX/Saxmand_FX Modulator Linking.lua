@@ -9,7 +9,8 @@
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local ImGui = require 'imgui' '0.9.3'
 local stateName = "ModulationLinking"
-local ctx = ImGui.CreateContext('Modulation Linking')
+local appName = "FX Modulator Linking"
+local ctx = ImGui.CreateContext(appName)
 font = reaper.ImGui_CreateFont('Arial', 14)
 font1 = reaper.ImGui_CreateFont('Arial', 15)
 font2 = reaper.ImGui_CreateFont('Arial', 17)
@@ -1449,7 +1450,7 @@ local function loop()
   
   
   reaper.ImGui_PushFont(ctx, font)
-  local visible, open = ImGui.Begin(ctx, 'Modulation Linking',true, 
+  local visible, open = ImGui.Begin(ctx, appName,true, 
   reaper.ImGui_WindowFlags_TopMost() | 
   --reaper.ImGui_WindowFlags_NoCollapse() | 
   --reaper.ImGui_WindowFlags_MenuBar() |
@@ -3287,10 +3288,11 @@ local function loop()
                             --if not isCollabsed then
                                 func(name, modulationContainerPos, fxIndex, fxIndContainerIndex)
                             --end
+                            
+                            reaper.ImGui_EndTable(ctx)
                         end
                         
                         
-                        reaper.ImGui_EndTable(ctx)
                         --reaper.ImGui_EndChild(ctx)
                         
                         
