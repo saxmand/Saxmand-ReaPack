@@ -1,0 +1,92 @@
+desc:MIDI Fader Modulator
+author: Saxmand
+version: 1.0
+changelog: Initial release
+
+/**
+ * JSFX : MIDI Fader Modulator
+ * Author: Jesper Ankarfeldt
+ * Reaper forum : 
+ * Licence: GPL v3
+ * REAPER: 7.0
+ * Version: 10 (2024-11-14)
+ */
+
+slider1:0<0,1,0.001>Output  
+
+slider2:TypeSel=0<0,128,1>Type
+slider3:Ch=0<0,16,1>Channel
+slider4:listen=0<0,1,1>Listen
+slider5:0<0,1,0.01>Offset
+slider6:width=1<-1,1,0.01>Width
+slider7:scale=1<-4,4,0.01>Scale
+slider8:passthrough=1<0,1,1>Pass Through
+
+options:no_meter
+
+@init
+
+ext_noinit = 1;
+
+noteOn  = $x90;
+noteOff = $x80;
+CCVAL = $xB0;
+PBVAL = $xE0;
+lastNewValue = 0;
+
+@slider
+
+out = slider5+(lastNewValue*width*scale);
+
+  
+@sample 
+// believe it will be more responsive in @sample and not @block, 
+//since we don't do any processing it should be fine??
+    
+while (midirecv(offset,msg1,msg2,msg3)) (
+    status = msg1 & $xF0;
+    channel = msg1 & $x0F;
+    
+    listen == 1 && (status == CCVAL || status == PBVAL) ? (
+      status == CCVAL ? TypeSel = msg2;
+      status == PBVAL ? TypeSel = 128;
+      Ch = Channel + 1;
+      listen = 0;
+    ):(
+      (status == CCVAL && (Ch == 0 || channel + 1 == Ch) && TypeSel == msg2) || (status == PBVAL && (Ch == 0 || channel + 1 == Ch) && TypeSel == 128) ? (
+                status == CCVAL ? newValue = (msg3 / 127);
+                status == PBVAL ? newValue = (floor((msg3 *  128 + msg2) / 1.6383)/10000);
+                lastNewValue = newValue;
+                out = newValue*width*scale + slider5; 
+                passthrough == 1 ? midisend(offset,msg1,msg2,msg3);
+      ):(
+          midisend(offset,msg1,msg2,msg3);
+      );
+    );
+);
+                
+out < 0 ? out = 0;
+out > 1 ? out = 1;
+slider1 = out;
+
+
+
+@gfx
+
+gfx_h = 300; // Height in pixels
+gfx_set(1, 1, 1, 0.15);
+gfx_rect(0, 0, gfx_w, gfx_h);
+gfx_setfont(1, "Arial", 16); // Font slot 1 with custom font and size
+gfx_set(1, 1, 1, 1); // Set color to white (RGBA: 1, 1, 1, 1)
+
+function drawCenteredText(text, posY) (
+    w = h = 0;
+    gfx_measurestr(text, w, h);
+    gfx_x = (gfx_w - w) / 2;
+    gfx_y = posY;
+    gfx_printf(text);
+);
+
+drawCenteredText("This plugin is part of ''Saxmand_FX Modulator Linking''.", 10);
+drawCenteredText("The script helps working with modulators.", 30);
+drawCenteredText("Run the script to map and adjust parameters.",50);

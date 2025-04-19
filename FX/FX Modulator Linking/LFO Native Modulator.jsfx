@@ -1,0 +1,60 @@
+desc:LFO Native Modulator
+author: Saxmand
+version: 1.0
+changelog: Initial release
+
+/**
+ * JSFX : LFO Native Modulator
+ * Author: Jesper Ankarfeldt
+ * Reaper forum : 
+ * Licence: GPL v3
+ * REAPER: 7.0
+ * Version: 10 (2024-11-14)
+ */
+
+slider1:0<0,1,0.001>Output
+slider2:input=0<0,1,0.001>Input
+slider3:offset=0<0,1,0.01>Offset
+slider4:width=1<-1,1,0.01>Width
+
+options:no_meter
+
+
+@init
+
+ext_noinit = 1;
+
+@slider
+
+//listen = slider5;
+// + (0.5 - (slider4/200))
+//slider5 == 0 ? (out = slider2 * (slider4/100) + (0.5 - (slider4/200)) + (slider3-0.5) + (slider5 / 2));
+//slider5 == -1 ? (out = slider2 * (slider4/100) + (1 - (slider4/100)) + (slider3-0.5) + (slider5 / 2));
+//slider5 == 1 ? (out = slider2 * (slider4/100) + (slider3-0.5) + (slider5 / 2));
+//slider1 = out;
+out = offset + (input*width);
+out < 0 ? out = 0;
+out > 1 ? out = 1;
+slider1 = out;
+
+
+
+@gfx
+
+gfx_h = 300; // Height in pixels
+gfx_set(1, 1, 1, 0.15);
+gfx_rect(0, 0, gfx_w, gfx_h);
+gfx_setfont(1, "Arial", 16); // Font slot 1 with custom font and size
+gfx_set(1, 1, 1, 1); // Set color to white (RGBA: 1, 1, 1, 1)
+
+function drawCenteredText(text, posY) (
+    w = h = 0;
+    gfx_measurestr(text, w, h);
+    gfx_x = (gfx_w - w) / 2;
+    gfx_y = posY;
+    gfx_printf(text);
+);
+
+drawCenteredText("This plugin is part of ''Saxmand_FX Modulator Linking''.", 10);
+drawCenteredText("The script helps working with modulators.", 30);
+drawCenteredText("Run the script to map and adjust parameters.",50);
