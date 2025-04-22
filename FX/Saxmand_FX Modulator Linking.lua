@@ -1,5 +1,5 @@
 -- @description FX Modulator Linking
--- @author saxmand
+-- @author Saxmand
 -- @version 0.1.3
 -- @provides
 --   [nomain] Helpers/*.lua
