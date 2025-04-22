@@ -3,7 +3,7 @@
 -- @version 0.1.2
 -- @provides
 --   [nomain] Helpers/*.lua
---   [effect] FX Modulator Linking/*.jsfx
+--   [effect] FX/FX Modulator Linking/*.jsfx
 -- @changelog
 --   + Initial version
 

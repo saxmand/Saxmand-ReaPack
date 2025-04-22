@@ -1,4 +1,5 @@
 -- @noindex
+-- @version 0.1.2
 local json = { _version = "0.1.2" }
 
 -- Internal functions.
