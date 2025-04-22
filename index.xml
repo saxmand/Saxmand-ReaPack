@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="ba3a7ed84ce47fc6ce97127e3d5edc8b4c6c7faf" name="Saxmand ReaPack">
+<index version="1" commit="ba3a7ed84ce47fc6ce97127e3d5edc8b4c6c7faf">
   <category name="FX">
     <reapack name="Saxmand_FX Modulator Linking.lua" type="script" desc="FX Modulator Linking">
       <version name="0.1.0" author="saxmand" time="2025-04-19T03:17:01Z">
