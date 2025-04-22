@@ -1,7 +1,7 @@
 desc:4-in-1-out Modulator
-author: Saxmand
+author: saxmand
 version: 1.0
-
+noindex: true
 changelog: Initial release
 
 /**
