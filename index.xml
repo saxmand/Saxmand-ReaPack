@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="db93997d88cd89325812b2ed610d4119474d52f8" name="Saxmand ReaPack">
+<index version="1" commit="5e65b883db023dbd298e92cd8d20b797d644ce50" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_FX Modulator Linking.lua" type="script" desc="FX Modulator Linking">
       <version name="0.1.0" author="saxmand" time="2025-04-19T03:17:01Z">
@@ -19,6 +19,12 @@
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/db93997d88cd89325812b2ed610d4119474d52f8/FX/Saxmand_FX%20Modulator%20Linking.lua</source>
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/db93997d88cd89325812b2ed610d4119474d52f8/FX/Helpers/json.lua</source>
         <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/db93997d88cd89325812b2ed610d4119474d52f8/FX/Helpers/special_buttons.lua</source>
+      </version>
+      <version name="0.1.6" author="Saxmand" time="2025-04-22T17:26:33Z">
+        <changelog><![CDATA[+ Initial version]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/5e65b883db023dbd298e92cd8d20b797d644ce50/FX/Saxmand_FX%20Modulator%20Linking.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/5e65b883db023dbd298e92cd8d20b797d644ce50/FX/Helpers/json.lua</source>
+        <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/5e65b883db023dbd298e92cd8d20b797d644ce50/FX/Helpers/special_buttons.lua</source>
       </version>
     </reapack>
   </category>
