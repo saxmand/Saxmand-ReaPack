@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.1.4
+-- @version 0.1.5
 -- @provides
 --   Helpers/*.lua
 -- @changelog
