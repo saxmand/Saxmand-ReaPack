@@ -7,9 +7,10 @@
 -- @changelog
 --   + Initial version
 
-local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
-local json = require(scriptPath .. "/Helpers/json")
-local specialButtons = require(scriptPath .. '/Helpers/special_buttons')
+local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
+package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
+local json = require("json")
+local specialButtons = require("special_buttons")
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local ImGui = require 'imgui' '0.9.3'
@@ -26,8 +27,8 @@ reaper.ImGui_Attach(ctx, font2)
 reaper.ImGui_SetConfigVar(ctx,reaper.ImGui_ConfigVar_MacOSXBehaviors(),0)
 
 
-function reaper_do_file(file) local info = debug.getinfo(1,'S'); local path = info.source:match[[^@?(.*[\/])[^\/]-$]]; dofile(path .. file); end
-reaper_do_file('Helpers/json.lua')
+--function reaper_do_file(file) local info = debug.getinfo(1,'S'); local path = info.source:match[[^@?(.*[\/])[^\/]-$]]; dofile(path .. file); end
+--reaper_do_file('Helpers/json.lua')
 -----------------------------------------
 ------------ TOOLBAR SETTINGS -----------
 -----------------------------------------
@@ -45,20 +46,26 @@ end
 
 
 local defaultSettings = {
-    openSelectedFx = true,
-    showModulatorContainer = true, 
+    openSelectedFx = false,
+    includeModulators = false, 
+    showParametersForAllPlugins = false,
     trackSelectionFollowFocus = false, 
     showToolTip = true,
     sortAsType = false,
     partsHeight = 250,
     vertical = false,
-
+    
+    onlyMapped = false,
+    search = "",
 }
 
 local defaultTrackSettings = {
     hideModules = false,
     hideParameters = false,
     hidePlugins = false,
+    collabsModules = {},
+    show = {},
+    renamed = {},
 }
 
 local function saveSettings()
@@ -439,6 +446,8 @@ function mapModulatorActivate(fxIndex, sliderNum, fxInContainerIndex, name)
 end
 
 function renameModule(track, modulationContainerPos, fxIndex, newName)
+    
+    
     reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'renamed_name',  newName)
     renameModulatorNames(track, modulationContainerPos)
 end
@@ -490,7 +499,7 @@ end
 
 
 function insertLocalLfoFxAndAddContainerMapping(track)
-    modulationContainerPos, insert_position = insertContainerAddPluginAndRename(track, 'LFO Native Modulator', "LFO Native")
+    modulationContainerPos, insert_position = insertContainerAddPluginAndRename(track, 'JS: LFO Native Modulator', "LFO Native")
     
     reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.mod.active', 1)
     reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.mod.baseline', 0.5)
@@ -502,7 +511,7 @@ function insertLocalLfoFxAndAddContainerMapping(track)
 end
 
 function insertACSAndAddContainerMapping(track)
-    modulationContainerPos, insert_position = insertContainerAddPluginAndRename(track, 'ACS Native Modulator', "ACS Native")
+    modulationContainerPos, insert_position = insertContainerAddPluginAndRename(track, 'JS: ACS Native Modulator', "ACS Native")
     
     reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.mod.active', 1)
     reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.mod.baseline', 0.5)
@@ -561,14 +570,14 @@ function getModulatorNames(track, modulationContainerPos)
             local _, fxIndex = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. c)  
             local _, fxOriginalName = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, 'original_name')
             local renamed, fxName = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, 'renamed_name')
+            local guid = reaper.TrackFX_GetFXGUID( track, fxIndex )
             
             if not renamed or fxName == "" or fxName == nil then 
                 fxName = fxOriginalName
             end
             --if not nameCount[fxName] then nameCount[fxName] = 1 else nameCount[fxName] = nameCount[fxName] + 1 end
             --table.insert(containerData, {name = fxName .. " " .. nameCount[fxName], fxIndex = tonumber(fxIndex)})
-            table.insert(containerData, {name = fxName, fxIndex = tonumber(fxIndex), fxInContainerIndex = c, fxName = fxOriginalName})
-            local isCollabsed = collabsModules[tonumber(fxIndex)]
+            table.insert(containerData, {name = fxName, fxIndex = tonumber(fxIndex), guid = guid, fxInContainerIndex = c, fxName = fxOriginalName})
             if not isCollabsed then allIsCollabsed = false end
             if isCollabsed then allIsNotCollabsed = false end
         end
@@ -828,14 +837,13 @@ collabsWidth = 20
 
 
 
---hasModuleState, modulesState = reaper.GetProjExtState(0, stateName, "collabsModules")
+--hasModuleState, modulesState = reaper.GetProjExtState(0, stateName, "trackSettings.collabsModules")
 --reaper.ShowConsoleMsg(hasModuleState  .. " - " .. modulesState)
---collabsModules = hasModuleState == 1 and unpickle(modulesState) or {}
+--trackSettings.collabsModules = hasModuleState == 1 and unpickle(modulesState) or {}
 
 parametersBaseline = {}
 randomPoints = {25,3,68,94,45,70}
  
-collabsModules = {}
 modulatorNames = {}
 lastCollabsModules = {}
 sliderNumber = 0
@@ -850,7 +858,7 @@ sliderNumber = 0
 --partsHeight = tonumber(reaper.GetExtState(stateName, "partsHeight")) or 250
 
 --openSelected = true
---showModulatorContainer = true
+--includeModulators = true
 --trackSelectionFollowFocus = reaper.GetExtState(stateName, "trackSelectionFollowFocus") == "1"
 --showToolTip = reaper.GetExtState(stateName, "showToolTip") == "1"
 --sortAsType = reaper.GetExtState(stateName, "sortAsType") == "1"
@@ -999,7 +1007,7 @@ end
 
 
 
-function CheckFXParamsMapping(pLinks, track, fxIndex)
+function CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
     local numParams = reaper.TrackFX_GetNumParams(track, fxIndex)
     _, fxName = reaper.TrackFX_GetFXName(track, fxIndex)
     for p = 0, numParams - 1 do
@@ -1007,13 +1015,14 @@ function CheckFXParamsMapping(pLinks, track, fxIndex)
         local _, modActive  = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "param." .. p .. ".mod.active") 
         local isLinkActive = linkActive == "1"
         local isModActive  = modActive == "1"
-        if isLinkActive and isModActive then 
-            local _, linkFx = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' )
-            local _, linkParam = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' )  -- this is the parameter in the modulator container 
+        if isLinkActive then 
+            local _, linkFx = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' ) -- index of the fx that's linked. if outside modulation folder, it will be modulation folder index
+            local _, linkParam = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' )  -- parameter of the fx that's linked. 
             local _, fxIndexInContainer = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.fx_index')
             --local _, linkFxIndex = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.hint_id')
             local _, linkFxIndex = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. fxIndexInContainer)
-            local _, parameterLinkName = reaper.TrackFX_GetParamName(track, linkFx, linkParam)
+            --local _, parameterLinkName = reaper.TrackFX_GetParamName(track, isModulator and linkFxIndex or modulationContainerPos, linkParam)
+            local _, linkedName = reaper.TrackFX_GetParamName(track, fxIndex, p)
             if not pLinks[linkFxIndex] then pLinks[linkFxIndex] = {} end
             --if not parameterLinks[linkFx][linkParam][fxIndex] then 
               --  parameterLinks[linkFx][linkParam] = 0
@@ -1023,7 +1032,7 @@ function CheckFXParamsMapping(pLinks, track, fxIndex)
             
             --reaper.ShowConsoleMsg(pLinks[linkFxIndex] .. " llo\n")
                 
-            --reaper.ShowConsoleMsg(fxName .. " - " ..parameterLinkName .. " - " .. linkFxIndex .. " - " .. linkFx .. " - " .. linkParam .. "\n")
+            --reaper.ShowConsoleMsg(fxName .. " - " ..parameterLinkName .. " -> " .. linkedName .. " - " .. linkFxIndex .. " - link FX index: " .. linkFx .. " - link FX param: " .. linkParam .. " - FX index in container: " .. fxIndexInContainer .. " - from mod con: " .. tostring(isModulator) .. "\n")
         end
     end 
     return pLinks
@@ -1045,6 +1054,8 @@ end
 
 -- Function to get all plugins on a track, including those within containers
 function getAllTrackFXOnTrack(track)
+    
+    --reaper.ShowConsoleMsg("\n\n")
     local plugins = {} -- Table to store plugin information
     local containersFetch = {} -- Table to store plugin information
     local pLinks = {} -- table to store all link parameters
@@ -1059,7 +1070,7 @@ function getAllTrackFXOnTrack(track)
                 local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
                 local isEnabled = reaper.TrackFX_GetEnabled(track, fxIndex)
                 
-                pLinks = CheckFXParamsMapping(pLinks, track, fxIndex)
+                pLinks = CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
                 
                 table.insert(plugins, {number = fxIndex, name = fxName, isModulator = isModulator, indent = indent, fxContainerIndex = fxContainerIndex, fxContainerName = fxContainerName, isContainer = isContainer, base1Index = subFxIndex + 1, isEnabled = isEnabled})
                 if isContainer then
@@ -1131,9 +1142,9 @@ local function getAllTrackFXOnTrackSimple(track)
 end
 
 function mapPlotColor()
-  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(),colorMap)
-  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(),colorMap)
-  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),colorMap)
+  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(),colorMapDark)
+  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(),colorMapDark)
+  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),colorMapDark)
 end
 
 
@@ -1148,8 +1159,7 @@ end
 
 
 
-local function drawFaderFeedback(sizeW, sizeH, fxIndex, param, min, max)
-    isCollabsed = collabsModules[fxIndex]
+local function drawFaderFeedback(sizeW, sizeH, fxIndex, param, min, max, isCollabsed)
     
     if not inputPlots then inputPlots = {}; time = {}; offset = {} end
     --aaa = lastCollabsModules
@@ -1187,16 +1197,16 @@ local function drawFaderFeedback(sizeW, sizeH, fxIndex, param, min, max)
     local isMapping = map == fxIndex
     
     local posX, posY = reaper.ImGui_GetCursorPos(ctx)
-    --if map == fxIndex then mapPlotColor() end
+    if map == fxIndex then mapPlotColor() end
     reaper.ImGui_PlotLines(ctx, '##'..fxIndex, inputPlots[fxIndex], offset[fxIndex] - 1, nil, min, max, sizeW, sizeH)
-    --if map == fxIndex then reaper.ImGui_PopStyleColor(ctx, 3) end
+    if map == fxIndex then reaper.ImGui_PopStyleColor(ctx, 3) end
     
     clicked = reaper.ImGui_IsItemClicked(ctx)
     reaper.ImGui_SetCursorPos(ctx, posX, posY) 
     
     --reaper.ImGui_SetNextItemAllowOverlap(ctx)
     reaper.ImGui_Button(ctx, ((reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_DelayNone()) or map == fxIndex) and (isCollabsed and "M" or isMapping and "Mapping" or "Map") or "") ..  "##plotLinesButton" .. fxIndex ,sizeW,sizeH)
-    if showToolTip then ImGui.SetItemTooltip(ctx, map and (map ~= fxIndex and ("Click to map " .. mapName .. "\nPress escape to stop mapping") or "Click or press escape to stop mapping") or "Click to map output") end
+    if settings.showToolTip then ImGui.SetItemTooltip(ctx, map and (map ~= fxIndex and ("Click to map " .. mapName .. "\nPress escape to stop mapping") or "Click or press escape to stop mapping") or "Click to map output") end
     return clicked
 end
 
@@ -1324,6 +1334,7 @@ function setToolTipFunc2(text,color)
 end
 
 function lastItemClickAndTooltip(tooltipText)
+    local clicked
     if reaper.ImGui_IsItemHovered(ctx) then
         if settings.showToolTip then reaper.ImGui_SetTooltip(ctx,addNewlinesAtSpaces(tooltipText,26)) end
         if  reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then 
@@ -1376,26 +1387,13 @@ function fineFader(currentValue, buttonId, visualName, min, max, divide, valueFo
     return ret, newValue
 end
 
-function getCollabsModulesStateOnTrack()
-    local saved, collabsModulesStr = reaper.GetSetMediaTrackInfo_String( track, "P_EXT:" .. stateName .. "collabsModules", "", false )
-    local newCollabsStates = (saved and collabsModulesStr ~= "") and unpickle(collabsModulesStr) or {}
-    collabsModules = newCollabsStates
-    --lastCollabsModules = newCollabsStates
-    return newCollabsStates
-end
 
-function saveCollabsModulesStateOnTrack()
-     reaper.GetSetMediaTrackInfo_String( track, "P_EXT:" .. stateName .. "collabsModules", pickle(collabsModules), true )
-    --for _, m in ipairs(modulatorNames) do
-   --     reaper.GetSetMediaTrackInfo_String( track, "P_EXT:" .. stateName .. ":collabsModule:" .. m.fxIndex, collabsModules[m.fxIndex] and "1" or "0", true )
-    --end
-end
+
 
 function hideShowEverything(track, newState)
     
     if modulatorNames  then
-        for _, m in ipairs(modulatorNames) do collabsModules[m.fxIndex] = newState end  
-        saveCollabsModulesStateOnTrack()
+        for _, m in ipairs(modulatorNames) do trackSettings.collabsModules[m.guid] = newState end   
     end
     
     trackSettings.hidePlugins = newState
@@ -1406,6 +1404,7 @@ function hideShowEverything(track, newState)
 end
 
 colorMap = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.4,0.4,1)
+colorMapDark = reaper.ImGui_ColorConvertDouble4ToU32(0.7,0.2,0.2,1)
 colorMapLight = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.65,0.65,1)
 colorMapLightest = reaper.ImGui_ColorConvertDouble4ToU32(0.95,0.75,0.75,1)
 colorMapLightTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.65,0.65,0.5)
@@ -1434,6 +1433,7 @@ colorDarkGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.2, 0.2, 1)
 colorYellowMinimzed = reaper.ImGui_ColorConvertDouble4ToU32(254 / 255, 188 / 255, 46 / 255, 0.7) -- 117 122 118
 colorRedHidden = reaper.ImGui_ColorConvertDouble4ToU32(254 / 255, 95 / 255, 88 / 255, 1)  -- 117 122 118
 colorGreen = reaper.ImGui_ColorConvertDouble4ToU32(39 / 255, 198 / 255, 65 / 255, 0.7)  -- 117 122 118
+colorDarkGreen = reaper.ImGui_ColorConvertDouble4ToU32(20 / 255, 100 / 255, 32 / 255, 0.7)  -- 117 122 118
 
 function buttonTransparent(name, width,height) 
     ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),colorTransparent)
@@ -1493,28 +1493,32 @@ local function loop()
               end
           end
           
+          --[[
           if (not last_fxnumber_fromtouch or last_fxnumber_fromtouch ~= fxnumber_fromtouch) then
+              if last_fxnumber_fromfocus then
+                  settings.onlyMapped = false
+              end
               last_fxnumber_fromtouch = fxnumber_fromtouch
               fxnumber = fxnumber_fromtouch
               last_paramnumber_fromtouch = nil -- ensure to reset scroll focus
               if doNotChangeOnlyMapped then
                   doNotChangeOnlyMapped = false
-              else
-                  onlyMapped = false
               end
               
               scrollPlugin = fxnumber
           end 
+          ]]
           
           --fxnumberSelectedFromScript PROBABLY DOESN*T WORK. TRYING TO MAKE SURE THAT NOT CONTAINER IS SELECTED WHEN SELECTING VIA SCRIPT!!
           if not fxnumberSelectedFromScript and retvalfocus and fxnumber_fromfocus > -1 and (not last_fxnumber_fromfocus or last_fxnumber_fromfocus ~= fxnumber_fromfocus) then 
+              if last_fxnumber_fromfocus then
+                  settings.onlyMapped = false
+              end
               last_fxnumber_fromfocus = fxnumber_fromfocus
               fxnumber = fxnumber_fromfocus
               --last_paramnumber_fromtouch = nil -- ensure to reset scroll focus
               if doNotChangeOnlyMapped then
                   doNotChangeOnlyMapped = false
-              else
-                  onlyMapped = false
               end
               
               scrollPlugin = fxnumber
@@ -1522,6 +1526,9 @@ local function loop()
           fxnumberSelectedFromScript = false
           
           if not last_paramnumber_fromtouch or last_paramnumber_fromtouch ~= paramnumber_fromtouch then
+              if last_paramnumber_fromTouch then
+                  settings.onlyMapped = false
+              end
               last_paramnumber_fromtouch = paramnumber_fromtouch
               paramnumber = paramnumber_fromtouch
               if not ignoreScroll then
@@ -1529,9 +1536,7 @@ local function loop()
               end
               ignoreScroll = nil
               if doNotChangeOnlyMapped then
-                  doNotChangeOnlyMapped = false
-              else
-                  onlyMapped = false
+                  doNotChangeOnlyMapped = false 
               end
           end
           
@@ -1567,18 +1572,16 @@ local function loop()
   if not paramnumber then paramnumber = 0 end
   --if not track then track = reaper.GetTrack(0,0) end
   if track then
-      loadTrackSettings(track)
       _, trackName = reaper.GetTrackName(track)
       trackId = reaper.GetTrackGUID(track) 
       
-      if not lastTrack or lastTrack ~= track then  
-          getCollabsModulesStateOnTrack()--{}--unpickle(modulesState)
+      if not lastTrack or lastTrack ~= track then   
+          loadTrackSettings(track)
           
           _, trackName = reaper.GetTrackName(track)
           lastTrack = track
       end
       
-      --if not collabsModules then collabsModules =  getCollabsModulesStateOnTrack() end
       --if not lastCollabsModules then lastCollabsModules = {} end 
   else
       --trackName = "Select a track or touch a plugin parameter"
@@ -1626,7 +1629,15 @@ local function loop()
       
       
       --if track then 
-      
+      function openCloseFx(track, fxnumber, open) 
+          if tonumber(fxnumber) > 0x200000 then
+              reaper.TrackFX_SetOpen(track,fxnumber,open)
+              --reaper.TrackFX_SetOpen(track,0,true)
+              --reaper.TrackFX_Show(track,fxnumber,1)
+          else
+              reaper.TrackFX_SetOpen(track,fxnumber,open)
+          end 
+      end
         
         
         
@@ -1650,14 +1661,7 @@ local function loop()
                         local fxWindowOpen = focusedMapping and topContainerFxIndex and reaper.TrackFX_GetOpen( track, topContainerFxIndex )
                         if not fileInfo.fxContainerIndex and floatingSampler then fxWindowOpen = false end
                         ]]
-                        
-                        if tonumber(fxnumber) > 0x200000 then
-                            reaper.TrackFX_SetOpen(track,fxnumber,true)
-                            --reaper.TrackFX_SetOpen(track,0,true)
-                            --reaper.TrackFX_Show(track,fxnumber,1)
-                        else
-                            reaper.TrackFX_SetOpen(track,fxnumber,true)
-                        end
+                        openCloseFx(track, fxnumber, true) 
                     end
                     
                     focusedFxNumber = fxnumber
@@ -1718,13 +1722,13 @@ local function loop()
         
         
         function pluginParameterName(name, valueName, number)
-            reaper.ImGui_Text(ctx,name .. "\n" .. valueName) 
+            reaper.ImGui_Text(ctx,name ) -- .. "\n" .. valueName) 
             if not map and ImGui.IsItemClicked(ctx) then paramnumber = number end 
         end
         
         
         
-        function parameterNameAndSliders(func1, func2, p, focusedParamNumber, infoModulationSlider, sizeArray) 
+        function parameterNameAndSliders(func1, func2, p, focusedParamNumber, infoModulationSlider, sizeArray, showingMappings) 
             local isParameterLinkActive = p.isParameterLinkActive
             local parameterModulationActive = p.parameterModulationActive
             local containerItemFxId = p.containerItemFxId
@@ -1744,6 +1748,7 @@ local function loop()
             local width = p.width
             local buttonId = fxIndex .. ":" .. number
             
+            local inclosingX, inclosingY
             
             local mapVariable = false
             if map and (not isParameterLinkActive or (isParameterLinkActive and map ~= containerItemFxId)) then
@@ -1753,7 +1758,7 @@ local function loop()
             local scrollBarOffset = 14
             local textSize = reaper.ImGui_CalcTextSize(ctx, "Offset", 0,0) + 10 
             local itemWidth = (sizeArray and sizeArray.faderWidth) and sizeArray.faderWidth or moduleWidth - 2 - textSize - scrollBarOffset
-            local areaWidth = infoModulationSlider and moduleWidth-30 or moduleWidth - scrollBarOffset - 2
+            local areaWidth = (infoModulationSlider or (sizeArray and sizeArray.faderWidth)) and moduleWidth-30 or moduleWidth - scrollBarOffset - 2
             local faderWidth =  (sizeArray and sizeArray.faderWidth) and sizeArray.faderWidth or moduleWidth - scrollBarOffset
             local parameterMappingWidth = (sizeArray and sizeArray.parameterMapSize) and sizeArray.parameterMapSize or itemWidth
             
@@ -1777,10 +1782,15 @@ local function loop()
             end
             
             ImGui.BeginGroup(ctx)  
-            local parStartPosX, parStartPosY = reaper.ImGui_GetItemRectMin(ctx)
+            
             
             local startPosX, startPosY = reaper.ImGui_GetCursorPos(ctx)
-            reaper.ImGui_PushStyleVar(ctx, ImGui.StyleVar_GrabMinSize, 2) 
+            reaper.ImGui_PushStyleVar(ctx, ImGui.StyleVar_GrabMinSize, 2)  
+            ImGui.PushStyleColor(ctx, reaper.ImGui_Col_CheckMark(),colorMap) 
+            ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(),semiTransparentGrey)
+            ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(),semiTransparentGrey)
+            ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),semiTransparentGrey) 
+            
             if infoModulationSlider then 
                 ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(), parameterModulationActive and colorMapLightest or colorWhite)
             else
@@ -1789,17 +1799,28 @@ local function loop()
             
             
             if func1 then  
-                reaper.ImGui_PushTextWrapPos(ctx)
-                func1(name, valueName, number)
-                reaper.ImGui_PopTextWrapPos(ctx)
+                if not showingMappings then
+                    reaper.ImGui_PushTextWrapPos(ctx)
+                    func1(name, valueName, number)
+                    reaper.ImGui_PopTextWrapPos(ctx)
+                else 
+                    if not parameterModulationActive then reaper.ImGui_BeginDisabled(ctx) end
+                    
+                    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(),parameterModulationActive and colorMapLight or colorMapLightTransparent)
+                    local ret, newValue = reaper.ImGui_Checkbox(ctx, name .. "##enable" .. buttonId, parameterModulationActive)
+                    if ret and number > -1 then
+                      reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..number..'.mod.active', newValue and 1 or 0 )
+                      setParameterToBaselineValue(track, fxIndex, number) 
+                      ignoreScroll = true
+                    end  
+                    reaper.ImGui_PopStyleColor(ctx)
+                end
             end
+            
+            local parStartPosX, parStartPosY = reaper.ImGui_GetItemRectMin(ctx)
             
             local posX, posY = reaper.ImGui_GetCursorPos(ctx)
             
-            
-            ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(),semiTransparentGrey)
-            ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(),semiTransparentGrey)
-            ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),semiTransparentGrey) 
             
             
             
@@ -1828,7 +1849,7 @@ local function loop()
                 ret, newValue = func2(track,fxIndex, infoModulationSlider, sliderValue, faderWidth)
                 parStartPosX, parStartPosY = reaper.ImGui_GetItemRectMin(ctx)
             else
-                ret, newValue = func2("", buttonId, sliderValue,min,max,"", nil, faderWidth, "Double", colorBrightBlueTransparent)
+                ret, newValue = func2("", buttonId, sliderValue,min,max,valueName, nil, faderWidth, "Double", colorBrightBlueTransparent)
                 ImGui.SetItemTooltip(ctx, 'Set parameter bassline') 
             end
             
@@ -1862,57 +1883,68 @@ local function loop()
                 local linkName = parameterLinkName 
                 --ImGui.SetNextItemWidth(ctx, itemWidth - textSize) 
                 --reaper.ImGui_SetCursorPos(ctx, posX, posY)
-                ImGui.PushStyleColor(ctx, ImGui.Col_SliderGrab,colorMap)
+                ImGui.PushStyleColor(ctx, reaper.ImGui_Col_SliderGrab(),colorMap)
                 ImGui.PushStyleColor(ctx, reaper.ImGui_Col_SliderGrabActive(),colorMap)
-                ImGui.PushStyleColor(ctx, reaper.ImGui_Col_CheckMark(),colorMap)
                 ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(),parameterModulationActive and colorMapLight or colorMapLightTransparent)
                 if mapVariable then ImGui.SetNextItemAllowOverlap(ctx) end -- in order for the overlapping map button to take focus                          
                 
-                if not parameterModulationActive then reaper.ImGui_BeginDisabled(ctx) end
                 
-                local ret, newValue = reaper.ImGui_Checkbox(ctx, linkName .. "##enable" .. buttonId, parameterModulationActive)
-                if parameterModulationActive then setToolTipFunc('Disable parameter modulation of ' .. linkName) end 
+                if not showingMappings then
+                    if not parameterModulationActive then reaper.ImGui_BeginDisabled(ctx) end
+                    local ret, newValue = reaper.ImGui_Checkbox(ctx, linkName .. "##enable" .. buttonId, parameterModulationActive)
                     if ret and number > -1 then
                       reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..number..'.mod.active', newValue and 1 or 0 )
                       setParameterToBaselineValue(track, fxIndex, number) 
+                      ignoreScroll = true
                     end 
-                    local minX, minY = reaper.ImGui_GetItemRectMin(ctx) 
-                    local screenPosX, screenPosY = reaper.ImGui_GetCursorScreenPos(ctx) 
-                    local isClickingText = mouse_pos_x > screenPosX + parameterMappingWidth
-                    
-                    ImGui.SetNextItemWidth(ctx, parameterMappingWidth) 
-                    if mapVariable then ImGui.SetNextItemAllowOverlap(ctx) end -- in order for the overlapping map button to take focus
-                    
-                    local ret, newValue = pluginParameterSlider("Offset", buttonId, math.floor(offset*100), -100, 100, "%d", sliderFlags,parameterMappingWidth, "Int", colorMap )
-                    
-                    if reaper.ImGui_IsItemClicked(ctx, 0) and isClickingText then -- reset value
-                        ret, newValue = true, linkName:match("LFO Native") ~= nil and -50 or 0
-                    end
-                    if parameterModulationActive then setToolTipFunc('Set modulation offset of ' .. linkName .. ".\nClick Offset to reset") end
-                    if ret and number > -1 then
-                      reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'.. number..'.plink.offset', newValue / 100 )
-                    end
-                    scrollHoveredItem(track, fxIndex, nil, offset, 1, 'param.'.. number..'.plink.offset', nil, -1, 1)
-                    
-                    ImGui.SetNextItemWidth(ctx, parameterMappingWidth) 
-                    if mapVariable then ImGui.SetNextItemAllowOverlap(ctx) end -- in order for the overlapping map button to take focus
-                    local ret, newValue = pluginParameterSlider("Width", buttonId ,math.floor(width*100), -100, 100, "%d", sliderFlags, parameterMappingWidth, "Int", colorMap)
-                    if reaper.ImGui_IsItemClicked(ctx, 0) and isClickingText then -- reset value
-                        ret, newValue = true, 100
-                    end 
-                    if parameterModulationActive then setToolTipFunc('Set modulation width of ' .. linkName .. ".\nClick Width to reset") end
-                    if ret and number > -1 then
-                      reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'.. number..'.plink.scale', newValue / 100 )
-                    end 
-                    scrollHoveredItem(track, fxIndex, nil, width, 1, 'param.'.. number..'.plink.scale', nil, -1, 1)
+                end
+                if parameterModulationActive then setToolTipFunc('Disable parameter modulation of ' .. linkName) end 
+                  
+                
+                if showingMappings then
+                   inclosingX, inclosingY = parStartPosX, parStartPosY 
+                else
+                    inclosingX, inclosingY = reaper.ImGui_GetItemRectMin(ctx) 
+                end
+                
+                local screenPosX, screenPosY = reaper.ImGui_GetCursorScreenPos(ctx) 
+                local isClickingText = mouse_pos_x > screenPosX + parameterMappingWidth
+                
+                ImGui.SetNextItemWidth(ctx, parameterMappingWidth) 
+                if mapVariable then ImGui.SetNextItemAllowOverlap(ctx) end -- in order for the overlapping map button to take focus
+                
+                local ret, newValue = pluginParameterSlider("Offset", buttonId, math.floor(offset*100), -100, 100, "%d", sliderFlags,parameterMappingWidth, "Int", colorMap )
+                
+                if reaper.ImGui_IsItemClicked(ctx, 0) and isClickingText then -- reset value
+                    ret, newValue = true, linkName:match("LFO Native") ~= nil and -50 or 0
+                end
+                if parameterModulationActive then setToolTipFunc('Set modulation offset of ' .. linkName .. ".\nClick Offset to reset") end
+                if ret and number > -1 then
+                  reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'.. number..'.plink.offset', newValue / 100 )
+                end
+                scrollHoveredItem(track, fxIndex, nil, offset, 1, 'param.'.. number..'.plink.offset', nil, -1, 1)
+                
+                ImGui.SetNextItemWidth(ctx, parameterMappingWidth) 
+                if mapVariable then ImGui.SetNextItemAllowOverlap(ctx) end -- in order for the overlapping map button to take focus
+                local ret, newValue = pluginParameterSlider("Width", buttonId ,math.floor(width*100), -100, 100, "%d", sliderFlags, parameterMappingWidth, "Int", colorMap)
+                if reaper.ImGui_IsItemClicked(ctx, 0) and isClickingText then -- reset value
+                    ret, newValue = true, 100
+                end 
+                if parameterModulationActive then setToolTipFunc('Set modulation width of ' .. linkName .. ".\nClick Width to reset") end
+                if ret and number > -1 then
+                  reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'.. number..'.plink.scale', newValue / 100 )
+                end 
+                scrollHoveredItem(track, fxIndex, nil, width, 1, 'param.'.. number..'.plink.scale', nil, -1, 1)
                     
                 if not parameterModulationActive then reaper.ImGui_EndDisabled(ctx) end
                 local _, maxY = reaper.ImGui_GetItemRectMax(ctx)
-                local maxX = minX + areaWidth
-                reaper.ImGui_DrawList_AddRect(draw_list, minX, minY, maxX, maxY, colorMapLightTransparent,4,nil,1)
+                local maxX = inclosingX + areaWidth
+                
+                reaper.ImGui_DrawList_AddRect(draw_list, inclosingX, inclosingY, maxX, maxY, colorMapLightTransparent,4,nil,1)
+                
                 local mouseX, mouseY = reaper.ImGui_GetMousePos(ctx) 
                 -- parameter mapping hoover
-                if not parameterModulationActive and mouseX >= minX and mouseX <= maxX and mouseY >= minY and mouseY <= maxY then
+                if not parameterModulationActive and mouseX >= inclosingX and mouseX <= maxX and mouseY >= inclosingY and mouseY <= maxY then
                     setToolTipFunc2('Enable parameter modulation of ' .. linkName)
                     if reaper.ImGui_IsMouseReleased(ctx,reaper.ImGui_MouseButton_Left()) then 
                          setBaselineToParameterValue(track, fxIndex, number) 
@@ -1920,16 +1952,17 @@ local function loop()
                     end
                 end
 
-                reaper.ImGui_PopStyleColor(ctx,4)
+                reaper.ImGui_PopStyleColor(ctx,3)
                 
             end
             
-            reaper.ImGui_PopStyleColor(ctx,4) 
+            reaper.ImGui_PopStyleColor(ctx,5) 
             ImGui.PopStyleVar(ctx)
             
             
-            endPosX, endPosY = reaper.ImGui_GetCursorPos(ctx)
+            local endPosX, endPosY = reaper.ImGui_GetCursorPos(ctx)
             
+            --if map then reaper.ShowConsoleMsg(mapName .. " ~= " ..  parameterLinkName .. "\n") end
             
             if map and (not isParameterLinkActive or (isParameterLinkActive and mapName ~= parameterLinkName)) then
                 reaper.ImGui_SetCursorPos(ctx, startPosX,startPosY)
@@ -1958,10 +1991,12 @@ local function loop()
               end
               
               if isParameterLinkActive then
-                  if specialButtons.close(ctx,areaWidth - (infoModulationSlider and 13 or 10),posY + 25,16,false,"remove" .. buttonId) then
+                  local closePosX = areaWidth - (infoModulationSlider and 14 or 11) - (showingMappings and 4 or 0) -- FIX FOR NOW
+                  local closePosY = posY + (showingMappings and - 22 or 26) -- FIX FOR NOW
+                  if specialButtons.close(ctx,closePosX,closePosY,16,false,"remove" .. buttonId, colorWhite, colorRedHidden,colorTransparent, colorTransparent) then
                       disableParameterLink(track, fxIndex, number)
                   end
-                   if showToolTip and reaper.ImGui_IsItemHovered(ctx) then reaper.ImGui_SetTooltip(ctx,addNewlinesAtSpaces("Remove mapping",26)) end
+                   if settings.showToolTip and reaper.ImGui_IsItemHovered(ctx) then reaper.ImGui_SetTooltip(ctx,addNewlinesAtSpaces("Remove mapping",26)) end
               end
             end
             --
@@ -1995,7 +2030,7 @@ local function loop()
         ImGui.BeginGroup(ctx)
         local x,y = reaper.ImGui_GetCursorPos(ctx)
         modulatorsW = vertical and partsWidth or (winW-x-30)
-        pansHeight = winH-y-30
+        pansHeight = winH-y-8
         --reaper.ImGui_SameLine(ctx)
         
         local widthOfTrackName = vertical and partsWidth - 24 or pansHeight - 24
@@ -2031,7 +2066,7 @@ local function loop()
         ImGui.BeginGroup(ctx)
         local x,y = reaper.ImGui_GetCursorPos(ctx)
         modulatorsW = settings.vertical and partsWidth or (winW-x-30)
-        pansHeight = winH-y-30
+        pansHeight = winH-y-28
         
         local title = "PLUGINS"
         click = false
@@ -2043,7 +2078,7 @@ local function loop()
                 click = true
             end        
         else
-            local visible = reaper.ImGui_BeginChild(ctx, 'PluginsChilds', partsWidth, settings.vertical and settings.partsHeight or pansHeight-50, reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_AutoResizeY(), reaper.ImGui_WindowFlags_MenuBar() | scrollFlags)
+            local visible = reaper.ImGui_BeginChild(ctx, 'PluginsChilds', partsWidth, settings.vertical and settings.partsHeight or pansHeight-72, reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_AutoResizeY(), reaper.ImGui_WindowFlags_MenuBar() | scrollFlags)
             if visible then
                 if reaper.ImGui_BeginMenuBar(ctx) then 
                      if titleButtonStyle(title, not trackSettings.hidePlugins and "Minimize plugins" or "Maximize plugins",settings.vertical and partsWidth or nil, true,not settings.vertical and trackSettings.hideModules ) then 
@@ -2052,7 +2087,7 @@ local function loop()
                     reaper.ImGui_EndMenuBar(ctx)
                 end
                 for _, f in ipairs(focsuedTrackFXNames) do 
-                    if (settings.showModulatorContainer) or (not settings.showModulatorContainer and (not f.isModulator)) then
+                    if (settings.includeModulators) or (not settings.includeModulators and (not f.isModulator)) then
                         local name = f.name
                         if f.isContainer then name = name .. ":" end
                         if f.indent then name = string.rep("     ", f.indent) .. name end
@@ -2080,15 +2115,25 @@ local function loop()
                 saveSettings()
             end
             setToolTipFunc("Automatically open the selected plugin FX window")
-            local ret, showModulatorContainer = reaper.ImGui_Checkbox(ctx,"Show Modulators",settings.showModulatorContainer) 
+            
+            
+            local ret, showParametersForAllPlugins = reaper.ImGui_Checkbox(ctx,"Show all parameters",settings.showParametersForAllPlugins) 
             if ret then 
-                settings.showModulatorContainer = showModulatorContainer
+                settings.showParametersForAllPlugins = showParametersForAllPlugins
                 saveSettings()
             end
-            setToolTipFunc("Show Modulators container in the plugin list")
+            setToolTipFunc("Show parameters for all plugins") 
             
+            
+            local ret, includeModulators = reaper.ImGui_Checkbox(ctx,"Include Modulators",settings.includeModulators) 
+            if ret then 
+                settings.includeModulators = includeModulators
+                saveSettings()
+            end
+            setToolTipFunc("Show Modulators container in the plugin list") 
             
         end
+        
         if click then 
             trackSettings.hidePlugins = not trackSettings.hidePlugins  
             saveTrackSettings(track)
@@ -2116,7 +2161,7 @@ local function loop()
             end
         else
                 
-            local visible = reaper.ImGui_BeginChild(ctx, 'Parameters', partsWidth, settings.vertical and settings.partsHeight or pansHeight-50, reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_AutoResizeY() ,reaper.ImGui_WindowFlags_MenuBar() | reaper.ImGui_WindowFlags_AlwaysVerticalScrollbar() | scrollFlags)
+            local visible = reaper.ImGui_BeginChild(ctx, 'Parameters', partsWidth, settings.vertical and settings.partsHeight or pansHeight-48, reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_AutoResizeY() ,reaper.ImGui_WindowFlags_MenuBar() | reaper.ImGui_WindowFlags_AlwaysVerticalScrollbar() | scrollFlags)
             if visible then
                 if reaper.ImGui_BeginMenuBar(ctx) then
                      title = "PARAMETERS" --.. (trackSettings.hideParameters and "" or (" (" .. (focusedParamNumber + 1) .. "/" .. #focusedTrackFXParametersData .. ")"))
@@ -2126,19 +2171,34 @@ local function loop()
                     reaper.ImGui_EndMenuBar(ctx)
                 end
                 size = nil
+                
+                -- check if any parameters links a active
+                if settings.onlyMapped then
+                    local someAreActive = false
+                    for _, p in ipairs(focusedTrackFXParametersData) do 
+                        if p.isParameterLinkActive then someAreActive = true; break end
+                    end
+                    if not someAreActive then settings.onlyMapped = false; saveTrackSettings(track) end
+                end
+                
                 for _, p in ipairs(focusedTrackFXParametersData) do 
                     --if p.number == focusedParamNumber then 
                     --posX, posY = reaper.ImGui_GetCursorPos(ctx) 
                     --end
                     --if not size then startPosY = reaper.ImGui_GetCursorPosY(ctx) end
-                    if not onlyMapped or (onlyMapped and p.isParameterLinkActive) then
-                        if not search or search == "" or searchName(p.name, search) then
+                    
+                    if not settings.onlyMapped or (settings.onlyMapped and p.isParameterLinkActive) then
+                        if not settings.search or settings.search == "" or searchName(p.name, settings.search) then
+                            --reaper.ImGui_Text(ctx, "")
                             parameterNameAndSliders(pluginParameterName, pluginParameterSlider,p, focusedParamNumber)
                         --if not size then size = reaper.ImGui_GetCursorPosY(ctx) - startPosY end
-                            reaper.ImGui_Separator(ctx)
+                            --reaper.ImGui_Separator(ctx)
+                            reaper.ImGui_Spacing(ctx)
+                            --reaper.ImGui_NewLine(ctx)
+                            
                             if scroll and p.number == scroll then
-                                ImGui.SetScrollHereY(ctx,  p.isParameterLinkActive and 0.45 or 0.3)
-                                scroll = nil
+                                ImGui.SetScrollHereY(ctx,  p.isParameterLinkActive and 0.45 or 0.3) 
+                                removeScroll = true
                             end
                         end
                     end
@@ -2152,13 +2212,17 @@ local function loop()
             
             local textSize = reaper.ImGui_CalcTextSize(ctx, "Search", 0,0)
             reaper.ImGui_SetNextItemWidth(ctx, moduleWidth - textSize - 10)
-            ret, search = reaper.ImGui_InputText(ctx,"Search", search) 
+            ret, search = reaper.ImGui_InputText(ctx,"Search", settings.search) 
             if ret then
-                onlyMapped = false
+                settings.search = search
+                settings.onlyMapped = false
+                saveSettings()
             end
-            ret, onlyMapped = reaper.ImGui_Checkbox(ctx,"Only mapped",onlyMapped)
+            ret, onlyMapped = reaper.ImGui_Checkbox(ctx,"Only mapped",settings.onlyMapped)
             if ret then
-                search = ""
+                settings.search = ""
+                settings.onlyMapped = onlyMapped
+                saveSettings()
             end 
             
         end
@@ -2184,7 +2248,7 @@ local function loop()
               reaper.SetExtState(stateName, "hideModules", hideModules and "1" or "0", true) 
           end 
         else
-            local visible = reaper.ImGui_BeginChild(ctx, "Modules", partsWidth, settings.vertical and settings.partsHeight or pansHeight-50, reaper.ImGui_ChildFlags_Border() ,reaper.ImGui_WindowFlags_MenuBar() )
+            local visible = reaper.ImGui_BeginChild(ctx, "Modules", partsWidth, settings.vertical and settings.partsHeight or pansHeight-24, reaper.ImGui_ChildFlags_Border() ,reaper.ImGui_WindowFlags_MenuBar() )
             if visible then
                 if reaper.ImGui_BeginMenuBar(ctx) then
                      if titleButtonStyle("MODULES", not hideModules and "Minimize modules" or "Maximize modules",settings.vertical and partsWidth or nil, true, (not settings.vertical and hideModules)) then 
@@ -2210,22 +2274,22 @@ local function loop()
                 if titleButtonStyle("+ ADSR-1 (tilr) ", "Add an ADSR that uses the plugin created by tilr") then 
                     currentFocus = reaper.JS_Window_GetFocus()
                     nameOpened = "ADSR-1"
-                    containerPos, insert_position = insertFXAndAddContainerMapping(track, "ADSR-1", "ADSR")
+                    containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: ADSR-1", "ADSR")
                 end  
                 if titleButtonStyle("+ MSEG-1 (tilr) ", "Add a multi-segment LFO / Envelope generator that uses the plugin created by tilr") then
                     currentFocus = reaper.JS_Window_GetFocus()
                     nameOpened = "MSEG-1"
-                    containerPos, insert_position = insertFXAndAddContainerMapping(track, "MSEG-1", "MSEG")
+                    containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: MSEG-1", "MSEG")
                 end 
                 if titleButtonStyle("+ MIDI Fader    ", "Use a MIDI fader as a modulator") then 
                     currentFocus = reaper.JS_Window_GetFocus()
                     nameOpened = "MIDI Fader"
-                    containerPos, insert_position = insertFXAndAddContainerMapping(track, "MIDI Fader Modulator", "MIDI Fader")
+                    containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: MIDI Fader Modulator", "MIDI Fader")
                 end 
                 if titleButtonStyle("+ AB Slider     ", "Map two positions A and B of plugin parameters on the selected track. Only parameters changed will be mapped") then
                     currentFocus = reaper.JS_Window_GetFocus()
                     nameOpened = "AB Slider"
-                    containerPos, insert_position = insertFXAndAddContainerMapping(track, "AB Slider Modulator", "AB Slider")
+                    containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: AB Slider Modulator", "AB Slider")
                 end
                 if titleButtonStyle("+ 4-in-1-out ", "Map 4 inputs to 1 output") then
                     currentFocus = reaper.JS_Window_GetFocus()
@@ -2257,7 +2321,7 @@ local function loop()
                 ImGui.EndChild(ctx)
             end 
             
-            ret, sortAsType = reaper.ImGui_Checkbox(ctx,"Sort as type",settings.sortAsType)
+            ret, sortAsType = reaper.ImGui_Checkbox(ctx,"Sort by name",settings.sortAsType)
             if ret then
                 settings.sortAsType = sortAsType
                 saveSettings()
@@ -2280,7 +2344,7 @@ local function loop()
         end
         
         local x,y = reaper.ImGui_GetCursorPos(ctx)
-        modulatorsW = settings.vertical and partsWidth or (winW-x-30)
+        modulatorsW = settings.vertical and partsWidth or (winW-x-8)
         --modulatorsH = winH-y-30
         local visible = ImGui.BeginChild(ctx, 'ModulatorsChilds', modulatorsW, settings.vertical and 0 or pansHeight, reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_AutoResizeY()| reaper.ImGui_ChildFlags_AutoResizeX(),reaper.ImGui_WindowFlags_MenuBar() | reaper.ImGui_WindowFlags_HorizontalScrollbar())
         --local visible = reaper.ImGui_BeginTable(ctx, 'ModulatorsChilds', settings.vertical and 1 or #modulatorNames,nil, modulatorsW)
@@ -2289,13 +2353,12 @@ local function loop()
                 if titleButtonStyle("MODULATORS", allIsNotCollabsed and "Minimize all modulators" or "Maximize all modulators",settings.vertical and partsWidth or nil,true,false ) then 
                     if modulatorNames and #modulatorNames > 0 then
                         if allIsNotCollabsed then
-                            for _, m in ipairs(modulatorNames) do collabsModules[m.fxIndex] = true end
+                            for _, m in ipairs(modulatorNames) do trackSettings.collabsModules[m.guid] = true end
                         else
-                            for _, m in ipairs(modulatorNames) do collabsModules[m.fxIndex] = false end
+                            for _, m in ipairs(modulatorNames) do trackSettings.collabsModules[m.guid] = false end
                         end 
-                        saveCollabsModulesStateOnTrack()
+                        saveTrackSettings(track)
                     end
-                    --reaper.SetProjExtState(0, stateName, "collabsModules", pickle(collabsModules))
                 end
                 reaper.ImGui_EndMenuBar(ctx)
             end
@@ -2315,10 +2378,10 @@ local function loop()
             ------ LFO -----------
             
             
-            function fixWidth(fxIndex, startPosX)
+            function fixWidth(guid, startPosX)
                 --mapButton(fxIndex, name)
                 endPosX, endPosY = reaper.ImGui_GetItemRectMax(ctx)--reaper.ImGui_GetCursorPosX(ctx)
-                if (not fxIndex or not collabsModules[fxIndex]) and endPosX - startPosX < moduleWidth - 17 then
+                if (not guid or not trackSettings.collabsModules[guid]) and endPosX - startPosX < moduleWidth - 17 then
                     dummyWidth = moduleWidth - (endPosX - startPosX) - 17
                     reaper.ImGui_SameLine(ctx)
                     reaper.ImGui_InvisibleButton(ctx,"dummy", dummyWidth,10)
@@ -2392,7 +2455,7 @@ local function loop()
                     mapButton(fxIndex, name)
                     reaper.ImGui_SameLine(ctx)
                     
-                    drawFaderFeedback(45, fxIndex, 1, -1, 1)
+                    drawFaderFeedback(45, fxIndex, 1, -1, 1, isCollabsed)
                     
                     endPosY = reaper.ImGui_GetCursorPosY(ctx)
                     ImGui.EndGroup(ctx)
@@ -2597,7 +2660,7 @@ local function loop()
                     return newValue and newValue or currentValue
                 end
                 
-                function openGui(track, fxIndex, name, gui, extraIdentifier) 
+                function openGui(track, fxIndex, name, gui, extraIdentifier, isCollabsed) 
                     if gui then 
                         local _, currentValue = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.."1"..'.mod.visible' )
                         fxIsShowing = currentValue == "1"
@@ -2608,12 +2671,12 @@ local function loop()
                     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), fxIsShowing and colorBlue or semiTransparentGrey)
                     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorLightBlue)
                     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorLightGrey)
-                    sizeW = collabsModules[(extraIdentifier and extraIdentifier or fxIndex)] and 20 or buttonWidth * 2 --(moduleWidth-dropDownSize-margin*4)
-                    sizeH = collabsModules[(extraIdentifier and extraIdentifier or fxIndex)] and 20 or dropDownSize/8
+                    sizeW = isCollabsed and 20 or buttonWidth * 2 --(moduleWidth-dropDownSize-margin*4)
+                    sizeH = isCollabsed and 20 or dropDownSize/8
                     if gui then
-                        title = collabsModules[fxIndex] and (fxIsShowing and "CG" or "OG") or (fxIsShowing and "Close Gui" or " Open Gui")
+                        title = isCollabsed and (fxIsShowing and "CG" or "OG") or (fxIsShowing and "Close Gui" or " Open Gui")
                     else
-                        title = collabsModules[(extraIdentifier and extraIdentifier or fxIndex)] and (fxIsShowing and "CP" or "OP") or (fxIsShowing and "Close Plugin" or " Open Plugin")
+                        title = isCollabsed and (fxIsShowing and "CP" or "OP") or (fxIsShowing and "Close Plugin" or " Open Plugin")
                     end
                     if reaper.ImGui_Button(ctx,title .."##"..fxIndex .. (extraIdentifier and extraIdentifier or ""), sizeW,sizeH) then
                         if gui then
@@ -2632,41 +2695,50 @@ local function loop()
                     reaper.ImGui_PopStyleColor(ctx,3)
                 end
                 
-                function mapAndShow(track, fxIndex, sliderNum, fxInContainerIndex, name) 
+                function mapAndShow(track, fx, sliderNum, fxInContainerIndex, name) 
                     reaper.ImGui_BeginGroup(ctx)
                     local h = buttonWidth/4 - 2
-                    local w = buttonWidth
+                    local w = buttonWidth - 8
                     
+                    local isShowing = trackSettings.show[fx.guid] 
+                    local isMapping = map == fx.fxIndex 
                     
-                    isMapping = map == fxIndex 
-                    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isMapping and colorMap or colorLightBlue)
-                    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isMapping and colorMap or colorBlue)
-                    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isMapping and colorMap or colorBlue)
-                    
+                    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isMapping and colorMap or colorDarkGrey)
+                    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isMapping and colorMap or colorGrey) 
+                    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isMapping and colorMap or colorBlue) 
                     
                     if reaper.ImGui_Button(ctx, isMapping and "MAPPING" or "MAP", w, h) then 
-                        mapModulatorActivate(fxIndex,sliderNum, fxInContainerIndex, name)
+                        mapModulatorActivate(fx.fxIndex,sliderNum, fxInContainerIndex, name)
                     end
                     
                     reaper.ImGui_PopStyleColor(ctx, 3) 
-                    
-                    if showToolTip then
-                        reaper.ImGui_SetItemTooltip(ctx,  isMapping and "Stop mapping " or "Start mapping " .. name .. " ")
+                     
+                    local text = (map and (not isMapping and ("Click to map " .. mapName .. "\nPress escape to stop mapping") or "Click or press escape to stop mapping") or "Click to map output")
+                    if settings.showToolTip then
+                        reaper.ImGui_SetItemTooltip(ctx, text)
                     end
                     
-                    local mappingsAmount = (parameterLinks and parameterLinks[tostring(fxIndex)]) and #parameterLinks[tostring(fxIndex)] or 0
+                    
+                    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isShowing and colorMapDark or colorDarkGrey)
+                    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isShowing and colorMapDark or colorGrey) 
+                    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isShowing and colorMapDark or colorBlue) 
+                    
+                    local mappingsAmount = (parameterLinks and parameterLinks[tostring(fx.fxIndex)]) and #parameterLinks[tostring(fx.fxIndex)] or 0
                     if reaper.ImGui_Button(ctx, "Show: " .. mappingsAmount, w, h) then 
-                    
+                        trackSettings.show[fx.guid] = not isShowing
+                        saveTrackSettings(track)
                     end
-                    if showToolTip then
-                        reaper.ImGui_SetItemTooltip(ctx,  "NOT YET IMPLEMENTED")
+                    if settings.showToolTip then
+                        reaper.ImGui_SetItemTooltip(ctx,  "Show mapped parameters")
                     end
                     
+                    
+                    reaper.ImGui_PopStyleColor(ctx, 3) 
                     reaper.ImGui_EndGroup(ctx)
                 end
                 
                 
-                function nlfoModulator(name, modulatorsPos, fxIndex, fxInContainerIndex)
+                function nlfoModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
                     
                     local noteTempos = {
                         {name = "32 D", value = 4/32*1.5},    -- 0.1875
@@ -2811,19 +2883,20 @@ local function loop()
                         buttonSize = 20
                         
                         
-                        if collabsModules[fxIndex] and settings.vertical then 
+                        if isCollabsed and settings.vertical then 
                             reaper.ImGui_SameLine(ctx)
                         end
-                        if drawFaderFeedback(nil,nil, fxIndex, 0, 0, 1) then
+                        if drawFaderFeedback(nil,nil, fxIndex, 0, 0, 1, isCollabsed) then
                             mapModulatorActivate(fxIndex,0, fxInContainerIndex, name)
                         end 
-                        
-                        if settings.vertical or not collabsModules[fxIndex] then reaper.ImGui_SameLine(ctx) end
-                        if not collabsModules[fxIndex] then openGui(track, fxIndex, name, true) end
+                        if not isCollabsed then reaper.ImGui_SameLine(ctx); mapAndShow(track, fx, 0, fxInContainerIndex, name, true) end
+                                                
+                        --if settings.vertical or not isCollabsed then reaper.ImGui_SameLine(ctx) end
+                        --if not isCollabsed then openGui(track, fxIndex, name, true, nil, isCollabsed) end
                         reaper.ImGui_TableNextColumn(ctx)
                         
                         
-                        if not collabsModules[fxIndex] then
+                        if not isCollabsed then
                             
                             createShapes()
                             
@@ -2881,7 +2954,7 @@ local function loop()
                         
                         --mapButton(fxIndex, name)
                         -- incase the module is to small
-                        --[[if not collabsModules[fxIndex] and endPosX - startPosX < moduleWidth - 17 then
+                        --[[if not isCollabsed and endPosX - startPosX < moduleWidth - 17 then
                             dummyWidth = moduleWidth - (endPosX - startPosX) - 17
                             reaper.ImGui_SameLine(ctx)
                             reaper.ImGui_InvisibleButton(ctx,"dummy", dummyWidth,10)
@@ -2898,7 +2971,7 @@ local function loop()
                 
                 
                 
-                function acsModulator(name, modulatorsPos, fxIndex, fxInContainerIndex) 
+                function acsModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
                     paramOut = "1"
                     direction = {"Negative","Centered", "Positive"}
                     directionDropDownText = ""
@@ -2912,19 +2985,20 @@ local function loop()
                     buttonSizeW = buttonSizeH * 1.25
                     
                     
-                    if collabsModules[fxIndex] and settings.vertical then 
+                    if isCollabsed and settings.vertical then 
                         reaper.ImGui_SameLine(ctx)
                     end
-                    if drawFaderFeedback(nil,nil, fxIndex, 0, 0, 1) then
+                    if drawFaderFeedback(nil,nil, fxIndex, 0, 0, 1, isCollabsed) then
                         mapModulatorActivate(fxIndex,0, fxInContainerIndex, name)
                     end 
-                    
-                    if settings.vertical or not collabsModules[fxIndex] then reaper.ImGui_SameLine(ctx) end
-                    
-                    if not collabsModules[fxIndex] then openGui(track, fxIndex, name, true) end
+                    if not isCollabsed then reaper.ImGui_SameLine(ctx); mapAndShow(track, fx, 0, fxInContainerIndex, name, true) end
+                                            
+                    --if settings.vertical or not isCollabsed then reaper.ImGui_SameLine(ctx) end
                     reaper.ImGui_TableNextColumn(ctx)
+                    if not isCollabsed then openGui(track, fxIndex, name, true, nil, isCollabsed) end
                     
-                    if not collabsModules[fxIndex] then
+                    
+                    if not isCollabsed then
                         
                         --createSlider(track,fxIndex,"SliderDouble",3,"Strength",0,100,1,"%0.1f %%",nil,nil,nil)
                         --createSlider(track, fxIndex, "Combo", 4, "Direction", nil,nil,nil,nil,nil,nil,directionDropDownText, 1) 
@@ -2950,7 +3024,7 @@ local function loop()
                     
                     --endPosX, endPosY = reaper.ImGui_GetItemRectMax(ctx)--reaper.ImGui_GetCursorPosX(ctx)
                     -- incase the module is to small
-                    --[[if not collabsModules[fxIndex] and endPosX - startPosX < moduleWidth - 17 then
+                    --[[if not isCollabsed and endPosX - startPosX < moduleWidth - 17 then
                         dummyWidth = moduleWidth - (endPosX - startPosX) - 17
                         reaper.ImGui_SameLine(ctx)
                         reaper.ImGui_InvisibleButton(ctx,"dummy", dummyWidth,10)
@@ -2963,7 +3037,7 @@ local function loop()
                     --endModulator(name, startPosX, startPosY, fxIndex)
                 end
                 
-                function midiCCModulator(name, modulatorsPos, fxIndex, fxInContainerIndex)
+                function midiCCModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
                     typeDropDownText = "Select\0"
                     for i = 1, 127 do
                         typeDropDownText = typeDropDownText .. "CC" .. i .. "\0" 
@@ -2975,16 +3049,18 @@ local function loop()
                     end 
                     
                     --local startPosX, startPosY = beginModulator(name, fxIndex)
-                    local drawFaderSize = collabsModules[fxIndex] and 20 or 45
-                    if collabsModules[fxIndex] and settings.vertical then 
+                    local drawFaderSize = isCollabsed and 20 or 45
+                    if isCollabsed and settings.vertical then 
                         reaper.ImGui_SameLine(ctx)
                     end
-                    if drawFaderFeedback(nil, nil, fxIndex,0, 0, 1) then
+                    if drawFaderFeedback(nil, nil, fxIndex,0, 0, 1, isCollabsed) then
                         mapModulatorActivate(fxIndex, 0, fxInContainerIndex, name)
                     end 
+                    if not isCollabsed then reaper.ImGui_SameLine(ctx); mapAndShow(track, fx, 0, fxInContainerIndex, name, true) end
+                                            
                     reaper.ImGui_TableNextColumn(ctx)
                     
-                    if not collabsModules[fxIndex] then
+                    if not isCollabsed then
                         --reaper.ImGui_NewLine(ctx)
                         createSlider(track,fxIndex,"Combo",1,"Fader",nil,nil,1,nil,nil,nil,typeDropDownText,0,"Select CC or pitchbend to control the output")
                         createSlider(track,fxIndex,"Combo",2,"Channel",nil,nil,1,nil,nil,nil,channelDropDownText,0,"Select which channel to use") 
@@ -3010,7 +3086,7 @@ local function loop()
                     
                     --mapButton(fxIndex, name)
                     --[[endPosX, endPosY = reaper.ImGui_GetItemRectMax(ctx)--reaper.ImGui_GetCursorPosX(ctx)
-                    if not collabsModules[fxIndex] and endPosX - startPosX < moduleWidth - 17 then
+                    if not isCollabsed and endPosX - startPosX < moduleWidth - 17 then
                         dummyWidth = moduleWidth - (endPosX - startPosX) - 17
                         reaper.ImGui_SameLine(ctx)
                         reaper.ImGui_InvisibleButton(ctx,"dummy", dummyWidth,10)
@@ -3022,22 +3098,24 @@ local function loop()
                     --endModulator(name, startPosX, startPosY, fxIndex)
                 end
                 
-                function abSliderModulator(name, modulatorsPos, fxIndex, fxInContainerIndex) 
+                function abSliderModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
                     --local startPosX, startPosY = beginModulator(name, fxIndex) 
                     local sliderIsMapped = parameterWithNameIsMapped(name) 
                     if not a_trackPluginStates then a_trackPluginStates = {}; b_trackPluginStates = {} end
                     local hasBothValues = a_trackPluginStates[fxIndex] and b_trackPluginStates[fxIndex]
                     local clearName = sliderIsMapped
                     
-                    if collabsModules[fxIndex] and hasBothValues then 
+                    if isCollabsed and hasBothValues then 
                         if settings.vertical then reaper.ImGui_SameLine(ctx) end
-                        drawFaderFeedback(nil, nil, fxIndex,0, 0, 1)
-                    elseif collabsModules[fxIndex] then
+                        drawFaderFeedback(nil, nil, fxIndex,0, 0, 1, isCollabsed)
+                        if not isCollabsed then reaper.ImGui_SameLine(ctx); mapAndShow(track, fx, 0, fxInContainerIndex, name, true) end
+                                                
+                    elseif isCollabsed then
                         reaper.ImGui_InvisibleButton(ctx,"1",20,1)
                     end
                     reaper.ImGui_TableNextColumn(ctx)
                     
-                    if not collabsModules[fxIndex] then  
+                    if not isCollabsed then  
                         local buttonName = clearName and "Clear! Values to A" or (a_trackPluginStates[fxIndex] and "A values are saved" or "Set A values")
                         local clearType = nil 
                         
@@ -3140,7 +3218,7 @@ local function loop()
                     
                     
                     --[[endPosX, endPosY = reaper.ImGui_GetItemRectMax(ctx)--reaper.ImGui_GetCursorPosX(ctx)
-                    if not collabsModules[fxIndex] and endPosX - startPosX < moduleWidth - 17 then
+                    if not isCollabsed and endPosX - startPosX < moduleWidth - 17 then
                         dummyWidth = moduleWidth - (endPosX - startPosX) - 17
                         reaper.ImGui_SameLine(ctx)
                         reaper.ImGui_InvisibleButton(ctx,"dummy", dummyWidth,10)
@@ -3152,20 +3230,23 @@ local function loop()
                 
                 
                 
-                function adsrModulator(name, modulatorsPos, fxIndex, fxInContainerIndex)
-                    local drawFaderSize = collabsModules[fxIndex] and 20 or 45
-                    if collabsModules[fxIndex] and settings.vertical then 
+                function adsrModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
+                    local drawFaderSize = isCollabsed and 20 or 45
+                    if isCollabsed and settings.vertical then 
                         reaper.ImGui_SameLine(ctx)
                     end
-                    if drawFaderFeedback(nil, nil, fxIndex,10, 0, 1) then
+                    if drawFaderFeedback(nil, nil, fxIndex,10, 0, 1, isCollabsed) then
                         mapModulatorActivate(fxIndex,10, fxInContainerIndex, name)
                     end 
-                    if settings.vertical or not collabsModules[fxIndex] then reaper.ImGui_SameLine(ctx) end
-                    if not collabsModules[fxIndex] then openGui(track, fxIndex, name, false) end
+                    if not isCollabsed then reaper.ImGui_SameLine(ctx); mapAndShow(track, fx, 0, fxInContainerIndex, name, true) end
+                                            
+                    --if settings.vertical or not isCollabsed then reaper.ImGui_SameLine(ctx) end
                     reaper.ImGui_TableNextColumn(ctx)
+                    if not isCollabsed then openGui(track, fxIndex, name, false, nil, isCollabsed) end
+                    
                     --local startPosX, startPosY = beginModulator(name, fxIndex)
                     
-                    if not collabsModules[fxIndex] then
+                    if not isCollabsed then
                         local _, min, max = reaper.TrackFX_GetParam(track, fxIndex, 0)
                         local _, visuelValue = reaper.TrackFX_GetFormattedParamValue(track, fxIndex, 0)
                         createSlider(track,fxIndex,"SliderDouble",0,"Attack",min,max,0,math.floor(tonumber(visuelValue)) .. " ms",nil,nil,nil,nil)
@@ -3189,7 +3270,7 @@ local function loop()
                     end
                     
                     
-                    --if settings.vertical or not collabsModules[fxIndex] then reaper.ImGui_SameLine(ctx) end
+                    --if settings.vertical or not isCollabsed then reaper.ImGui_SameLine(ctx) end
                     
                     
                     --endModulator(name, startPosX, startPosY, fxIndex)
@@ -3198,24 +3279,26 @@ local function loop()
                 
                 
                 
-                function msegModulator(name, modulatorsPos, fxIndex, fxInContainerIndex)
+                function msegModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
                     
                     --local startPosX, startPosY = beginModulator(name, fxIndex)
                     
-                    local drawFaderSize = collabsModules[fxIndex] and 20 or 45
-                    if collabsModules[fxIndex] and settings.vertical then 
+                    local drawFaderSize = isCollabsed and 20 or 45
+                    if isCollabsed and settings.vertical then 
                         reaper.ImGui_SameLine(ctx)
                     end
-                    if drawFaderFeedback(nil, nil, fxIndex,10, 0, 1) then
+                    if drawFaderFeedback(nil, nil, fxIndex,10, 0, 1, isCollabsed) then
                         mapModulatorActivate(fxIndex,10, fxInContainerIndex, name)
                     end 
-                    if settings.vertical or not collabsModules[fxIndex] then reaper.ImGui_SameLine(ctx) end
-                    if not collabsModules[fxIndex] then openGui(track, fxIndex, name, false) end
+                    if not isCollabsed then reaper.ImGui_SameLine(ctx); mapAndShow(track, fx, 0, fxInContainerIndex, name, true) end
+                                            
+                    --if settings.vertical or not isCollabsed then reaper.ImGui_SameLine(ctx) end
                     reaper.ImGui_TableNextColumn(ctx)
-                    
+                    if not isCollabsed then openGui(track, fxIndex, name, false, nil,isCollabsed) end
+                     
                     
                     --reaper.ImGui_TableNextRow(ctx)
-                    if not collabsModules[fxIndex] then
+                    if not isCollabsed then
                         
                         local triggers = {"Sync","Free", "MIDI", "Manual"}
                         local triggersDropDownText = ""
@@ -3272,22 +3355,25 @@ local function loop()
                 
                 
                 
-                function _4in1Out(name, modulatorsPos, fxIndex, fxInContainerIndex)
+                function _4in1Out(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
                     
-                    local drawFaderSize = collabsModules[fxIndex] and 20 or 45
-                    if collabsModules[fxIndex] and settings.vertical then 
+                    local drawFaderSize = isCollabsed and 20 or 45
+                    if isCollabsed and settings.vertical then 
                         reaper.ImGui_SameLine(ctx)
                     end
-                    if drawFaderFeedback(nil, nil, fxIndex,0, 0, 1) then
+                    if drawFaderFeedback(nil, nil, fxIndex,0, 0, 1, isCollabsed) then
                         mapModulatorActivate(fxIndex,0, fxInContainerIndex, name)
                     end 
-                    if settings.vertical or not collabsModules[fxIndex] then reaper.ImGui_SameLine(ctx) end
-                    --if not collabsModules[fxIndex] then openGui(track, fxIndex, name, false) end
+                    if not isCollabsed then reaper.ImGui_SameLine(ctx); mapAndShow(track, fx, 0, fxInContainerIndex, name, true) end
+                                            
+                    --if settings.vertical or not isCollabsed then reaper.ImGui_SameLine(ctx) end
                     reaper.ImGui_TableNextColumn(ctx)
+                    --if not isCollabsed then openGui(track, fxIndex, name, false, nil, isCollabsed) end
+                    
                     
                     --local startPosX, startPosY = beginModulator(name, fxIndex)
                     
-                    if not collabsModules[fxIndex] then 
+                    if not isCollabsed then 
                         createSlider(track,fxIndex,"SliderDouble",1,"Input 1",0,1,1,"%0.02f",nil,nil,nil,nil) 
                         createSlider(track,fxIndex,"SliderDouble",2,"Input 2",0,1,1,"%0.02f",nil,nil,nil,nil) 
                         createSlider(track,fxIndex,"SliderDouble",3,"Input 3",0,1,1,"%0.02f",nil,nil,nil,nil) 
@@ -3300,29 +3386,27 @@ local function loop()
                 
                 
                 
-                function genericModulator(name, modulationContainerPos, fxIndex, fxInContainerIndex)
+                function genericModulator(name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
                     
                     --local startPosX, startPosY = beginModulator(name, fxIndex)
                     
-                    --if settings.vertical or not collabsModules[fxIndex] then reaper.ImGui_SameLine(ctx) end
+                    --if settings.vertical or not isCollabsed then reaper.ImGui_SameLine(ctx) end
                     
                     
-                    if not collabsModules[fxIndex] then
+                    if not isCollabsed then
                         local buttonName = (mapGeneric and mapGeneric[fxIndex]) and " Stop\nmapping" or "Map slider\nas output"
-                        if reaper.ImGui_Button(ctx,buttonName .."##" .. fxIndex, dropDownSize, dropDownSize/2) then
+                        if reaper.ImGui_Button(ctx,buttonName .."##" .. fxIndex, dropDownSize, dropDownSize/4) then
                             if not mapGeneric then mapGeneric = {} end
                             mapGeneric[fxIndex] = not mapGeneric[fxIndex]
                         end
-                        reaper.ImGui_SameLine(ctx)
                     end
                     
-                    --if collabsModules[fxIndex] and settings.vertical then reaper.ImGui_SameLine(ctx) end
-                    if not collabsModules[fxIndex] then openGui(track, fxIndex, name, false) 
-                    end
-                    
+                    --if isCollabsed and settings.vertical then reaper.ImGui_SameLine(ctx) end
                     reaper.ImGui_TableNextColumn(ctx)
+                    if not isCollabsed then openGui(track, fxIndex, name, false, nil, isCollabsed) end
                     
-                    if not collabsModules[fxIndex] then
+                    
+                    if not isCollabsed then
                         numParams = reaper.TrackFX_GetNumParams(track,fxIndex)
                         for p = 0, numParams -1 do
                             if mapGeneric and mapGeneric[fxIndex] then
@@ -3347,49 +3431,51 @@ local function loop()
                             
                         end
                         
-                        --if drawFaderFeedback(nil, nil, fxIndex,10, 0, 1) then
+                        --if drawFaderFeedback(nil, nil, fxIndex,10, 0, 1, isCollabsed) then
                         --    mapModulatorActivate(fxIndex,10, fxInContainerIndex, name)
                         --end 
                     end
                     
                     
-                    if settings.vertical or not collabsModules[fxIndex] then reaper.ImGui_SameLine(ctx) end 
+                    --if settings.vertical or not isCollabsed then reaper.ImGui_SameLine(ctx) end 
                      
                     --endModulator(name, startPosX, startPosY, fxIndex)
                 end
                 
-                function genericMappingModulator(name, modulationContainerPos, fxIndex, fxInContainerIndex) 
+                function genericMappingModulator(name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
                     --local startPosX, startPosY = beginModulator(name:gsub(" %(Generic mapping%)", ""), fxIndex)
-                    
-                    if not collabsModules[fxIndex] and parameterLinkFxIndex ~= "" then
-                        local _, mappedFxName = reaper.TrackFX_GetFXName(track, tostring(parameterLinkFxIndex)) 
-                        openGui(track, parameterLinkFxIndex, mappedFxName, false, fxIndex) 
-                        if settings.vertical or not collabsModules[fxIndex] then reaper.ImGui_SameLine(ctx) end
+                    local drawFaderSize = isCollabsed and 20 or 45
+                    if isCollabsed and settings.vertical then 
+                        reaper.ImGui_SameLine(ctx)
+                    end
+                    if drawFaderFeedback(nil, nil, fxIndex,0, 0, 1, isCollabsed) then
+                        mapModulatorActivate(fxIndex, 0, fxInContainerIndex, fx.name)
+                    end 
+                    if not isCollabsed then reaper.ImGui_SameLine(ctx); mapAndShow(track, fx, 0, fxInContainerIndex, name, true) end
+                       
+                    reaper.ImGui_TableNextColumn(ctx)
+                    if not isCollabsed and fx.parameterLinkFxIndex then
+                        local _, mappedFxName = reaper.TrackFX_GetFXName(track, fx.parameterLinkFxIndex) 
+                        openGui(track, parameterLinkFxIndex, mappedFxName, false, fxIndex, isCollabsed) 
+                        if settings.vertical or not isCollabsed then reaper.ImGui_SameLine(ctx) end
                     else
                        -- reaper.TrackFX_Delete(track,fxIndex)
                     end
                     
-                    reaper.ImGui_TableNextColumn(ctx)
+                        
                     
-                    if not collabsModules[fxIndex] then 
+                    if not isCollabsed then 
                         createSlider(track,fxIndex,"SliderDouble",2,"Offset",0,1,1,"%0.2f",nil,nil,nil,nil)
                         createSlider(track,fxIndex,"SliderDouble",3,"Width",-1,1,1,"%0.2f",nil,nil,nil,nil) 
                     end
                     
-                    local drawFaderSize = collabsModules[fxIndex] and 20 or 45
-                    if collabsModules[fxIndex] and settings.vertical then 
-                        reaper.ImGui_SameLine(ctx)
-                    end
-                    if drawFaderFeedback(nil, nil, fxIndex,0, 0, 1) then
-                        mapModulatorActivate(fxIndex, 0, fxInContainerIndex, name)
-                    end 
-                    
-                    if settings.vertical or not collabsModules[fxIndex] then reaper.ImGui_SameLine(ctx) end
+                                     
+                    --if settings.vertical or not isCollabsed then reaper.ImGui_SameLine(ctx) end
                     
                     -- find the name and fxIndex of the mapped parameter
-                    local _, parameterLinkEffect = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.. 1 ..'.plink.effect' )
-                    local _, parameterLinkParam = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.. 1 ..'.plink.param' )
-                    local _, parameterLinkFxIndex = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'container_item.'.. parameterLinkEffect )
+                    --local _, parameterLinkEffect = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.. 1 ..'.plink.effect' )
+                    --local _, parameterLinkParam = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.. 1 ..'.plink.param' )
+                    --local _, parameterLinkFxIndex = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'container_item.'.. parameterLinkEffect )
                     
                     
                     
@@ -3417,10 +3503,10 @@ local function loop()
                     end
                 end
                 
-                function modulatorWrapper(func, name, modulationContainerPos, fxIndex, fxIndContainerIndex)
+                function modulatorWrapper(func, name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx)
                     reaper.ImGui_BeginGroup(ctx)
                     
-                    isCollabsed = collabsModules[fxIndex]
+                    isCollabsed = trackSettings.collabsModules[fx.guid]
                     toolTipText = (isCollabsed and "Maximize " or "Minimize ") .. name 
                     --windowFlag = isCollabsed and reaper.ImGui_WindowFlags_NoTitleBar() or reaper.ImGui_WindowFlags_MenuBar()
                     --width = isCollabsed and 20 or moduleWidth
@@ -3441,7 +3527,9 @@ local function loop()
                     
                     
                     collabsOffsetY = not settings.vertical and 20 or 0
-                    collabsOffsetX = settings.vertical and 28 or 0
+                    collabsOffsetX = settings.vertical and 28 or 0 
+                    local smallHeader = isCollabsed and not settings.vertical
+                    local tableWidth = smallHeader and 22 or moduleWidth
                     
                     local modulatorStartPosX, modulatorStartPosY = reaper.ImGui_GetCursorScreenPos(ctx)
                     
@@ -3452,7 +3540,7 @@ local function loop()
                             
                             
                             if not settings.vertical then
-                                func(name, modulationContainerPos, fxIndex, fxIndContainerIndex)  
+                                func(name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx)  
                                 minX, minY = reaper.ImGui_GetItemRectMin(ctx)
                             end
                             
@@ -3485,7 +3573,7 @@ local function loop()
                             maxX, maxY = endPosX, endPosY
                             
                             if settings.vertical then 
-                                func(name, modulationContainerPos, fxIndex, fxIndContainerIndex) 
+                                func(name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx) 
                             end
                             
                             
@@ -3500,7 +3588,7 @@ local function loop()
                             reaper.ImGui_SetCursorPos(ctx, modulatorStartPosX,modulatorStartPosY+collabsOffsetY)
                             
                             
-                            --func(name, modulationContainerPos, fxIndex, fxIndContainerIndex)
+                            --func(name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx)
                             --reaper.ImGui_PushStyleVar(ctx,reaper.ImGui_StyleVar_FrameRounding(),5)
                             ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),colorTransparent)
                             ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),colorTransparent)
@@ -3527,14 +3615,13 @@ local function loop()
                             --reaper.ImGui_PopStyleVar(ctx)
                             foundPos = false
                         else
-                            local tableWidth = isCollabsed and not settings.vertical and 22 or moduleWidth
                             local visible = reaper.ImGui_BeginTable(ctx, name .. fxIndex,1, flags, tableWidth, settings.vertical and 0 or -4 )
                             if visible then
                                 reaper.ImGui_DrawList_AddRectFilled(draw_list, modulatorStartPosX, modulatorStartPosY , modulatorStartPosX+ winH, modulatorStartPosY+winH, menuGrey,0)
                                 
                                 reaper.ImGui_TableNextColumn(ctx)
                                 
-                                func(name, modulationContainerPos, fxIndex, fxIndContainerIndex)
+                                func(name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx)
                                 
                                 click = verticalButtonStyle(name, toolTipText, nil,false,false,9.5)
                                 
@@ -3552,7 +3639,7 @@ local function loop()
                         
                     else
                         --local visible = reaper.ImGui_BeginChild(ctx, name .. fxIndex, moduleWidth, height, reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_AutoResizeY(),reaper.ImGui_WindowFlags_MenuBar() | scrollFlags )
-                        local tableWidth = isCollabsed and not settings.vertical and 22 or moduleWidth
+                        
                         local visible = reaper.ImGui_BeginTable(ctx, name .. fxIndex,1, flags, tableWidth, settings.vertical and 0 or -4 )
                         if visible then
                             reaper.ImGui_PushFont(ctx, font1)
@@ -3566,18 +3653,18 @@ local function loop()
                             --reaper.ImGui_SameLine(ctx)
                             --if reaper.ImGui_BeginMenuBar(ctx) then
                                 --clickType = titleTextStyle(name, toolTipText, moduleWidth, false)
-                                clickType = lastItemClickAndTooltip(toolTipText)
+                                 local clickType = lastItemClickAndTooltip(toolTipText)
                                 
                                  click = false
-                                  if clickType == "right" then 
-                                      ImGui.OpenPopup(ctx, 'popup##' .. fxIndex) 
-                                  elseif clickType == "left" then 
-                                      click = true
-                                  end
+                                 if clickType == "right" then 
+                                     ImGui.OpenPopup(ctx, 'popup##' .. fxIndex) 
+                                 elseif clickType == "left" then 
+                                     click = true
+                                 end
                                   
                                  --if settings.vertical and isCollabsed then
                                     
-                                  --  func(name, modulationContainerPos, fxIndex, fxIndContainerIndex)
+                                  --  func(name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx)
                                 --end
                                -- reaper.ImGui_EndMenuBar(ctx)
                             --end
@@ -3585,8 +3672,27 @@ local function loop()
                             --reaper.ImGui_TableNextRow(ctx)
                             reaper.ImGui_TableNextColumn(ctx)
                             --if not isCollabsed then
-                                func(name, modulationContainerPos, fxIndex, fxIndContainerIndex)
+                                func(name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx)
                             --end
+                            
+                            
+                            -----------------
+                            -----REMOVE------
+                            -----------------
+                            local isHovered = buttonHovering["delete" .. fxIndex]
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorTransparent)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorTransparent)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), isHovered and colorRedHidden or colorGrey)
+                            
+                            if reaper.ImGui_Button(ctx, "Delete module##delete" .. fxIndex) then
+                                deleteModule(track, selectedModule, modulationContainerPos)
+                            end
+                            buttonHovering["delete" .. fxIndex] = reaper.ImGui_IsItemHovered(ctx) 
+                            reaper.ImGui_PopStyleColor(ctx, 4)
+                            -----------------
+                            -----------------
+                            -----------------
                             
                             reaper.ImGui_EndTable(ctx)
                         end
@@ -3601,12 +3707,10 @@ local function loop()
                         
                     end
                     
-                    reaper.ImGui_PopStyleColor(ctx,3)
                     
                     if click then
-                        collabsModules[fxIndex] = not collabsModules[fxIndex] 
-                        saveCollabsModulesStateOnTrack()
-                        --reaper.SetProjExtState(0, stateName, "collabsModules", pickle(collabsModules))
+                        trackSettings.collabsModules[fx.guid] = not trackSettings.collabsModules[fx.guid]
+                        saveTrackSettings(track)
                         selectedModule = fxIndex
                     end
                     
@@ -3620,7 +3724,7 @@ local function loop()
                     if mouseX >= minX and mouseX <= maxX and mouseY >= minY and mouseY <= maxY then
                         if  reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then 
                             selectedModule = fxIndex
-                            --ImGui.OpenPopup(ctx, 'popup##' .. fxIndex) 
+                            ImGui.OpenPopup(ctx, 'popup##' .. fxIndex) 
                         end
                         if  reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Left(),false) then 
                             selectedModule = fxIndex
@@ -3638,6 +3742,13 @@ local function loop()
                             ImGui.CloseCurrentPopup(ctx)
                             openRename = true 
                         end
+                        originalName = trackSettings.renamed[fx.guid]
+                        if originalName and originalName ~= name then
+                            if reaper.ImGui_Button(ctx,"Revert to original name##" .. fxIndex) then
+                                renameModule(track, modulationContainerPos, fxIndex, originalName)
+                                ImGui.CloseCurrentPopup(ctx) 
+                            end
+                        end
                         ImGui.EndPopup(ctx)
                     end 
                     
@@ -3649,12 +3760,17 @@ local function loop()
                     if reaper.ImGui_BeginPopup(ctx, 'rename##' .. fxIndex, nil) then
                         reaper.ImGui_Text(ctx, "Rename " .. name)
                         reaper.ImGui_SetKeyboardFocusHere(ctx)
+                        local originalName = name
                         local ret, newName = reaper.ImGui_InputText(ctx,"##" .. fxIndex, name,nil,nil)
                         if reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Escape(),false) then
                             reaper.ImGui_CloseCurrentPopup(ctx)
                         end
                         if reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Enter(),false) then
+                            if not trackSettings.renamed then trackSettings.renamed = {} end
+                            if trackSettings.renamed[fx.guid] == nil then trackSettings.renamed[fx.guid] = originalName end
+                            if newName == "" then newName = trackSettings.renamed[fx.guid] end -- ; trackSettings.renamed[fx.guid] = nil end
                             renameModule(track, modulationContainerPos, fxIndex, newName)
+                            reaper.ImGui_CloseCurrentPopup(ctx)
                         end
                         ImGui.EndPopup(ctx)
                     end 
@@ -3664,8 +3780,93 @@ local function loop()
                     --
                     reaper.ImGui_EndGroup(ctx)
                     --reaper.ImGui_SameLine(ctx)
-                    --func(name, modulationContainerPos, fxIndex, fxIndContainerIndex)
+                    --func(name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx)
                     
+                    if trackSettings.show[fx.guid] then 
+                        if not settings.vertical then reaper.ImGui_SameLine(ctx) end
+                        reaper.ImGui_BeginGroup(ctx)
+                        
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TableBorderStrong(), colorMap)
+                        
+                        local tableWidth = moduleWidth
+                        local visible = reaper.ImGui_BeginTable(ctx,"mappings" .. name .. fxIndex,1, flags, tableWidth, settings.vertical and 0 or -4 )
+                        if visible then
+                            reaper.ImGui_PushFont(ctx, font1)
+                            reaper.ImGui_TableSetupColumn(ctx, "< Mappings")
+                            
+                            reaper.ImGui_TableSetupScrollFreeze(ctx,1,1)
+                            --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_TableAngledHeadersAngle(), 0)
+                            --reaper.ImGui_TableAngledHeadersRow(ctx)
+                            reaper.ImGui_TableHeadersRow(ctx)
+                            reaper.ImGui_PopFont(ctx)
+                            local clickType = lastItemClickAndTooltip("Hide mapped parameters")
+                            if clickType then
+                                trackSettings.show[fx.guid] = false
+                            end
+                            
+                            reaper.ImGui_TableNextColumn(ctx)
+                            
+                            local mappings = (parameterLinks and parameterLinks[tostring(fx.fxIndex)]) and parameterLinks[tostring(fx.fxIndex)] or {}
+                            local widthArray = widthArray or {faderWidth = tableWidth- 38, parameterMapSize = tableWidth - 72}
+                            local alreadyShowing = {}
+                            for _, map in ipairs(mappings) do 
+                                local fxIndex = map.fxIndex
+                                local _, name = reaper.TrackFX_GetFXName(track, fxIndex)
+                                if not alreadyShowing[fxIndex] then 
+                                    fxIsShowing = reaper.TrackFX_GetOpen(track,fxIndex)
+                                    fxIsFloating = reaper.TrackFX_GetFloatingWindow(track,fxIndex)
+                                    local isShowing = (fxIsShowing or fxIsFloating)
+                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), isShowing and colorLightBlue or colorDarkGrey)
+                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), isShowing and colorLightBlue or colorDarkGrey)
+                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), isShowing and colorLightBlue or colorDarkGrey)
+                                    if reaper.ImGui_Button(ctx, name, widthArray.faderWidth) then
+                                        openCloseFx(track, fxIndex, not isShowing) 
+                                    end
+                                    setToolTipFunc( (isShowing and "Open " or "Close ") .. name)
+                                    reaper.ImGui_PopStyleColor(ctx,3)
+                                    alreadyShowing[fxIndex] = true
+                                end
+                                parameterNameAndSliders(pluginParameterName, pluginParameterSlider,getAllDataFromParameter(track,fxIndex,map.param), focusedParamNumber, nil, widthArray, true)
+                                
+                                --reaper.ImGui_Separator(ctx)
+                                if scroll and map.param == scroll then
+                                    ImGui.SetScrollHereY(ctx,  0.33)
+                                    removeScroll = true
+                                end
+                            end
+                            --reaper.ImGui_SameLine(ctx)
+                            --if reaper.ImGui_BeginMenuBar(ctx) then
+                                --clickType = titleTextStyle(name, toolTipText, moduleWidth, false)
+                                 local clickType = lastItemClickAndTooltip(toolTipText)
+                                
+                                 click = false
+                                 if clickType == "right" then 
+                                     ImGui.OpenPopup(ctx, 'popup##' .. fxIndex) 
+                                 elseif clickType == "left" then 
+                                     click = true
+                                 end
+                                  
+                                 --if settings.vertical and isCollabsed then
+                                    
+                                  --  func(name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx)
+                                --end
+                               -- reaper.ImGui_EndMenuBar(ctx)
+                            --end
+                            --reaper.ImGui_PopStyleVar(ctx)
+                            --reaper.ImGui_TableNextRow(ctx)
+                            reaper.ImGui_TableNextColumn(ctx)
+                            
+                            reaper.ImGui_EndTable(ctx)
+                        end
+                        
+                        
+                        reaper.ImGui_PopStyleColor(ctx,1)
+                        
+                        reaper.ImGui_EndGroup(ctx)
+                    end
+                    
+                    
+                    reaper.ImGui_PopStyleColor(ctx,3)
                     if not settings.vertical then reaper.ImGui_SameLine(ctx) end
                 end
                     
@@ -3692,24 +3893,30 @@ local function loop()
                 end
                 
                 for pos, m in ipairs(modulatorNames) do
-                    if m.fxName:match("LFO Native") then
-                        modulatorWrapper(nlfoModulator, m.name,modulationContainerPos, m.fxIndex, m.fxInContainerIndex) 
-                    elseif m.fxName:match("ADSR") then
-                        modulatorWrapper(adsrModulator,m.name,modulationContainerPos, m.fxIndex, m.fxInContainerIndex)
-                    elseif m.fxName:match("MSEG") then
-                        modulatorWrapper(msegModulator,m.name,modulationContainerPos, m.fxIndex, m.fxInContainerIndex)
-                    elseif m.fxName:match("MIDI Fader Modulator") then
-                        modulatorWrapper(midiCCModulator,m.name,modulationContainerPos, m.fxIndex, m.fxInContainerIndex)
-                    elseif m.fxName:match("AB Slider") then
-                        modulatorWrapper(abSliderModulator,m.name,modulationContainerPos, m.fxIndex, m.fxInContainerIndex)
-                    elseif m.fxName:match("ACS Native") then
-                        modulatorWrapper(acsModulator,m.name,modulationContainerPos, m.fxIndex, m.fxInContainerIndex)
-                    elseif m.fxName:match("4%-in%-1%-out") then
-                        modulatorWrapper(_4in1Out,m.name,modulationContainerPos, m.fxIndex, m.fxInContainerIndex)
-                    elseif m.fxName:match("(Generic mapping)") then
-                        modulatorWrapper(genericMappingModulator,m.name:gsub(" %(Generic mapping%)", ""),modulationContainerPos, m.fxIndex, m.fxInContainerIndex)
+                    local fxIndex = m.fxIndex
+                    local fxName = m.fxName
+                    local name = m.name
+                    local isCollabsed = trackSettings.collabsModules[guid]
+                    local fxInContainerIndex = m.fxInContainerIndex
+                    
+                    if fxName:match("LFO Native") then
+                        modulatorWrapper(nlfoModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m) 
+                    elseif fxName:match("ADSR") then
+                        modulatorWrapper(adsrModulator,name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m)
+                    elseif fxName:match("MSEG") then
+                        modulatorWrapper(msegModulator,name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m)
+                    elseif fxName:match("MIDI Fader Modulator") then
+                        modulatorWrapper(midiCCModulator,name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m)
+                    elseif fxName:match("AB Slider") then
+                        modulatorWrapper(abSliderModulator,name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m)
+                    elseif fxName:match("ACS Native") then
+                        modulatorWrapper(acsModulator,name,modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m)
+                    elseif fxName:match("4%-in%-1%-out") then
+                        modulatorWrapper(_4in1Out,name,modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m)
+                    elseif fxName:match("Generic Parameter Modulator") then
+                        modulatorWrapper(genericMappingModulator,name:gsub(" %(Generic mapping%)", ""),modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m)
                     else 
-                        modulatorWrapper(genericModulator,m.name,modulationContainerPos, m.fxIndex, m.fxInContainerIndex)
+                        modulatorWrapper(genericModulator,name,modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m)
                     end
                 end 
                 
@@ -3782,7 +3989,7 @@ local function loop()
         if ret then 
             reaper.SetExtState(stateName, "useFineFaders", useFineFaders and "1" or "0", true)
         end
-        if reaper.ImGui_IsItemHovered(ctx) and showToolTip then
+        if reaper.ImGui_IsItemHovered(ctx) and settings.showToolTip then
             reaper.ImGui_SetTooltip(ctx,"If enabled the faders will have more fine control\n - Use Shift for for higher values\n - Use Alt for lower")  
         end
                 
@@ -3799,6 +4006,8 @@ local function loop()
             hideShowEverything(track,everythingsIsNotMinimized) 
         end
         
+        
+        
         ret, partsWidth = reaper.ImGui_SliderInt(ctx, "Modules width",partsWidth,100,300)
         if ret then
             if not is_docked and settings.vertical then  
@@ -3810,6 +4019,28 @@ local function loop()
         ret, partsHeight = reaper.ImGui_SliderInt(ctx, "Modules height (only vertical)",settings.partsHeight,80,550)
         if ret then
             settings.partsHeight = partsHeight
+            saveSettings()
+        end
+        
+        reaper.ImGui_NewLine(ctx)
+        
+        if reaper.ImGui_Button(ctx, "Reset track settings") then
+            trackSettings = defaultTrackSettings
+            saveTrackSettings(tracK)
+        end
+         
+        if reaper.ImGui_Button(ctx, "Reset track settings on all tracks") then
+            for i = 0, reaper.CountTracks(0) - 1 do
+                local tr = reaper.GetTrack(0, i) 
+                local trackSettingsStr = json.encodeToJson(defaultTrackSettings)
+                reaper.GetSetMediaTrackInfo_String(tr, "P_EXT" .. ":" .. stateName, trackSettingsStr, true)
+            end 
+            trackSettings = defaultTrackSettings
+            saveTrackSettings(tracK)
+        end 
+        
+        if reaper.ImGui_Button(ctx, "Reset app settings") then
+            settings = defaultSettings
             saveSettings()
         end
         
@@ -3847,6 +4078,11 @@ local function loop()
      end
      
   end 
+  
+  if removeScroll then
+      scroll = nil
+      removeScroll = false
+  end
   
   --------------- KEY COMMANDS ----------------
   

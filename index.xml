@@ -46,7 +46,7 @@
       </version>
     </reapack>
   </category>
-  <category name="Items Editing">
+    <category name="Items Editing">
     <reapack name="Saxmand_Advanced Arrangement View Selection.lua" type="script" desc="Advanced Arrangment View Selection">
       <version name="0.3.2" author="saxmand" time="2025-04-19T03:17:01Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/9456228f9238dffd648aa923bf8ae919189a39bd/Items%20Editing/Saxmand_Advanced%20Arrangement%20View%20Selection.lua</source>

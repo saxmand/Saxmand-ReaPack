@@ -7,12 +7,12 @@ local colorWhite = reaper.ImGui_ColorConvertDouble4ToU32(1, 1, 1, 1)
 local colorDarkGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.2, 0.2, 1)
 local colorBlack = reaper.ImGui_ColorConvertDouble4ToU32(0, 0, 0, 1)
 
-function buttons.close(ctx, x, y, size, onlyXOnHover, id)
+function buttons.close(ctx, x, y, size, onlyXOnHover, id, textColor, textColorHover, backgroundColor,backgroundColorHover)
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), size)
     if x and y then reaper.ImGui_SetCursorPos(ctx, x, y) end
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorRedHidden)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorRedHidden)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), backgroundColor and backgroundColor or colorTransparent)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), backgroundColorHover and backgroundColorHover or colorRedHidden)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), backgroundColorHover and backgroundColorHover or colorRedHidden)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorTransparent)
     reaper.ImGui_PushFont(ctx, closeTitle)
 
@@ -23,12 +23,11 @@ function buttons.close(ctx, x, y, size, onlyXOnHover, id)
     local posX, posY = reaper.ImGui_GetItemRectMin(ctx)
     --posX, posY = posX - 1, posY -1
     crop = size/4
-    
-    if not onlyXOnHover or reaper.ImGui_IsItemHovered(ctx) then 
-        reaper.ImGui_DrawList_AddLine(draw_list, posX + crop, posY + crop, posX + size - crop, posY + size - crop, colorWhite,
-            2)
-        reaper.ImGui_DrawList_AddLine(draw_list, posX + crop, posY + size - crop, posX + size - crop, posY + crop, colorWhite,
-            2)
+    local isHovered = reaper.ImGui_IsItemHovered(ctx)
+    if not onlyXOnHover or isHovered then 
+        local crossColor = isHovered and (textColorHover and textColorHover or colorWhite) or (textColor and textColor or colorWhite)
+        reaper.ImGui_DrawList_AddLine(draw_list, posX + crop, posY + crop, posX + size - crop, posY + size - crop, crossColor, 2)
+        reaper.ImGui_DrawList_AddLine(draw_list, posX + crop, posY + size - crop, posX + size - crop, posY + crop, crossColor, 2)
     end
 
 
