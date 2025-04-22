@@ -4,6 +4,8 @@
 -- @provides
 --   [nomain] Helpers/*.lua
 --   [effect] FX Modulator Linking/*.jsfx
+-- @changelog
+--   + Initial version
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
 local json = require(scriptPath .. "/Helpers/json")
