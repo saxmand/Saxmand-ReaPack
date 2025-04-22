@@ -1,7 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
 -- @version 0.1.4
--- @provides
 -- @changelog
 --   + Initial version
 
