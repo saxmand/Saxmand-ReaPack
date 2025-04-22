@@ -1,3 +1,4 @@
+-- @version 0.1.1
 -- @noindex
 local buttons = {}
 local colorTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0, 0, 0, 0)
