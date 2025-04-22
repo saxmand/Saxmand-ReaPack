@@ -2,7 +2,6 @@
 -- @author Saxmand
 -- @version 0.1.4
 -- @provides
---   [effect] FX Modulator Linking/*.jsfx
 -- @changelog
 --   + Initial version
 
