@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="9fdee5bd430fb90563241e658b6784dfdd7ce830">
+<index version="1" commit="83de704e3d193304a4601c8f54253e44c6db83ff">
   <category name="FX">
     <reapack name="Saxmand_FX Modulator Linking.lua" type="script" desc="FX Modulator Linking">
       <version name="0.1.0" author="saxmand" time="2025-04-19T03:17:01Z">
@@ -19,6 +19,9 @@
     <reapack name="Saxmand_Add subtitles to video from srt file using video processor.lua" type="script" desc="Add subtitles to video from srt file using video processor">
       <version name="1.0.0" author="saxmand" time="2025-04-19T04:49:09Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/ba3a7ed84ce47fc6ce97127e3d5edc8b4c6c7faf/Video/Saxmand_Add%20subtitles%20to%20video%20from%20srt%20file%20using%20video%20processor.lua</source>
+      </version>
+      <version name="1.0.1" author="saxmand" time="2025-04-22T17:12:01Z">
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/83de704e3d193304a4601c8f54253e44c6db83ff/Video/Saxmand_Add%20subtitles%20to%20video%20from%20srt%20file%20using%20video%20processor.lua</source>
       </version>
     </reapack>
   </category>

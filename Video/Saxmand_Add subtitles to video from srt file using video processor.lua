@@ -1,6 +1,6 @@
 -- @description Add subtitles to video from srt file using video processor
 -- @author saxmand
--- @version 1.0.1
+-- @version 1.0.2
 
 function getTimecodeInputOffsetInFrames(fps)
     -- Labels for each timecode component
