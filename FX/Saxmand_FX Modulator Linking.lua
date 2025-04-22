@@ -2,8 +2,7 @@
 -- @author Saxmand
 -- @version 0.1.4
 -- @provides
---    [nomain] Helpers/*.lua
---    [effect] FX Modulator Linking/*.jsfx
+--   [effect] FX Modulator Linking/*.jsfx
 -- @changelog
 --   + Initial version
 
