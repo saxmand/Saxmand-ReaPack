@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.2.3
+-- @version 0.2.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
@@ -1858,7 +1858,7 @@ function pluginParameterSlider(nameOnSide, buttonId, currentValue,  min, max, di
             mouseDragStartX = mouse_pos_x
             mouseDragStartY = mouse_pos_y
             if not isMouseDown then 
-                setToolTipFunc("Set baseline of " .. name .. "\n - press Shift for fine resolution\n - press Ctrl to change width\n - right click for more options")
+                setToolTipFunc("Set baseline of " .. name .. "\n - hold Shift for fine resolution\n - hold Ctrl to change width\n - hold Alt and scroll to change value\n - right click for more options")
             end
         end  
     end
@@ -4677,9 +4677,9 @@ local function loop()
   
   reaper.ImGui_PopFont(ctx)
   
-  if (reaper.ImGui_IsKeyDown(ctx,reaper.ImGui_Mod_Super()) and  reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Backspace())) or reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Delete()) then
-      deleteModule(track, selectedModule, modulationContainerPos)
-  end
+  --if (reaper.ImGui_IsKeyDown(ctx,reaper.ImGui_Mod_Super()) and  reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Backspace())) or reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Delete()) then
+  --    deleteModule(track, selectedModule, modulationContainerPos)
+  --end
   
   if isAltPressed and reaper.ImGui_IsKeyDown(ctx,reaper.ImGui_Key_M()) then
      -- open = false
