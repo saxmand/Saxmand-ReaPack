@@ -1,14 +1,11 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.2.2
+-- @version 0.2.3
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + show mappings for specific modulators
---   + Lock track
---   + Changed mapping module
---   + a bunch more things
+--   + Fixed direction width offset
 
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
@@ -1729,7 +1726,7 @@ function pluginParameterSlider(nameOnSide, buttonId, currentValue,  min, max, di
     local faderWidth = nameOnSide and width / 2 or width
     local sliderWidthAvailable = (faderWidth - (sliderGrabWidth) - 4) 
     local valueNormalized = p.valueNormalized
-    
+    local direction = p.direction
     local padColor = parameterModulationActive and colorMap or colorMapLightTransparent
     
     local parStartPosX, parStartPosY, parEndPosX, parEndPosY
