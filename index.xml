@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="6e8804a63d20517843258d4a5dac1752f3a82111" name="Saxmand ReaPack">
+<index version="1" commit="01e8083fa1a0a9a4947e9e6d96282c1ce86d3a71" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_FX Modulator Linking.lua" type="script" desc="FX Modulator Linking">
       <version name="0.1.0" author="saxmand" time="2025-04-19T03:17:01Z">
@@ -130,6 +130,24 @@
         <source type="effect" file="../FX Modulator Linking/MIDI Fader Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/6e8804a63d20517843258d4a5dac1752f3a82111/FX%20Modulator%20Linking/MIDI%20Fader%20Modulator.jsfx</source>
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6e8804a63d20517843258d4a5dac1752f3a82111/FX/Helpers/json.lua</source>
         <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6e8804a63d20517843258d4a5dac1752f3a82111/FX/Helpers/special_buttons.lua</source>
+      </version>
+      <version name="0.2.6" author="Saxmand" time="2025-04-27T23:34:02Z">
+        <changelog><![CDATA[+ fixed ADSR-1 and MSEG-1 output mapping
++ uptimized output plot writing. Still choppy though
++ removed plotting info when moving cursor over output plotter
++ Fix closing of Browser window, if already open for the specific track when clicking + [ANY]
++ Gave the Plugins module some love, with focus arrow, open fx color and button as well as options in the settings menu
++ improved open close function
++ removed option to see modulator parameters in the PARAMETERS module]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/01e8083fa1a0a9a4947e9e6d96282c1ce86d3a71/FX/Saxmand_FX%20Modulator%20Linking.lua</source>
+        <source type="effect" file="../FX Modulator Linking/4-in-1-out Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/01e8083fa1a0a9a4947e9e6d96282c1ce86d3a71/FX%20Modulator%20Linking/4-in-1-out%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/AB Slider Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/01e8083fa1a0a9a4947e9e6d96282c1ce86d3a71/FX%20Modulator%20Linking/AB%20Slider%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/ACS Native Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/01e8083fa1a0a9a4947e9e6d96282c1ce86d3a71/FX%20Modulator%20Linking/ACS%20Native%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Generic Parameter Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/01e8083fa1a0a9a4947e9e6d96282c1ce86d3a71/FX%20Modulator%20Linking/Generic%20Parameter%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/LFO Native Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/01e8083fa1a0a9a4947e9e6d96282c1ce86d3a71/FX%20Modulator%20Linking/LFO%20Native%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/MIDI Fader Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/01e8083fa1a0a9a4947e9e6d96282c1ce86d3a71/FX%20Modulator%20Linking/MIDI%20Fader%20Modulator.jsfx</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/01e8083fa1a0a9a4947e9e6d96282c1ce86d3a71/FX/Helpers/json.lua</source>
+        <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/01e8083fa1a0a9a4947e9e6d96282c1ce86d3a71/FX/Helpers/special_buttons.lua</source>
       </version>
     </reapack>
   </category>
