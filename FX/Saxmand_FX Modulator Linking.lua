@@ -1,11 +1,11 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.2.8
+-- @version 0.2.9
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + removed generic modulator jsfx
+--   + Fixed collabsed mapping output
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -443,7 +443,8 @@ function mapModulatorActivate(fxIndex, sliderNum, fxInContainerIndex, name)
     if not fxIndex or map == fxIndex then 
         map = false
         sliderNumber = false
-    else 
+    else  
+        hideParametersFromModulator = nil
         map = fxIndex
         mapName = name
         sliderNumber = sliderNum
@@ -2822,7 +2823,6 @@ function mapAndShow(track, fx, sliderNum, fxInContainerIndex, name)
     ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isMapping and colorMap or colorBlue) 
     
     if reaper.ImGui_Button(ctx, isMapping and "MAPPING" or "MAP", w, h) then 
-        hideParametersFromModulator = nil
         mapModulatorActivate(fx.fxIndex,sliderNum, fx.fxInContainerIndex, name)
     end
     
@@ -4668,7 +4668,7 @@ local function loop()
                             
                             for _, output in ipairs(outputArray) do 
                                 if drawFaderFeedback(nil,nil, fxIndex, output, 0, 1, isCollabsed, fx) then 
-                                    mapModulatorActivate(fx.fxIndex,sliderNum, fx.fxInContainerIndex, name)
+                                    mapModulatorActivate(fx.fxIndex,output, fx.fxInContainerIndex, name)
                                 end  
                                 
                             end
