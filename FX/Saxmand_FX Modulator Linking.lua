@@ -1,19 +1,11 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.2.7
+-- @version 0.2.8
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + fixed Modulator always showing output and map button
---   + added AB mappings overview
---   + moved "remove Modulator" button to top left corner X
---   + fixed clean up of removing Modulator
---   + maybe fixed parameters that are not from 0-1 for setting their baseline
---   + fixed minimized version of modulators
---   + added preset support
---   + you can now hide parameters in custom modulators, this will also be stored in presets
---   + fixed to remember pos and dock from last time
+--   + removed generic modulator jsfx
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
