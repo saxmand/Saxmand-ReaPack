@@ -1,12 +1,12 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.3.1
+-- @version 0.3.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + plugins menu header width fix
-local version = "0.3.1"
+--   + fixed show extra toggle
+local version = "0.3.2"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -4690,9 +4690,8 @@ local function loop()
                     reaper.ImGui_Separator(ctx)
                     
                     
-                    local count = #settings.userModulators
                     menuHeader("Extra [" .. 1 .."]", "showExtra", "extra functions")
-                    if settings.showExtra and count > 0 then  
+                    if settings.showExtra then  
                     
                         -- set realearn params on the run after the first one
                         if setTrackControlParamsOnIndex then
