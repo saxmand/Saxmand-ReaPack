@@ -1,16 +1,12 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.3.0
+-- @version 0.3.1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + Added Keytrack JSFX
---   + Added Note velocity JSFX
---   + Added Track controls Plugin (Using realearn)
---   + changed so vertical setting is per docked area and will be remember once it's been set once
---   + fixed issue when loading script, not catching settings properly
-local version = "0.3.0"
+--   + plugins menu header width fix
+local version = "0.3.1"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -4501,7 +4497,7 @@ local function loop()
                     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorDarkGrey)
                     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorLightGrey)
                     local textState = (not settings[variable] and "Show" or "Hide") 
-                    if reaper.ImGui_Button(ctx, text, partsWidth- 16) then  
+                    if reaper.ImGui_Button(ctx, text, partsWidth- 32) then  
                         settings[variable] = not settings[variable]
                         saveSettings()
                     end
