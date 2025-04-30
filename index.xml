@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="22e3a6388badcfb6c4621feec3c4f4fbd9c1f41d" name="Saxmand ReaPack">
+<index version="1" commit="204713626de3a4cdc6eb42909bf5766764c878ff" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_FX Modulator Linking.lua" type="script" desc="FX Modulator Linking">
       <version name="0.1.0" author="saxmand" time="2025-04-19T03:17:01Z">
@@ -220,6 +220,19 @@
         <source type="effect" file="../FX Modulator Linking/Note Velocity Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/22e3a6388badcfb6c4621feec3c4f4fbd9c1f41d/FX%20Modulator%20Linking/Note%20Velocity%20Modulator.jsfx</source>
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/22e3a6388badcfb6c4621feec3c4f4fbd9c1f41d/FX/Helpers/json.lua</source>
         <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/22e3a6388badcfb6c4621feec3c4f4fbd9c1f41d/FX/Helpers/special_buttons.lua</source>
+      </version>
+      <version name="0.3.2" author="Saxmand" time="2025-04-30T00:48:35Z">
+        <changelog><![CDATA[+ fixed show extra toggle]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/204713626de3a4cdc6eb42909bf5766764c878ff/FX/Saxmand_FX%20Modulator%20Linking.lua</source>
+        <source type="effect" file="../FX Modulator Linking/4-in-1-out Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/204713626de3a4cdc6eb42909bf5766764c878ff/FX%20Modulator%20Linking/4-in-1-out%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/AB Slider Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/204713626de3a4cdc6eb42909bf5766764c878ff/FX%20Modulator%20Linking/AB%20Slider%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/ACS Native Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/204713626de3a4cdc6eb42909bf5766764c878ff/FX%20Modulator%20Linking/ACS%20Native%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Keytracker Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/204713626de3a4cdc6eb42909bf5766764c878ff/FX%20Modulator%20Linking/Keytracker%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/LFO Native Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/204713626de3a4cdc6eb42909bf5766764c878ff/FX%20Modulator%20Linking/LFO%20Native%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/MIDI Fader Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/204713626de3a4cdc6eb42909bf5766764c878ff/FX%20Modulator%20Linking/MIDI%20Fader%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Note Velocity Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/204713626de3a4cdc6eb42909bf5766764c878ff/FX%20Modulator%20Linking/Note%20Velocity%20Modulator.jsfx</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/204713626de3a4cdc6eb42909bf5766764c878ff/FX/Helpers/json.lua</source>
+        <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/204713626de3a4cdc6eb42909bf5766764c878ff/FX/Helpers/special_buttons.lua</source>
       </version>
     </reapack>
   </category>
