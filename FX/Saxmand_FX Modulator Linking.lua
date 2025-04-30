@@ -1,12 +1,12 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.3.2
+-- @version 0.3.3
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + fixed show extra toggle
-local version = "0.3.2"
+--   + changed to move [ANY] added modulators instead of removing and inserting
+local version = "0.3.3"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -572,6 +572,18 @@ function insertGenericParamFXAndAddContainerMapping(track, fxIndex, newName, par
     reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.. p ..'.plink.param', paramNumber )
     
     reaper.Undo_EndBlock("Add modulator plugin",-1)
+    return modulationContainerPos, insert_position
+end
+
+function movePluginToContainer(track, originalIndex)
+    local modulationContainerPos = addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
+    local position_of_FX_in_container = select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count')) + 1
+    local parent_FX_count = reaper.TrackFX_GetCount(track)
+    local position_of_container = modulationContainerPos+1
+    
+    local insert_position = 0x2000000 + position_of_FX_in_container * (parent_FX_count + 1) + position_of_container
+    
+    reaper.TrackFX_CopyToTrack(track, originalIndex, track, insert_position, true)
     return modulationContainerPos, insert_position
 end
 
@@ -1414,7 +1426,7 @@ local function getAllTrackFXOnTrackSimple(track)
     local data = {}
     for f = 0, fxCount-1 do
        _, name = reaper.TrackFX_GetFXName(track,f)
-       table.insert(data, {number = f, name = name})
+       table.insert(data, {fxIndex = f, name = name})
     end
     return data
 end
@@ -4614,12 +4626,16 @@ local function loop()
                                 fx_after = getAllTrackFXOnTrackSimple(track)
                                 if #fx_after > #fx_before then
                                     -- An FX was added
+                                    openCloseFx(track, fx_after[#fx_after].fxIndex, false)
+                                    containerPos, insert_position = movePluginToContainer(track, fx_after[#fx_after].fxIndex )
+                                    --[[
                                     local fxName = fx_after[#fx_after].name
                                     if reaper.Undo_CanUndo2(0):match("Add FX: " .. trackTitleIndex) ~= nil then
                                         reaper.Undo_DoUndo2(0)
                                     end 
                                     containerPos, insert_position = insertFXAndAddContainerMapping(track, fxName, fxName)
-                                    openCloseFx(track, insert_position, false)
+                                    
+                                    ]]
                                 end
                             end)
                         end
