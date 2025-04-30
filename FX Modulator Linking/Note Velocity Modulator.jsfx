@@ -1,0 +1,107 @@
+desc:Note Velocity Modulator
+author: saxmand
+version: 1.0
+noindex: true
+changelog: Initial release
+
+/**
+ * JSFX : MIDI Fader Modulator
+ * Author: Jesper Ankarfeldt
+ * Reaper forum : 
+ * Licence: GPL v3
+ * REAPER: 7.0
+ * Version: 10 (2025-04-29)
+ */
+
+
+slider1:0<0,1,0.001>Output
+slider2:timer=0<0,2,1{Off,Smooth,Constant}>Timer
+slider3:speed=500<1,5000,1>Speed (ms)
+
+slider4:minimum=1<1,127,1>Minimum
+slider5:maximum=127<0,127,1>Maximum
+slider6:offset=0<0,1,0.01>Offset
+slider7:width=1<-1,1,0.01>Width
+slider8:scale=1<-4,4,0.01>Scale
+slider9:passthrough=1<0,1,1>Pass Through
+
+slider10:listenMinimum=0<0,1,1>Listen Minimum
+slider11:listenMaximum=0<0,1,1>Listen Maximum
+
+options:no_meter
+
+@init
+
+ext_noinit = 1;
+target = 0;
+current = 0;
+
+@slider
+speed = max(speed, 1); // Avoid 0 speed
+
+@block
+while (
+  midirecv(t, msg1, msg2, msg3)
+)(
+  status = msg1 & 0xF0;
+  (status == 0x90) ? (
+    listenMinimum == 1 ? (
+      minimum = msg2;
+      listenMinimum = 0;
+    );
+    listenMaximum == 1 ? (
+      maximum = msg2;
+      listenMaximum = 0;
+    );
+    
+    msg3 > 0 ? (
+      crampedMsg3 = min(max(msg3-1, minimum), maximum)-minimum;
+      target = (crampedMsg3)/(maximum-minimum);
+      passthrough == 1 ? midisend(t, msg1, msg2, msg3);
+    );
+  ):(
+    midisend(t, msg1, msg2, msg3);
+  );
+);
+
+@sample
+delta = target - current;
+
+(timer == 0) ? (
+  current = target;
+)
+: timer == 1 ? (
+  current += delta * 0.1/speed;
+)
+: (
+  step = 0.022/speed;
+  current += (delta > step) ? step :
+            (delta < -step) ? -step : delta;
+);
+
+out = current*width*scale+offset; 
+out < 0 ? out = 0;
+out > 1 ? out = 1;
+slider1 = out;
+
+
+
+@gfx
+
+gfx_h = 300; // Height in pixels
+gfx_set(1, 1, 1, 0.15);
+gfx_rect(0, 0, gfx_w, gfx_h);
+gfx_setfont(1, "Arial", 16); // Font slot 1 with custom font and size
+gfx_set(1, 1, 1, 1); // Set color to white (RGBA: 1, 1, 1, 1)
+
+function drawCenteredText(text, posY) (
+    w = h = 0;
+    gfx_measurestr(text, w, h);
+    gfx_x = (gfx_w - w) / 2;
+    gfx_y = posY;
+    gfx_printf(text);
+);
+
+drawCenteredText("This plugin is part of ''Saxmand_FX Modulator Linking''.", 10);
+drawCenteredText("The script helps working with modulators.", 30);
+drawCenteredText("Run the script to map and adjust parameters.",50);

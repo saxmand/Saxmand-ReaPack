@@ -1,17 +1,21 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.2.9
+-- @version 0.3.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + Fixed collabsed mapping output
+--   + Added Keytrack JSFX
+--   + Added Note velocity JSFX
+--   + Added Track controls Plugin (Using realearn)
+--   + changed so vertical setting is per docked area and will be remember once it's been set once
+--   + fixed issue when loading script, not catching settings properly
+local version = "0.3.0"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
 local json = require("json")
 local specialButtons = require("special_buttons")
-
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local ImGui = require 'imgui' '0.9.3'
 local stateName = "ModulationLinking"
@@ -34,7 +38,7 @@ function checkIfPluginIsInstalled(name)
        while true do
          local ret, fx = reaper.EnumInstalledFX(i)
          if not ret or not fx then break end
-         if ret and fx:match("^JS:") and fx:lower():find(name:lower(), 1, true) then
+         if ret and fx:lower():find(name:lower(), 1, true) then
            return true
          end
          i = i + 1
@@ -46,8 +50,9 @@ function checkIfPluginIsInstalled(name)
     return jsfx_exists(name) 
 end
 
-local isAdsr1Installed = checkIfPluginIsInstalled("ADSR-1")
-local isMseg1Installed = checkIfPluginIsInstalled("MSEG-1")
+local isAdsr1Installed = checkIfPluginIsInstalled("JS: ADSR-1")
+local isMseg1Installed = checkIfPluginIsInstalled("JS: MSEG-1")
+local isReaLearnInstalled = checkIfPluginIsInstalled("Helgobox")
 --function reaper_do_file(file) local info = debug.getinfo(1,'S'); local path = info.source:match[[^@?(.*[\/])[^\/]-$]]; dofile(path .. file); end
 --reaper_do_file('Helpers/json.lua')
 -----------------------------------------
@@ -95,11 +100,6 @@ local defaultSettings = {
     onlyMapped = false,
     search = "", 
     partsWidth = 188,
-    -- Plugins
-    showContainers = true,
-    colorContainers = true,
-    indentsAmount = 3,
-    allowHorizontalScroll = false,
     wwVertical = 180 + margin *4,
     whVertical = 900,
     xVertical = 300,
@@ -111,12 +111,27 @@ local defaultSettings = {
     showBuildin = true,
     showUser = true,
     showPreset = true,
+    showExtra = true,
+    
     userModulators = {},
     mapOnce = false,
+    
+    -- Visual settings
+      -- Plugins
+    showContainers = true,
+    colorContainers = true,
+    indentsAmount = 3,
+    allowHorizontalScroll = false,
+      -- Parameters
+    showSearch = true,
+    showOnlyMapped = true,
+    showParameterOptionsOnTop = true,
     
     defaultMappingWidth = 50,
     defaultDirection = 3,
     defaultLFODirection = 2,
+    
+    dockIdVertical = {},
 }
 
 local defaultTrackSettings = {
@@ -146,7 +161,7 @@ end
 
 -- BACKWARDS COMPATABILITY
 for key, value in pairs(defaultSettings) do
-    if not settings[key] then
+    if settings[key] == nil then
         settings[key] = value
     end
 end
@@ -166,7 +181,7 @@ local function loadTrackSettings(track)
             trackSettings = json.decodeFromJson(savedTrackStates)
             
             for key, value in pairs(defaultTrackSettings) do
-                if not trackSettings[key] then
+                if trackSettings[key] == nil then
                     trackSettings[key] = value
                 end
             end
@@ -1085,12 +1100,18 @@ local function setNativeACSParamSettings(track,fxIndex, settings)
     end 
 end
 
-local function getAllDataFromParameter(track,fxIndex,p)
+local function getAllDataFromParameter(track,fxIndex,p) 
+    local fx_name_ret, fxName = reaper.TrackFX_GetFXName(track, fxIndex, "") 
     local retValueName, valueName = reaper.TrackFX_GetFormattedParamValue(track,fxIndex,p)
     local _, name = reaper.TrackFX_GetParamName(track,fxIndex,p)
     local _, parameterLinkActive = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.active')
     local isParameterLinkActive = parameterLinkActive == "1" 
     local guid = reaper.TrackFX_GetFXGUID( track, fxIndex )
+    
+    -- special setting, to rename for nicer view in parameters
+    if fxName == "Track controls" then
+        name = name:gsub("^Main p%d+:%s*", "")
+    end 
     
     local _, parameterModulationActive = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.mod.active')
     local parameterModulationActive = isParameterLinkActive and parameterModulationActive == "1"
@@ -1156,6 +1177,7 @@ local function getAllDataFromParameter(track,fxIndex,p)
     valueName = valueName, fxIndex = fxIndex, guid = guid,
     parameterModulationActive = parameterModulationActive, isParameterLinkActive = isParameterLinkActive, parameterLinkEffect = parameterLinkEffect,containerItemFxId = tonumber(containerItemFxId),
     usesEnvelope = usesEnvelope, envelopeValue = envelopeValue, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
+    fxName = fxName,
     }
 end
 
@@ -2480,6 +2502,148 @@ function openCloseFx(track, fxIndex, open)
     
 end
 
+function addVolumePanAndSendControlPlugin(track)
+    
+    local nameOpened = "Track controls" 
+    local fxPosition = reaper.TrackFX_AddByName( track, nameOpened, false, 1 )
+    if fxPosition == -1 then
+        fxPosition = reaper.TrackFX_AddByName( track, "Helgobox", false, 1 )
+        reaper.TrackFX_SetNamedConfigParm( track, fxPosition, 'renamed_name', nameOpened)
+    end
+    return fxPosition
+end
+
+function setVolumePanAndSendControlPluginParams(track, fxPosition) 
+    -- mappings for volume and pan
+    local mappings = [[
+  "mappings": [
+    {
+      "name": "Volume",
+      "source": {
+        "category": "reaper",
+        "reaperSourceType": "realearn-parameter",
+        "parameterIndex": 0
+      },
+      "mode": {
+      },
+      "target": {
+        "type": 2,
+        "fxAnchor": "id"
+      }
+    },
+    {
+      "name": "Pan",
+      "source": {
+        "category": "reaper",
+        "reaperSourceType": "realearn-parameter",
+        "parameterIndex": 1
+      },
+      "mode": {
+      },
+      "target": {
+        "type": 4
+      }
+    },
+    {
+      "name": "Pan width",
+      "source": {
+        "category": "reaper",
+        "reaperSourceType": "realearn-parameter",
+        "parameterIndex": 2
+      },
+      "mode": {
+      },
+      "target": {
+        "type": 17
+      }
+    }]]
+        
+    -- parameter slider for volume and pan
+    local params = [[,
+  "parameters": {
+    "0": {
+      "name": "Volume",
+      "value": 0.5
+    },
+    "1": {
+      "name": "Pan",
+      "value": 0.5
+    },
+    "2": {
+      "name": "Pan width",
+      "value": 0.5
+    }]]
+        
+    -- mappings and parameter for sends
+    for i = 1, 16 do
+        mappings = mappings .. [[,
+    {
+      "name": "Send ]] .. i ..[[ volume",
+      "source": {
+        "category": "reaper",
+        "reaperSourceType": "realearn-parameter",
+        "parameterIndex": ]] .. i * 2 + 1 ..[[
+        
+      },
+      "mode": {
+      },
+      "target": {
+        "type": 3,
+        "sendIndex": ]] .. i - 1 ..[[
+        
+      }
+    },
+    {
+      "name": "Send ]] .. i ..[[ pan",
+      "source": {
+        "category": "reaper",
+        "reaperSourceType": "realearn-parameter",
+        "parameterIndex": ]] .. i * 2 + 2 ..[[
+        
+      },
+      "mode": {
+      },
+      "target": {
+        "type": 9,
+        "sendIndex": ]] .. i - 1 ..[[
+        
+      }
+    }]]
+          
+        params = params .. [[,
+    "]] .. i * 2 + 1 ..[[": {
+      "name": "Send ]] .. i ..[[ volume",
+      "value": 0.5
+    },
+    "]] .. i * 2 + 2 ..[[": {
+      "name": "Send ]] .. i ..[[ pan",
+      "value": 0.5
+    }]]
+    end
+    
+    mappings = mappings .. "\n  ]"
+    params = params .. "\n  }"
+    
+    local state = "{\n" .. mappings .. params .. "\n}" 
+    
+    reaper.TrackFX_SetNamedConfigParm(track, fxPosition, "set-state", state)
+end
+
+function scrollHoveredDropdown(currentValue, track,fxIndex,paramIndex, dropDownList, native, min, max)
+    if reaper.ImGui_IsItemHovered(ctx) then
+        if scrollVertical ~= 0 and isAltPressed then
+            local newIndexValue = currentValue + (scrollVertical > 0 and -1 or 1) 
+            newIndexValue = math.min(math.max(newIndexValue, min and min or 1), max and max or #dropDownList)
+            local newScrollValue = dropDownList[1].value and dropDownList[newIndexValue].value or (newIndexValue)
+            if native then
+                reaper.TrackFX_SetNamedConfigParm( track, fxIndex, native, newScrollValue) 
+            else
+                reaper.TrackFX_SetParam( track, fxIndex, paramIndex, newScrollValue) 
+            end
+        end
+    end
+end
+
         
 function scrollHoveredItem(track, fxIndex, paramIndex, currentValue, divide, nativeParameter, dropDownValue, min, max)
     if reaper.ImGui_IsItemHovered(ctx) and isAltPressed then 
@@ -2713,7 +2877,7 @@ function createSlider2(track,fxIndex, info, currentValue, setSize)
             end
             scrollValue = 1
         elseif _type == "ButtonToggle" then
-            if reaper.ImGui_Button(ctx, name.. '##slider' .. name .. fxIndex,dropDownSize,buttonSizeH) then
+            if reaper.ImGui_Button(ctx, name.. '##slider' .. name .. fxIndex,setSize and setSize or dropDownSize,buttonSizeH) then
                 setParameterButReturnFocus(track, fxIndex, paramIndex, currentValue == 1 and 0 or 1) 
             end
             
@@ -2727,11 +2891,11 @@ function createSlider2(track,fxIndex, info, currentValue, setSize)
 end
 
 -- wrap slider in to mapping function
-function createSlider(track,fxIndex, _type,paramIndex,name,min,max,divide, valueFormat,sliderFlag, checkboxFlipped, dropDownText, dropdownOffset,tooltip, widthArray)  
+function createSlider(track,fxIndex, _type,paramIndex,name,min,max,divide, valueFormat,sliderFlag, checkboxFlipped, dropDownText, dropdownOffset,tooltip, width)  
     local info = {_type = _type,paramIndex =paramIndex,name = name,min = min,max =max,divide=divide, valueFormat = valueFormat,sliderFlag = sliderFlag, checkboxFlipped =checkboxFlipped, dropDownText = dropDownText, dropdownOffset = dropdownOffset,tooltip =tooltip}
-    widthArray = widthArray or {faderWidth = buttonWidth}
+    local sizeW = width and width or buttonWidth
     if _type == "Combo" or _type == "Checkbox" or _type == "ButtonToggle" then
-        createSlider2(track,fxIndex, info,nil, widthArray.faderWidth) 
+        createSlider2(track,fxIndex, info,nil, sizeW) 
     --else  
     --    parameterNameAndSliders(createSlider2, getAllDataFromParameter(track,fxIndex,paramIndex), focusedParamNumber, info, widthArray) 
     end
@@ -2767,7 +2931,7 @@ function createModulationLFOParameter(track, fxIndex,  _type, paramName, visualN
             scrollValue = divide
         end
         if tooltip and settings.showToolTip then reaper.ImGui_SetItemTooltip(ctx,tooltip) end
-        scrollHoveredItem(track, fxIndex, paramIndex, currentValue, divide, 'param.'..paramOut..'.' .. paramName, scrollValue)
+        --scrollHoveredItem(track, fxIndex, paramIndex, currentValue, divide, 'param.'..paramOut..'.' .. paramName, scrollValue)
         
     end
     return newValue and newValue or currentValue
@@ -3060,15 +3224,8 @@ function nlfoModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isColla
                     if ret then  
                         reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.lfo.' .. paramName, noteTempos[value + 1].value) 
                     end
-                    if reaper.ImGui_IsItemHovered(ctx) then
-                        if scrollVertical ~= 0 and isAltPressed then
-                            local newScrollValue = (#noteTempos > closest_index + scrollVertical and 1 < closest_index + scrollVertical and mouseWheelValue ~= 0) and 
-                            (scrollVertical < 0 and noteTempos[closest_index+1].value or noteTempos[closest_index-1].value) 
-                            or noteTempos[closest_index].value
-                        
-                            reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.lfo.' .. paramName, newScrollValue) 
-                        end
-                    end
+                    
+                    scrollHoveredDropdown(closest_index, track,fxIndex,nil, noteTempos, 'param.'..paramOut..'.lfo.' .. paramName)
                     --scrollHoveredItem(track, fxIndex, paramIndex, newScrollValue, 1, 'param.'..paramOut..'.lfo.' .. paramName,1 )
                 end
             end
@@ -3227,6 +3384,86 @@ function midiCCModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCol
     
     --endModulator(name, startPosX, startPosY, fxIndex)
 end
+
+function keytrackerModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
+    local list = {"Off","Smooth", "Constant"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    
+    createSlider(track,fxIndex,"Combo",1,"Timer",nil,nil,1,nil,nil,nil,listText,0,"Set the timer mode for changing the value")
+
+    local useTimer = reaper.TrackFX_GetParam(track, fxIndex, 1) > 0
+    if useTimer then
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    end
+    
+    
+    local isListening = reaper.TrackFX_GetParam(track, fxIndex, 9) == 1
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isListening and colorMapLittleTransparent or colorMap )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isListening and colorMapLittleTransparent or colorMap )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMap or semiTransparentGrey )
+    createSlider(track,fxIndex,"ButtonToggle",9,isListening and "Stop" or "Set minimum",0,1,nil,nil,nil,nil,nil,0,"Listen for MIDI input to set minimum key range", dropDownSize)   
+    
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    reaper.ImGui_PopStyleColor(ctx,3)
+    
+    local isListening = reaper.TrackFX_GetParam(track, fxIndex, 10) == 1
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isListening and colorMapLittleTransparent or colorMap )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isListening and colorMapLittleTransparent or colorMap )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMap or semiTransparentGrey )
+    createSlider(track,fxIndex,"ButtonToggle",10,isListening and "Stop" or "Set maximum",0,1,nil,nil,nil,nil,nil,0,"Listen for MIDI input to set maximum key range", dropDownSize)  
+    reaper.ImGui_PopStyleColor(ctx,3)
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 127) 
+    
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,5), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    
+    createSlider(track,fxIndex,"Checkbox",8,"Pass through MIDI",nil,nil,1,nil,nil,nil,nil,nil) 
+end
+
+function noteVelocityModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
+    local list = {"Off","Smooth", "Constant"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    
+    createSlider(track,fxIndex,"Combo",1,"Timer",nil,nil,1,nil,nil,nil,listText,0,"Set the timer mode for changing the value")
+
+    local useTimer = reaper.TrackFX_GetParam(track, fxIndex, 1) > 0
+    if useTimer then
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    end
+    
+    
+    local isListening = reaper.TrackFX_GetParam(track, fxIndex, 9) == 1
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isListening and colorMapLittleTransparent or colorMap )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isListening and colorMapLittleTransparent or colorMap )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMap or semiTransparentGrey )
+    createSlider(track,fxIndex,"ButtonToggle",9,isListening and "Stop" or "Set minimum",0,1,nil,nil,nil,nil,nil,0,"Listen for MIDI input to set minimum key range", dropDownSize)   
+    
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    reaper.ImGui_PopStyleColor(ctx,3)
+    
+    local isListening = reaper.TrackFX_GetParam(track, fxIndex, 10) == 1
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isListening and colorMapLittleTransparent or colorMap )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isListening and colorMapLittleTransparent or colorMap )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMap or semiTransparentGrey )
+    createSlider(track,fxIndex,"ButtonToggle",10,isListening and "Stop" or "Set maximum",0,1,nil,nil,nil,nil,nil,0,"Listen for MIDI input to set maximum key range", dropDownSize)  
+    reaper.ImGui_PopStyleColor(ctx,3)
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 127) 
+    
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,5), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    
+    createSlider(track,fxIndex,"Checkbox",8,"Pass through MIDI",nil,nil,1,nil,nil,nil,nil,nil) 
+end
+
+
 
 function abSliderModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
     --local startPosX, startPosY = beginModulator(name, fxIndex) 
@@ -3424,9 +3661,12 @@ function msegModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isColla
         
         --createSlider(track,fxIndex,"SliderDouble",0,"Pattern",1,12,100,"%0.0f",nil,nil,nil,nil) 
         parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,0), focusedParamNumber, nil, nil, nil, "Pattern", buttonWidth*2, 0, "%0.0f") 
-        createSlider(track,fxIndex,"Combo",1,"Trigger",nil,nil,1,nil,nil,nil,triggersDropDownText,0,"Select how to trigger pattern")
-        createSlider(track,fxIndex,"Combo",2,"Tempo Sync",nil,nil,1,nil,nil,nil,tempoSyncDropDownText,0,"Select if the tempo should sync")
         
+        createSlider(track,fxIndex,"Combo",1,"Trigger",nil,nil,1,nil,nil,nil,triggersDropDownText,0,"Select how to trigger pattern")
+        scrollHoveredDropdown(reaper.TrackFX_GetParam(track, fxIndex, 1), track,fxIndex, 1, triggers,nil, 0, #triggers-1)
+        
+        createSlider(track,fxIndex,"Combo",2,"Tempo Sync",nil,nil,1,nil,nil,nil,tempoSyncDropDownText,0,"Select if the tempo should sync")
+        scrollHoveredDropdown(reaper.TrackFX_GetParam(track, fxIndex, 2), track,fxIndex, 2, tempoSync,nil, 0, #tempoSync-1)
         
         local syncOff = reaper.TrackFX_GetParam(track, fxIndex, 2)
         if math.floor(syncOff) == 0  then 
@@ -3748,9 +3988,14 @@ local function loop()
       local x = settings.vertical and settings.xVertical or settings.xHorizontal 
       local y = settings.vertical and settings.yVertical or settings.yHorizontal 
       
-      if (dock_id and dock_id == 0) or (not dock_id and settings.dock_id == 0) then 
+      if (dock_id and (dock_id == 1 or dock_id == 0)) or (not dock_id and (settings.dock_id == 1 or settings.dock_id == 0)) then 
           reaper.ImGui_SetNextWindowSize(ctx,ww ,wh ,nil)
           reaper.ImGui_SetNextWindowPos(ctx,x ,y ,nil)
+      end
+      
+      if dock_id and dock_id ~= 1 and dock_id ~= 0 then
+          settings.dockIdVertical["id" .. tostring(dock_id)] = settings.vertical and "1" or "0"
+          saveSettings()
       end
       
       last_vertical = settings.vertical 
@@ -3801,14 +4046,8 @@ local function loop()
       
   
       if not last_dock_id or last_dock_id ~= dock_id then
-        if dock_id == -1 or dock_id == -2 then
-            settings.vertical = true
-        elseif dock_id == -4 or dock_id == -3 then
-            settings.vertical = false
-        elseif not is_docked and last_dock_id and last_dock_id == 0 then
-            --resetWindow = 
-        else
-        
+        if settings.dockIdVertical["id" .. tostring(dock_id)] then
+            settings.vertical = tostring(settings.dockIdVertical["id" .. tostring(dock_id)]) == "1"
         end 
         settings.dock_id = dock_id 
         
@@ -3817,6 +4056,7 @@ local function loop()
       end
       
       dock_id = reaper.ImGui_GetWindowDockID(ctx)
+      
       
       if not reaper.ImGui_IsWindowDocked(ctx) and 
           (settings.vertical and (settings.wwVertical ~= winW or settings.whVertical ~= winH or settings.xVertical ~= winX or settings.yVertical ~= winY))
@@ -4110,6 +4350,35 @@ local function loop()
         ------------------------
         -- PARAMETERS ----------
         ------------------------
+        function searchAndOnlyMapped()
+            if settings.showOnlyMapped or settings.showSearch then
+                if not settings.showParameterOptionsOnTop then 
+                    reaper.ImGui_Separator(ctx)
+                end
+                if settings.showSearch then
+                    local textSize = reaper.ImGui_CalcTextSize(ctx, "Search", 0,0)
+                    reaper.ImGui_SetNextItemWidth(ctx, moduleWidth - textSize - 20)
+                    ret, search = reaper.ImGui_InputText(ctx,"Search", settings.search) 
+                    if ret then
+                        settings.search = search
+                        settings.onlyMapped = false
+                        saveSettings()
+                    end
+                end
+                if settings.showOnlyMapped then
+                    ret, onlyMapped = reaper.ImGui_Checkbox(ctx,"Only mapped",settings.onlyMapped)
+                    if ret then
+                        settings.search = ""
+                        settings.onlyMapped = onlyMapped
+                        saveSettings()
+                    end 
+                end
+                if settings.showParameterOptionsOnTop then 
+                    reaper.ImGui_Separator(ctx)
+                end
+            end
+        end
+        
         
         ImGui.BeginGroup(ctx) 
         if not settings.vertical then
@@ -4133,22 +4402,9 @@ local function loop()
                     reaper.ImGui_EndMenuBar(ctx)
                 end
                 
-                local textSize = reaper.ImGui_CalcTextSize(ctx, "Search", 0,0)
-                reaper.ImGui_SetNextItemWidth(ctx, moduleWidth - textSize - 20)
-                ret, search = reaper.ImGui_InputText(ctx,"Search", settings.search) 
-                if ret then
-                    settings.search = search
-                    settings.onlyMapped = false
-                    saveSettings()
+                if settings.showParameterOptionsOnTop then
+                    searchAndOnlyMapped()
                 end
-                ret, onlyMapped = reaper.ImGui_Checkbox(ctx,"Only mapped",settings.onlyMapped)
-                if ret then
-                    settings.search = ""
-                    settings.onlyMapped = onlyMapped
-                    saveSettings()
-                end 
-                
-                reaper.ImGui_Separator(ctx)
                 
                 size = nil
                 
@@ -4162,28 +4418,33 @@ local function loop()
                     --if not someAreActive then settings.onlyMapped = false; saveTrackSettings(track) end
                 end
                 
-                local curPosY = reaper.ImGui_GetCursorPosY(ctx)
-                if reaper.ImGui_BeginChild(ctx, "parametersForFocused", tableWidth-16, height-curPosY-16, nil,scrollFlags) then
-                    for _, p in ipairs(focusedTrackFXParametersData) do 
+                local curPosY = (settings.showOnlyMapped or settings.showSearch) and (42 + (settings.showOnlyMapped and 24 or 0) + (settings.showSearch and 24 or 0)) or 40--reaper.ImGui_GetCursorPosY(ctx)
+                if reaper.ImGui_BeginChild(ctx, "parametersForFocused", tableWidth-16, height-curPosY, nil,scrollFlags) then
+                    for i, p in ipairs(focusedTrackFXParametersData) do 
                         --if p.param == focusedParamNumber then 
                         --posX, posY = reaper.ImGui_GetCursorPos(ctx) 
                         --end
                         --if not size then startPosY = reaper.ImGui_GetCursorPosY(ctx) end
+                        local pMappedShown = not settings.showOnlyMapped or not someAreActive or not settings.onlyMapped or (settings.onlyMapped and p.isParameterLinkActive)
+                        local pSearchShown = not settings.showSearch or not settings.search or settings.search == "" or searchName(p.name, settings.search)
                         
-                        if not someAreActive or not settings.onlyMapped or (settings.onlyMapped and p.isParameterLinkActive) then
-                            if not settings.search or settings.search == "" or searchName(p.name, settings.search) then
-                                --reaper.ImGui_Text(ctx, "")
-                                reaper.ImGui_Spacing(ctx)
-                                parameterNameAndSliders("parameter",pluginParameterSlider,p, focusedParamNumber,nil,nil,nil,nil,nil,nil,nil,nil,true)
-                            --if not size then size = reaper.ImGui_GetCursorPosY(ctx) - startPosY end
-                                --reaper.ImGui_Separator(ctx)
-                                
-                                --reaper.ImGui_NewLine(ctx)
-                                
-                                if scroll and p.param == scroll then
-                                    ImGui.SetScrollHereY(ctx,  p.isParameterLinkActive and 0.22 or 0.13) 
-                                    removeScroll = true
-                                end
+                        local pTrackControlShown = true
+                        if p.fxName == "Track controls" and i > 35 then
+                            pTrackControlShown = false
+                        end 
+                        
+                        if pMappedShown and pSearchShown and pTrackControlShown then
+                            --reaper.ImGui_Text(ctx, "")
+                            reaper.ImGui_Spacing(ctx)
+                            parameterNameAndSliders("parameter",pluginParameterSlider,p, focusedParamNumber,nil,nil,nil,nil,nil,nil,nil,nil,true)
+                        --if not size then size = reaper.ImGui_GetCursorPosY(ctx) - startPosY end
+                            --reaper.ImGui_Separator(ctx)
+                            
+                            --reaper.ImGui_NewLine(ctx)
+                            
+                            if scroll and p.param == scroll then
+                                ImGui.SetScrollHereY(ctx,  p.isParameterLinkActive and 0.22 or 0.13) 
+                                removeScroll = true
                             end
                         end
                         --if p.param == focusedParamNumber then
@@ -4191,6 +4452,10 @@ local function loop()
                         --end
                     end
                     reaper.ImGui_EndChild(ctx)
+                end
+                
+                if not settings.showParameterOptionsOnTop then
+                    searchAndOnlyMapped()
                 end
                 
                 reaper.ImGui_EndChild(ctx)
@@ -4273,18 +4538,17 @@ local function loop()
                     menuHeader("Buildin [" .. 8 .."]", "showBuildin", "buildin modulators")
                     if settings.showBuildin then 
                         
-                        
-                        if moduleButton("+ LFO Native    ","Add an LFO modulator that uses the build in Reaper LFO which is sample accurate",nil) then
+                        if moduleButton("+ AB Slider     ", "Map two positions A and B of plugin parameters on the selected track. Only parameters changed will be mapped") then
                             currentFocus = reaper.JS_Window_GetFocus()
-                            nameOpened = "LFO Native"
-                            --insertLfoFxAndAddContainerMapping(track)
-                            containerPos, insert_position = insertLocalLfoFxAndAddContainerMapping(track)
+                            nameOpened = "AB Slider"
+                            containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: AB Slider Modulator", nameOpened)
                         end 
+                        
                         if moduleButton("+ ACS Native    ", "Add an Audio Control Signal (sidechain) modulator which uses the build in Reaper ACS") then
                             currentFocus = reaper.JS_Window_GetFocus()
                             nameOpened = "ACS Native"
                             containerPos, insert_position = insertACSAndAddContainerMapping(track)
-                        end
+                        end 
                         
                         local tooltip = not isAdsr1Installed and 'Install the ReaPack by "tilr" first.\nClick to open webpage' or "Add an ADSR that uses the plugin created by tilr"
                         if not isAdsr1Installed then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorGrey) end
@@ -4298,6 +4562,19 @@ local function loop()
                             end
                         end  
                         if not isAdsr1Installed then reaper.ImGui_PopStyleColor(ctx) end
+                        
+                        if moduleButton("+ Keytracker    ", "Use the pitch of notes as a modulator") then 
+                            currentFocus = reaper.JS_Window_GetFocus()
+                            nameOpened = "Keytracker"
+                            containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: Keytracker Modulator", nameOpened)
+                        end 
+                        
+                        if moduleButton("+ LFO Native    ","Add an LFO modulator that uses the build in Reaper LFO which is sample accurate",nil) then
+                            currentFocus = reaper.JS_Window_GetFocus()
+                            nameOpened = "LFO Native"
+                            --insertLfoFxAndAddContainerMapping(track)
+                            containerPos, insert_position = insertLocalLfoFxAndAddContainerMapping(track)
+                        end 
                         
                         local tooltip = not isMseg1Installed and 'Install the ReaPack by "tilr" first.\nClick to open webpage' or "Add a multi-segment LFO / Envelope generator\nthat uses the plugin created by tilr"
                         if not isMseg1Installed then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorGrey) end
@@ -4315,25 +4592,29 @@ local function loop()
                         if moduleButton("+ MIDI Fader    ", "Use a MIDI fader as a modulator") then 
                             currentFocus = reaper.JS_Window_GetFocus()
                             nameOpened = "MIDI Fader"
-                            containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: MIDI Fader Modulator", "MIDI Fader")
+                            containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: MIDI Fader Modulator", nameOpened)
                         end 
-                        if moduleButton("+ AB Slider     ", "Map two positions A and B of plugin parameters on the selected track. Only parameters changed will be mapped") then
+                        
+                        
+                        if moduleButton("+ Note velocity", "Use note velocity as a modulator") then 
                             currentFocus = reaper.JS_Window_GetFocus()
-                            nameOpened = "AB Slider"
-                            containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: AB Slider Modulator", "AB Slider")
-                        end
+                            nameOpened = "Note velocity"
+                            containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: Note Velocity Modulator", nameOpened)
+                        end 
+                        
                         if moduleButton("+ 4-in-1-out ", "Map 4 inputs to 1 output") then
                             currentFocus = reaper.JS_Window_GetFocus()
                             nameOpened = "4-in-1-out"
-                            containerPos, insert_position = insertFXAndAddContainerMapping(track, "4-in-1-out", "4-in-1-out")
+                            containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: 4-in-1-out", nameOpened)
                         end  
+                        
+                        
                         
                         if moduleButton("+ [ANY] ", "Add any FX as a modulator") then  
                             local addFXToTrackWindowName, trackTitleIndex = openFxBrowserOnSpecificTrack() 
                             local fx_before = getAllTrackFXOnTrackSimple(track)  
                             local browserHwnd = reaper.JS_Window_GetForeground()
                             waitForWindowToClose(browserHwnd, function()
-                                reaper.ShowConsoleMsg("hej11\n")
                                 fx_after = getAllTrackFXOnTrackSimple(track)
                                 if #fx_after > #fx_before then
                                     -- An FX was added
@@ -4413,20 +4694,49 @@ local function loop()
                     reaper.ImGui_Separator(ctx)
                     
                     
+                    local count = #settings.userModulators
+                    menuHeader("Extra [" .. 1 .."]", "showExtra", "extra functions")
+                    if settings.showExtra and count > 0 then  
+                    
+                        -- set realearn params on the run after the first one
+                        if setTrackControlParamsOnIndex then
+                            setVolumePanAndSendControlPluginParams(track, setTrackControlParamsOnIndex) 
+                            setTrackControlParamsOnIndex = nil
+                        end
+                        
+                        local tooltip = not isReaLearnInstalled and 'Install Helgobox to have ReaLearn installed first.\nClick to open webpage' or "Control you volume, pan and send with modulators.\n[This is not a modulator and have to be placed outside the modulator folder]"
+                        if not isReaLearnInstalled then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorGrey) end
+                        if moduleButton("+ Track controls", tooltip) then
+                            if not isReaLearnInstalled then
+                                openWebpage("https://www.helgoboss.org/projects/realearn")
+                            else 
+                                currentFocus = reaper.JS_Window_GetFocus()
+                                insert_position = addVolumePanAndSendControlPlugin(track)  
+                                setTrackControlParamsOnIndex = insert_position
+                            end
+                        end  
+                        if not isReaLearnInstalled then reaper.ImGui_PopStyleColor(ctx) end
+                    end
+                    
+                    reaper.ImGui_Separator(ctx)
+                    
                     
                     if currentFocus then 
                         --reaper.ShowConsoleMsg(modulationContainerPos .. " - ".. insert_position .. "\n")
+                        --openCloseFx(track, insert_position, false)
+                        
                         fxIsShowing = reaper.TrackFX_GetOpen(track,insert_position)
                         fxIsFloating = reaper.TrackFX_GetFloatingWindow(track,insert_position)
                         if fxIsShowing then
                             reaper.TrackFX_Show(track, insert_position, fxIsFloating and 2 or 0) 
                         end
                         
-                        
-                        containerIsShowin = reaper.TrackFX_GetOpen(track,containerPos)
-                        containerIsFloating = reaper.TrackFX_GetFloatingWindow(track,containerPos)
-                        if containerIsShowin then
-                            reaper.TrackFX_Show(track, containerPos, containerIsFloating and 2 or 0) 
+                        if containerPos then
+                            containerIsShowin = reaper.TrackFX_GetOpen(track,containerPos)
+                            containerIsFloating = reaper.TrackFX_GetFloatingWindow(track,containerPos)
+                            if containerIsShowin then
+                                reaper.TrackFX_Show(track, containerPos, containerIsFloating and 2 or 0) 
+                            end
                         end
                         
                         --local newFocus = reaper.JS_Window_GetFocus() 
@@ -5212,22 +5522,24 @@ local function loop()
                     local isCollabsed = trackSettings.collabsModules[guid]
                     local fxInContainerIndex = m.fxInContainerIndex
                     
-                    if fxName:match("LFO Native") then
+                    if fxName:match("LFO Native Modulator") then
                         modulatorWrapper(nlfoModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m, nil, {0}) 
-                    elseif fxName:match("ADSR") then
+                    elseif fxName:match("ADSR%-1") then
                         modulatorWrapper(adsrModulator,name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,{10})
-                    elseif fxName:match("MSEG") then
+                    elseif fxName:match("MSEG%-1") then
                         modulatorWrapper(msegModulator,name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,{10})
                     elseif fxName:match("MIDI Fader Modulator") then
                         modulatorWrapper(midiCCModulator,name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,{0})
-                    elseif fxName:match("AB Slider") then
+                    elseif fxName:match("AB Slider Modulator") then
                         modulatorWrapper(abSliderModulator,name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,{0})
-                    elseif fxName:match("ACS Native") then
+                    elseif fxName:match("ACS Native Modulator") then
                         modulatorWrapper(acsModulator,name,modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,{0})
-                    elseif fxName:match("4%-in%-1%-out") then
+                    elseif fxName:match("4%-in%-1%-out Modulator") then
                         modulatorWrapper(_4in1Out,name,modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,{0})
-                    --elseif fxName:match("Generic Parameter Modulator") then
-                    --    modulatorWrapper(genericMappingModulator,name:gsub(" %(Generic mapping%)", ""),modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m)
+                    elseif fxName:match("Keytracker Modulator") then
+                        modulatorWrapper(keytrackerModulator,name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,{0})
+                    elseif fxName:match("Note Velocity Modulator") then
+                        modulatorWrapper(noteVelocityModulator,name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,{0})
                     else 
                         local numParams = reaper.TrackFX_GetNumParams(track,fxIndex) 
                         
@@ -5270,7 +5582,7 @@ local function loop()
     
     if ImGui.BeginPopup(ctx, 'popup##general', nil) then 
         reaper.ImGui_BeginGroup(ctx)
-        
+        reaper.ImGui_TextColored(ctx, colorGrey, appName .. " version " .. version)
         local menuWidth = 200
         ret, vertical = reaper.ImGui_Checkbox(ctx,"Vertical",settings.vertical)
         if ret then 
@@ -5374,10 +5686,10 @@ local function loop()
         reaper.ImGui_SameLine(ctx)
         
         reaper.ImGui_BeginGroup(ctx)
-        reaper.ImGui_TextColored(ctx, colorGrey, "Modules sections settings:")
+        reaper.ImGui_TextColored(ctx, colorGrey, "SECTION SETTINGS LAYOUT:")
         
-        --reaper.ImGui_NewLine(ctx)
-        reaper.ImGui_TextColored(ctx, colorGrey, "Plugins settings:")
+        reaper.ImGui_NewLine(ctx)
+        reaper.ImGui_TextColored(ctx, colorGrey, "PLUGINS:")
         
         local ret, val = reaper.ImGui_Checkbox(ctx,"Show containers",settings.showContainers) 
         if ret then 
@@ -5394,8 +5706,7 @@ local function loop()
             end
             setToolTipFunc("Color FX container grey in the plugin list")  
         end
-        
-        
+         
         
         sliderInMenu("Indents size for containers", "indentsAmount", menuWidth, 0, 8, "Set how large a visual indents size is shown for container content in the plugin list")
         
@@ -5405,6 +5716,34 @@ local function loop()
             saveSettings()
         end
         setToolTipFunc("Allow to scroll horizontal in the plugin list, when namas are too big for module")  
+        
+        
+        
+        reaper.ImGui_NewLine(ctx)
+        reaper.ImGui_TextColored(ctx, colorGrey, "PARAMETERS:")
+        
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Show search",settings.showSearch) 
+        if ret then 
+            settings.showSearch = val
+            saveSettings()
+        end
+        setToolTipFunc("Show search field in parameters area")  
+        
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Show only mapped",settings.showOnlyMapped) 
+        if ret then 
+            settings.showOnlyMapped = val
+            saveSettings()
+        end
+        setToolTipFunc("Show only mapped toggle in parameters area")  
+        
+        
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Show options on top of parameters",settings.showParameterOptionsOnTop) 
+        if ret then 
+            settings.showParameterOptionsOnTop = val
+            saveSettings()
+        end
+        setToolTipFunc("Show search field, only mapped on top of mappings")  
+        
         
         reaper.ImGui_EndGroup(ctx)
         
