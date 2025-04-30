@@ -1,12 +1,12 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.3.3
+-- @version 0.3.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + changed to move [ANY] added modulators instead of removing and inserting
-local version = "0.3.3"
+--   + changed how [ANY] detects closing the browser window 
+local version = "0.3.4"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -2438,8 +2438,7 @@ end
 
 local function waitForWindowToClose(browserHwnd, callback)  
     -- we need this to ensure we cancel even if window is not "destroyed", eg. FX Browser seems to still be there after closing
-    local visible = reaper.BR_Win32_IsWindowVisible(browserHwnd) 
-    
+    local visible = reaper.JS_Window_IsVisible(browserHwnd) 
     if (browserHwnd and visible) then 
         reaper.defer(function() waitForWindowToClose(browserHwnd, callback) end) 
     else
