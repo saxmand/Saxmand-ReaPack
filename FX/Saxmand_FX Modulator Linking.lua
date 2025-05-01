@@ -1,13 +1,13 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.3.7
+-- @version 0.3.8
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + added two options for showing track color
+--   + moved settings for track colors to general
 
-local version = "0.3.7"
+local version = "0.3.8"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -3900,14 +3900,6 @@ function appSettingsWindow()
             
             --reaper.ImGui_NewLine(ctx)
             
-            
-            
-            reaper.ImGui_EndGroup(ctx)
-            
-            reaper.ImGui_SameLine(ctx)
-            
-            reaper.ImGui_BeginGroup(ctx) 
-            reaper.ImGui_TextColored(ctx, colorGrey, "PLUGINS:")
             
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Track color around lock",settings.trackColorAroundLock) 
