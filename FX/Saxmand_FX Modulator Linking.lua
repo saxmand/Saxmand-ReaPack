@@ -1,18 +1,16 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.3.5
+-- @version 0.3.6
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + changed how [ANY] detects closing the browser window and added layover
---   + fixed bug where ADSR would crash the script
---   + moved settings to cogwheel
---   + moved open plugin pos
---   + started work on settings window
---   + added more options for plugin view
+--   + Better support for the addover layer for [ANY] on Windows. But does not work on docked browser
+--   + re-written way of registrering if a paremeter in an FX window was clicked. This will improve mapping and scroll
+--   + added option in settings to have focus of app follow FX window clicks. 
+--   + added option in settings to app select track when focus is on a new track
 
-local version = "0.3.5"
+local version = "0.3.6"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -94,7 +92,8 @@ local defaultSettings = {
     openSelectedFx = false,
     includeModulators = false, 
     showParametersForAllPlugins = false,
-    trackSelectionFollowFocus = false, 
+    trackSelectionFollowFocus = true,
+    focusFollowsFxClicks = false,
     showToolTip = true,
     sortAsType = false,
     partsHeight = 250,
@@ -125,6 +124,7 @@ local defaultSettings = {
     colorContainers = true,
     indentsAmount = 3,
     allowHorizontalScroll = false,
+    hidePluginTypeName = false,
     
     showOpenAll = true, 
     showAddTrackFX = true,
@@ -175,7 +175,7 @@ for key, value in pairs(defaultSettings) do
 end
 
 local function saveTrackSettings(track)
-    if track then
+    if track and reaper.ValidatePtr(track, "MediaTrack*") then
         local trackSettingsStr = json.encodeToJson(trackSettings)
         reaper.GetSetMediaTrackInfo_String(track, "P_EXT" .. ":" .. stateName, trackSettingsStr, true)
     end
@@ -466,6 +466,8 @@ function mapModulatorActivate(fxIndex, sliderNum, fxInContainerIndex, name)
         map = false
         sliderNumber = false
     else  
+        parameterTouched = nil
+        fxIndexTouched = nil
         hideParametersFromModulator = nil
         map = fxIndex
         mapName = name
@@ -3832,22 +3834,42 @@ function appSettingsWindow()
     end
     
     
+    ret, vertical = reaper.ImGui_Checkbox(ctx,"Vertical",settings.vertical)
+    if ret then 
+        settings.vertical = vertical 
+        saveSettings()
+       -- reaper.ImGui_CloseCurrentPopup(ctx) 
+    end
+    reaper.ImGui_SameLine(ctx)
+    ret, showToolTip = reaper.ImGui_Checkbox(ctx,"Show tips",settings.showToolTip)
+    if ret then 
+        settings.showToolTip = showToolTip
+        saveSettings()
+    end
+    
+    reaper.ImGui_SameLine(ctx)
+    ret, focusFollowsFxClicks = reaper.ImGui_Checkbox(ctx,"Focus follows click on FX", settings.focusFollowsFxClicks)
+    if ret then 
+        settings.focusFollowsFxClicks = focusFollowsFxClicks
+        saveSettings()
+    end 
+    setToolTipFunc("When touching a FX parameter, change the track focus (if the FX is from another track)")  
+    
+    if settings.focusFollowsFxClicks then
+        
+        reaper.ImGui_SameLine(ctx)
+        ret, trackSelectionFollowFocus = reaper.ImGui_Checkbox(ctx,"Select track on focus change", settings.trackSelectionFollowFocus)
+        if ret then 
+            settings.trackSelectionFollowFocus = trackSelectionFollowFocus
+            saveSettings()
+        end
+        setToolTipFunc("Select the specific when touching a FX parameter that's from another track")
+    end
+    
+    reaper.ImGui_NewLine(ctx)
     if ImGui.BeginTabBar(ctx, '##SettingsTabs') then
         if ImGui.BeginTabItem(ctx, 'Layout') then
         
-            reaper.ImGui_BeginGroup(ctx)
-            ret, vertical = reaper.ImGui_Checkbox(ctx,"Vertical",settings.vertical)
-            if ret then 
-                settings.vertical = vertical 
-                saveSettings()
-               -- reaper.ImGui_CloseCurrentPopup(ctx) 
-            end
-            
-            ret, showToolTip = reaper.ImGui_Checkbox(ctx,"Show tips",settings.showToolTip)
-            if ret then 
-                settings.showToolTip = showToolTip
-                saveSettings()
-            end
             
             --[[
             ret, useFineFaders = reaper.ImGui_Checkbox(ctx,"Use fine faders",settings.useFineFaders)
@@ -3860,21 +3882,19 @@ function appSettingsWindow()
             ]]
                     
             
+            reaper.ImGui_BeginGroup(ctx)
              
-            --ret, trackSelectionFollowFocus = reaper.ImGui_Checkbox(ctx,"Auto select track on plugin click", settings.trackSelectionFollowFocus)
-            --if ret then 
-            --    settings.trackSelectionFollowFocus = trackSelectionFollowFocus
-            --    saveSettings()
-            --end
             
             
             
             
+            reaper.ImGui_TextColored(ctx, colorGrey, "GENERAL:")
             
-            if sliderInMenu("Modules width", "partsWidth", menuWidth, 140, 400) then 
+            if sliderInMenu("Modules width", "partsWidth", menuWidth, 140, 400, "Set the width of modules. ONLY in horizontal mode") then 
                 setWindowWidth = true
             end
-            sliderInMenu("Modules height (only vertical)", "partsHeight", menuWidth, 80, 550) 
+            
+            sliderInMenu("Modules height", "partsHeight", menuWidth, 80, 550, "Set the height of modules. ONLY in vertical mode") 
             
             
             reaper.ImGui_NewLine(ctx)
@@ -3890,6 +3910,14 @@ function appSettingsWindow()
             
             reaper.ImGui_BeginGroup(ctx) 
             reaper.ImGui_TextColored(ctx, colorGrey, "PLUGINS:")
+            
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Hide plugin type from name",settings.hidePluginTypeName) 
+            if ret then 
+                settings.hidePluginTypeName = val
+                saveSettings()
+            end
+            setToolTipFunc("Hide plugin type from name")  
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Show containers",settings.showContainers) 
             if ret then 
@@ -3916,7 +3944,7 @@ function appSettingsWindow()
                 saveSettings()
             end
             setToolTipFunc("Allow to scroll horizontal in the plugin list, when namas are too big for module")  
-            
+             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Open all",settings.showOpenAll) 
             if ret then 
                 settings.showOpenAll = val
@@ -3940,7 +3968,12 @@ function appSettingsWindow()
             setToolTipFunc("Show Open All and Add Track FX on top of plugins")  
             
             
-            reaper.ImGui_NewLine(ctx)
+            reaper.ImGui_EndGroup(ctx)
+            
+            reaper.ImGui_SameLine(ctx)
+            
+            reaper.ImGui_BeginGroup(ctx) 
+            
             reaper.ImGui_TextColored(ctx, colorGrey, "PARAMETERS:")
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Search",settings.showSearch) 
@@ -3965,6 +3998,23 @@ function appSettingsWindow()
             end
             setToolTipFunc("Show search field, only mapped on top of mappings")  
             
+            
+            reaper.ImGui_EndGroup(ctx)
+            
+            reaper.ImGui_SameLine(ctx)
+            
+            reaper.ImGui_BeginGroup(ctx) 
+            
+            reaper.ImGui_TextColored(ctx, colorGrey, "MODULES:")
+            
+            
+            reaper.ImGui_EndGroup(ctx)
+            
+            reaper.ImGui_SameLine(ctx)
+            
+            reaper.ImGui_BeginGroup(ctx) 
+            
+            reaper.ImGui_TextColored(ctx, colorGrey, "MODULATORS:")
             
             reaper.ImGui_EndGroup(ctx)
             
@@ -4056,6 +4106,8 @@ function addingAnyModuleWindow(hwnd, isDocked)
     local avHeight = avTop
     if isApple then
         y = avHeight - y
+    else
+        y = y + (isDocked and 4 or - 20)
     end    
     local topbar = 32
     y = y - topbar
@@ -4074,8 +4126,9 @@ function addingAnyModuleWindow(hwnd, isDocked)
     --    reaper.ImGui_SetNextWindowPos(ctx, x + w - windowW - 160, y + h - 4)
     --    reaper.ImGui_SetNextWindowSize(ctx, windowW, topbar)
     --end
-    
-    local rv, open = reaper.ImGui_Begin(ctx, appName .. 'AddingAnyModule', true, reaper.ImGui_WindowFlags_NoBackground() | reaper.ImGui_WindowFlags_NoDocking() | reaper.ImGui_WindowFlags_TopMost() | reaper.ImGui_WindowFlags_NoDecoration() | reaper.ImGui_WindowFlags_NoMove()) 
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), colorTransparent)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorTransparent)
+    local rv, open = reaper.ImGui_Begin(ctx, appName .. 'AddingAnyModule', true, reaper.ImGui_WindowFlags_NoDocking() | reaper.ImGui_WindowFlags_TopMost() | reaper.ImGui_WindowFlags_NoDecoration() | reaper.ImGui_WindowFlags_NoMove()) 
     if not rv then return open end
     
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
@@ -4092,8 +4145,91 @@ function addingAnyModuleWindow(hwnd, isDocked)
     reaper.ImGui_PopStyleColor(ctx,5)
     reaper.ImGui_PopStyleVar(ctx, 2)
     reaper.ImGui_End(ctx)
+    
+    reaper.ImGui_PopStyleColor(ctx,2)
     return open
 end
+
+
+
+function isFXWindowUnderMouse()
+    local x, y = reaper.GetMousePosition()
+    local hwnd = reaper.JS_Window_FromPoint(x, y)
+  
+    while hwnd ~= nil and reaper.JS_Window_IsWindow(hwnd) do
+        local title = reaper.JS_Window_GetTitle(hwnd)
+        if title and (title:match("FX:") or title:match("VST:") or title:match("JS:") or title:match("Clap:")) then
+        --if title and title:match(" - Track") then
+          return true, title
+        end
+        hwnd = reaper.JS_Window_GetParent(hwnd)
+    end
+  
+    return false, ""
+end
+
+local fxWindowClicked, parameterFound, parameterChanged, focusDelta
+function updateTouchedFX()
+    function setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp)
+        trackIndexTouched = trackidx
+        fxIndexTouched = fxidx
+        parameterTouched = param
+        trackTouched = trackTemp
+    end
+    
+    local parameterUpdated = false
+    local retval, trackidx, itemidx, takeidx, fxidx, param = reaper.GetTouchedOrFocusedFX( 0 )  
+    if retval then
+        local trackTemp = reaper.GetTrack(0,trackidx)  
+        local deltaParam = reaper.TrackFX_GetNumParams(trackTemp, fxidx) - 1  
+        if isMouseDown then  
+            if not fxWindowClicked  then
+                fxWindowClicked = isFXWindowUnderMouse() 
+            end
+            if fxWindowClicked then 
+                focusDelta = false
+                if not parameterFound then 
+                    if deltaParam ~= param then 
+                        parameterFound = true 
+                        parameterUpdated = true
+                        setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp)
+                    end
+                else 
+                    if param ~= deltaParam then
+                        if not parameterChanged then 
+                            -- not used right now
+                            parameterChanged = true
+                        end  
+                    end
+                end
+            end
+        else  
+            -- we keep checking that delta is set, so we are ready for next click
+            if param ~= deltaParam then  
+                -- if we have not found the parameter (like clicking Rea plugins) we find it on release
+                if fxWindowClicked and not parameterFound and not focusDelta then  
+                    parameterFound = true 
+                    parameterUpdated = true
+                    setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp)
+                end 
+                
+                -- sets the Delta value to it's current value, to clear the last touched or focused fx
+                local deltaVal = reaper.TrackFX_GetParam(trackTemp, fxidx, deltaParam)
+                reaper.TrackFX_SetParam(trackTemp, fxidx, deltaParam, deltaVal) 
+                -- we store that we have focused delta, so we do not find parameter twice on release above
+                focusDelta = true
+            end
+            
+            -- we remove the variables for next click
+            parameterChanged = nil
+            parameterFound = nil
+            fxWindowClicked = nil
+        end
+    end
+    return parameterUpdated
+end
+
+
 
 local fx_before, fx_after, firstBrowserHwnd
 local dock_id, is_docked
@@ -4107,8 +4243,8 @@ local function loop()
   isCtrlPressed = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl())
   isShiftPressed = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift())
   isSuperPressed = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Super())
-  isMouseDown = reaper.ImGui_IsMouseDown(ctx,reaper.ImGui_MouseButton_Left())
-  isMouseReleased = reaper.ImGui_IsMouseReleased(ctx,reaper.ImGui_MouseButton_Left())
+  isMouseDownImgui = reaper.ImGui_IsMouseDown(ctx,reaper.ImGui_MouseButton_Left())
+  isMouseReleasedImgui = reaper.ImGui_IsMouseReleased(ctx,reaper.ImGui_MouseButton_Left())
   --isMouseReleased = reaper.JS_Mouse_GetState(1)
   isMouseDragging = reaper.ImGui_IsMouseDragging(ctx,reaper.ImGui_MouseButton_Left()) 
   click_pos_x, click_pos_y = ImGui.GetMouseClickedPos(ctx, 0) 
@@ -4118,10 +4254,20 @@ local function loop()
   local scrollFlags = isAltPressed and reaper.ImGui_WindowFlags_NoScrollWithMouse() or reaper.ImGui_WindowFlags_None()
   
   
+
+  
+  state                    = reaper.JS_Mouse_GetState(-1)
+  shift                    = (state & 0x08) ~= 0
+  super                    = (state & 0x04) ~= 0
+  alt                      = (state & 0x10) ~= 0
+  ctrl                     = (state & 0x20) ~= 0
+  isMouseDown              = (state & 0x01) ~= 0
+  isMouseReleased          = (state & 0x01) == 0
+  isMouseRightDown         = (state & 0x02) ~= 0
   
   
   
-  
+  --[[
   --if not ignoreFocusBecauseOfUiClick and not isMouseReleased then
       retvaltouch, trackidx_fromtouch, itemidx_fromtouch, takeidx_fromtouch, fxnumber_fromtouch, paramnumber_fromtouch = reaper.GetTouchedOrFocusedFX( 0 )
   --end
@@ -4238,6 +4384,42 @@ local function loop()
       end
   end
   ignoreFocusBecauseOfUiClick = nil
+  ]]
+  
+  firstSelectedTrack = reaper.GetSelectedTrack(0,0)
+  if not track or (firstSelectedTrack ~= track and not locked) then 
+      track = firstSelectedTrack 
+      
+      mapModulatorActivate(nil)
+  end
+  
+  
+  updateTouchedFX()
+  
+  if settings.focusFollowsFxClicks and trackTouched and track ~= trackTouched then
+      if settings.trackSelectionFollowFocus then
+          reaper.SetOnlyTrackSelected(trackTouched)
+      end
+      track = trackTouched
+  end
+  
+  if track == trackTouched and fxIndexTouched and parameterTouched then 
+      fxnumber = fxIndexTouched
+      paramnumber = parameterTouched 
+      if map then
+          setParamaterToLastTouched(track, modulationContainerPos, map, fxnumber, paramnumber, reaper.TrackFX_GetParam(track,fxnumber, paramnumber), (mapName:match("LFO") ~= nil and (settings.defaultLFODirection - 3)/2 or (settings.defaultDirection - 3) / 2), settings.defaultMappingWidth / 100)
+      end
+      
+      if (lastFxNumber ~= fxnumber or lastParamNumber ~= paramnumber) then
+          scroll = paramnumber 
+      end
+      
+      lastFxNumber = fxnumber
+      lastParamNumber = paramnumber
+      --track = trackTouched
+  end
+  
+  
   
   if not fxnumber then fxnumber = 0 end
   if not paramnumber then paramnumber = 0 end
@@ -4251,6 +4433,7 @@ local function loop()
           if trackSettings then
               trackSettings.fxnumber = fxnumber
               trackSettings.paramnumber = paramnumber
+              -- TODO: check if project is still open
               saveTrackSettings(lastTrack)
           end
           
@@ -4620,6 +4803,9 @@ local function loop()
                         if not f.isModulator and (settings.showContainers or (not settings.showContainers and not f.isContainer)) then
                             count  = count  + 1
                             local name = f.name
+                            if settings.hidePluginTypeName then
+                                name = name:gsub("^[^:]+: ", "")
+                            end
                             if f.isContainer then name = name .. ":" end
                             local indentStr = string.rep(" ", settings.indentsAmount)
                             if f.indent then name = string.rep(indentStr, f.indent) .. name end
