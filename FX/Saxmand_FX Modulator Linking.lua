@@ -1,14 +1,13 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.4.0
+-- @version 0.4.1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + added validation of tracks, to avoid error when closing session
---   + disable LOCK if changing project
+--   + option to hide parameters panel
 
-local version = "0.4.0"
+local version = "0.4.1"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -133,6 +132,7 @@ local defaultSettings = {
     showPluginOptionsOnTop = true,
     
       -- Parameters
+    showParametersPanel = true,
     showSearch = true,
     showOnlyMapped = true,
     showParameterOptionsOnTop = true,
@@ -3995,6 +3995,13 @@ function appSettingsWindow()
             
             reaper.ImGui_TextColored(ctx, colorGrey, "PARAMETERS:")
             
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel",settings.showParametersPanel) 
+            if ret then 
+                settings.showParametersPanel = val
+                saveSettings()
+            end
+            setToolTipFunc("Show or hide the parameters panel")  
+            
             local ret, val = reaper.ImGui_Checkbox(ctx,"Search",settings.showSearch) 
             if ret then 
                 settings.showSearch = val
@@ -4977,100 +4984,101 @@ local function loop()
             end
         end
         
+        if settings.showParametersPanel then
         
-        ImGui.BeginGroup(ctx) 
-        if not settings.vertical then
-            --reaper.ImGui_Indent(ctx)
-        end
-        click = false
-        title = "PARAMETERS" --.. (trackSettings.hideParameters and "" or (" (" .. (focusedParamNumber + 1) .. "/" .. #focusedTrackFXParametersData .. ")"))
-        if trackSettings.hideParameters then  
-            if modulePartButton(title .. "", not trackSettings.hideParameters and "Minimize parameters" or "Maximize parameters",settings.vertical and partsWidth or nil, true, true ) then 
-                click = true
+            ImGui.BeginGroup(ctx) 
+            if not settings.vertical then
+                --reaper.ImGui_Indent(ctx)
             end
-        else 
-            reaper.ImGui_SetNextWindowSizeConstraints(ctx, 0, 30, tableWidth, height)
-            local visible = reaper.ImGui_BeginChild(ctx, 'Parameters', -0.0, 0.0, childFlags,reaper.ImGui_WindowFlags_MenuBar() | scrollFlags)
-            if visible then
-                if reaper.ImGui_BeginMenuBar(ctx) then
-                     title = "PARAMETERS" --.. (trackSettings.hideParameters and "" or (" (" .. (focusedParamNumber + 1) .. "/" .. #focusedTrackFXParametersData .. ")"))
-                     if titleButtonStyle(title, not trackSettings.hideParameters and "Minimize parameters" or "Maximize parameters",settings.vertical and partsWidth or nil, true, (not settings.vertical and trackSettings.hideParameters)) then 
-                         click = true
-                     end
-                    reaper.ImGui_EndMenuBar(ctx)
+            click = false
+            title = "PARAMETERS" --.. (trackSettings.hideParameters and "" or (" (" .. (focusedParamNumber + 1) .. "/" .. #focusedTrackFXParametersData .. ")"))
+            if trackSettings.hideParameters then  
+                if modulePartButton(title .. "", not trackSettings.hideParameters and "Minimize parameters" or "Maximize parameters",settings.vertical and partsWidth or nil, true, true ) then 
+                    click = true
                 end
-                
-                if settings.showParameterOptionsOnTop then
-                    searchAndOnlyMapped()
-                end
-                
-                size = nil
-                
-                
-                -- check if any parameters links a active
-                local someAreActive = false
-                if settings.onlyMapped then
-                    for _, p in ipairs(focusedTrackFXParametersData) do 
-                        if p.isParameterLinkActive then someAreActive = true; break end
+            else 
+                reaper.ImGui_SetNextWindowSizeConstraints(ctx, 0, 30, tableWidth, height)
+                local visible = reaper.ImGui_BeginChild(ctx, 'Parameters', -0.0, 0.0, childFlags,reaper.ImGui_WindowFlags_MenuBar() | scrollFlags)
+                if visible then
+                    if reaper.ImGui_BeginMenuBar(ctx) then
+                         title = "PARAMETERS" --.. (trackSettings.hideParameters and "" or (" (" .. (focusedParamNumber + 1) .. "/" .. #focusedTrackFXParametersData .. ")"))
+                         if titleButtonStyle(title, not trackSettings.hideParameters and "Minimize parameters" or "Maximize parameters",settings.vertical and partsWidth or nil, true, (not settings.vertical and trackSettings.hideParameters)) then 
+                             click = true
+                         end
+                        reaper.ImGui_EndMenuBar(ctx)
                     end
-                    --if not someAreActive then settings.onlyMapped = false; saveTrackSettings(track) end
-                end
-                
-                local curPosY = (settings.showOnlyMapped or settings.showSearch) and (42 + (settings.showOnlyMapped and 24 or 0) + (settings.showSearch and 24 or 0)) or 40--reaper.ImGui_GetCursorPosY(ctx)
-                if reaper.ImGui_BeginChild(ctx, "parametersForFocused", tableWidth-16, height-curPosY, nil,scrollFlags) then
-                    for i, p in ipairs(focusedTrackFXParametersData) do 
-                        --if p.param == focusedParamNumber then 
-                        --posX, posY = reaper.ImGui_GetCursorPos(ctx) 
-                        --end
-                        --if not size then startPosY = reaper.ImGui_GetCursorPosY(ctx) end
-                        local pMappedShown = not settings.showOnlyMapped or not someAreActive or not settings.onlyMapped or (settings.onlyMapped and p.isParameterLinkActive)
-                        local pSearchShown = not settings.showSearch or not settings.search or settings.search == "" or searchName(p.name, settings.search)
-                        
-                        local pTrackControlShown = true
-                        if p.fxName == "Track controls" and i > 35 then
-                            pTrackControlShown = false
-                        end 
-                        
-                        if pMappedShown and pSearchShown and pTrackControlShown then
-                            --reaper.ImGui_Text(ctx, "")
-                            reaper.ImGui_Spacing(ctx)
-                            parameterNameAndSliders("parameter",pluginParameterSlider,p, focusedParamNumber,nil,nil,nil,nil,nil,nil,nil,nil,true)
-                        --if not size then size = reaper.ImGui_GetCursorPosY(ctx) - startPosY end
-                            --reaper.ImGui_Separator(ctx)
-                            
-                            --reaper.ImGui_NewLine(ctx)
-                            
-                            if scroll and p.param == scroll then
-                                ImGui.SetScrollHereY(ctx,  p.isParameterLinkActive and 0.22 or 0.13) 
-                                removeScroll = true
-                            end
+                    
+                    if settings.showParameterOptionsOnTop then
+                        searchAndOnlyMapped()
+                    end
+                    
+                    size = nil
+                    
+                    
+                    -- check if any parameters links a active
+                    local someAreActive = false
+                    if settings.onlyMapped then
+                        for _, p in ipairs(focusedTrackFXParametersData) do 
+                            if p.isParameterLinkActive then someAreActive = true; break end
                         end
-                        --if p.param == focusedParamNumber then
-                         --   reaper.ImGui_DrawList_AddRect(draw_list, windowPosX + posX, windowPosY+ posY, windowPosX+ posX+10, windowPosY +posY+10,colorBlue)
-                        --end
+                        --if not someAreActive then settings.onlyMapped = false; saveTrackSettings(track) end
                     end
+                    
+                    local curPosY = (settings.showOnlyMapped or settings.showSearch) and (42 + (settings.showOnlyMapped and 24 or 0) + (settings.showSearch and 24 or 0)) or 40--reaper.ImGui_GetCursorPosY(ctx)
+                    if reaper.ImGui_BeginChild(ctx, "parametersForFocused", tableWidth-16, height-curPosY, nil,scrollFlags) then
+                        for i, p in ipairs(focusedTrackFXParametersData) do 
+                            --if p.param == focusedParamNumber then 
+                            --posX, posY = reaper.ImGui_GetCursorPos(ctx) 
+                            --end
+                            --if not size then startPosY = reaper.ImGui_GetCursorPosY(ctx) end
+                            local pMappedShown = not settings.showOnlyMapped or not someAreActive or not settings.onlyMapped or (settings.onlyMapped and p.isParameterLinkActive)
+                            local pSearchShown = not settings.showSearch or not settings.search or settings.search == "" or searchName(p.name, settings.search)
+                            
+                            local pTrackControlShown = true
+                            if p.fxName == "Track controls" and i > 35 then
+                                pTrackControlShown = false
+                            end 
+                            
+                            if pMappedShown and pSearchShown and pTrackControlShown then
+                                --reaper.ImGui_Text(ctx, "")
+                                reaper.ImGui_Spacing(ctx)
+                                parameterNameAndSliders("parameter",pluginParameterSlider,p, focusedParamNumber,nil,nil,nil,nil,nil,nil,nil,nil,true)
+                            --if not size then size = reaper.ImGui_GetCursorPosY(ctx) - startPosY end
+                                --reaper.ImGui_Separator(ctx)
+                                
+                                --reaper.ImGui_NewLine(ctx)
+                                
+                                if scroll and p.param == scroll then
+                                    ImGui.SetScrollHereY(ctx,  p.isParameterLinkActive and 0.22 or 0.13) 
+                                    removeScroll = true
+                                end
+                            end
+                            --if p.param == focusedParamNumber then
+                             --   reaper.ImGui_DrawList_AddRect(draw_list, windowPosX + posX, windowPosY+ posY, windowPosX+ posX+10, windowPosY +posY+10,colorBlue)
+                            --end
+                        end
+                        reaper.ImGui_EndChild(ctx)
+                    end
+                    
+                    if not settings.showParameterOptionsOnTop then
+                        searchAndOnlyMapped()
+                    end
+                    
                     reaper.ImGui_EndChild(ctx)
-                end
+                end 
                 
-                if not settings.showParameterOptionsOnTop then
-                    searchAndOnlyMapped()
-                end
                 
-                reaper.ImGui_EndChild(ctx)
-            end 
+                
+            end
+            if click then 
+                trackSettings.hideParameters = not trackSettings.hideParameters  
+                saveTrackSettings(track)
+            end
             
+            ImGui.EndGroup(ctx)
             
-            
+            placingOfNextElement()
         end
-        if click then 
-            trackSettings.hideParameters = not trackSettings.hideParameters  
-            saveTrackSettings(track)
-        end
-        
-        ImGui.EndGroup(ctx)
-        
-        placingOfNextElement()
-        
 
         
         ImGui.BeginGroup(ctx) 
