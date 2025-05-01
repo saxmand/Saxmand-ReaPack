@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="57d92c3ec601091e903e8eea4a76a97dddb7afd2" name="Saxmand ReaPack">
+<index version="1" commit="0062bedd9465b93d5800936a71b35feb0e03b284" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_FX Modulator Linking.lua" type="script" desc="FX Modulator Linking">
       <version name="0.1.0" author="saxmand" time="2025-04-19T03:17:01Z">
@@ -277,6 +277,22 @@
         <source type="effect" file="../FX Modulator Linking/Note Velocity Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/57d92c3ec601091e903e8eea4a76a97dddb7afd2/FX%20Modulator%20Linking/Note%20Velocity%20Modulator.jsfx</source>
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/57d92c3ec601091e903e8eea4a76a97dddb7afd2/FX/Helpers/json.lua</source>
         <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/57d92c3ec601091e903e8eea4a76a97dddb7afd2/FX/Helpers/special_buttons.lua</source>
+      </version>
+      <version name="0.3.6" author="Saxmand" time="2025-05-01T21:50:28Z">
+        <changelog><![CDATA[+ Better support for the addover layer for [ANY] on Windows. But does not work on docked browser
++ re-written way of registrering if a paremeter in an FX window was clicked. This will improve mapping and scroll
++ added option in settings to have focus of app follow FX window clicks. 
++ added option in settings to app select track when focus is on a new track]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/0062bedd9465b93d5800936a71b35feb0e03b284/FX/Saxmand_FX%20Modulator%20Linking.lua</source>
+        <source type="effect" file="../FX Modulator Linking/4-in-1-out Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/0062bedd9465b93d5800936a71b35feb0e03b284/FX%20Modulator%20Linking/4-in-1-out%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/AB Slider Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/0062bedd9465b93d5800936a71b35feb0e03b284/FX%20Modulator%20Linking/AB%20Slider%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/ACS Native Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/0062bedd9465b93d5800936a71b35feb0e03b284/FX%20Modulator%20Linking/ACS%20Native%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Keytracker Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/0062bedd9465b93d5800936a71b35feb0e03b284/FX%20Modulator%20Linking/Keytracker%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/LFO Native Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/0062bedd9465b93d5800936a71b35feb0e03b284/FX%20Modulator%20Linking/LFO%20Native%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/MIDI Fader Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/0062bedd9465b93d5800936a71b35feb0e03b284/FX%20Modulator%20Linking/MIDI%20Fader%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Note Velocity Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/0062bedd9465b93d5800936a71b35feb0e03b284/FX%20Modulator%20Linking/Note%20Velocity%20Modulator.jsfx</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/0062bedd9465b93d5800936a71b35feb0e03b284/FX/Helpers/json.lua</source>
+        <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/0062bedd9465b93d5800936a71b35feb0e03b284/FX/Helpers/special_buttons.lua</source>
       </version>
     </reapack>
   </category>
