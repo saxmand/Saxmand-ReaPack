@@ -1,13 +1,13 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.4.1
+-- @version 0.4.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + option to hide parameters panel
+--   + moved catching of fx parameters to be inside parameters panel, so not loading if not shown
 
-local version = "0.4.1"
+local version = "0.4.2"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -4494,7 +4494,6 @@ local function loop()
   end
   
   
-  
   if track then 
       modulationContainerPos = getModulationContainerPos(track)
       
@@ -4504,7 +4503,7 @@ local function loop()
       
       focusedTrackFXNames, parameterLinks = getAllTrackFXOnTrack(track)
       if fxnumber and modulationContainerPos ~= fxnumber and not modulatorFxIndexes[fxnumber] then
-          focusedTrackFXParametersData = getAllParametersFromTrackFx(track, fxnumber) 
+          --focusedTrackFXParametersData = getAllParametersFromTrackFx(track, fxnumber) 
       else
           for i, f in ipairs(focusedTrackFXNames) do
               if not f.isModulator then
@@ -4513,6 +4512,7 @@ local function loop()
           end
       end
   else 
+      fxnumber = nil
       focusedTrackFXNames = {}
       parameterLinks = {}
       focusedTrackFXParametersData = {}
@@ -4985,7 +4985,11 @@ local function loop()
         end
         
         if settings.showParametersPanel then
-        
+            if track and fxnumber then 
+                focusedTrackFXParametersData = getAllParametersFromTrackFx(track, fxnumber) 
+            end
+            
+            
             ImGui.BeginGroup(ctx) 
             if not settings.vertical then
                 --reaper.ImGui_Indent(ctx)
