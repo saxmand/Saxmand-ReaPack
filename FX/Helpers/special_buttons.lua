@@ -95,17 +95,25 @@ function buttons.openClose(ctx, id, x, y, size, open)
     return click
 end
 
-function buttons.lock(ctx, id, size, lock, tooltipText, lockedColor, unlockedColor, background, hover, active, vertical)
+function buttons.lock(ctx, id, size, lock, tooltipText, lockedColor, unlockedColor, background, hover, active, vertical, border)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),hover)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),active)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),background)
     local clicked = false
     
     reaper.ImGui_PushStyleVar(ctx,reaper.ImGui_StyleVar_FrameRounding(),5)
+
+    reaper.ImGui_PushStyleVar(ctx,reaper.ImGui_StyleVar_FrameBorderSize(),border and 1 or 0)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(),border and border or colorTransparent)
     
     if reaper.ImGui_Button(ctx,"##" .. id, size, size) then
         clicked = true
     end 
+
+    reaper.ImGui_PopStyleVar(ctx)
+    reaper.ImGui_PopStyleColor(ctx,1)
+
+
     if reaper.ImGui_IsItemHovered(ctx) and tooltipText then
         reaper.ImGui_SetTooltip(ctx,tooltipText)    
     end

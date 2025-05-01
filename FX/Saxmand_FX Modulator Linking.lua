@@ -1,16 +1,13 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.3.6
+-- @version 0.3.7
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + Better support for the addover layer for [ANY] on Windows. But does not work on docked browser
---   + re-written way of registrering if a paremeter in an FX window was clicked. This will improve mapping and scroll
---   + added option in settings to have focus of app follow FX window clicks. 
---   + added option in settings to app select track when focus is on a new track
+--   + added two options for showing track color
 
-local version = "0.3.6"
+local version = "0.3.7"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -119,6 +116,10 @@ local defaultSettings = {
     mapOnce = false,
     
     -- Visual settings
+      -- Name
+    trackColorAroundLock = true,
+    showTrackColorLine = false,
+    
       -- Plugins
     showContainers = true,
     colorContainers = true,
@@ -3897,13 +3898,32 @@ function appSettingsWindow()
             sliderInMenu("Modules height", "partsHeight", menuWidth, 80, 550, "Set the height of modules. ONLY in vertical mode") 
             
             
-            reaper.ImGui_NewLine(ctx)
+            --reaper.ImGui_NewLine(ctx)
             
             
             
-            if reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Escape(),false) then
-                reaper.ImGui_CloseCurrentPopup(ctx)
+            reaper.ImGui_EndGroup(ctx)
+            
+            reaper.ImGui_SameLine(ctx)
+            
+            reaper.ImGui_BeginGroup(ctx) 
+            reaper.ImGui_TextColored(ctx, colorGrey, "PLUGINS:")
+            
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Track color around lock",settings.trackColorAroundLock) 
+            if ret then 
+                settings.trackColorAroundLock = val
+                saveSettings()
             end
+            setToolTipFunc("Have track color shown as a border around the lock")  
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Track color as line",settings.showTrackColorLine) 
+            if ret then 
+                settings.showTrackColorLine = val
+                saveSettings()
+            end
+            setToolTipFunc("Have track color as a line on the left in horizontal mode or on top in vertical mode")  
+            
             reaper.ImGui_EndGroup(ctx)
             
             reaper.ImGui_SameLine(ctx)
@@ -4646,9 +4666,16 @@ local function loop()
         local pansHeight = winH-y-8
         --reaper.ImGui_SameLine(ctx)
         
+        local trackColor = colorTransparent
+        if track and settings.trackColorAroundLock then 
+            local color = reaper.GetTrackColor(track)
+            trackColor = color & 0x1000000 ~= 0 and (color << 8) | 0xFF or colorTransparent
+        end
+        
+        
         local widthOfTrackName = settings.vertical and partsWidth - 24 - 24 or pansHeight - 24 - 48
         if not settings.vertical then
-            if specialButtons.lock(ctx, "lock", 24, locked, "Lock to selected track", colorWhite, colorGrey, colorTransparent, colorDarkGrey, menuGreyActive, settings.vertical) then
+            if specialButtons.lock(ctx, "lock", 24, locked, "Lock to selected track", colorWhite, colorGrey, colorTransparent, colorDarkGrey, menuGreyActive, settings.vertical, trackColor) then
                 locked = not locked and track or false 
                 --reaper.SetExtState(stateName, "locked", locked and "1" or "0", true)
             end
@@ -4682,6 +4709,8 @@ local function loop()
                 --reaper.SetExtState(stateName, "locked", locked and "1" or "0", true)
             end
         end
+        
+        
         
         
         --reaper.ImGui_SetCursorPos(ctx, x +20, y + 20)
@@ -6182,6 +6211,16 @@ local function loop()
     if reaper.ImGui_IsWindowHovered(ctx) then
       --  reaper.ShowConsoleMsg(tostring(reaper.ImGui_IsAnyItemHovered(ctx)) .. "\n")
     end
+    
+    
+    if track and settings.showTrackColorLine then 
+        local color = reaper.GetTrackColor(track)
+        local trackColor = color & 0x1000000 ~= 0 and (color << 8) | 0xFF or colorTransparent
+        local lineWidth = settings.vertical and winW or 0
+        local lineHeight = settings.vertical and 0 or winH
+        reaper.ImGui_DrawList_AddLine(draw_list, windowPosX, windowPosY, windowPosX + lineWidth, windowPosY + lineHeight, trackColor,4)
+    end
+    
     
     
     ImGui.End(ctx)
