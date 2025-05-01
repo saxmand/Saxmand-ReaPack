@@ -1,13 +1,13 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.3.8
+-- @version 0.3.9
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + moved settings for track colors to general
+--   + map once works on FX windows as well now
 
-local version = "0.3.8"
+local version = "0.3.9"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -4420,6 +4420,7 @@ local function loop()
       paramnumber = parameterTouched 
       if map then
           setParamaterToLastTouched(track, modulationContainerPos, map, fxnumber, paramnumber, reaper.TrackFX_GetParam(track,fxnumber, paramnumber), (mapName:match("LFO") ~= nil and (settings.defaultLFODirection - 3)/2 or (settings.defaultDirection - 3) / 2), settings.defaultMappingWidth / 100)
+          if settings.mapOnce then map = false; sliderNumber = false end
       end
       
       if (lastFxNumber ~= fxnumber or lastParamNumber ~= paramnumber) then
