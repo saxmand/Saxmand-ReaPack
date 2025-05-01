@@ -1,13 +1,14 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.3.9
+-- @version 0.4.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + map once works on FX windows as well now
+--   + added validation of tracks, to avoid error when closing session
+--   + disable LOCK if changing project
 
-local version = "0.3.9"
+local version = "0.4.0"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -175,8 +176,14 @@ for key, value in pairs(defaultSettings) do
     end
 end
 
-local function saveTrackSettings(track)
+function validateTrack(track)
     if track and reaper.ValidatePtr(track, "MediaTrack*") then
+        return true
+    end
+end
+
+local function saveTrackSettings(track)
+    if validateTrack(track) then
         local trackSettingsStr = json.encodeToJson(trackSettings)
         reaper.GetSetMediaTrackInfo_String(track, "P_EXT" .. ":" .. stateName, trackSettingsStr, true)
     end
@@ -4191,7 +4198,7 @@ function updateTouchedFX()
     
     local parameterUpdated = false
     local retval, trackidx, itemidx, takeidx, fxidx, param = reaper.GetTouchedOrFocusedFX( 0 )  
-    if retval then
+    if retval and trackidx then
         local trackTemp = reaper.GetTrack(0,trackidx)  
         local deltaParam = reaper.TrackFX_GetNumParams(trackTemp, fxidx) - 1  
         if isMouseDown then  
@@ -4398,6 +4405,15 @@ local function loop()
   ignoreFocusBecauseOfUiClick = nil
   ]]
   
+  -- remove lock if we change project
+  currentProject = reaper.EnumProjects(-1)
+  if not lastCurrentProject or lastCurrentProject ~= currentProject then
+      lastCurrentProject = currentProject
+      --track = nil
+      locked = false
+  end
+      
+  
   firstSelectedTrack = reaper.GetSelectedTrack(0,0)
   if not track or (firstSelectedTrack ~= track and not locked) then 
       track = firstSelectedTrack 
@@ -4408,14 +4424,14 @@ local function loop()
   
   updateTouchedFX()
   
-  if settings.focusFollowsFxClicks and trackTouched and track ~= trackTouched then
+  if settings.focusFollowsFxClicks and trackTouched and track ~= trackTouched and validateTrack(trackTouched) then
       if settings.trackSelectionFollowFocus then
           reaper.SetOnlyTrackSelected(trackTouched)
       end
       track = trackTouched
   end
   
-  if track == trackTouched and fxIndexTouched and parameterTouched then 
+  if validateTrack(trackTouched) and track == trackTouched and fxIndexTouched and parameterTouched then 
       fxnumber = fxIndexTouched
       paramnumber = parameterTouched 
       if map then
