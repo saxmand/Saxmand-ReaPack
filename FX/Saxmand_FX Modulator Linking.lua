@@ -1,15 +1,14 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.4.3
+-- @version 0.4.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + added floating modules panel, WIP
---   + added fix for corner case when using on default blank project (https://forum.cockos.com/showpost.php?p=2863717&postcount=185)
+--   + fixed cropping of open plugin/gui window when very small width is used
+--   + fixed show above not working for parameters
 
-
-local version = "0.4.3"
+local version = "0.4.4"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -24,11 +23,17 @@ font = reaper.ImGui_CreateFont('Arial', 14)
 font1 = reaper.ImGui_CreateFont('Arial', 15)
 font2 = reaper.ImGui_CreateFont('Arial', 17)
 font10 = reaper.ImGui_CreateFont('Arial', 10)
+font11 = reaper.ImGui_CreateFont('Arial', 11)
+font12 = reaper.ImGui_CreateFont('Arial', 12)
+font13 = reaper.ImGui_CreateFont('Arial', 13)
 -- imgui_font
 reaper.ImGui_Attach(ctx, font)
 reaper.ImGui_Attach(ctx, font1)
 reaper.ImGui_Attach(ctx, font2)
 reaper.ImGui_Attach(ctx, font10)
+reaper.ImGui_Attach(ctx, font11)
+reaper.ImGui_Attach(ctx, font12)
+reaper.ImGui_Attach(ctx, font13)
 reaper.ImGui_SetConfigVar(ctx,reaper.ImGui_ConfigVar_MacOSXBehaviors(),0)
 local isApple = reaper.GetOS():match("mac")
 
@@ -2998,7 +3003,7 @@ function openGui(track, fxIndex, name, gui, extraIdentifier, isCollabsed)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorLightBlue)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorLightGrey)
     sizeW = isCollabsed and 20 or buttonWidth * 2 + 8 --(moduleWidth-dropDownSize-margin*4)
-    sizeH = isCollabsed and 20 or dropDownSize/8
+    sizeH = isCollabsed and 20 or 20
     if gui then
         title = isCollabsed and (fxIsShowing and "CG" or "OG") or (fxIsShowing and "Close Gui" or " Open Gui")
     else
@@ -3282,12 +3287,9 @@ function nlfoModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isColla
             --createSlider(track,fxIndex,"SliderDouble",3,"Strength",0,100,1,"%0.1f %%",nil,nil,nil)
             --createModulationLFOParameter(track, fxIndex, "SliderDouble", "lfo.strength", "Strength", 0, 100,100, "%0.1f %%") 
             
-            nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "lfo.phase", "Phase", 0, 1, 1, "%0.2f", nil, nil, nil, nil, nil,buttonWidth*2, 0)
             
             --createSlider(track, fxIndex, "Combo", 4, "Direction", nil,nil,nil,nil,nil,nil,directionDropDownText, 1) 
             --createModulationLFOParameter(track, fxIndex, "Combo", "lfo.dir", "Direction", nil,nil,nil,nil,nil,nil,directionDropDownText, 1) 
-            
-            createModulationLFOParameter(track, fxIndex, "Checkbox", "lfo.free", "Seek/loop", nil,nil,1,nil,nil,true)
             
             
 
@@ -3295,6 +3297,11 @@ function nlfoModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isColla
             
             parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
             parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+            nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "lfo.phase", "Phase", 0, 1, 1, "%0.2f", nil, nil, nil, nil, nil,buttonWidth*2, 0)
+            
+            createModulationLFOParameter(track, fxIndex, "Checkbox", "lfo.free", "Seek/loop", nil,nil,1,nil,nil,true)
+            
+            
             
             --parameterNameAndSliders("modulator",pluginParameterSlider,p, focusedParamNumber)
             
@@ -3994,7 +4001,7 @@ function appSettingsWindow()
             setToolTipFunc("Show Add Track FX button in plugins area")  
             
             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show above",settings.showPluginOptionsOnTop) 
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Show above##plugins",settings.showPluginOptionsOnTop) 
             if ret then 
                 settings.showPluginOptionsOnTop = val
                 saveSettings()
@@ -4032,7 +4039,7 @@ function appSettingsWindow()
             setToolTipFunc("Show only mapped toggle in parameters area")  
             
             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show above",settings.showParameterOptionsOnTop) 
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Show above##parameters",settings.showParameterOptionsOnTop) 
             if ret then 
                 settings.showParameterOptionsOnTop = val
                 saveSettings()
@@ -4592,6 +4599,17 @@ local function loop()
   
   
   reaper.ImGui_PushFont(ctx, font)
+  --[[
+  partsWidth = settings.partsWidth
+  if partsWidth >= 180 then
+      reaper.ImGui_PushFont(ctx, font)
+  elseif partsWidth < 180 and partsWidth >= 160 then
+      reaper.ImGui_PushFont(ctx, font13)
+  elseif partsWidth < 160 and partsWidth >= 140 then
+      reaper.ImGui_PushFont(ctx, font12)
+  end
+  ]]
+  
   local visible, open = ImGui.Begin(ctx, appName,true, 
   reaper.ImGui_WindowFlags_TopMost() | 
   --reaper.ImGui_WindowFlags_NoCollapse() | 
@@ -5836,6 +5854,7 @@ local function loop()
                                 reaper.ImGui_Separator(ctx)
                                 
                                 local curPosY = reaper.ImGui_GetCursorPosY(ctx)
+                                reaper.ShowConsoleMsg(curPosY .. "\n")
                                 if reaper.ImGui_BeginChild(ctx, "params" .. name .. fxIndex, tableWidth-16, height-curPosY-16, nil,scrollFlags) then
                                     
                                 
