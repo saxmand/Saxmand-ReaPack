@@ -1,14 +1,13 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.4.4
+-- @version 0.4.5
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + fixed cropping of open plugin/gui window when very small width is used
---   + fixed show above not working for parameters
+--   + fixed issue where floating windows were not recognized for mapping
 
-local version = "0.4.4"
+local version = "0.4.5"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -4214,8 +4213,8 @@ function isFXWindowUnderMouse()
   
     while hwnd ~= nil and reaper.JS_Window_IsWindow(hwnd) do
         local title = reaper.JS_Window_GetTitle(hwnd)
-        if title and (title:match("FX:") or title:match("VST:") or title:match("JS:") or title:match("Clap:")) then
-        --if title and title:match(" - Track") then
+        --if title and (title:match("FX:") or title:match("VST:") or title:match("JS:") or title:match("Clap:")) then
+        if title and title:match(" - Track") ~= nil then
           return true, title
         end
         hwnd = reaper.JS_Window_GetParent(hwnd)
@@ -5854,7 +5853,6 @@ local function loop()
                                 reaper.ImGui_Separator(ctx)
                                 
                                 local curPosY = reaper.ImGui_GetCursorPosY(ctx)
-                                reaper.ShowConsoleMsg(curPosY .. "\n")
                                 if reaper.ImGui_BeginChild(ctx, "params" .. name .. fxIndex, tableWidth-16, height-curPosY-16, nil,scrollFlags) then
                                     
                                 
