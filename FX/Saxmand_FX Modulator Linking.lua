@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.5.0
+-- @version 0.5.0-b1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
@@ -154,29 +154,22 @@ function open_folder(subfolder)
     end
 end
 
+
 function get_files_in_folder(subfolder) 
-  local target_dir = scriptPath .. (subfolder and (subfolder .. seperator) or "")
-  local files = {}
-  local command
-
-  if seperator == "/" then
-    -- macOS / Linux
-    command = 'ls -p "' .. target_dir .. '" | grep -v /'
-  else
-    -- Windows
-    command = 'dir "' .. target_dir .. '" /b /a-d'
-  end
-
-  local p = io.popen(command)
-  if p then
-    for file in p:lines() do
-        local name_without_ext = file:match("(.+)%.[^%.]+$") or file
-        table.insert(files, name_without_ext)
+    target_dir = scriptPath .. (subfolder and (subfolder .. seperator) or "")
+    target_dir = target_dir:gsub("\\", "/")
+    local names = {}
+    local i = 0
+    while true do 
+        local file = reaper.EnumerateFiles(target_dir, i)
+        if not file then break end
+        if file:match(".txt") ~= nil then
+            local name = file:match("(.+)%..+$") or file  -- remove extension
+            table.insert(names, name)
+        end 
+        i = i + 1
     end
-    p:close()
-  end
-
-  return files
+    return names
 end
 -----------------------------------------
 -----------------------------------------
