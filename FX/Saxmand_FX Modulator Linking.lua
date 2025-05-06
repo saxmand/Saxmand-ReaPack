@@ -1,14 +1,13 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.4.8
+-- @version 0.4.9
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + Maybe track color fix for windows
---   + Started color settings page work
+--   + including two presets
 
-local version = "0.4.8"
+local version = "0.4.9"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -129,9 +128,12 @@ function readFile(fileName, subfolder)
   if not file then
     return nil
   end
+  
 
   local content = file:read("*a") -- read entire file
   file:close()
+  -- remove possible no index
+  content = content:gsub("--@noindex\n", "")
   return content
 end
 
