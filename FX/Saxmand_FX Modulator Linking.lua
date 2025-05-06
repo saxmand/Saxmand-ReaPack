@@ -1,13 +1,16 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.4.5
+-- @version 0.4.6
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
---   + fixed issue where floating windows were not recognized for mapping
+--   + Maybe track color fix for windows
+--   + fix crash when window is too small
+--   + fix crash no modulators container, but a manual mapping (CC)
+--   + fix right clicking modulator to show context menu
 
-local version = "0.4.5"
+local version = "0.4.6"
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
@@ -143,14 +146,18 @@ local defaultSettings = {
     showSearch = true,
     showOnlyMapped = true,
     showParameterOptionsOnTop = true,
+    maxParametersShown = 0,
     
       -- Modules 
     showModulesPanel = true,
     
-    -- DEFAULTS
+    -- Mapping
+    forceMapping = false,
     defaultMappingWidth = 50,
     defaultDirection = 3,
     defaultLFODirection = 2,
+    
+    lastFocusedSettingsTab = "Layout",
     
     dockIdVertical = {},
 }
@@ -1226,7 +1233,8 @@ local function getAllParametersFromTrackFx(track, fxIndex)
     local data = {} 
     if track and fxIndex then
         local paramCount = reaper.TrackFX_GetNumParams(track, fxIndex) - 1
-        for p = 0, paramCount do
+        local pc = settings.maxParametersShown == 0 and paramCount or math.min(paramCount, settings.maxParametersShown)
+        for p = 0, pc do
             table.insert(data, getAllDataFromParameter(track,fxIndex,p))
         end
     end
@@ -1328,7 +1336,7 @@ function CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
         local _, modActive  = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "param." .. p .. ".mod.active") 
         local isLinkActive = linkActive == "1"
         local isModActive  = modActive == "1"
-        if isLinkActive then 
+        if isLinkActive and modulationContainerPos then 
             local _, linkFx = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' ) -- index of the fx that's linked. if outside modulation folder, it will be modulation folder index
             local _, linkParam = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' )  -- parameter of the fx that's linked. 
             local _, fxIndexInContainer = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.fx_index')
@@ -1675,8 +1683,8 @@ function verticalButtonStyle(name, tooltipText, sizeW, verticalName, background,
         reaper.ImGui_DrawList_AddLine(draw_list, text_pos_x + line[1], text_pos_y +line[2],  text_pos_x + line[3],text_pos_y+ line[4], 0xffffffff, 1.2)
     end 
     
-    if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx,addNewlinesAtSpaces(tooltipText,26) )  
+    if tooltipText and reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx,tooltipText )  
     end
     reaper.ImGui_PopStyleColor(ctx,3)
     
@@ -1709,7 +1717,7 @@ end
 function lastItemClickAndTooltip(tooltipText)
     local clicked
     if reaper.ImGui_IsItemHovered(ctx) then
-        if settings.showToolTip then reaper.ImGui_SetTooltip(ctx,addNewlinesAtSpaces(tooltipText,26)) end
+        if settings.showToolTip and tooltipText then reaper.ImGui_SetTooltip(ctx,tooltipText) end
         if  reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then 
             clicked = "right"
         end
@@ -2265,7 +2273,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
         local amount
         if isMouseDown then
           
-            amount = linkWidth + ((mouse_pos_x - mouseDragStartX) - (mouse_pos_y - mouseDragStartY)) / 100
+            amount = linkWidth + ((mouse_pos_x - mouseDragStartX) - (mouse_pos_y - mouseDragStartY)) / (isShiftPressed and 1000 or 100)
             mouseDragStartX = mouse_pos_x
             mouseDragStartY = mouse_pos_y 
         elseif isAltPressed and scrollVertical and scrollVertical ~= 0 then
@@ -2497,15 +2505,19 @@ local function openFxBrowserOnSpecificTrack()
     --end
     
     reaper.Main_OnCommand(40271, 0) --View: Show FX browser window
-    local browserHwnd = reaper.JS_Window_GetForeground()
+    local browserHwnd = reaper.JS_Window_GetFocus()
     browserName = reaper.JS_Window_GetTitle(browserHwnd)
+    --reaper.ShowConsoleMsg(browserName .. "1\n")
     local showing = browserName == "FX Browser (docked)" or browserName == addFXToTrackWindowName
+    
     if not showing then 
         reaper.Main_OnCommand(40271, 0) --View: Show FX browser window
-        browserHwnd = reaper.JS_Window_GetForeground()
+        browserHwnd = reaper.JS_Window_GetFocus()
         browserName = reaper.JS_Window_GetTitle(browserHwnd)
+        --reaper.ShowConsoleMsg(browserName .. "2\n")
         showing = browserName == "FX Browser (docked)" or browserName == addFXToTrackWindowName 
     end
+    
     local isDocked = browserName == "FX Browser (docked)"
     
     return browserHwnd, isDocked
@@ -3889,7 +3901,7 @@ function appSettingsWindow()
     
     reaper.ImGui_NewLine(ctx)
     if ImGui.BeginTabBar(ctx, '##SettingsTabs') then
-        if ImGui.BeginTabItem(ctx, 'Layout') then
+        if reaper.ImGui_BeginTabItem(ctx, 'Layout') then
         
             
             --[[
@@ -4045,6 +4057,9 @@ function appSettingsWindow()
             end
             setToolTipFunc("Show search field, only mapped on top of mappings")  
             
+            sliderInMenu("Max parameters shown", "maxParametersShown", menuWidth, 0, 512, "Will only fetch X amount of parameters from focused FX. 0 will show all. If you have problems with performance reduce the amount") 
+            
+            
             
             reaper.ImGui_EndGroup(ctx)
             
@@ -4078,12 +4093,26 @@ function appSettingsWindow()
             ImGui.EndTabItem(ctx) 
         end 
         
-        if ImGui.BeginTabItem(ctx, 'Defaults') then
+        if ImGui.BeginTabItem(ctx, 'Mapping') then
+            
+            reaper.ImGui_BeginGroup(ctx)
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Force mapping##",settings.forceMapping) 
+            if ret then 
+                settings.forceMapping = val
+                saveSettings()
+            end
+            setToolTipFunc("This will ensure that you always map a parameter if you click on it.\nThe downside is that that the last touched FX parameter will always be the delta value for the focused FX, in order to ensure this behavior.") 
+            
+            reaper.ImGui_EndGroup(ctx)
+            reaper.ImGui_SameLine(ctx)
+            
             
             reaper.ImGui_BeginGroup(ctx)
             reaper.ImGui_TextColored(ctx, colorGrey, "Default parameter mapping settings:")
             
             sliderInMenu("Width", "defaultMappingWidth", menuWidth, -100, 100, "Set the default width when mapping a parameter") 
+            
             
             reaper.ImGui_TextColored(ctx, colorGrey, "Direction")
             for i = #directions, 1, -1 do
@@ -4103,6 +4132,7 @@ function appSettingsWindow()
                 end
             end
             reaper.ImGui_EndGroup(ctx)
+            
             ImGui.EndTabItem(ctx) 
         end
         
@@ -4213,8 +4243,8 @@ function isFXWindowUnderMouse()
   
     while hwnd ~= nil and reaper.JS_Window_IsWindow(hwnd) do
         local title = reaper.JS_Window_GetTitle(hwnd)
-        --if title and (title:match("FX:") or title:match("VST:") or title:match("JS:") or title:match("Clap:")) then
-        if title and title:match(" - Track") ~= nil then
+        if title and (title:match("FX:") ~= nil or title:match("VST") ~= nil or title:match("JS:") ~= nil or title:match("Clap:") ~= nil) then
+        --if title and title:match(" - Track") ~= nil then
           return true, title
         end
         hwnd = reaper.JS_Window_GetParent(hwnd)
@@ -4225,35 +4255,57 @@ end
 
 local fxWindowClicked, parameterFound, parameterChanged, focusDelta
 function updateTouchedFX()
-    function setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp)
-        trackIndexTouched = trackidx
-        fxIndexTouched = fxidx
-        parameterTouched = param
-        trackTouched = trackTemp
+    local parameterUpdated = false
+    function setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp, deltaParam)
+        if settings.forceMapping then
+            if deltaParam ~= param then 
+                parameterFound = true 
+                parameterUpdated = true
+            end
+        else
+            if lastParameterTouched ~= param or lastFxIndexTouched ~= fxidx or lastTrackIndexTouched ~= trackidx then 
+                parameterFound = true 
+                parameterUpdated = true
+            end
+        end
+        
+        if parameterFound then
+            trackIndexTouched = trackidx
+            fxIndexTouched = fxidx
+            parameterTouched = param
+            trackTouched = trackTemp
+            
+            fxnumber = fxIndexTouched
+            paramnumber = parameterTouched 
+            
+            scrollToParameter = true
+            
+            if not settings.forceMapping then 
+                lastParameterTouched = parameterTouched
+                lastFxIndexTouched = fxIndexTouched
+                lastTrackIndexTouched = trackIndexTouched
+            end
+        end
     end
     
-    local parameterUpdated = false
     local retval, trackidx, itemidx, takeidx, fxidx, param = reaper.GetTouchedOrFocusedFX( 0 )  
     if retval and trackidx then
         local trackTemp = reaper.GetTrack(0,trackidx)  
         if trackTemp then
             local deltaParam = reaper.TrackFX_GetNumParams(trackTemp, fxidx) - 1  
             if isMouseDown then  
-                if not fxWindowClicked  then
+                if not fxWindowClicked then
                     fxWindowClicked = isFXWindowUnderMouse() 
                 end
                 if fxWindowClicked then 
                     focusDelta = false
                     if not parameterFound then 
-                        if deltaParam ~= param then 
-                            parameterFound = true 
-                            parameterUpdated = true
-                            setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp)
-                        end
+                        setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp, deltaParam)
                     else 
+                        
+                        -- not used right now
                         if param ~= deltaParam then
                             if not parameterChanged then 
-                                -- not used right now
                                 parameterChanged = true
                             end  
                         end
@@ -4261,14 +4313,13 @@ function updateTouchedFX()
                 end
             else  
                 -- we keep checking that delta is set, so we are ready for next click
-                if param ~= deltaParam then  
-                    -- if we have not found the parameter (like clicking Rea plugins) we find it on release
-                    if fxWindowClicked and not parameterFound and not focusDelta then  
-                        parameterFound = true 
-                        parameterUpdated = true
-                        setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp)
-                    end 
-                    
+                
+                -- if we have not found the parameter (like clicking Rea plugins) we find it on release
+                if fxWindowClicked and not parameterFound and (not settings.forceMapping) or (settings.forceMapping and not focusDelta) then  
+                    setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp, deltaParam)
+                end 
+                
+                if settings.forceMapping and param ~= deltaParam then      
                     -- sets the Delta value to it's current value, to clear the last touched or focused fx
                     local deltaVal = reaper.TrackFX_GetParam(trackTemp, fxidx, deltaParam)
                     reaper.TrackFX_SetParam(trackTemp, fxidx, deltaParam, deltaVal) 
@@ -4283,9 +4334,24 @@ function updateTouchedFX()
             end
         end
     end
+    
     return parameterUpdated
 end
 
+    
+    
+function getTrackColor(track)
+    if isApple then
+        local color  = reaper.GetTrackColor(track)
+        return color & 0x1000000 ~= 0 and (color << 8) | 0xFF or colorTransparent
+    else
+        -- taken from MaCClane
+        local natcol  = reaper.GetTrackColor(track)
+        local r,g,b   = reaper.ColorFromNative(natcol) 
+        local color = reaper.GetTrackColor(track)
+        return color & 0x1000000 ~= 0 and (0xFF000000 | (r << 16) | (g << 8) | b) | 0xFF or colorTransparent
+    end
+end
 
 
 local fx_before, fx_after, firstBrowserHwnd
@@ -4461,25 +4527,24 @@ local function loop()
   end
   
   
-  updateTouchedFX()
-  
-  if settings.focusFollowsFxClicks and trackTouched and track ~= trackTouched and validateTrack(trackTouched) then
-      if settings.trackSelectionFollowFocus then
-          reaper.SetOnlyTrackSelected(trackTouched)
+  if updateTouchedFX() then
+      if settings.focusFollowsFxClicks and trackTouched and track ~= trackTouched and validateTrack(trackTouched) then
+          if settings.trackSelectionFollowFocus then
+              reaper.SetOnlyTrackSelected(trackTouched)
+          end
+          track = trackTouched
       end
-      track = trackTouched
   end
   
   if validateTrack(trackTouched) and track == trackTouched and fxIndexTouched and parameterTouched then 
-      fxnumber = fxIndexTouched
-      paramnumber = parameterTouched 
       if map then
           setParamaterToLastTouched(track, modulationContainerPos, map, fxnumber, paramnumber, reaper.TrackFX_GetParam(track,fxnumber, paramnumber), (mapName:match("LFO") ~= nil and (settings.defaultLFODirection - 3)/2 or (settings.defaultDirection - 3) / 2), settings.defaultMappingWidth / 100)
           if settings.mapOnce then map = false; sliderNumber = false end
       end
       
-      if (lastFxNumber ~= fxnumber or lastParamNumber ~= paramnumber) then
+      if scrollToParameter and (lastFxNumber ~= fxnumber or lastParamNumber ~= paramnumber) then
           scroll = paramnumber 
+          scrollToParameter = false
       end
       
       lastFxNumber = fxnumber
@@ -4726,9 +4791,8 @@ local function loop()
         --reaper.ImGui_SameLine(ctx)
         
         local trackColor = colorTransparent
-        if track and settings.trackColorAroundLock then 
-            local color = reaper.GetTrackColor(track)
-            trackColor = color & 0x1000000 ~= 0 and (color << 8) | 0xFF or colorTransparent
+        if track and settings.trackColorAroundLock then  
+            trackColor = getTrackColor(track)
         end
         
         
@@ -4938,7 +5002,7 @@ local function loop()
                                 end 
                                 
                                 reaper.ImGui_PopStyleColor(ctx, 1)
-                                setToolTipFunc("Focus on " .. f.name .. " parameters\n- Double click to open or close")
+                                setToolTipFunc("Click to focus on " .. f.name .. " parameters\n- Double click to open or close")
                                 
                                 if scrollPlugin and tonumber(f.param) == tonumber(scrollPlugin) then
                                     reaper.ImGui_SetScrollHereY(ctx, 0)
@@ -5183,7 +5247,7 @@ local function loop()
                         local containerPos, insert_position
                         
                         
-                        menuHeader("Buildin [" .. 8 .."]", "showBuildin", "buildin modulators")
+                        menuHeader("Factory [" .. 8 .."]", "showBuildin", "buildin modulators")
                         if settings.showBuildin then 
                             
                             if moduleButton("+ AB Slider     ", "Map two positions A and B of plugin parameters on the selected track. Only parameters changed will be mapped") then
@@ -5480,10 +5544,12 @@ local function loop()
                         reaper.ImGui_EndMenuBar(ctx)
                     end
                     modulesPanel()
+                    
+                    
+                    reaper.ImGui_EndChild(ctx)
                 
                 end
                 
-                ImGui.EndChild(ctx)
             end
             
             ImGui.EndGroup(ctx)
@@ -5649,7 +5715,7 @@ local function loop()
                     isCollabsed = trackSettings.collabsModules[fx.guid]
                     mappings = (parameterLinks and parameterLinks[tostring(fx.fxIndex)]) and parameterLinks[tostring(fx.fxIndex)] or {}
                     
-                    toolTipText = (isCollabsed and "Maximize " or "Minimize ") .. name 
+                    toolTipText = (isCollabsed and "Maximize " or "Minimize ") .. name .. "\n - Right click for more options" 
                     --windowFlag = isCollabsed and reaper.ImGui_WindowFlags_NoTitleBar() or reaper.ImGui_WindowFlags_MenuBar()
                     --width = isCollabsed and 20 or moduleWidth
                     click = false 
@@ -5714,7 +5780,7 @@ local function loop()
                             
                             local clickType = lastItemClickAndTooltip(toolTipText)
                             
-                            click = false
+                            click = false 
                             if clickType == "right" then 
                                 ImGui.OpenPopup(ctx, 'popup##' .. fxIndex) 
                             elseif clickType == "left" then 
@@ -5727,7 +5793,8 @@ local function loop()
                                 if specialButtons.close(ctx,2,height - 20,16,false,"remove" .. fxIndex, colorWhite, colorRedHidden,colorTransparent, colorTransparent) then
                                     deleteModule(track, selectedModule, modulationContainerPos)
                                 end
-                                setToolTipFunc("Remove modulator")
+                                setToolTipFunc("Remove modulator") 
+                                ignoreRightClick = true
                             end
                             reaper.ImGui_PopStyleColor(ctx, 1)
                             
@@ -5757,6 +5824,7 @@ local function loop()
                                         deleteModule(track, selectedModule, modulationContainerPos)
                                     end
                                     setToolTipFunc("Remove modulator")
+                                    ignoreRightClick = true
                                 end
                                 
                                 reaper.ImGui_PushFont(ctx, font1) 
@@ -6239,6 +6307,7 @@ local function loop()
                 end
                 
                 
+                ignoreRightClick = false
                 for pos, m in ipairs(modulatorNames) do
                     local fxIndex = m.fxIndex
                     local fxName = m.fxName
@@ -6296,10 +6365,8 @@ local function loop()
         
          startOfModulatorsPanelX, startOfModulatorsPanelY = reaper.ImGui_GetItemRectMin(ctx)
          endOfModulatorsPanelX, endOfModulatorsPanelY = reaper.ImGui_GetItemRectMax(ctx)
-        
-        if reaper.ImGui_IsMouseHoveringRect(ctx, startOfModulatorsPanelX, startOfModulatorsPanelY, endOfModulatorsPanelX, endOfModulatorsPanelY) and isMouseDownRightImgui then
-            openFloatingModulesWindow = true
-            
+        if not ignoreRightClick and reaper.ImGui_IsMouseHoveringRect(ctx, startOfModulatorsPanelX, startOfModulatorsPanelY, endOfModulatorsPanelX, endOfModulatorsPanelY) and isMouseDownRightImgui then
+            openFloatingModulesWindow = not openFloatingModulesWindow 
         end
         
         ImGui.PopStyleVar(ctx) 
@@ -6317,10 +6384,9 @@ local function loop()
       --  reaper.ShowConsoleMsg(tostring(reaper.ImGui_IsAnyItemHovered(ctx)) .. "\n")
     end
     
-    
+        
     if track and settings.showTrackColorLine then 
-        local color = reaper.GetTrackColor(track)
-        local trackColor = color & 0x1000000 ~= 0 and (color << 8) | 0xFF or colorTransparent
+        local trackColor = getTrackColor(track)
         local lineWidth = settings.vertical and winW or 0
         local lineHeight = settings.vertical and 0 or winH
         reaper.ImGui_DrawList_AddLine(draw_list, windowPosX, windowPosY, windowPosX + lineWidth, windowPosY + lineHeight, trackColor,4)
