@@ -1,13 +1,14 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.4.9
+-- @version 0.5.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
+--   Color sets/*.txt
 -- @changelog
---   + including two presets
+--   + including two presets properly
 
-local version = "0.4.9"
+local version = "0.5.0"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -121,7 +122,8 @@ local function saveFile(data, fileName, subfolder)
     end
 end
 
-function readFile(fileName, subfolder)
+function readFile(fileName, subfolder) 
+  if not fileName then return nil end
   local target_dir = scriptPath .. (subfolder and (subfolder .. seperator) or "")
   local target_path = target_dir .. fileName .. ".txt"
   local file = io.open(target_path, "r") -- "r" for read mode
@@ -4025,7 +4027,8 @@ end
 
 function setColorSet(index, allColorSets)
     settings.selectedColorSet = allColorSets[index]
-    settings.colors = json.decodeFromJson(readFile(settings.selectedColorSet, colorFolderName))
+    local currentSettingsStr = readFile(settings.selectedColorSet, colorFolderName)
+    settings.colors = currentSettingsStr and json.decodeFromJson(currentSettingsStr) or {}
     
     -- BACKWARDS COMPATABILITY
     for key, value in pairs(defaultSettings.colors) do
