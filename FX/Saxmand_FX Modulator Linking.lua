@@ -1,18 +1,17 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.4.6
+-- @version 0.4.8
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 -- @changelog
 --   + Maybe track color fix for windows
---   + fix crash when window is too small
---   + fix crash no modulators container, but a manual mapping (CC)
---   + fix right clicking modulator to show context menu
+--   + Started color settings page work
 
-local version = "0.4.6"
+local version = "0.4.8"
 
-local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[\\/])")
+local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
+local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
 local json = require("json")
 local specialButtons = require("special_buttons")
@@ -20,6 +19,10 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local ImGui = require 'imgui' '0.9.3'
 local stateName = "ModulationLinking"
 local appName = "FX Modulator Linking"
+
+            
+local colorFolderName = "Color sets"
+
 local ctx = ImGui.CreateContext(appName)
 font = reaper.ImGui_CreateFont('Arial', 14)
 font1 = reaper.ImGui_CreateFont('Arial', 15)
@@ -80,6 +83,106 @@ end
 -----------------------------------------
 -----------------------------------------
 
+function deepcopy(orig, copies)
+  copies = copies or {}
+  if type(orig) ~= 'table' then
+    return orig
+  elseif copies[orig] then
+    return copies[orig]  -- handle circular references
+  end
+
+  local copy = {}
+  copies[orig] = copy
+  for k, v in next, orig, nil do
+    copy[deepcopy(k, copies)] = deepcopy(v, copies)
+  end
+  setmetatable(copy, deepcopy(getmetatable(orig), copies))
+  return copy
+end
+
+local function prettifyString(str)
+  -- Step 1: Insert space before each capital letter (except first)
+  local with_spaces = str:gsub("(%u)", " %1")
+  -- Step 2: Trim and capitalize first character
+  with_spaces = with_spaces:gsub("^%s*(%l)", string.upper)
+  return with_spaces
+end
+
+local function saveFile(data, fileName, subfolder)  
+    local target_dir = scriptPath .. (subfolder and (subfolder .. seperator) or "")
+    local save_path = target_dir .. fileName .. ".txt"
+    -- Make sure subfolder exists (cross-platform)
+    os.execute( (seperator == "/" and "mkdir -p \"" or "mkdir \"" ) .. target_dir .. "\"")
+    
+    -- Save a file
+    local file = io.open(save_path, "w")
+    if file then
+      file:write(data)
+      file:close()
+    end
+end
+
+function readFile(fileName, subfolder)
+  local target_dir = scriptPath .. (subfolder and (subfolder .. seperator) or "")
+  local target_path = target_dir .. fileName .. ".txt"
+  local file = io.open(target_path, "r") -- "r" for read mode
+  if not file then
+    return nil
+  end
+
+  local content = file:read("*a") -- read entire file
+  file:close()
+  return content
+end
+
+function open_folder(subfolder)
+    local target_dir = scriptPath .. (subfolder and (subfolder .. seperator) or "")
+    -- Normalize slashes
+    target_dir = target_dir:gsub("\\", "/")
+  
+    -- Detect OS and run the appropriate command
+    if reaper.GetOS():find("Win") then
+        os.execute('start "" "' .. target_dir .. '"')
+    elseif reaper.GetOS():find("mac") then
+        os.execute('open "' .. target_dir .. '"')
+    else
+        os.execute('xdg-open "' .. target_dir .. '"')
+    end
+end
+
+function get_files_in_folder(subfolder) 
+  local target_dir = scriptPath .. (subfolder and (subfolder .. seperator) or "")
+  local files = {}
+  local command
+
+  if seperator == "/" then
+    -- macOS / Linux
+    command = 'ls -p "' .. target_dir .. '" | grep -v /'
+  else
+    -- Windows
+    command = 'dir "' .. target_dir .. '" /b /a-d'
+  end
+
+  local p = io.popen(command)
+  if p then
+    for file in p:lines() do
+        local name_without_ext = file:match("(.+)%.[^%.]+$") or file
+        table.insert(files, name_without_ext)
+    end
+    p:close()
+  end
+
+  return files
+end
+-----------------------------------------
+-----------------------------------------
+-----------------------------------------
+-----------------------------------------
+-----------------------------------------
+
+
+
+
 
 local focusedTrackFXNames = {}
 local parameterLinks = {}
@@ -93,6 +196,45 @@ local buttonHovering = {}
 local directions = {"Downwards", "Bipolar", "Upwards"}
 
 local margin = 8
+
+
+
+colorMap = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.4,0.4,1)
+colorMapDark = reaper.ImGui_ColorConvertDouble4ToU32(0.7,0.2,0.2,1)
+colorMapLight = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.65,0.65,1)
+colorMapLightest = reaper.ImGui_ColorConvertDouble4ToU32(0.95,0.75,0.75,1)
+colorMapLightTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.65,0.65,0.5)
+colorMapLittleTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.4,0.4,0.9)
+colorMapSemiTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.4,0.4,0.7)
+colorMapMoreTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.4,0.4,0.4)
+colorGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.4,0.4,1)
+colorMidGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.5,0.5,0.5,1)
+colorLightGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.6,0.6,0.6,1)
+colorWhite = reaper.ImGui_ColorConvertDouble4ToU32(1, 1, 1,1)
+colorAlmostWhite = reaper.ImGui_ColorConvertDouble4ToU32(0.8, 0.8, 0.8,1)
+colorBlue = reaper.ImGui_ColorConvertDouble4ToU32(0.2,0.4,0.8,1)
+colorBrightBlue = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.6,1,1)
+colorBrightBlueTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.6,1,0.8)
+colorBrightBlueOverlay = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.6,1,0.3)
+colorBlueTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.6,1,0.5)
+colorLightBlue = reaper.ImGui_ColorConvertDouble4ToU32(0.2,0.4,0.8,0.5)
+colorTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0,0)
+semiTransparentGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.3,0.3,0.3,0.2)
+littleTransparentGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.3,0.3,0.3,0.4)
+menuGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.14,0.14,0.14,1)
+menuGreyHover = reaper.ImGui_ColorConvertDouble4ToU32(0.3,0.30,0.30,1)
+menuGreyActive = reaper.ImGui_ColorConvertDouble4ToU32(0.45,0.45,0.45,1)
+
+colorBlack = reaper.ImGui_ColorConvertDouble4ToU32(0, 0, 0, 1)
+colorAlmostBlack = reaper.ImGui_ColorConvertDouble4ToU32(0.1, 0.1, 0.1, 1)
+colorDarkGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.2, 0.2, 1)
+
+colorYellowMinimzed = reaper.ImGui_ColorConvertDouble4ToU32(254 / 255, 188 / 255, 46 / 255, 0.7) -- 117 122 118
+colorRedHidden = reaper.ImGui_ColorConvertDouble4ToU32(254 / 255, 95 / 255, 88 / 255, 1)  -- 117 122 118
+colorRedTransparent = reaper.ImGui_ColorConvertDouble4ToU32(254 / 255, 95 / 255, 88 / 255, 0.3)  -- 117 122 118
+colorGreen = reaper.ImGui_ColorConvertDouble4ToU32(39 / 255, 198 / 255, 65 / 255, 0.7)  -- 117 122 118
+colorGreenTransparent = reaper.ImGui_ColorConvertDouble4ToU32(39 / 255, 198 / 255, 65 / 255, 0.3)  -- 117 122 118
+colorDarkGreen = reaper.ImGui_ColorConvertDouble4ToU32(20 / 255, 100 / 255, 32 / 255, 0.7)  -- 117 122 118
 
 local defaultSettings = {
     openSelectedFx = false,
@@ -160,6 +302,56 @@ local defaultSettings = {
     lastFocusedSettingsTab = "Layout",
     
     dockIdVertical = {},
+    
+    
+    colors = {
+      appBackground = colorBlack,
+      modulesBackground = colorBlack, 
+      modulatorsModuleBackground = colorBlack,
+      
+      modulesBorder = colorGrey,
+      text = colorWhite,
+      textDimmed = colorGrey,
+      
+      modulatorOutput = colorWhite,
+      modulatorOutputBackground = colorLightBlue,
+      modulatorBorder = colorGrey,
+      modulatorBorderSelected = colorWhite,
+      
+      mapping = colorMap,
+      selectOverlay = colorBlue,
+      
+      buttons = colorDarkGrey,
+      buttonsActive = colorMidGrey,
+      buttonsHover = colorGrey,
+      buttonsBorder = colorLightGrey,
+      
+      buttonsSpecial = colorDarkGrey,
+      buttonsSpecialActive = colorMidGrey,
+      buttonsSpecialHover = colorGrey,
+      
+      pluginOpen = colorLightBlue,
+      pluginOpenInContainer = colorDarkGrey,
+      
+      sliderBackground = colorAlmostBlack,
+      sliderBaseline = colorBrightBlue,
+      sliderOutput = colorMapLightTransparent,
+      sliderWidth = colorBlueTransparent,
+      sliderWidthNegative = colorMapLightTransparent,
+      
+      boxBackground = colorAlmostBlack,
+      boxBackgroundHover = colorDarkGrey,
+      boxBackgroundActive = colorDarkGrey,
+      boxTick = colorAlmostWhite,
+      
+      menuBar = colorDarkGrey,
+      menuBarHover = menuGreyActive,
+      menuBarActive = menuGreyActive,
+      
+      removeCross = colorWhite,
+      removeCrossHover = colorRedHidden,
+    },
+    selectedColorSet = "Dark",
 }
 
 local defaultTrackSettings = {
@@ -183,14 +375,28 @@ if reaper.HasExtState(stateName, "settings") then
     local settingsStr = reaper.GetExtState(stateName,"settings") 
     settings = json.decodeFromJson(settingsStr)
 else    
-    settings = defaultSettings
+    settings = deepcopy(defaultSettings)
     saveSettings()
 end
 
+--settings = {}
+
 -- BACKWARDS COMPATABILITY
 for key, value in pairs(defaultSettings) do
-    if settings[key] == nil then
-        settings[key] = value
+    if type(value) == "table" then 
+        if settings[key] == nil then
+            settings[key] = {}
+        end
+        
+        for subKey, subValue in pairs(value) do
+            if settings[key][subKey] == nil then
+                settings[key][subKey] = subValue
+            end
+        end
+    else  
+        if settings[key] == nil then
+            settings[key] = value
+        end
     end
 end
 
@@ -1570,8 +1776,8 @@ local function drawFaderFeedback(sizeW, sizeH, fxIndex, param, min, max, isColla
     ]]
     
     reaper.ImGui_SetCursorPos(ctx, posX, posY) 
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), isMapping and colorMap or colorLightBlue)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PlotLines(), colorWhite)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), isMapping and settings.colors.mapping or settings.colors.modulatorOutputBackground)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PlotLines(), settings.colors.modulatorOutput)
     
     reaper.ImGui_PlotLines(ctx, '##'..fxIndex, inputPlots[id], offset[id] - 1, nil, 0, 1, valuesForPlotting[sizeId].w, valuesForPlotting[sizeId].h)
     reaper.ImGui_PopStyleColor(ctx,2)
@@ -1623,9 +1829,10 @@ end
 
 
 function titleButtonStyle(name, tooltipText, sizeW, bigText, background)
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),menuGreyHover)
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),menuGreyActive)
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),background and menuGrey or colorTransparent)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),settings.colors.menuBarHover)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),settings.colors.menuBarActive)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),background and settings.colors.menuBar or colorTransparent)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(),colorText)
     local clicked = false
     if bigText then reaper.ImGui_PushFont(ctx, font2) end
     
@@ -1639,11 +1846,11 @@ function titleButtonStyle(name, tooltipText, sizeW, bigText, background)
         clicked = true
     end 
     if reaper.ImGui_IsItemHovered(ctx) and settings.showToolTip and tooltipText and tooltipText ~= "" then
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorWhite)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorText)
         reaper.ImGui_SetTooltip(ctx,tooltipText )  
         reaper.ImGui_PopStyleColor(ctx)
     end
-    reaper.ImGui_PopStyleColor(ctx,3)
+    reaper.ImGui_PopStyleColor(ctx,4)
     reaper.ImGui_PopStyleVar(ctx)
     if bigText then reaper.ImGui_PopFont(ctx) end
     if background then 
@@ -1657,9 +1864,10 @@ end
 
 function verticalButtonStyle(name, tooltipText, sizeW, verticalName, background, textSize, hover, buttonW)
     --ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),background and menuGreyHover or colorTransparent)
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),(background or hover) and menuGreyHover or colorTransparent)
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),background and menuGreyActive or colorTransparent)
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),background and menuGrey or colorTransparent)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),(background or hover) and settings.colors.menuBarHover or colorTransparent)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),background and  settings.colors.menuBarActive or colorTransparent)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),background and  settings.colors.menuBar or colorTransparent)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(),colorText)
     local clicked = false 
     
     reaper.ImGui_PushFont(ctx, font2)
@@ -1680,13 +1888,13 @@ function verticalButtonStyle(name, tooltipText, sizeW, verticalName, background,
     local text_pos_y = startPosY +6
     
     for _, line in ipairs(points) do
-        reaper.ImGui_DrawList_AddLine(draw_list, text_pos_x + line[1], text_pos_y +line[2],  text_pos_x + line[3],text_pos_y+ line[4], 0xffffffff, 1.2)
+        reaper.ImGui_DrawList_AddLine(draw_list, text_pos_x + line[1], text_pos_y +line[2],  text_pos_x + line[3],text_pos_y+ line[4], colorText, 1.2)
     end 
     
     if tooltipText and reaper.ImGui_IsItemHovered(ctx) then
         reaper.ImGui_SetTooltip(ctx,tooltipText )  
     end
-    reaper.ImGui_PopStyleColor(ctx,3)
+    reaper.ImGui_PopStyleColor(ctx,4)
     
     reaper.ImGui_PopStyleVar(ctx)
     if background then
@@ -1700,14 +1908,14 @@ end
 
 function setToolTipFunc(text, color)
     if settings.showToolTip and text and #text > 0 then  
-        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(),color and color or colorWhite) 
+        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(),color and color or colorText) 
         ImGui.SetItemTooltip(ctx, text) 
         reaper.ImGui_PopStyleColor(ctx)
     end
 end
 
 function setToolTipFunc2(text,color)
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(),color and color or colorWhite)  
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(),color and color or colorText)  
     reaper.ImGui_BeginTooltip(ctx)
     reaper.ImGui_Text(ctx,addNewlinesAtSpaces(text,26))
     reaper.ImGui_EndTooltip(ctx)
@@ -1819,9 +2027,9 @@ function nativeReaperModuleParameter(track, fxIndex, paramOut,  _type, paramName
     local range = max - min
     local faderResolution = faderWidth / range
     local sliderWidthAvailable = (faderWidth - (sliderGrabWidth) - 4) 
-    local colorPos = colorBrightBlue
-    local valueColor = colorWhite
-    local textColor = colorWhite
+    local colorPos = colorSliderBaseline
+    local valueColor = colorText
+    local textColor = colorText
     local name = visualName
     
     
@@ -1907,7 +2115,7 @@ function nativeReaperModuleParameter(track, fxIndex, paramOut,  _type, paramName
         elseif _type == "SliderDouble" then 
             -- this could probably be unified
             if useFineFaders then
-                ret, newValue = pluginParameterSlider(currentValue, fxIndex .. paramName, visualName, min, max, divide, valueFormat, sliderFlags, buttonWidth, "Double", colorBrightBlueTransparent, {})
+                ret, newValue = pluginParameterSlider(currentValue, fxIndex .. paramName, visualName, min, max, divide, valueFormat, sliderFlags, buttonWidth, "Double", {})
             else
             -- was the usual slider.
                 reaper.ImGui_PushStyleVar(ctx, ImGui.StyleVar_GrabMinSize, 2) 
@@ -1931,14 +2139,14 @@ end
 
 function drawCustomSlider(valueFormat, valueColor, colorPos ,currentValue, posXOffset, minX, minY, maxX, maxY, sliderWidthAvailable, sliderFlags, min, max, sliderGrabWidth,hasLink, linkValue, linkWidth, baseline, direction)
     -- background
-    reaper.ImGui_DrawList_AddRectFilled(draw_list, minX, minY, maxX, maxY, colorAlmostBlack, 2) 
+    reaper.ImGui_DrawList_AddRectFilled(draw_list, minX, minY, maxX, maxY, settings.colors.sliderBackground, 2) 
     
     local posX = getPosXForLine(posXOffset, sliderWidthAvailable, currentValue, sliderFlags, min, max)
     -- baseline value
     reaper.ImGui_DrawList_AddLine(draw_list, posX, minY+2, posX, maxY-2, colorPos,sliderGrabWidth)
     
     if hasLink then  
-        local widthColor = linkWidth >= 0 and colorBlueTransparent or colorMapLightTransparent
+        local widthColor = linkWidth >= 0 and settings.colors.sliderWidth or settings.colors.sliderWidthNegative
         local initialValue = baseline + (direction == -1 and - math.abs(linkWidth) or (direction == 0 and - math.abs(linkWidth)/2 or 0))
         
         local posX1 = getPosXForLineNormalized(posXOffset, sliderWidthAvailable, initialValue)
@@ -1949,7 +2157,7 @@ function drawCustomSlider(valueFormat, valueColor, colorPos ,currentValue, posXO
         
         local posX = getPosXForLine(posXOffset, sliderWidthAvailable, linkValue, sliderFlags, min, max)
         -- playing value
-        reaper.ImGui_DrawList_AddLine(draw_list, posX, minY+2, posX, maxY-2, colorMapLittleTransparent,sliderGrabWidth)
+        reaper.ImGui_DrawList_AddLine(draw_list, posX, minY+2, posX, maxY-2, settings.colors.sliderOutput,sliderGrabWidth)
     end
     
     
@@ -1972,7 +2180,8 @@ function textButtonNoBackgroundClipped(text, color, width, id)
     return click
 end
 
-function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min, max, divide, valueFormat, sliderFlags, width, _type, colorPos, p, showingMappings, resetValue, genericModulatorOutput, parametersWindow, dontShowName)
+function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min, max, divide, valueFormat, sliderFlags, width, _type, p, showingMappings, resetValue, genericModulatorOutput, parametersWindow, dontShowName)
+
     local divide = divide or 1
     local range = max - min
     
@@ -1990,18 +2199,19 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     local valueName = p.valueName
     local parameterLinkName = p.parameterLinkName 
     local name = p.name and p.name or "NA"
-    local areaWidth = width
-    local faderWidth = nameOnSide and width / 2 or width
+    local areaWidth = width - 2
+    local faderWidth = nameOnSide and areaWidth / 2 or areaWidth
     local sliderWidthAvailable = (faderWidth - (sliderGrabWidth) - 4)
     local nameOnSideWidth = faderWidth - 8
     
     local valueNormalized = p.valueNormalized
     local direction = p.direction
-    local padColor = parameterModulationActive and colorMap or colorMapLightTransparent
+    local padColor = parameterModulationActive and colorMapping or colorMappingLight
     
     local parStartPosX, parStartPosY, parEndPosX, parEndPosY
     
     local startPosX, startPosY = reaper.ImGui_GetCursorPos(ctx)
+    reaper.ImGui_SetCursorPos(ctx, startPosX + 1, startPosY)
     local faderResolution = sliderWidthAvailable --/ range
     
     local currentValue = p.usesEnvelope and p.envelopeValue or ((parameterLinkEffect and parameterModulationActive) and p.baseline or p.value) 
@@ -2016,10 +2226,10 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     -- we check if any overlay is active
     local overlayActive = canBeMapped or mapOutput or (hideParametersFromModulator == p.guid)
     
-    local textColor = overlayActive and colorGrey or colorWhite
+    local textColor = overlayActive and colorTextDimmed or colorText
     local valueColor = textColor
     if (paramnumber ~= param and not nameOnSide and parametersWindow) then
-        textColor = colorGrey
+        textColor = colorTextDimmed
     end
     
     -- we overwrite text and value color if it's a generic modulator output
@@ -2028,6 +2238,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
         textColor = colorBlue
         overlayActive = false
     end
+    local colorPos = colorSliderBaseline
     
     if name == "Phase" then 
         --reaper.ShowConsoleMsg(tostring(p.baseline) .. "\n")
@@ -2060,7 +2271,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
         minY = minY + pad
         size = size - pad * 2
         local angle = 4
-        local color = colorMap
+        local color = colorMapping
         -- vertical line
         reaper.ImGui_DrawList_AddLine(draw_list, minX + size/2, minY, minX + size/2, minY+size, color)
         -- top arrow
@@ -2079,9 +2290,11 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     end
     
     function modulatorMappingItems()
+        reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
         if isParameterLinkActive then
             local nameForText = showingMappings and p.name or parameterLinkName
             local toolTipText = (parameterModulationActive and 'Disable' or 'Enable') .. ' "' .. parameterLinkName .. '" parameter modulation of ' .. p.name
+            
             local ret, newValue = reaper.ImGui_Checkbox(ctx, "##enable" .. buttonId, parameterModulationActive)
             if ret and param > -1 then
                 toggleeModulatorAndSetBaselineAcordingly(track, fxIndex, param, newValue)
@@ -2097,7 +2310,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
                 if parameterModulationActive then
                     reaper.ImGui_SameLine(ctx)
                     local overlayText = isMouseDown and "Width\n" .. math.floor(linkWidth * 100) .. "%"
-                    if specialButtons.knob(ctx, "width" .. buttonId .. moduleId, -8, 0, 20,linkWidth / 2 + 0.5, overlayText, nil, 2, 0, colorBlue) then
+                    if specialButtons.knob(ctx, "width" .. buttonId .. moduleId, -7, 0, 20,linkWidth / 2 + 0.5, overlayText, settings.colors.text, settings.colors.buttons, settings.colors.buttonsBorder, settings.colors.buttonsActive) then
                         if parameterModulationActive and not dragKnob then
                             dragKnob = "width" .. buttonId .. moduleId
                             mouseDragStartX = mouse_pos_x
@@ -2133,6 +2346,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
                 if not overlayActive then setToolTipFunc(toolTipText) end
             end
         end
+        reaper.ImGui_PopStyleVar(ctx)
     end
     
     
@@ -2143,7 +2357,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     else
         if not nameOnSide and not dontShowName then   
             reaper.ImGui_SetNextItemAllowOverlap(ctx)
-            textButtonNoBackgroundClipped(not overlayActive and showName or "  ", textColor, faderWidth)
+            textButtonNoBackgroundClipped(not overlayActive and (" " .. showName) or "  ", textColor, faderWidth)
             parStartPosX, parStartPosY = reaper.ImGui_GetItemRectMin(ctx)
         end
     end
@@ -2227,7 +2441,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
           end
           
           if not hideCloseButton and not overlayActive then
-              if specialButtons.close(ctx,startPosX + areaWidth-18,startPosY,16,false,"remove" .. buttonId, valueColor, colorRedHidden,colorTransparent, colorTransparent) then
+              if specialButtons.close(ctx,startPosX + areaWidth-18,startPosY,16,false,"remove" .. buttonId, settings.colors.removeCross, settings.colors.removeCrossHover,colorTransparent, colorTransparent) then
                   
                   disableParameterLink(track, fxIndex, param)
               end
@@ -2240,7 +2454,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
         end
     end
     
-    local padW = 0
+    local padW = 1
     local padH = 1
     if isParameterLinkActive then
         reaper.ImGui_DrawList_AddRect(draw_list, parStartPosX - padW, parStartPosY - padH, parStartPosX + areaWidth + padW, parEndPosY  + padH, padColor,4,nil,1)
@@ -2358,8 +2572,8 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     
     -- MAPPING OVRELAY
     if overlayActive then 
-        local overlayColor = (canBeMapped and not mapOutput) and colorMapLightTransparent or colorBrightBlueOverlay
-        local borderColor = (canBeMapped and not mapOutput) and colorMapDark or colorBlue
+        local overlayColor = (canBeMapped and not mapOutput) and colorMappingLight or colorSelectOverlayLight
+        local borderColor = (canBeMapped and not mapOutput) and colorMapping or colorSelectOverlay
         
         reaper.ImGui_EndDisabled(ctx)
         reaper.ImGui_SetCursorPos(ctx, startPosX,startPosY)
@@ -2399,7 +2613,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
             
             local textW = reaper.ImGui_CalcTextSize(ctx, visualName, 0, 0)
             -- value text
-            reaper.ImGui_DrawList_AddText(draw_list, posXOffset + areaWidth/2 - textW/2, parStartPosY+2, colorWhite, visualName)
+            reaper.ImGui_DrawList_AddText(draw_list, posXOffset + areaWidth/2 - textW/2, parStartPosY+2, colorText, visualName)
         end
     end
     
@@ -2428,42 +2642,6 @@ function hideShowEverything(track, newState)
     saveTrackSettings(track)
 end
 
-colorMap = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.4,0.4,1)
-colorMapDark = reaper.ImGui_ColorConvertDouble4ToU32(0.7,0.2,0.2,1)
-colorMapLight = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.65,0.65,1)
-colorMapLightest = reaper.ImGui_ColorConvertDouble4ToU32(0.95,0.75,0.75,1)
-colorMapLightTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.65,0.65,0.5)
-colorMapLittleTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.4,0.4,0.9)
-colorMapSemiTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.4,0.4,0.7)
-colorMapMoreTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.9,0.4,0.4,0.4)
-colorGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.4,0.4,1)
-colorLightGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.6,0.6,0.6,1)
-colorWhite = reaper.ImGui_ColorConvertDouble4ToU32(1, 1, 1,1)
-colorAlmostWhite = reaper.ImGui_ColorConvertDouble4ToU32(0.8, 0.8, 0.8,1)
-colorBlue = reaper.ImGui_ColorConvertDouble4ToU32(0.2,0.4,0.8,1)
-colorBrightBlue = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.6,1,1)
-colorBrightBlueTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.6,1,0.8)
-colorBrightBlueOverlay = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.6,1,0.3)
-colorBlueTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.6,1,0.5)
-colorLightBlue = reaper.ImGui_ColorConvertDouble4ToU32(0.2,0.4,0.8,0.5)
-colorTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0,0)
-semiTransparentGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.3,0.3,0.3,0.2)
-littleTransparentGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.3,0.3,0.3,0.4)
-menuGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.14,0.14,0.14,1)
-menuGreyHover = reaper.ImGui_ColorConvertDouble4ToU32(0.3,0.30,0.30,1)
-menuGreyActive = reaper.ImGui_ColorConvertDouble4ToU32(0.45,0.45,0.45,1)
-
-colorBlack = reaper.ImGui_ColorConvertDouble4ToU32(0, 0, 0, 1)
-colorAlmostBlack = reaper.ImGui_ColorConvertDouble4ToU32(0.1, 0.1, 0.1, 1)
-colorDarkGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.2, 0.2, 1)
-
-colorYellowMinimzed = reaper.ImGui_ColorConvertDouble4ToU32(254 / 255, 188 / 255, 46 / 255, 0.7) -- 117 122 118
-colorRedHidden = reaper.ImGui_ColorConvertDouble4ToU32(254 / 255, 95 / 255, 88 / 255, 1)  -- 117 122 118
-colorRedTransparent = reaper.ImGui_ColorConvertDouble4ToU32(254 / 255, 95 / 255, 88 / 255, 0.3)  -- 117 122 118
-colorGreen = reaper.ImGui_ColorConvertDouble4ToU32(39 / 255, 198 / 255, 65 / 255, 0.7)  -- 117 122 118
-colorGreenTransparent = reaper.ImGui_ColorConvertDouble4ToU32(39 / 255, 198 / 255, 65 / 255, 0.3)  -- 117 122 118
-colorDarkGreen = reaper.ImGui_ColorConvertDouble4ToU32(20 / 255, 100 / 255, 32 / 255, 0.7)  -- 117 122 118
-
 function buttonTransparent(name, width,height) 
     ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),colorTransparent)
     ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),colorTransparent)
@@ -2473,9 +2651,9 @@ function buttonTransparent(name, width,height)
 end
 
 function mapButtonColor()
-  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),colorMapSemiTransparent)
-  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),colorMap)
-  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),colorMapLittleTransparent)
+  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),colorMappingLight)
+  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),colorMapping)
+  ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),colorMapLight)
 end
 
 local function waitForWindowToClose(browserHwnd, callback)  
@@ -2812,15 +2990,15 @@ function parameterNameAndSliders(moduleId, func2, p, focusedParamNumber, infoMod
     
     local startPosX, startPosY = reaper.ImGui_GetCursorPos(ctx)
     reaper.ImGui_PushStyleVar(ctx, ImGui.StyleVar_GrabMinSize, 2)  
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_CheckMark(),colorMap) 
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_CheckMark(),colorMapping) 
     ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(),semiTransparentGrey)
     ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(),semiTransparentGrey)
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),semiTransparentGrey) 
+    --ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),semiTransparentGrey) 
     
     if infoModulationSlider then 
-        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(), parameterModulationActive and colorMapLightest or colorWhite)
+        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(), parameterModulationActive and colorMapLightest or colorText)
     else
-        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(), param == focusedParamNumber and colorWhite or (parameterModulationActive and colorMapLightest or colorGrey))
+        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(), param == focusedParamNumber and colorText or (parameterModulationActive and colorMapLightest or colorTextDimmed))
     end
     
     
@@ -2841,11 +3019,11 @@ function parameterNameAndSliders(moduleId, func2, p, focusedParamNumber, infoMod
         ret, newValue = func2(track,fxIndex, infoModulationSlider, sliderValue, faderWidth)
         parStartPosX, parStartPosY = reaper.ImGui_GetItemRectMin(ctx)
     else
-        ret, newValue = pluginParameterSlider(moduleId, nameOnSide, buttonId, sliderValue,min,max,nil, valueName, nil, faderWidth, "Double", colorBrightBlue, p, showingMappings, resetValue, genericModulatorOutput, parametersWindow, excludeName) 
+        ret, newValue = pluginParameterSlider(moduleId, nameOnSide, buttonId, sliderValue,min,max,nil, valueName, nil, faderWidth, "Double", p, showingMappings, resetValue, genericModulatorOutput, parametersWindow, excludeName) 
     end
     
     
-    reaper.ImGui_PopStyleColor(ctx,5) 
+    reaper.ImGui_PopStyleColor(ctx,4) 
     ImGui.PopStyleVar(ctx)
     
     
@@ -2907,11 +3085,11 @@ function createSlider2(track,fxIndex, info, currentValue, setSize)
         if setSize then reaper.ImGui_SetNextItemWidth(ctx,setSize) end
         if _type == "SliderInt" then 
             --ret, val = reaper.ImGui_SliderInt(ctx,visualName.. '##slider' .. name .. fxIndex, math.floor(currentValue * divide), min, max, valueFormat) 
-            ret, val = pluginParameterSlider(visualName, '##slider' ..name .. fxIndex, math.floor(currentValue * divide),min,max, nil,valueFormat, sliderFlags, setSize, "Int", colorBrightBlueTransparent, {})
+            ret, val = pluginParameterSlider(visualName, '##slider' ..name .. fxIndex, math.floor(currentValue * divide),min,max, nil,valueFormat, sliderFlags, setSize, "Int", {})
             if ret then setParameterButReturnFocus(track, fxIndex, paramIndex, val/divide) end
         elseif _type == "SliderDouble" then --"%d"
             --ret, val= reaper.ImGui_SliderDouble(ctx,visualName.. '##slider' .. name .. fxIndex, currentValue, min, max, valueFormat, sliderFlag)
-            ret, val = pluginParameterSlider(visualName, '##slider' .. name .. fxIndex, currentValue, min, max, nil, valueFormat, sliderFlag, setSize, "Double", colorBrightBlueTransparent, {})
+            ret, val = pluginParameterSlider(visualName, '##slider' .. name .. fxIndex, currentValue, min, max, nil, valueFormat, sliderFlag, setSize, "Double", {})
             if ret then setParameterButReturnFocus(track, fxIndex, paramIndex, val) end
         elseif _type == "SliderDoubleLogarithmic" then --"%d"
         -- NOT USED AT THE MOMENT
@@ -2923,7 +3101,7 @@ function createSlider2(track,fxIndex, info, currentValue, setSize)
         elseif _type == "SliderDoubleLogarithmic2" then --"%d"
             --ret, val= reaper.ImGui_SliderDouble(ctx,visualName.. '##slider' .. name .. fxIndex, (2.7183^currentValue), min, max, valueFormat, sliderFlag)
             --if ret then setParameterNormalizedButReturnFocus(track, fxIndex, paramIndex, math.log(val)) end
-            ret, val = pluginParameterSlider(visualName, '##slider' .. name .. fxIndex, currentValue, min, max, nil, valueFormat, sliderFlag, setSize, "Double", colorBrightBlueTransparent, {})
+            ret, val = pluginParameterSlider(visualName, '##slider' .. name .. fxIndex, currentValue, min, max, nil, valueFormat, sliderFlag, setSize, "Double", {})
             if ret then setParameterButReturnFocus(track, fxIndex, paramIndex, val) end
         elseif _type == "SliderName" then --"%d"
             local hasSliderValueName, sliderValueName = reaper.TrackFX_FormatParamValue(track,fxIndex,paramIndex,currentValue)
@@ -2981,7 +3159,7 @@ function createModulationLFOParameter(track, fxIndex,  _type, paramName, visualN
         elseif _type == "SliderDouble" then 
             -- this could probably be unified
             if useFineFaders then
-                ret, newValue = pluginParameterSlider(currentValue, fxIndex .. paramName, visualName, min, max, divide, valueFormat, sliderFlags, buttonWidth, "Double", colorBrightBlueTransparent, {})
+                ret, newValue = pluginParameterSlider(currentValue, fxIndex .. paramName, visualName, min, max, divide, valueFormat, sliderFlags, buttonWidth, "Double", {})
             else
             -- was the usual slider.
                 reaper.ImGui_PushStyleVar(ctx, ImGui.StyleVar_GrabMinSize, 2) 
@@ -3010,9 +3188,9 @@ function openGui(track, fxIndex, name, gui, extraIdentifier, isCollabsed)
         fxIsShowing = reaper.TrackFX_GetOpen(track,fxIndex)
         fxIsFloating = reaper.TrackFX_GetFloatingWindow(track,fxIndex)
     end
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), fxIsShowing and colorBlue or semiTransparentGrey)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorLightBlue)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorLightGrey)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), fxIsShowing and settings.colors.pluginOpen or settings.colors.buttons)
+    --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorLightBlue)
+    --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorLightGrey)
     sizeW = isCollabsed and 20 or buttonWidth * 2 + 8 --(moduleWidth-dropDownSize-margin*4)
     sizeH = isCollabsed and 20 or 20
     if gui then
@@ -3035,7 +3213,7 @@ function openGui(track, fxIndex, name, gui, extraIdentifier, isCollabsed)
     if settings.showToolTip then
         reaper.ImGui_SetItemTooltip(ctx, "Open " .. name .. " as floating")
     end
-    reaper.ImGui_PopStyleColor(ctx,3)
+    reaper.ImGui_PopStyleColor(ctx,1)
 end
 
 function mapAndShow(track, fx, sliderNum, fxInContainerIndex, name) 
@@ -3047,9 +3225,11 @@ function mapAndShow(track, fx, sliderNum, fxInContainerIndex, name)
     local isShowing = trackSettings.show[fx.guid] 
     local isMapping = map == fx.fxIndex 
     
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isMapping and colorMap or colorDarkGrey)
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isMapping and colorMap or colorGrey) 
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isMapping and colorMap or colorBlue) 
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isMapping and settings.colors.mapping or settings.colors.buttons)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isMapping and settings.colors.mapping or colorButtonsHover)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isMapping and settings.colors.mapping or colorButtonsActive)
+    --ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isMapping and colorMap or colorGrey) 
+    --ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isMapping and colorMap or colorBlue) 
     
     if reaper.ImGui_Button(ctx, isMapping and "MAPPING" or "MAP", w, h) then 
         mapModulatorActivate(fx.fxIndex,sliderNum, fx.fxInContainerIndex, name)
@@ -3419,9 +3599,9 @@ function midiCCModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCol
         createSlider(track,fxIndex,"Combo",2,"Channel",nil,nil,1,nil,nil,nil,channelDropDownText,0,"Select which channel to use") 
 
         isListening = reaper.TrackFX_GetParamNormalized(track, fxIndex, 3) == 1
-        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isListening and colorMapLittleTransparent or colorMap )
-        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isListening and colorMapLittleTransparent or colorMap )
-        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMap or semiTransparentGrey )
+        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorMapping )
+        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorMappingLight )
+        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMapping or colorButtons )
         createSlider(track,fxIndex,"ButtonToggle",3,isListening and "Stop" or "Listen",0,1,nil,nil,nil,nil,nil,0,"Listen for MIDI input") 
         reaper.ImGui_PopStyleColor(ctx,3)
         createSlider(track,fxIndex,"Checkbox",7,"Pass through MIDI",nil,nil,1,nil,nil,nil,nil,nil)
@@ -3468,18 +3648,18 @@ function keytrackerModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, i
     
     
     local isListening = reaper.TrackFX_GetParam(track, fxIndex, 9) == 1
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isListening and colorMapLittleTransparent or colorMap )
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isListening and colorMapLittleTransparent or colorMap )
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMap or semiTransparentGrey )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),colorMapping )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),colorMappingLight)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMapping or colorButtons )
     createSlider(track,fxIndex,"ButtonToggle",9,isListening and "Stop" or "Set minimum",0,1,nil,nil,nil,nil,nil,0,"Listen for MIDI input to set minimum key range", dropDownSize)   
     
     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
     reaper.ImGui_PopStyleColor(ctx,3)
     
     local isListening = reaper.TrackFX_GetParam(track, fxIndex, 10) == 1
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isListening and colorMapLittleTransparent or colorMap )
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isListening and colorMapLittleTransparent or colorMap )
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMap or semiTransparentGrey )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),colorMapping )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),colorMappingLight)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMapping or colorButtons )
     createSlider(track,fxIndex,"ButtonToggle",10,isListening and "Stop" or "Set maximum",0,1,nil,nil,nil,nil,nil,0,"Listen for MIDI input to set maximum key range", dropDownSize)  
     reaper.ImGui_PopStyleColor(ctx,3)
     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 127) 
@@ -3506,19 +3686,19 @@ function noteVelocityModulator(name, modulatorsPos, fxIndex, fxInContainerIndex,
     end
     
     
-    local isListening = reaper.TrackFX_GetParam(track, fxIndex, 9) == 1
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isListening and colorMapLittleTransparent or colorMap )
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isListening and colorMapLittleTransparent or colorMap )
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMap or semiTransparentGrey )
+    local isListening = reaper.TrackFX_GetParam(track, fxIndex, 9) == 1 
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),colorMapping )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),colorMappingLight)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMapping or colorButtons )
     createSlider(track,fxIndex,"ButtonToggle",9,isListening and "Stop" or "Set minimum",0,1,nil,nil,nil,nil,nil,0,"Listen for MIDI input to set minimum key range", dropDownSize)   
     
     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
     reaper.ImGui_PopStyleColor(ctx,3)
     
-    local isListening = reaper.TrackFX_GetParam(track, fxIndex, 10) == 1
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),isListening and colorMapLittleTransparent or colorMap )
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),isListening and colorMapLittleTransparent or colorMap )
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMap or semiTransparentGrey )
+    local isListening = reaper.TrackFX_GetParam(track, fxIndex, 10) == 1 
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),colorMapping )
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),colorMappingLight)
+    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMapping or colorButtons )
     createSlider(track,fxIndex,"ButtonToggle",10,isListening and "Stop" or "Set maximum",0,1,nil,nil,nil,nil,nil,0,"Listen for MIDI input to set maximum key range", dropDownSize)  
     reaper.ImGui_PopStyleColor(ctx,3)
     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 127) 
@@ -3826,6 +4006,40 @@ function genericModulator(name, modulationContainerPos, fxIndex, fxInContainerIn
      
     --endModulator(name, startPosX, startPosY, fxIndex)
     return genericModulatorInfo
+end
+
+
+function getColorSetsAndSelectedIndex() 
+    local allColorSets = get_files_in_folder(colorFolderName) 
+    local selectedColorSetIndex = 0
+    for i, colorSetName in ipairs(allColorSets) do  
+        if settings.selectedColorSet == colorSetName then
+            selectedColorSetIndex = i
+            break;
+        end
+    end 
+    return allColorSets, selectedColorSetIndex
+end
+
+function setColorSet(index, allColorSets)
+    settings.selectedColorSet = allColorSets[index]
+    settings.colors = json.decodeFromJson(readFile(settings.selectedColorSet, colorFolderName))
+    
+    -- BACKWARDS COMPATABILITY
+    for key, value in pairs(defaultSettings.colors) do
+        if settings.colors[key] == nil then
+            settings.colors[key] = value
+        end
+    end
+    -- BACKWARDS COMPATABILITY
+    for key, value in pairs(settings.colors) do
+        if defaultSettings.colors[key] == nil then
+            settings.colors[key] = nil
+        end
+    end
+    
+    defaultSettings.colors = deepcopy(settings.colors)
+    saveSettings()
 end
 
 ---------------------------------------------------------------------------------------------------------------
@@ -4136,8 +4350,147 @@ function appSettingsWindow()
             ImGui.EndTabItem(ctx) 
         end
         
-        if ImGui.BeginTabItem(ctx, 'Colors') then
-            reaper.ImGui_TextColored(ctx, colorGrey, "TO BE ADDED...")
+        
+        if reaper.ImGui_BeginTabItem(ctx, 'Colors') then
+            reaper.ImGui_AlignTextToFramePadding(ctx)
+            reaper.ImGui_TextColored(ctx, colorTextDimmed, "Color sets:")
+            reaper.ImGui_SameLine(ctx)
+            
+            
+            local allColorSets, selectedColorSetIndex = getColorSetsAndSelectedIndex() 
+            
+            ret, val = reaper.ImGui_Combo(ctx, "##ColorSetsSelection", selectedColorSetIndex - 1, table.concat(allColorSets, "\0") .. "\0")
+            if ret then 
+                setColorSet(tonumber(val) + 1, allColorSets)
+            end
+            
+            
+            
+            reaper.ImGui_SameLine(ctx)
+            if not someValuesAreDifferent then reaper.ImGui_BeginDisabled(ctx) end
+            if reaper.ImGui_Button(ctx, "Reset all colors to current color set") then  
+                for key in pairs(settings.colors) do
+                    settings.colors[key] = deepcopy(defaultSettings.colors[key])
+                end
+                --saveSettings()
+            end  
+            if not someValuesAreDifferent then reaper.ImGui_EndDisabled(ctx) end
+            
+            
+            reaper.ImGui_SameLine(ctx)
+            
+            if reaper.ImGui_Button(ctx, "Open color set folder") then  
+                open_folder(colorFolderName)
+            end 
+            
+            reaper.ImGui_SameLine(ctx)
+            if reaper.ImGui_Button(ctx, "Save new color set") then  
+                ImGui.OpenPopup(ctx, 'Save color set') 
+            end 
+            
+            reaper.ImGui_Separator(ctx)
+            
+            if ImGui.BeginPopupModal(ctx, 'Save color set', nil , reaper.ImGui_WindowFlags_AlwaysAutoResize() ) then
+              reaper.ImGui_TextColored(ctx, colorTextDimmed, 'Name:') 
+              
+              reaper.ImGui_SetNextItemWidth(ctx, 248)
+              local ret, fileName = reaper.ImGui_InputText(ctx, "##nameColorSet", settings.selectedColorSet) 
+              
+              reaper.ImGui_SetItemDefaultFocus(ctx)
+              if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter()) or ImGui.Button(ctx, 'Save', 120, 0) then  
+                  ImGui.CloseCurrentPopup(ctx) 
+                  if fileName then
+                      saveFile(json.encodeToJson(settings.colors), fileName, colorFolderName) 
+                      settings.selectedColorSet = fileName
+                  end
+              end
+              ImGui.SameLine(ctx)
+              if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape()) or ImGui.Button(ctx, 'Cancel', 120, 0) then ImGui.CloseCurrentPopup(ctx) end
+              
+              
+              ImGui.EndPopup(ctx)
+            end
+            
+            
+            
+            if ImGui.BeginChild(ctx, '##colors', 0, 0) then
+              local inner_spacing = ImGui.GetStyleVar(ctx, ImGui.StyleVar_ItemInnerSpacing)
+              -- Extract the keys
+              local colorsOrder = {}
+              for key in pairs(settings.colors) do
+                table.insert(colorsOrder, key)
+              end
+              -- Sort alphabetically
+              table.sort(colorsOrder)
+              
+              someValuesAreDifferent = false
+              for i, name in pairs(colorsOrder) do
+                  local formattedName = prettifyString(name)
+                  color = settings.colors[name]
+                  
+                  local isDifferent = settings.colors[name] == defaultSettings.colors[name]
+                  if isDifferent then reaper.ImGui_BeginDisabled(ctx) else
+                      someValuesAreDifferent = true
+                  end
+                  
+                  if reaper.ImGui_Button(ctx, "Reset##resetcolor".. name) then 
+                      settings.colors[name] = defaultSettings.colors[name]
+                      saveSettings()
+                  end 
+                  if isDifferent then reaper.ImGui_EndDisabled(ctx) end
+                  
+                  
+                  reaper.ImGui_SameLine(ctx,0,1)
+                  
+                  if reaper.ImGui_Button(ctx, "Copy##".. name) then 
+                      clipboardColor = color
+                  end 
+                  setToolTipFunc('Copy "' .. formattedName .. '" color to paste buttons')
+                  
+                  
+                  if not clipboardColor then reaper.ImGui_BeginDisabled(ctx) end
+                  
+                  
+                  ImGui.SameLine(ctx, 0.0, 1)
+                  
+                  
+                  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorText)
+                  reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
+                  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), clipboardColor and clipboardColor or settings.colors.buttons)
+                  if reaper.ImGui_Button(ctx, "##paste".. name, 20) then 
+                      settings.colors[name] = clipboardColor
+                      saveSettings()
+                  end 
+                  reaper.ImGui_PopStyleColor(ctx, 2)
+                  reaper.ImGui_PopStyleVar(ctx)
+                  
+                  
+                  if not clipboardColor then reaper.ImGui_EndDisabled(ctx) end
+                  
+                  
+                  setToolTipFunc('Paste color to "' .. formattedName .. '"' )
+                  
+                  ImGui.SameLine(ctx, 0.0, inner_spacing)
+                  
+                  rv, settings.colors[name] = reaper.ImGui_ColorEdit4(ctx, '##color' .. name, settings.colors[name])
+                  if rv then
+                      saveSettings()
+                    --ImGui.SameLine(ctx, 0.0, inner_spacing)
+                    --if ImGui.Button(ctx, 'Save') then
+                    --  app.style_editor.ref.colors[i] = app.style_editor.style.colors[i]
+                    --end
+                    --ImGui.SameLine(ctx, 0.0, inner_spacing)
+                    --if ImGui.Button(ctx, 'Revert') then
+                    --  app.style_editor.style.colors[i] = app.style_editor.ref.colors[i]
+                    --end
+                  end
+                  ImGui.SameLine(ctx, 0.0, inner_spacing)
+                  ImGui.Text(ctx, formattedName) 
+              end
+              ImGui.EndChild(ctx)
+            end
+
+            
             ImGui.EndTabItem(ctx) 
         end
         
@@ -4218,11 +4571,11 @@ function addingAnyModuleWindow(hwnd, isDocked)
     
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 5)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorMap)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorDarkGrey)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorGrey)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorGrey)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorMap)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorMapping)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorButtons)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorButtonsHover)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorButtonsActive)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorMapping)
     if reaper.ImGui_Button(ctx, text, textW+ 8) then
         open = false
     end
@@ -4341,17 +4694,15 @@ end
     
     
 function getTrackColor(track)
-    if isApple then
-        local color  = reaper.GetTrackColor(track)
-        return color & 0x1000000 ~= 0 and (color << 8) | 0xFF or colorTransparent
-    else
-        -- taken from MaCClane
-        local natcol  = reaper.GetTrackColor(track)
-        local r,g,b   = reaper.ColorFromNative(natcol) 
-        local color = reaper.GetTrackColor(track)
-        return color & 0x1000000 ~= 0 and (0xFF000000 | (r << 16) | (g << 8) | b) | 0xFF or colorTransparent
-    end
+    local color  = reaper.GetTrackColor(track)
+     -- shift 0x00RRGGBB to 0xRRGGBB00 then add 0xFF for 100% opacity
+    return color & 0x1000000 ~= 0 and (reaper.ImGui_ColorConvertNative(color) << 8) | 0xFF or colorTransparent 
 end
+
+
+-- before looping script we ensure we have the correct loaded color set 
+local allColorSets, selectedColorSetIndex =  getColorSetsAndSelectedIndex() 
+setColorSet(selectedColorSetIndex, allColorSets)
 
 
 local fx_before, fx_after, firstBrowserHwnd
@@ -4674,14 +5025,63 @@ local function loop()
   end
   ]]
   
+  colorMapping = settings.colors.mapping
+  colorMappingLight = colorMapping & 0xFFFFFFFF55
+  
+  colorSelectOverlay = settings.colors.selectOverlay
+  colorSelectOverlayLight = colorSelectOverlay & 0xFFFFFFFF55
+  
+  colorButtons = settings.colors.buttons
+  colorButtonsActive = settings.colors.buttonsActive
+  colorButtonsHover = settings.colors.buttonsHover
+  colorButtonsBorder = settings.colors.buttonsBorder
+  colorText = settings.colors.text
+  colorTextDimmed = settings.colors.textDimmed
+  colorSliderBaseline = settings.colors.sliderBaseline
+  colorSliderOutput = settings.colors.sliderOutput
+  colorSliderWidth = settings.colors.sliderWidth
+  colorSliderWidthNegative = settings.colors.sliderWidthNegative
+  colorMenuBar = settings.colors.menuBar
+  
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), settings.colors.appBackground)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarBg(), settings.colors.appBackground)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PopupBg(), settings.colors.modulesBackground)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorText)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorButtons)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorButtonsActive)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorButtonsHover)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Separator(), colorTextDimmed)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_MenuBarBg(), colorMenuBar)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrab(), colorButtons)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrabActive(), colorButtonsActive)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrabHovered(), colorButtonsHover)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), settings.colors.boxBackground)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(), settings.colors.boxBackgroundActive)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(), settings.colors.boxBackgroundHover)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_CheckMark(), settings.colors.boxTick)
+  
+  
+  
+  local colorsPush = 16
+  
+  reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 4)
+  local varPush = 1
+  
   local visible, open = ImGui.Begin(ctx, appName,true, 
   reaper.ImGui_WindowFlags_TopMost() | 
   --reaper.ImGui_WindowFlags_NoCollapse() | 
   --reaper.ImGui_WindowFlags_MenuBar() |
-  reaper.ImGui_WindowFlags_HorizontalScrollbar()
-  | scrollFlags
+  --reaper.ImGui_WindowFlags_HorizontalScrollbar() |
+  scrollFlags
   )
   if visible then
+      
+      --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), settings.colors.modulesBackground)
+      reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.modulesBackground)
+      reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarBg(), settings.colors.modulesBackground)
+      
+      local colorsPush2 = 2
+      
       local winW, winH = reaper.ImGui_GetWindowSize(ctx)
       local winX, winY = reaper.ImGui_GetWindowPos(ctx) 
       is_docked = reaper.ImGui_IsWindowDocked(ctx)
@@ -4798,36 +5198,36 @@ local function loop()
         
         local widthOfTrackName = settings.vertical and partsWidth - 24 - 24 or pansHeight - 24 - 48
         if not settings.vertical then
-            if specialButtons.lock(ctx, "lock", 24, locked, "Lock to selected track", colorWhite, colorGrey, colorTransparent, colorDarkGrey, menuGreyActive, settings.vertical, trackColor) then
+            if specialButtons.lock(ctx, "lock", 24, locked, "Lock to selected track", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, trackColor, settings.vertical) then
                 locked = not locked and track or false 
                 --reaper.SetExtState(stateName, "locked", locked and "1" or "0", true)
             end
             
             reaper.ImGui_SetCursorPos(ctx, x, y + 24)
-            if modulePartButton(title,  (everythingsIsNotMinimized and "Minimize" or "Maximize") ..  " everything", widthOfTrackName, true,false,nil,true,24, hoverColor ) then 
+            if modulePartButton(title,  (everythingsIsNotMinimized and "Minimize" or "Maximize") ..  " everything", widthOfTrackName, true,false,nil,true,24,  settings.colors.buttonsSpecialHover ) then 
                 hideShowEverything(track, everythingsIsNotMinimized)
             end
             
             reaper.ImGui_SetCursorPos(ctx, x, y + pansHeight - 20 -24)
-            if specialButtons.cogwheel(ctx, "settings", 24, settingsOpen, "Show app settings", colorWhite, colorGrey, colorTransparent, colorDarkGrey, menuGreyActive) then
+            if specialButtons.cogwheel(ctx, "settings", 24, settingsOpen, "Show app settings", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground) then
                 settingsOpen = not settingsOpen
             end
         end
         
         
         if settings.vertical then
-            if specialButtons.cogwheel(ctx, "settings", 24, settingsOpen, "Show app settings", colorWhite, colorGrey, colorTransparent, colorDarkGrey, menuGreyActive) then
+            if specialButtons.cogwheel(ctx, "settings", 24, settingsOpen, "Show app settings", colorText, colorTextDimmed,colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground) then
                 settingsOpen = not settingsOpen
             end 
         
             reaper.ImGui_SameLine(ctx, 24) 
             
-            if modulePartButton(title,  (everythingsIsNotMinimized and "Minimize" or "Maximize") ..  " everything", widthOfTrackName, true,false,nil,true,24, hoverColor ) then 
+            if modulePartButton(title,  (everythingsIsNotMinimized and "Minimize" or "Maximize") ..  " everything", widthOfTrackName, true,false,nil,true,24,  settings.colors.buttonsSpecialHover ) then 
                 hideShowEverything(track, everythingsIsNotMinimized)
             end
             
             reaper.ImGui_SameLine(ctx, widthOfTrackName + 24) 
-            if specialButtons.lock(ctx, "lock", 24, locked, "Lock to selected track", colorWhite, colorGrey, colorTransparent, colorDarkGrey, menuGreyActive, settings.vertical) then
+            if specialButtons.lock(ctx, "lock", 24, locked, "Lock to selected track", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, trackColor, settings.vertical) then
                 locked = not locked and track or false 
                 --reaper.SetExtState(stateName, "locked", locked and "1" or "0", true)
             end
@@ -4895,11 +5295,11 @@ local function loop()
                                 reaper.ImGui_Separator(ctx)
                             end
                             
-                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorDarkGrey)
+                            --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorDarkGrey)
                             
                             if settings.showOpenAll then
                                 local textState = (not allIsClosed and "Close " or "Open ")
-                                if reaper.ImGui_Button(ctx, textState .. ' all##FXOpenall') then 
+                                if reaper.ImGui_Button(ctx, textState .. ' all##FXOpenall', tableWidth / 2 - 8) then 
                                     for _, f in ipairs(focusedTrackFXNames) do 
                                         if not f.isModulator then
                                             openCloseFx(track, tonumber(f.fxIndex), allIsClosed)
@@ -4914,14 +5314,14 @@ local function loop()
                                     reaper.ImGui_SameLine(ctx)
                                 end
                                 
-                                if reaper.ImGui_Button(ctx, "Add Track FX##add") then  
+                                if reaper.ImGui_Button(ctx, "Add FX##add", tableWidth / 2 - 16) then  
                                     openFxBrowserOnSpecificTrack() 
                                 end
                                 setToolTipFunc("Add new FX to track")
                             end
                             
                             
-                            reaper.ImGui_PopStyleColor(ctx)
+                            --reaper.ImGui_PopStyleColor(ctx)
                             
                             if settings.showPluginOptionsOnTop then 
                                 reaper.ImGui_Separator(ctx)
@@ -4934,9 +5334,9 @@ local function loop()
                     end
                     
                     --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), colorAlmostBlack)
-                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), colorDarkGrey)
-                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), colorDarkGrey)
-                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), littleTransparentGrey)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), colorButtonsHover)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), colorButtonsActive)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), colorButtons)
                     
                     local pluginFlags = reaper.ImGui_TableFlags_ScrollY() | reaper.ImGui_TableFlags_NoPadOuterX()
                     if settings.allowHorizontalScroll then
@@ -4974,9 +5374,9 @@ local function loop()
                                 reaper.ImGui_TableNextRow(ctx)
                                  
                                 
-                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), f.isFloating and colorLightBlue or colorDarkGrey)
+                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), f.isFloating and settings.colors.pluginOpen or settings.colors.pluginOpenInContainer)
                                 reaper.ImGui_TableNextColumn(ctx)
-                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), isFocused and colorWhite or colorGrey)
+                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), isFocused and colorText or colorTextDimmed)
                                 if reaper.ImGui_Selectable(ctx, (isFocused and ">" or count) .. '##' .. f.fxIndex, f.isOpen ,nil) then 
                                     
                                     openCloseFx(track, f.fxIndex, not f.isOpen)
@@ -4991,7 +5391,7 @@ local function loop()
                                 --    openCloseFx(track, f.fxIndex, not f.isOpen)
                                 --end
                                 
-                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), (settings.colorContainers and f.isContainer) and colorGrey or colorWhite)
+                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), (settings.colorContainers and f.isContainer) and colorTextDimmed or colorText)
                                 if reaper.ImGui_Selectable(ctx, name .. '##' .. f.fxIndex, isFocused ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
                                    fxnumber = f.fxIndex
                                    paramnumber = 0 
@@ -5209,9 +5609,9 @@ local function loop()
                     
                     function menuHeader(text, variable, tooltip)
                         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorDarkGrey)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorDarkGrey)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorLightGrey)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorButtonsHover)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorButtonsActive)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorTextDimmed)
                         local textState = (not settings[variable] and "Show" or "Hide") 
                         if reaper.ImGui_Button(ctx, text, partsWidth- 32) then  
                             settings[variable] = not settings[variable]
@@ -5225,9 +5625,9 @@ local function loop()
                     function moduleButton(text, tooltip)
                         local click = false
                         
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), colorDarkGrey)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), colorDarkGrey)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), colorDarkGrey)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), colorButtonsHover)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), colorButtonsActive)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), colorButtons)
                         if reaper.ImGui_Selectable(ctx, text, false) then 
                             click = true
                         end 
@@ -5247,7 +5647,7 @@ local function loop()
                         local containerPos, insert_position
                         
                         
-                        menuHeader("Factory [" .. 8 .."]", "showBuildin", "buildin modulators")
+                        menuHeader("Factory [" .. 8 .."]", "showBuildin", "factory modulators")
                         if settings.showBuildin then 
                             
                             if moduleButton("+ AB Slider     ", "Map two positions A and B of plugin parameters on the selected track. Only parameters changed will be mapped") then
@@ -5335,6 +5735,7 @@ local function loop()
                                 ]]
                             end
                         end
+
                         
                         if browserHwnd then
                             firstBrowserHwnd = firstBrowserHwnd and firstBrowserHwnd + 1 or 0 
@@ -5580,7 +5981,6 @@ local function loop()
         
         function optionsForModulators()
             
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), colorDarkGrey)
             ret, sortAsType = reaper.ImGui_Checkbox(ctx,"Sort by name",settings.sortAsType)
             if ret then
                 settings.sortAsType = sortAsType
@@ -5593,9 +5993,11 @@ local function loop()
                 settings.mapOnce = mapOnce
                 saveSettings()
             end
-            reaper.ImGui_PopStyleColor(ctx)
         
         end
+        
+        
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.modulatorsModuleBackground)
         
         local x,y = reaper.ImGui_GetCursorPos(ctx)
         modulatorsW = settings.vertical and partsWidth or (winW-x-8)
@@ -5663,9 +6065,9 @@ local function loop()
             
             
             function mapButton(fxIndex, name)
-                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), map == fxIndex and colorMap or colorGrey)
-                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorMapSemiTransparent)
-                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), map == fxIndex and colorMap or colorGrey)
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), map == fxIndex and colorMapping or colorGrey)
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorMappingLight)
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), map == fxIndex and colorMapping or colorGrey)
                 if reaper.ImGui_Button(ctx, "MAP##" .. fxIndex, 45,45) then 
                      mapModulatorActivate(fxIndex, 0, name)
                 end 
@@ -5687,10 +6089,10 @@ local function loop()
                         local colorBg = isShowing and colorLightGrey or colorDarkGrey
                         reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
                         reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 20)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(),colorMap)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorDarkGrey)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),colorDarkGrey)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),colorDarkGrey)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(),colorMapping)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), settings.colors.buttonsSpecial)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),settings.colors.buttonsSpecialHover)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),settings.colors.buttonsSpecialActive)
                         local tv = (isShowing and ">" or "^")
                         
                         reaper.ImGui_PushFont(ctx, font1) 
@@ -5701,7 +6103,7 @@ local function loop()
                         
                         
                         local bX, bY = reaper.ImGui_GetItemRectMin(ctx)
-                        reaper.ImGui_DrawList_AddText(draw_list, bX+ (isShowing and 4 or 4), bY + (isShowing and 0 or 2),colorMap, tv)
+                        reaper.ImGui_DrawList_AddText(draw_list, bX+ (isShowing and 4 or 4), bY + (isShowing and 0 or 2),colorMapping, tv)
                         reaper.ImGui_PopStyleColor(ctx, 4)
                         reaper.ImGui_PopStyleVar(ctx,2)
                         
@@ -5722,7 +6124,7 @@ local function loop()
                     local height = settings.vertical and (isCollabsed and 22 + buttonWidth/3 + 16 or settings.partsHeight) or pansHeight-54
                     local minX, minY, maxX, maxY = false, false, false, false
                     
-                    local borderColor = selectedModule == fxIndex and (map == fxIndex and colorMap or colorWhite) or colorGrey
+                    local borderColor = selectedModule == fxIndex and (map == fxIndex and colorMapping or settings.colors.modulatorBorderSelected) or settings.colors.modulatorBorder
                     
                     local flags = reaper.ImGui_TableFlags_BordersOuter()
                     flags = not isCollabsed and flags or flags | reaper.ImGui_TableFlags_NoPadOuterX() --| reaper.ImGui_TableFlags_RowBg()
@@ -5750,11 +6152,11 @@ local function loop()
                     if isCollabsed and not settings.vertical then 
                         
                         reaper.ImGui_SetNextWindowSizeConstraints(ctx, 0, 60, tableWidth, height)
-                        if reaper.ImGui_BeginChild(ctx, name .. fxIndex, tableWidth, 0, childFlags,  reaper.ImGui_WindowFlags_NoScrollbar()) then
+                        if reaper.ImGui_BeginChild(ctx, name .. fxIndex, tableWidth, 0, childFlags,  reaper.ImGui_WindowFlags_NoScrollbar() | reaper.ImGui_WindowFlags_NoScrollWithMouse()) then
                             
-                            reaper.ImGui_DrawList_AddRectFilled(draw_list, modulatorStartPosX, modulatorStartPosY , modulatorStartPosX+ tableWidth, modulatorStartPosY+height, menuGrey,20)
+                            reaper.ImGui_DrawList_AddRectFilled(draw_list, modulatorStartPosX, modulatorStartPosY , modulatorStartPosX+ tableWidth, modulatorStartPosY+height, settings.colors.menuBar,8)
                              
-                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorGrey)
+                            -- reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), settings.colors.modulatorBorder)
                             --valuesFromModulator = func(name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx)
                             reaper.ImGui_SetCursorPosY(ctx, 4)
                             reaper.ImGui_SetCursorPosX(ctx, 4)
@@ -5790,13 +6192,13 @@ local function loop()
                             
                             
                             if mouse_pos_x >= screenPosX and mouse_pos_x <= screenPosX + tableWidth and mouse_pos_y >= screenPosY and mouse_pos_y <= screenPosY + height then
-                                if specialButtons.close(ctx,2,height - 20,16,false,"remove" .. fxIndex, colorWhite, colorRedHidden,colorTransparent, colorTransparent) then
+                                if specialButtons.close(ctx,2,height - 20,16,false,"remove" .. fxIndex, settings.colors.removeCross, settings.colors.removeCrossHover,colorTransparent, colorTransparent) then
                                     deleteModule(track, selectedModule, modulationContainerPos)
                                 end
                                 setToolTipFunc("Remove modulator") 
                                 ignoreRightClick = true
                             end
-                            reaper.ImGui_PopStyleColor(ctx, 1)
+                            --reaper.ImGui_PopStyleColor(ctx, 1)
                             
                             reaper.ImGui_EndChild(ctx)
                         end     
@@ -5820,7 +6222,7 @@ local function loop()
                             
                             --reaper.ImGui_PushID(ctx, 0)
                                 if mouse_pos_x >= screenPosX and mouse_pos_x <= screenPosX + tableWidth and mouse_pos_y >= screenPosY and mouse_pos_y <= screenPosY + height then
-                                    if specialButtons.close(ctx,0,2,16,false,"remove" .. fxIndex, colorWhite, colorRedHidden,colorTransparent, colorTransparent) then
+                                    if specialButtons.close(ctx,0,2,16,false,"remove" .. fxIndex, settings.colors.removeCross, settings.colors.removeCrossHover,colorTransparent, colorTransparent) then
                                         deleteModule(track, selectedModule, modulationContainerPos)
                                     end
                                     setToolTipFunc("Remove modulator")
@@ -6161,7 +6563,7 @@ local function loop()
                         reaper.ImGui_BeginGroup(ctx) 
                         
                         --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TableBorderStrong(), colorMap)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorMap)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorMapping)
                         
                         local tableWidth = moduleWidth 
                         local height = settings.vertical and settings.partsHeight or  height
@@ -6170,7 +6572,7 @@ local function loop()
                         reaper.ImGui_SetNextWindowSizeConstraints(ctx, 40, 60, tableWidth, height)
                         local visible = reaper.ImGui_BeginChild(ctx, "mappings" .. name .. fxIndex, tableWidth, 0, childFlags ,reaper.ImGui_WindowFlags_MenuBar() | reaper.ImGui_WindowFlags_HorizontalScrollbar())
                         if visible then
-                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorDarkGrey)
+                            --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorDarkGrey)
                             reaper.ImGui_PushFont(ctx, font1)
                             --reaper.ImGui_TableSetupColumn(ctx, "< Mappings")
                             
@@ -6178,12 +6580,12 @@ local function loop()
                             --reaper.ImGui_TableHeadersRow(ctx)
                             if reaper.ImGui_BeginMenuBar(ctx) then 
                                 
-                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),menuGreyHover)
-                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),menuGreyActive)
+                                --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),menuGreyHover)
+                                --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),menuGreyActive)
                                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),colorTransparent)
-                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(),colorMap)
+                                --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(),colorMap)
                                 reaper.ImGui_Button(ctx, "Mappings" .. (#mappings> 0 and (" (" .. #mappings .. ")") or ""))
-                                reaper.ImGui_PopStyleColor(ctx, 4)
+                                reaper.ImGui_PopStyleColor(ctx, 1)
                                 reaper.ImGui_EndMenuBar(ctx)
                             end
                             reaper.ImGui_PopFont(ctx)
@@ -6213,12 +6615,12 @@ local function loop()
                                     fxIsFloating = reaper.TrackFX_GetFloatingWindow(track,fxIndex)
                                     local isShowing = (fxIsShowing or fxIsFloating)
                                     
-                                    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 6)
+                                    --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 6)
                                     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
-                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorLightGrey)
-                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), isShowing and colorLightBlue or colorDarkGrey)
-                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), isShowing and colorLightBlue or colorGrey)
-                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), isShowing and colorLightBlue or colorDarkGrey)
+                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorButtonsBorder)
+                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), isShowing and colorButtonsActive or colorButtons)
+                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorButtonsHover)
+                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorButtonsActive)
                                     if i > 1 then 
                                         reaper.ImGui_Spacing(ctx)
                                     end
@@ -6230,7 +6632,7 @@ local function loop()
                                     end
                                     setToolTipFunc(toggleText )
                                     reaper.ImGui_PopStyleColor(ctx,4)
-                                    reaper.ImGui_PopStyleVar(ctx, 2)
+                                    reaper.ImGui_PopStyleVar(ctx, 1)
                                     alreadyShowing[fxIndex] = true
                                     
                                 end
@@ -6268,7 +6670,7 @@ local function loop()
                             --reaper.ImGui_TableNextRow(ctx)
                             reaper.ImGui_TableNextColumn(ctx)
                             
-                            reaper.ImGui_PopStyleColor(ctx,1)
+                            --reaper.ImGui_PopStyleColor(ctx,1)
                             --reaper.ImGui_EndTable(ctx)
                             reaper.ImGui_EndChild(ctx)
                         end
@@ -6306,6 +6708,8 @@ local function loop()
                     end
                 end
                 
+                
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.modulesBackground)
                 
                 ignoreRightClick = false
                 for pos, m in ipairs(modulatorNames) do
@@ -6349,6 +6753,7 @@ local function loop()
                         modulatorWrapper(genericModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m, genericModulatorInfo,{genericModulatorInfo.outputParam})
                     end
                 end 
+                reaper.ImGui_PopStyleColor(ctx, 1)
                 
                 --end
             end
@@ -6359,6 +6764,8 @@ local function loop()
             --reaper.ImGui_EndTable(ctx)
             ImGui.EndChild(ctx)
         end
+        
+        reaper.ImGui_PopStyleColor(ctx, 1)
         
         reaper.ImGui_Text(ctx,"")
         ImGui.EndGroup(ctx)
@@ -6394,6 +6801,7 @@ local function loop()
     
     
     
+    reaper.ImGui_PopStyleColor(ctx, colorsPush2)
     ImGui.End(ctx)
   end
   
@@ -6414,6 +6822,8 @@ local function loop()
      settingsOpen = appSettingsWindow()
   end
   
+  reaper.ImGui_PopStyleColor(ctx, colorsPush)
+  reaper.ImGui_PopStyleVar(ctx, varPush)
   reaper.ImGui_PopFont(ctx)
   
   --if (reaper.ImGui_IsKeyDown(ctx,reaper.ImGui_Mod_Super()) and  reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Backspace())) or reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Delete()) then

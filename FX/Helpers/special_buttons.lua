@@ -95,7 +95,7 @@ function buttons.openClose(ctx, id, x, y, size, open)
     return click
 end
 
-function buttons.lock(ctx, id, size, lock, tooltipText, lockedColor, unlockedColor, background, hover, active, vertical, border)
+function buttons.lock(ctx, id, size, lock, tooltipText, lockedColor, unlockedColor, background, hover, active, centerColor, border, vertical)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),hover)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),active)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),background)
@@ -123,12 +123,12 @@ function buttons.lock(ctx, id, size, lock, tooltipText, lockedColor, unlockedCol
         reaper.ImGui_DrawList_AddRectFilled(draw_list, posX + size * 0.2, posY + size * 0.4, posX + size * 0.8, posY + size * 0.85, lock and lockedColor or unlockedColor, 2)
         reaper.ImGui_DrawList_PathArcTo(draw_list, posX + size * 0.5, posY + size * 0.35, size * 0.19, 3.141592 * 0.8, 3.141592 * (lock and 2.3 or 1.9))
         reaper.ImGui_DrawList_PathStroke(draw_list, lock and lockedColor or unlockedColor, reaper.ImGui_DragDropFlags_AcceptNoDrawDefaultRect(), 2)
-        reaper.ImGui_DrawList_AddTriangleFilled(draw_list, posX + size * 0.4, posY + size * 0.55, posX + size * 0.6, posY + size * 0.55, posX + size * 0.5, posY + size * 0.70, colorBlack)
+        reaper.ImGui_DrawList_AddTriangleFilled(draw_list, posX + size * 0.4, posY + size * 0.55, posX + size * 0.6, posY + size * 0.55, posX + size * 0.5, posY + size * 0.70, centerColor)
     else
         reaper.ImGui_DrawList_AddRectFilled(draw_list, posX + size * 0.4, posY + size * 0.2, posX + size * 0.85, posY + size * 0.8, lock and lockedColor or unlockedColor, 2)
         reaper.ImGui_DrawList_PathArcTo(draw_list, posX + size * 0.35, posY + size * 0.5, size * 0.19, 3.141592 * 0.1, 3.141592 * (lock and 1.6 or 1.4))
         reaper.ImGui_DrawList_PathStroke(draw_list, lock and lockedColor or unlockedColor, reaper.ImGui_DragDropFlags_AcceptNoDrawDefaultRect(), 2)
-        reaper.ImGui_DrawList_AddTriangleFilled(draw_list, posX + size * 0.55, posY + size * 0.4, posX + size * 0.55, posY + size * 0.6, posX + size * 0.70, posY + size * 0.5, colorBlack)
+        reaper.ImGui_DrawList_AddTriangleFilled(draw_list, posX + size * 0.55, posY + size * 0.4, posX + size * 0.55, posY + size * 0.6, posX + size * 0.70, posY + size * 0.5, centerColor)
     end
     
     reaper.ImGui_PopStyleColor(ctx,3)
@@ -137,7 +137,7 @@ function buttons.lock(ctx, id, size, lock, tooltipText, lockedColor, unlockedCol
     return clicked 
 end
 
-function buttons.cogwheel(ctx, id, size, lock, tooltipText, lockedColor, unlockedColor, background, hover, active, vertical)
+function buttons.cogwheel(ctx, id, size, lock, tooltipText, lockedColor, unlockedColor, background, hover, active, centerColor)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),hover)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),active)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),background)
@@ -159,7 +159,7 @@ function buttons.cogwheel(ctx, id, size, lock, tooltipText, lockedColor, unlocke
     reaper.ImGui_DrawList_AddLine(draw_list, posX + size * (0.25), posY + size * 0.25, posX + size * (0.75), posY + size * 0.75, lock and lockedColor or unlockedColor, lineThickness)
     reaper.ImGui_DrawList_AddLine(draw_list, posX + size * (0.25), posY + size * 0.75, posX + size * (0.75), posY + size * 0.25, lock and lockedColor or unlockedColor, lineThickness)
     reaper.ImGui_DrawList_AddCircleFilled(draw_list, posX + size * 0.52, posY + size * 0.5, size * 0.25, lock and lockedColor or unlockedColor)
-    reaper.ImGui_DrawList_AddCircle(draw_list, posX + size * 0.52, posY + size * 0.5, size * 0.14, colorAlmostBlack,nil, 2)
+    reaper.ImGui_DrawList_AddCircle(draw_list, posX + size * 0.52, posY + size * 0.5, size * 0.14, centerColor,nil, 2)
     
     reaper.ImGui_PopStyleColor(ctx,3)
     reaper.ImGui_PopStyleVar(ctx)
@@ -168,12 +168,12 @@ function buttons.cogwheel(ctx, id, size, lock, tooltipText, lockedColor, unlocke
 end
 
 
-function buttons.knob(ctx, id, relativePosX, relativePosY, size, amount, textOnTop, outerCircleColor, thickness, centerOffset, staticColor, outerColor)
+function buttons.knob(ctx, id, relativePosX, relativePosY, size, amount, textOnTop, textOverlayColor, textOverlayColorBackground, border, nonAvailable)
     winPosX, windPosY = reaper.ImGui_GetCursorScreenPos(ctx)
     x = winPosX + relativePosX
     y = windPosY + relativePosY
 
-    reaper.ImGui_DrawList_AddRectFilled(draw_list, x, y, x + size, y + size, colorDarkGrey, size, nil)
+    reaper.ImGui_DrawList_AddRectFilled(draw_list, x, y, x + size, y + size, textOverlayColorBackground, size, nil)
     
 
     local center_x = x + size / 2
@@ -189,42 +189,24 @@ function buttons.knob(ctx, id, relativePosX, relativePosY, size, amount, textOnT
     
     -- draw shade of non availble pos
     reaper.ImGui_DrawList_PathArcTo(draw_list, center_x, center_y, size / 4, leftAngle + math.pi*2, rightAngle)
-    reaper.ImGui_DrawList_PathStroke(draw_list, colorDarkDarkGrey, reaper.ImGui_DrawFlags_None(), size/2) 
+    reaper.ImGui_DrawList_PathStroke(draw_list, border, reaper.ImGui_DrawFlags_None(), size/2) 
     -- Calculate end point (p2_x, p2_y)
     local p2_x = center_x + math.cos(angle) * radius
     local p2_y = center_y + math.sin(angle) * radius
 
-    if outerCircleColor then 
-        if centerOffset then
-            local amountLeft = 0.5 - amount/2 + centerOffset
-            if amountLeft < 0 then amountLeft = 0 end
-            local amountRight = amount/2 + 0.5 + centerOffset
-            if amountRight > 1 then amountRight = 1 end
-            
-            local centerAngleLeft = (startPosAngle + amountLeft * 310) * (math.pi / 180)
-            local centerAngleRight = (startPosAngle + amountRight * 310) * (math.pi / 180) 
-            
-            reaper.ImGui_DrawList_PathArcTo(draw_list, center_x, center_y, size / 2 - thickness / 2, centerAngleLeft, centerAngleRight)
-            reaper.ImGui_DrawList_PathStroke(draw_list, outerCircleColor, reaper.ImGui_DrawFlags_None(), thickness) 
-            reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, center_x + math.cos(centerAngle) * radius, center_y + math.sin(centerAngle) * radius, colorBlack, 1)
-        else 
-            local amountRight = (startPosAngle + (staticColor and staticColor or amount) * 310) * (math.pi / 180)   
-            reaper.ImGui_DrawList_PathArcTo(draw_list, center_x, center_y, size / 2 - thickness / 2, centerAngle, amountRight)
-            reaper.ImGui_DrawList_PathStroke(draw_list, outerCircleColor, reaper.ImGui_DrawFlags_None(), thickness) 
-            reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, p2_x, p2_y, colorWhite, 1)
-        end
-    else
-        reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, p2_x, p2_y, colorWhite, 1)
-        reaper.ImGui_DrawList_AddRect(draw_list, x + 1, y + 1, x + size - 1, y + size - 1, outerColor and outerColor or colorGrey, size, nil, 1)
-    end
-    reaper.ImGui_DrawList_AddRect(draw_list, x, y, x + size, y + size, colorBlack, size, nil, 1)
 
+    reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, p2_x, p2_y, textOverlayColor, 1)
+    --reaper.ImGui_DrawList_AddRect(draw_list, x + 1, y + 1, x + size - 1, y + size - 1, border, size, nil, 1)
 
+    reaper.ImGui_DrawList_AddRect(draw_list, x, y, x + size, y + size, border, size, nil, 1)
+
+    
+    -- text overlay
     if dragKnob and dragKnob == id and textOnTop then
-        reaper.ImGui_DrawList_AddRectFilled(draw_list, x - 2, y - 2, x + size + 3, y + size + 3, colorAlmostBlack, 0, nil)
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, x - 1, y - 1, x + size + 1, y + size + 1, textOverlayColorBackground, 3, nil)
         --reaper.ImGui_SetCursorPos(ctx, curPosX + relativePosX, curPosY + relativePosY - 4)
         reaper.ImGui_PushFont(ctx, font10)            
-        reaper.ImGui_DrawList_AddText(draw_list, x, y, colorWhite, textOnTop)
+        reaper.ImGui_DrawList_AddText(draw_list, x, y, textOverlayColor, textOnTop)
         --reaper.ImGui_Text(ctx, textOnTop)
         reaper.ImGui_PopFont(ctx)
     end
