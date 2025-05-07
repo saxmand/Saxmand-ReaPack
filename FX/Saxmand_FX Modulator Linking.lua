@@ -1,14 +1,15 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.5.1
+-- @version 0.5.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + including two presets properly
+--   + fixed color for tabs and window header (taking from buttons and headers)
+--   + removed auto resizing for settings window for now
 
-local version = "0.5.1"
+local version = "0.5.2"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -4045,7 +4046,7 @@ end
 ---------------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------
 function appSettingsWindow() 
-    local rv, open = reaper.ImGui_Begin(ctx, appName .. ' Settings', true, reaper.ImGui_WindowFlags_AlwaysAutoResize() | reaper.ImGui_WindowFlags_NoDocking() | reaper.ImGui_WindowFlags_TopMost() | reaper.ImGui_WindowFlags_NoCollapse()) 
+    local rv, open = reaper.ImGui_Begin(ctx, appName .. ' Settings', true, reaper.ImGui_WindowFlags_NoDocking() | reaper.ImGui_WindowFlags_TopMost() | reaper.ImGui_WindowFlags_NoCollapse()) 
     if not rv then return open end
     
     
@@ -4112,7 +4113,7 @@ function appSettingsWindow()
     end
     
     reaper.ImGui_NewLine(ctx)
-    if ImGui.BeginTabBar(ctx, '##SettingsTabs') then
+    if reaper.ImGui_BeginTabBar(ctx, '##SettingsTabs') then
         if reaper.ImGui_BeginTabItem(ctx, 'Layout') then
         
             
@@ -4357,6 +4358,7 @@ function appSettingsWindow()
             
             local allColorSets, selectedColorSetIndex = getColorSetsAndSelectedIndex() 
             
+            reaper.ImGui_SetNextItemWidth(ctx, 160)
             ret, val = reaper.ImGui_Combo(ctx, "##ColorSetsSelection", selectedColorSetIndex - 1, table.concat(allColorSets, "\0") .. "\0")
             if ret then 
                 setColorSet(tonumber(val) + 1, allColorSets)
@@ -5042,6 +5044,14 @@ local function loop()
   colorMenuBar = settings.colors.menuBar
   
   reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), settings.colors.appBackground)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBg(), settings.colors.menuBar)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBgActive(), settings.colors.menuBar)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBgCollapsed(), settings.colors.menuBar)
+  
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Tab(), settings.colors.buttons)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabSelected(), settings.colors.buttonsActive)
+  reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabHovered(), settings.colors.buttonsHover)
+  
   reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarBg(), settings.colors.appBackground)
   reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PopupBg(), settings.colors.modulesBackground)
   reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorText)
@@ -5060,14 +5070,14 @@ local function loop()
   
   
   
-  local colorsPush = 16
+  local colorsPush = 22
   
   reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 4)
   local varPush = 1
   
   local visible, open = ImGui.Begin(ctx, appName,true, 
   reaper.ImGui_WindowFlags_TopMost() | 
-  --reaper.ImGui_WindowFlags_NoCollapse() | 
+  reaper.ImGui_WindowFlags_NoCollapse() | 
   --reaper.ImGui_WindowFlags_MenuBar() |
   --reaper.ImGui_WindowFlags_HorizontalScrollbar() |
   scrollFlags
