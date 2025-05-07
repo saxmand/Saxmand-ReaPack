@@ -189,7 +189,7 @@ function buttons.knob(ctx, id, relativePosX, relativePosY, size, amount, textOnT
     
     -- draw shade of non availble pos
     reaper.ImGui_DrawList_PathArcTo(draw_list, center_x, center_y, size / 4, leftAngle + math.pi*2, rightAngle)
-    reaper.ImGui_DrawList_PathStroke(draw_list, border, reaper.ImGui_DrawFlags_None(), size/2) 
+    reaper.ImGui_DrawList_PathStroke(draw_list, border & 0xFFFFFFFF44, reaper.ImGui_DrawFlags_None(), size/2) 
     -- Calculate end point (p2_x, p2_y)
     local p2_x = center_x + math.cos(angle) * radius
     local p2_y = center_y + math.sin(angle) * radius
