@@ -1,15 +1,16 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.5.9
+-- @version 0.6.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + error on windows dragging value
+--   + fixed colors on key commands buttons
+--   + fixed modifiers not read correctly after changing in the settings
 
 
-local version = "0.5.9"
+local version = "0.6.0"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -4677,7 +4678,7 @@ function appSettingsWindow()
                         ImGui.TableSetColumnIndex(ctx, column)
                         command = commands[column]
                         if command then
-                            if colorButton(command .. "##"..name..column,colorWhite,colorAlmostBlack,colorAlmostBlack,colorOrange,"Remove key command", colorOrange) then 
+                            if colorButton(command .. "##"..name..column,colorText,colorButtons,colorButtons,colorOrange,"Remove key command", colorOrange) then 
                                 table.remove(commands,column)
                                 reaper.SetExtState(stateName,"keyCommandSettings", json.encodeToJson(keyCommandSettings), true)
                             end
@@ -4690,7 +4691,7 @@ function appSettingsWindow()
                                     addKeyCommand(index)
                                 end
                             else
-                                if colorButton("add new##"..name,colorBlue,colorAlmostBlack,colorAlmostBlack,colorDarkGrey,"Add key command") then
+                                if colorButton("add new##"..name,colorBlue,colorButtons,colorButtons,colorButtonsHover,"Add key command") then
                                     addKey = name
                                 end
                             end
@@ -4699,7 +4700,7 @@ function appSettingsWindow()
                 end
                 ImGui.EndTable(ctx)
             end
-            if colorButton("Reset to default", colorOrange, colorAlmostBlack, colorAlmostBlack, colorDarkGrey) then
+            if colorButton("Reset to default", colorOrange,colorButtons,colorButtons, colorButtonsHover) then
                 keyCommandSettings = keyCommandSettingsDefault
                 reaper.SetExtState(stateName,"keyCommandSettings", json.encodeToJson(keyCommandSettings), true)
             end
@@ -4937,14 +4938,18 @@ function compareTwoTables(tb1, tb2)
     local noTable = true
     for key, val in pairs(tb1) do
         noTable = false
-        if not tb2[key] or tb2[key] ~= val then
-            same = false
+        if val then
+            if not tb2[key] then
+                same = false
+            end
         end
     end 
     for key, val in pairs(tb2) do
         noTable = false
-        if not tb1[key] or tb1[key] ~= val then
-            same = false
+        if val then 
+            if not tb1[key] then
+                same = false
+            end
         end
     end
     
@@ -4996,7 +5001,6 @@ local function loop()
     if isCtrlPressed then modifierTable.Ctrl = true end
     if isShiftPressed then modifierTable.Shift = true end
     if isAltPressed then modifierTable.Alt = true end
-        
     
     -- SET ALL MODIFIER OPTIONS
     isScrollValue = compareTwoTables(modifierTable, settings.modifierOptions.scrollValue) 
@@ -5028,7 +5032,6 @@ local function loop()
         isFineAdjust = true
         isAdjustWidth = true
     end
-    
     
     anyModifierIsPressed = isAltPressed or isCtrlPressed or isShiftPressed or isSuperPressed
     --isAltPressed = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Alt())
