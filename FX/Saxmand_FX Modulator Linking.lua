@@ -1,22 +1,15 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.5.8
+-- @version 0.5.9
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added new floating panel
---   + added option to scroll modulators with horizontal scroll
---   + setting for size of visualizer/output element
---   + option to only have mapping width positive (from 0-1)
---   + scroll option in modulators area
---   + more layout stuff
---   + modifiers can be changed
---   + begining of key commands
+--   + error on windows dragging value
 
 
-local version = "0.5.8"
+local version = "0.5.9"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -2322,7 +2315,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
                     local newVal = (amount + addOffset) * range + min
                     newAmount = setParam(track, p, newVal)
                      
-                    newAmountRelative = newAmount and (newAmount - min) / range 
+                    newAmountRelative = newAmount and (newAmount - min) / range or 0
                     -- these deals with moving the mouse but the parameter does not change, so we store them and add the difference to the next time
                     if lastAmount and lastAmount == amount then
                         missingOffset = amount - newAmountRelative + (missingOffset and missingOffset or 0)
