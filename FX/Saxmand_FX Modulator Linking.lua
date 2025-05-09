@@ -1,16 +1,16 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.6.0
+-- @version 0.6.1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed colors on key commands buttons
---   + fixed modifiers not read correctly after changing in the settings
+--   + fixed modifiers not read correctly after changing in the settings v2
+--   + fixed drag direction for windows
 
 
-local version = "0.6.0"
+local version = "0.6.1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -2236,7 +2236,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         local amount
         local grains = (isFineAdjust and 100 * settings.fineAdjustAmount or 100)
         if isMouseDown then 
-            amount = linkWidth + ((mouse_pos_x - mouseDragStartX) - (mouse_pos_y - mouseDragStartY)) / grains
+            amount = linkWidth + ((mouse_pos_x - mouseDragStartX) - (mouse_pos_y - mouseDragStartY) * (isApple and -1 or 1)) / grains
             mouseDragStartX = mouse_pos_x
             mouseDragStartY = mouse_pos_y
         elseif isScrollValue and scrollVertical and scrollVertical ~= 0 then
@@ -2295,7 +2295,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
                 if reaper.ImGui_IsMouseClicked(ctx, 0) and nameOnSide then
                     --reaper.ShowConsoleMsg(faderResolution .. "\n")
                 end
-                mouseDragWidth = (mouse_pos_x - mouseDragStartX) + (dragKnob:match("Window") ~= nil and (mouse_pos_y - mouseDragStartY) or 0)
+                mouseDragWidth = (mouse_pos_x - mouseDragStartX) - (dragKnob:match("Window") ~= nil and (mouse_pos_y - mouseDragStartY) * (isApple and -1 or 1) or 0)
                 amount = currentValueNormalized + mouseDragWidth / changeResolution
                 mouseDragStartX = mouse_pos_x
                 mouseDragStartY = mouse_pos_y
@@ -4937,16 +4937,16 @@ function compareTwoTables(tb1, tb2)
     local same = true
     local noTable = true
     for key, val in pairs(tb1) do
-        noTable = false
         if val then
+            noTable = false
             if not tb2[key] then
                 same = false
             end
         end
     end 
     for key, val in pairs(tb2) do
-        noTable = false
-        if val then 
+        if val then  
+            noTable = false
             if not tb1[key] then
                 same = false
             end
@@ -4957,9 +4957,16 @@ function compareTwoTables(tb1, tb2)
 end
 
 function mergeTables(tb1, tb2)
-    local temp = deepcopy(tb1)
+    local temp = {}
+    for k, v in pairs(tb1) do
+        if v then
+            temp[k] = v
+        end
+    end
     for k, v in pairs(tb2) do
-      temp[k] = v
+      if v then
+          temp[k] = v
+      end
     end
     return temp
 end
@@ -5032,6 +5039,8 @@ local function loop()
         isFineAdjust = true
         isAdjustWidth = true
     end
+    
+    
     
     anyModifierIsPressed = isAltPressed or isCtrlPressed or isShiftPressed or isSuperPressed
     --isAltPressed = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Alt())
