@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="8e3b4a816db19d37d4e2d02d78e9942f9997bc39" name="Saxmand ReaPack">
+<index version="1" commit="964f82bc80cfe79c026beb51f9994bb64e6900a3" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_FX Modulator Linking.lua" type="script" desc="FX Modulator Linking">
       <version name="0.1.0" author="saxmand" time="2025-04-19T03:17:01Z">
@@ -575,6 +575,28 @@
         <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/8e3b4a816db19d37d4e2d02d78e9942f9997bc39/FX/Helpers/special_buttons.lua</source>
         <source file="Color sets/Dark.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/8e3b4a816db19d37d4e2d02d78e9942f9997bc39/FX/Color%20sets/Dark.txt</source>
         <source file="Color sets/Light.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/8e3b4a816db19d37d4e2d02d78e9942f9997bc39/FX/Color%20sets/Light.txt</source>
+      </version>
+      <version name="0.5.8" author="Saxmand" time="2025-05-09T21:53:08Z">
+        <changelog><![CDATA[+ added new floating panel
++ added option to scroll modulators with horizontal scroll
++ setting for size of visualizer/output element
++ option to only have mapping width positive (from 0-1)
++ scroll option in modulators area
++ more layout stuff
++ modifiers can be changed
++ begining of key commands]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX/Saxmand_FX%20Modulator%20Linking.lua</source>
+        <source type="effect" file="../FX Modulator Linking/4-in-1-out Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX%20Modulator%20Linking/4-in-1-out%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/AB Slider Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX%20Modulator%20Linking/AB%20Slider%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/ACS Native Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX%20Modulator%20Linking/ACS%20Native%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Keytracker Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX%20Modulator%20Linking/Keytracker%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/LFO Native Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX%20Modulator%20Linking/LFO%20Native%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/MIDI Fader Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX%20Modulator%20Linking/MIDI%20Fader%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Note Velocity Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX%20Modulator%20Linking/Note%20Velocity%20Modulator.jsfx</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX/Helpers/json.lua</source>
+        <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX/Helpers/special_buttons.lua</source>
+        <source file="Color sets/Dark.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX/Color%20sets/Dark.txt</source>
+        <source file="Color sets/Light.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/964f82bc80cfe79c026beb51f9994bb64e6900a3/FX/Color%20sets/Light.txt</source>
       </version>
     </reapack>
   </category>
