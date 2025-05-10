@@ -1,16 +1,15 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.6.1
+-- @version 0.6.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed modifiers not read correctly after changing in the settings v2
---   + fixed drag direction for windows
+--   + quick fix for mapping and updating last touch parameter
 
 
-local version = "0.6.1"
+local version = "0.6.2"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -2204,6 +2203,22 @@ function textButtonNoBackgroundClipped(text, color, width, id)
     return click
 end
 
+function getCurrentVal(p)
+    if p.param and p.param > -1 then
+        if p.usesEnvelope then
+        -- write automation
+        -- first read automation state
+        -- then set to touch
+        elseif p.parameterLinkEffect and p.parameterModulationActive then
+            local _, baseline = reaper.TrackFX_GetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline')
+            local val = reaper.TrackFX_GetParam(track, p.fxIndex, p.param)
+            return val, baseline
+        else 
+            return reaper.TrackFX_GetParam(track, p.fxIndex, p.param), nil
+        end
+    end 
+end
+
     
 function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, currentValue, faderResolution) 
     local currentValueNormalized = (currentValue - min) / range
@@ -4354,14 +4369,14 @@ function appSettingsWindow()
                 saveSettings()
             end
             setToolTipFunc("If enabeled the mapped parameter width will only be from 0 to 1, so never negative")  
-            --[[
+            
             local ret, val = reaper.ImGui_Checkbox(ctx,"Force mapping##",settings.forceMapping) 
             if ret then 
                 settings.forceMapping = val
                 saveSettings()
             end
             setToolTipFunc("This will ensure that you always map a parameter if you click on it.\nThe downside is that that the last touched FX parameter will always be the delta value for the focused FX, in order to ensure this behavior.") 
-            ]]
+            
             reaper.ImGui_NewLine(ctx)
             reaper.ImGui_TextColored(ctx, colorTextDimmed, "Floating mapper settings:")
             local ret, val = reaper.ImGui_Checkbox(ctx,"Use floating mapper##",settings.useFloatingMapper) 
@@ -4819,20 +4834,26 @@ end
 local fxWindowClicked, parameterFound, parameterChanged, focusDelta
 function updateTouchedFX()
     local parameterUpdated = false
-    function setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp, deltaParam)
+    function setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp, deltaParam, val, lastValTouched)
         if settings.forceMapping then
             if deltaParam ~= param then 
                 parameterFound = true 
                 parameterUpdated = true
             end
         else
-            if lastParameterTouched ~= param or lastFxIndexTouched ~= fxidx or lastTrackIndexTouched ~= trackidx then 
+            if (lastParameterTouched ~= param or lastFxIndexTouched ~= fxidx or lastTrackIndexTouched ~= trackidx) then --or (lastValTouched and lastValTouched ~= val) then 
                 parameterFound = true 
-                parameterUpdated = true
+                parameterUpdated = true 
+                --if lastValTouched and lastValTouched ~= val then
+                --    reaper.ShowConsoleMsg( lastValTouched .. "~=" .. val .. " lastval dif\n")
+                --end
+                --reaper.ShowConsoleMsg(tostring(lastParameterTouched) .."~=".. param .. " - ".. tostring(lastFxIndexTouched) .."~=".. fxidx .. " - ".. tostring(lastTrackIndexTouched) .."~=".. trackidx .. "\n")
             end
         end
         
         if parameterFound then
+            
+            --reaper.ShowConsoleMsg( tostring(lastValTouched) .. "~=" .. val .. " found\n")
             trackIndexTouched = trackidx
             fxIndexTouched = fxidx
             parameterTouched = param
@@ -4841,7 +4862,7 @@ function updateTouchedFX()
             fxnumber = fxIndexTouched
             paramnumber = parameterTouched 
             
-            scrollToParameter = true
+            --scrollToParameter = true
             
             --if not settings.forceMapping then 
                 lastParameterTouched = parameterTouched
@@ -4851,40 +4872,47 @@ function updateTouchedFX()
         end
     end
     
-    local retval, trackidx, itemidx, takeidx, fxidx, param = reaper.GetTouchedOrFocusedFX( 0 )  
+    local retval, trackidx, itemidx, takeidx, fxidx, param = reaper.GetTouchedOrFocusedFX( 0 ) 
+    
     if retval and trackidx then
-        local trackTemp = reaper.GetTrack(0,trackidx)  
-        if trackTemp then
+        local trackTemp = reaper.GetTrack(0,trackidx)   
+        --reaper.ShowConsoleMsg(val .. " - " .. tostring(dragKnob) .. "\n")
+        if trackTemp then 
+            local p = getAllDataFromParameter(trackTemp,fxidx,param) 
+            local val, baseline = getCurrentVal(p)
             local deltaParam = reaper.TrackFX_GetNumParams(trackTemp, fxidx) - 1  
             if isMouseDown then  
                 if not fxWindowClicked then 
                     fxWindowClicked = isFXWindowUnderMouse() 
                 end
-                if fxWindowClicked then 
+                if fxWindowClicked then  
+                    
                 
                     if settings.useFloatingMapper then
                         showFloatingMapper = true
                     end
                     
-                    if not dragKnob then 
-                        dragKnob = "baselineWindow"
-                        mouseDragStartX = mouse_pos_x
-                        mouseDragStartY = mouse_pos_y
-                    end
                     
                     focusDelta = false
                     if not parameterFound then 
-                        setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp, deltaParam)
+                        setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp, deltaParam, val, lastValTouched)
+                        lastValTouched = val
                     else 
                         -- changing parameter
-                        if param ~= deltaParam then 
-                            local p = getAllDataFromParameter(trackTouched,fxIndexTouched,parameterTouched) 
+                        if not settings.forceMapping or param ~= deltaParam then 
                             if p.isParameterLinkActive then
                                 local range = p.max - p.min
                                 setParameterValuesViaMouse(trackTouched, "Window", "", p, range, p.min, p.baseline, 100)
                                 
                                 -- not used right now
                                 if not parameterChanged then 
+                                    if not dragKnob then 
+                                        dragKnob = "baselineWindow"
+                                        mouseDragStartX = mouse_pos_x
+                                        mouseDragStartY = mouse_pos_y
+                                    end
+                                    
+                                    --reaper.ShowConsoleMsg(param .. " - " .. val .. " - " .. tostring(dragKnob) .. "\n")
                                     parameterChanged = true
                                 end  
                             end
@@ -4912,6 +4940,7 @@ function updateTouchedFX()
                 parameterFound = nil
                 fxWindowClicked = nil
                 dragKnob = nil
+                lastValTouched = nil
             end
         end
     end
@@ -5128,8 +5157,8 @@ local function loop()
         
         lastFxNumber = fxnumber
         lastParamNumber = paramnumber
-        lastFxIndexTouched = nil
-        lastParameterTouched = nil
+        --lastFxIndexTouched = nil
+        --lastParameterTouched = nil
         --track = trackTouched
     end
     
@@ -6047,7 +6076,9 @@ local function loop()
                           if notInstalled then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorTextDimmed) end
                           
                           if moduleButton("+ " .. val.name, tooltip) then
-                              currentFocus = reaper.JS_Window_GetFocus()
+                              if val.func ~= "Any" then
+                                  currentFocus = reaper.JS_Window_GetFocus()
+                              end
                               if val.func == "general" then 
                                   if notInstalled then
                                       openWebpage(val.website)
