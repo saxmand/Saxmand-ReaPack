@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.6.3-b1
+-- @version 0.6.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
@@ -11,7 +11,7 @@
 --   + fix removing fx not doing visual glitch
 
 
-local version = "0.6.3"
+local version = "0.6.4"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
