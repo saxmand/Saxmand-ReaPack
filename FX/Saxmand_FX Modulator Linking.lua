@@ -1,17 +1,16 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.6.4
+-- @version 0.6.5
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fix mapping [ANY] fx
---   + fix remove type from name when using mapping [ANY] fx
---   + fix removing fx not doing visual glitch
+--   + fix position and colors (no transparent is availble) of [ADD] overlay on windows
+--   + popup for mapped parameters opens left of modulator
 
 
-local version = "0.6.4"
+local version = "0.6.5"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -742,7 +741,9 @@ end
 
 function renameModulatorNames(track, modulationContainerPos)
     local ret, fxAmount = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count')
-    if fxAmount == "0" then
+    fxAmount = tonumber(fxAmount)
+    if not fxAmount then return end
+    if fxAmount == 0 then
         reaper.TrackFX_Delete(track, modulationContainerPos)
     end 
     
@@ -2384,6 +2385,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     local parStartPosX, parStartPosY, parEndPosX, parEndPosY
     
     local startPosX, startPosY = reaper.ImGui_GetCursorPos(ctx)
+    -- we move elements slightly to make sure they are not covered by the line around
     reaper.ImGui_SetCursorPos(ctx, startPosX + 1, startPosY)
     local faderResolution = sliderWidthAvailable --/ range
     
@@ -2652,8 +2654,8 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     
     if parStartPosX and mouse_pos_x_imgui >= parStartPosX and mouse_pos_x_imgui <= parStartPosX + areaWidth and
        mouse_pos_y_imgui >= parStartPosY and mouse_pos_y_imgui <= parEndPosY then
-      if isParameterLinkActive and reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then 
-          ImGui.OpenPopup(ctx, 'popup##' .. buttonId) 
+      if isParameterLinkActive and reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then  
+          reaper.ImGui_OpenPopup(ctx, 'popup##' .. buttonId)  
       end
       
       if moduleId:match("Floating") == nil and moduleId:match("modulator") == nil and not nameOnSide and reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Left(),false) then 
@@ -2693,6 +2695,88 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
           
         end
     end
+    
+    
+    if not popupOpen then popupOpen = {}; popupStartPos = {}; end
+    popupOpen[buttonId] = reaper.ImGui_IsPopupOpen(ctx, 'popup##' .. buttonId)
+    if popupOpen[buttonId] then 
+        reaper.ImGui_SetNextWindowPos(ctx,parStartPosX + areaWidth + 2, parStartPosY - 1, reaper.ImGui_Cond_Appearing());
+        if not popupStartPos[buttonId] then
+            popupStartPos[buttonId] = {x = parStartPosX, y = parStartPosY}
+        end
+        
+        
+        if popupStartPos[buttonId] and (popupStartPos[buttonId].x ~= parStartPosX or popupStartPos[buttonId].y ~= parStartPosY) then
+            popupStartPos[buttonId] = nil
+        end 
+    else
+        --popupStartPos[buttonId] = nil
+    end
+    
+    if reaper.ImGui_BeginPopup(ctx, 'popup##' .. buttonId) then
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorText)
+        if isParameterLinkActive then
+            --[[
+            for i, dir in ipairs(directions) do
+                if reaper.ImGui_RadioButton(ctx, dir, p.direction == - (i - 2)) then 
+                    reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'.. param..'.plink.offset',  linkWidth >= 0 and -(i - 1) / 2 or  (i - 3) / 2)
+                end
+            end
+            ]]
+            local toolTipText = (parameterModulationActive and 'Disable' or 'Enable') .. ' "' .. parameterLinkName .. '" parameter modulation of ' .. p.name
+            local ret, newValue = reaper.ImGui_Checkbox(ctx, "##enable" .. buttonId, parameterModulationActive)
+            if ret and param > -1 then
+                toggleeModulatorAndSetBaselineAcordingly(track, fxIndex, param, newValue)
+                ignoreScroll = true
+            end  
+            setToolTipFunc(toolTipText)  
+            reaper.ImGui_SameLine(ctx)
+            local overlayText = isMouseDown and "Width\n" .. math.floor(linkWidth * 100) .. "%"
+            if specialButtons.knob(ctx, "width" .. buttonId .. moduleId, 0, 0, 20,minWidth == 0 and linkWidth or linkWidth / 2 + 0.5, overlayText, settings.colors.text, settings.colors.buttons, settings.colors.buttonsBorder, settings.colors.buttonsActive) then
+                if not dragKnob then
+                    dragKnob = "width" .. buttonId .. moduleId
+                    mouseDragStartX = mouse_pos_x
+                    mouseDragStartY = mouse_pos_y
+                end 
+                if not isMouseDown then  
+                    toolTipText = "Width: " .. math.floor(linkWidth * 100) .. "%"
+                    setToolTipFunc(toolTipText)
+                end
+            end 
+            
+            reaper.ImGui_SameLine(ctx)
+            if drawModulatorDirection(20, p.bipolar, p.width, track, fxIndex, param, buttonId, 0,0, p.bipolar and colorText or colorTextDimmed) then
+                toggleBipolar(track, fxIndex, param, p.bipolar) 
+            end
+            
+            reaper.ImGui_Spacing(ctx)
+            local close = false
+            if reaper.ImGui_Button(ctx,"Remove ".. '"' ..  parameterLinkName .. '"' .. " modulator mapping##remove" .. buttonId) then
+                disableParameterLink(track, fxIndex, param)
+                doNotChangeOnlyMapped = true
+                close = true
+            end 
+            if reaper.ImGui_Button(ctx,"Open ".. '"' .. parameterLinkName .. '"' .. " modulator plugin##open" .. buttonId) then 
+                reaper.TrackFX_SetOpen(track,fxnumber,true)   
+                close = true
+            end 
+            if reaper.ImGui_Button(ctx,"Show "..'"' .. name ..'"' .. " parameter modulation/link window##show" .. buttonId) then 
+                reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.visible',1 )
+                close = true
+            end
+        end
+        
+        if not popupStartPos[buttonId] or close then
+            reaper.ImGui_CloseCurrentPopup(ctx)
+            popupStartPos[buttonId] = nil
+        end
+        reaper.ImGui_PopStyleColor(ctx)
+        
+        ImGui.EndPopup(ctx)
+    end
+    
+    
+    
     
     local padW = 1
     local padH = 1
@@ -2765,6 +2849,8 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
         reaper.ImGui_SetCursorPos(ctx, endPosX, endPosY)
         reaper.ImGui_Spacing(ctx)
     end
+    
+    
     --return ret, newValue
 end
 
@@ -2852,7 +2938,7 @@ local function openFxBrowserOnSpecificTrack()
         browserHwnd, browserSearchFieldHwnd, title = findWindowParentWithName("FX Browser", addFXToTrackWindowName)
     end
     
-    local isDocked = title == "FX Browser (docked)"
+    --local isDocked = title == "FX Browser (docked)"
     
     return browserHwnd, browserSearchFieldHwnd, isDocked
 end
@@ -3114,58 +3200,6 @@ function parameterNameAndSliders(moduleId, func2, p, focusedParamNumber, doNotSe
     local faderWidth = sizeOfFader and sizeOfFader or moduleWidth - scrollBarOffset --(sizeArray and sizeArray.faderWidth) and sizeArray.faderWidth or moduleWidth - scrollBarOffset
     local parameterMappingWidth = itemWidth
     
-    if ImGui.BeginPopup(ctx, 'popup##' .. buttonId, nil) then
-        if isParameterLinkActive then
-            --[[
-            for i, dir in ipairs(directions) do
-                if reaper.ImGui_RadioButton(ctx, dir, p.direction == - (i - 2)) then 
-                    reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'.. param..'.plink.offset',  linkWidth >= 0 and -(i - 1) / 2 or  (i - 3) / 2)
-                end
-            end
-            ]]
-            local toolTipText = (parameterModulationActive and 'Disable' or 'Enable') .. ' "' .. parameterLinkName .. '" parameter modulation of ' .. p.name
-            local ret, newValue = reaper.ImGui_Checkbox(ctx, "##enable" .. buttonId, parameterModulationActive)
-            if ret and param > -1 then
-                toggleeModulatorAndSetBaselineAcordingly(track, fxIndex, param, newValue)
-                ignoreScroll = true
-            end  
-            setToolTipFunc(toolTipText)  
-            reaper.ImGui_SameLine(ctx)
-            local overlayText = isMouseDown and "Width\n" .. math.floor(linkWidth * 100) .. "%"
-            if specialButtons.knob(ctx, "width" .. buttonId .. moduleId, 0, 0, 20,minWidth == 0 and linkWidth or linkWidth / 2 + 0.5, overlayText, settings.colors.text, settings.colors.buttons, settings.colors.buttonsBorder, settings.colors.buttonsActive) then
-                if not dragKnob then
-                    dragKnob = "width" .. buttonId .. moduleId
-                    mouseDragStartX = mouse_pos_x
-                    mouseDragStartY = mouse_pos_y
-                end 
-                if not isMouseDown then  
-                    toolTipText = "Width: " .. math.floor(linkWidth * 100) .. "%"
-                    setToolTipFunc(toolTipText)
-                end
-            end 
-            
-            reaper.ImGui_SameLine(ctx)
-            if drawModulatorDirection(20, p.bipolar, p.width, track, fxIndex, param, buttonId, 0,0, p.bipolar and colorText or colorTextDimmed) then
-                toggleBipolar(track, fxIndex, param, p.bipolar) 
-            end
-            
-            reaper.ImGui_Spacing(ctx)
-            if reaper.ImGui_Button(ctx,"Remove ".. '"' ..  parameterLinkName .. '"' .. " modulator mapping##remove" .. buttonId) then
-                disableParameterLink(track, fxIndex, param)
-                doNotChangeOnlyMapped = true
-                ImGui.CloseCurrentPopup(ctx)
-            end 
-            if reaper.ImGui_Button(ctx,"Open ".. '"' .. parameterLinkName .. '"' .. " modulator plugin##open" .. buttonId) then 
-                reaper.TrackFX_SetOpen(track,fxnumber,true)   
-                ImGui.CloseCurrentPopup(ctx)
-            end 
-            if reaper.ImGui_Button(ctx,"Show "..'"' .. name ..'"' .. " parameter modulation/link window##show" .. buttonId) then 
-                reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.visible',1 )
-                ImGui.CloseCurrentPopup(ctx)
-            end
-        end
-        ImGui.EndPopup(ctx)
-    end
     
     ImGui.BeginGroup(ctx)  
     
@@ -4776,17 +4810,17 @@ function appSettingsWindow()
     return open
 end
 
-function addingAnyModuleWindow(hwnd, isDocked) 
+function addingAnyModuleWindow(hwnd) 
     local ret, x, y = reaper.JS_Window_GetClientRect(hwnd)
     local ret, w, h = reaper.JS_Window_GetClientSize(hwnd)
     local _, avTop, _, avBottom = reaper.JS_Window_GetViewportFromRect(0, 0, 0, 0, false)
     local avHeight = avTop
     if isApple then
-        y = avHeight - y
+        y = avHeight - y + 4
     else
-        y = y + (isDocked and 4 or - 20)
+        y = y + 4
     end    
-    local topbar = 32
+    local topbar = 36
     y = y - topbar
     
     
@@ -4803,24 +4837,25 @@ function addingAnyModuleWindow(hwnd, isDocked)
     --    reaper.ImGui_SetNextWindowPos(ctx, x + w - windowW - 160, y + h - 4)
     --    reaper.ImGui_SetNextWindowSize(ctx, windowW, topbar)
     --end
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), colorTransparent)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorTransparent)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), isApple and colorTransparent or colorText)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), isApple and colorTransparent or colorMapping)
     local rv, open = reaper.ImGui_Begin(ctx, appName .. 'AddingAnyModule', true, reaper.ImGui_WindowFlags_NoDocking() | reaper.ImGui_WindowFlags_TopMost() | reaper.ImGui_WindowFlags_NoDecoration() | reaper.ImGui_WindowFlags_NoMove()) 
     if not rv then return open end
     
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 5)
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 4)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorMapping)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorButtons)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorButtonsHover)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorButtonsActive)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorMapping)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorText)
     if reaper.ImGui_Button(ctx, text, textW+ 8) then
         open = false
     end
     reaper.ImGui_PopFont(ctx)
     reaper.ImGui_PopStyleColor(ctx,5)
-    reaper.ImGui_PopStyleVar(ctx, 2)
+    reaper.ImGui_PopStyleVar(ctx, 3)
     reaper.ImGui_End(ctx)
     
     reaper.ImGui_PopStyleColor(ctx,2)
@@ -5203,7 +5238,7 @@ local function loop()
             paramnumber = trackSettings.fxnumber ~= modulationContainerPos and trackSettings.paramnumber or nil 
             
             _, trackName = reaper.GetTrackName(track)
-            lastTrack = track
+            --lastTrack = track
         end
         
         
@@ -6107,7 +6142,7 @@ local function loop()
                               elseif val.func == "LFO" then 
                                   containerPos, insert_position = insertLocalLfoFxAndAddContainerMapping(track)
                               elseif val.func == "Any" then 
-                                  browserHwnd, browserSearchFieldHwnd, isDocked = openFxBrowserOnSpecificTrack() 
+                                  browserHwnd, browserSearchFieldHwnd = openFxBrowserOnSpecificTrack() 
                                   fx_before = getAllTrackFXOnTrackSimple(track)  
                               end
                               click = true
@@ -6242,7 +6277,7 @@ local function loop()
           
           
           
-          if browserHwnd then 
+          if browserHwnd and track and track == lastTrack then 
               firstBrowserHwnd = firstBrowserHwnd and firstBrowserHwnd + 1 or 0 
               
               fx_after = getAllTrackFXOnTrackSimple(track)
@@ -6259,12 +6294,12 @@ local function loop()
                   -- An FX was added
                   openCloseFx(track, newFxIndex, false) 
                   reaper.TrackFX_SetNamedConfigParm( track, newFxIndex, 'renamed_name', fxName:gsub("^[^:]+: ", "")) 
-                  containerPos, insert_position = movePluginToContainer(track, newFxIndex )
+                  modulationContainerPos, insert_position = movePluginToContainer(track, newFxIndex )
                   renameModulatorNames(track, modulationContainerPos)
                   browserHwnd = nil
               end
                
-              if not addingAnyModuleWindow(browserHwnd, isDocked) then
+              if not addingAnyModuleWindow(browserHwnd) then
                   browserHwnd = nil
               end
               
@@ -7631,6 +7666,9 @@ local function loop()
         removeScroll = false
     end
     
+    if track and (not lastTrack or lastTrack ~= track) then  
+        lastTrack = track
+    end
     --------------- KEY COMMANDS ----------------
     
     local time = reaper.time_precise()
