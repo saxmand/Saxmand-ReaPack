@@ -7,7 +7,7 @@
 --   Color sets/*.txt
 -- @changelog
 --   + fix position and colors (no transparent is availble) of [ADD] overlay on windows
---   + popup for mapped parameters opens left of modulator
+--   + right click popup for mapped parameters opens left the parameters area
 
 
 local version = "0.6.5"
