@@ -1,12 +1,14 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.6.2
+-- @version 0.6.2-b1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + quick fix for mapping and updating last touch parameter
+--   + fix mapping [ANY] fx
+--   + fix remove type from name when using mapping [ANY] fx
+--   + fix removing fx not doing visual glitch
 
 
 local version = "0.6.2"
@@ -809,15 +811,22 @@ end
 function deleteModule(track, fxIndex, modulationContainerPos)
     if fxIndex then 
         if reaper.TrackFX_Delete(track, fxIndex) then
+            selectedModule = false
             local mappings = (parameterLinks and parameterLinks[tostring(fxIndex)]) and parameterLinks[tostring(fxIndex)] or {} 
+            
+            
             for i, map in ipairs(mappings) do  
                 local mapFxIndex = map.fxIndex
                 local mapParam = map.param
-                disableParameterLink(track, mapFxIndex, mapParam)
+                disableParameterLink(track, mapFxIndex, mapParam) 
+            end
+            
+            local guid = reaper.TrackFX_GetFXGUID( track, fxIndex )
+            if trackSettings.hideParametersFromModulator and trackSettings.hideParametersFromModulator[p.guid] then 
+                trackSettings.hideParametersFromModulator[p.guid] = nil
             end
                 
             renameModulatorNames(track, modulationContainerPos)
-            selectedModule = false
         end
     end
 end
@@ -960,10 +969,13 @@ function movePluginToContainer(track, originalIndex)
     local insert_position = 0x2000000 + position_of_FX_in_container * (parent_FX_count + 1) + position_of_container
     
     reaper.TrackFX_CopyToTrack(track, originalIndex, track, insert_position, true)
+    
+    
+    
     return modulationContainerPos, insert_position
 end
 
-function getOutputArrayForModulator(track, fxName)
+function getOutputArrayForModulator(track, fxName, fxIndex, modulationContainerPos)
     if fxName:match("LFO Native Modulator") then
         return {0}
     elseif fxName:match("ADSR%-1") then
@@ -983,20 +995,7 @@ function getOutputArrayForModulator(track, fxName)
     elseif fxName:match("Note Velocity Modulator") then
         return {0}
     else 
-        local numParams = reaper.TrackFX_GetNumParams(track,fxIndex) 
-        
-        local genericModulatorInfo = {outputParam = -1, indexInContainerMapping = -1}
-        for p = 0, numParams -1 do
-            --retval, buf = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, "param." .. p .. ".container_map.hint_id" )
-            -- we would have to enable multiple outputs here later
-            retval, buf = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, "container_map.get." .. fxIndex .. "." .. p )
-            if retval then
-                genericModulatorInfo = {outputParam = p, indexInContainerMapping = tonumber(buf)}
-                break
-            end
-        end
-        
-        return {genericModulatorInfo.outputParam}
+        return {} 
     end
 end
 
@@ -1018,7 +1017,7 @@ function getModulatorNames(track, modulationContainerPos, parameterLinks)
             end
             
             local mappings = (parameterLinks and parameterLinks[tostring(fxIndex)]) and parameterLinks[tostring(fxIndex)] or {}
-            local output = getOutputArrayForModulator(track, fxOriginalName)
+            local output = getOutputArrayForModulator(track, fxOriginalName, fxIndex, modulationContainerPos)
             
             local isCollabsed = trackSettings.collabsModules[guid]
             --if not nameCount[fxName] then nameCount[fxName] = 1 else nameCount[fxName] = nameCount[fxName] + 1 end
@@ -2657,7 +2656,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
           ImGui.OpenPopup(ctx, 'popup##' .. buttonId) 
       end
       
-      if moduleId:match("Floating") == nil and not nameOnSide and reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Left(),false) then 
+      if moduleId:match("Floating") == nil and moduleId:match("modulator") == nil and not nameOnSide and reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Left(),false) then 
           --reaper.ShowConsoleMsg(moduleId .. " - ".."hej\n")
           if not doNotSetFocus then
               paramnumber = param
@@ -2710,11 +2709,12 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     
     
     -- MAPPING OVRELAY
-    if overlayActive then 
-        local overlayColor = (canBeMapped and not mapOutput) and colorMappingLight or colorSelectOverlayLight
+    if overlayActive then  reaper.ImGui_EndDisabled(ctx) end
+    
+    if p.guid and overlayActive then  
         local borderColor = (canBeMapped and not mapOutput) and colorMapping or colorSelectOverlay
         
-        reaper.ImGui_EndDisabled(ctx)
+        
         reaper.ImGui_SetCursorPos(ctx, startPosX,startPosY)
         local visualName = ("Use " .. name)
         if (canBeMapped and not mapOutput) then visualName = ("Map " .. name) end
@@ -2722,14 +2722,13 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
             local hidden = trackSettings.hideParametersFromModulator and trackSettings.hideParametersFromModulator[p.guid] and trackSettings.hideParametersFromModulator[p.guid][p.param]
             visualName = (hidden and "Hidding "  or "Showing ") .. name 
             if hidden then
-                overlayColor = colorRedTransparent
                 borderColor = colorRedHidden
             else
-                overlayColor = colorGreenTransparent
                 borderColor = colorGreen
-            end
-                
+            end 
         end
+        -- transparent version of border
+        local overlayColor = borderColor & 0xFFFFFFFF55
         
         reaper.ImGui_InvisibleButton(ctx,  visualName .. "##map" .. buttonId,  areaWidth, endPosY - startPosY - 4)
         if ImGui.IsItemClicked(ctx) then
@@ -2810,6 +2809,26 @@ local function waitForWindowToClose(browserHwnd, callback)
     end
 end
 
+
+
+function findWindowParentWithName(name1, name2, name3)
+    local hwnd = reaper.JS_Window_GetFocus()
+    local originalHwnd = hwnd
+  
+    while hwnd ~= nil and reaper.JS_Window_IsWindow(hwnd) do
+        local title = reaper.JS_Window_GetTitle(hwnd)
+        if title and (name1 and title:match(name1) ~= nil) or (name2 and title:match(name2) ~= nil) or (name3 and title:match(name3) ~= nil) then
+            return hwnd, originalHwnd, title
+        end
+        hwnd = reaper.JS_Window_GetParent(hwnd)
+    end
+  
+    return false, false, ""
+end
+
+
+
+
 local function openFxBrowserOnSpecificTrack()
     local index = reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER")
     local trackTitleIndex = "Track " .. math.floor(index)
@@ -2826,22 +2845,16 @@ local function openFxBrowserOnSpecificTrack()
     --end
     
     reaper.Main_OnCommand(40271, 0) --View: Show FX browser window
-    local browserHwnd = reaper.JS_Window_GetFocus()
-    browserName = reaper.JS_Window_GetTitle(browserHwnd)
-    --reaper.ShowConsoleMsg(browserName .. "1\n")
-    local showing = browserName == "FX Browser (docked)" or browserName == addFXToTrackWindowName
+    local browserHwnd, browserSearchFieldHwnd, title = findWindowParentWithName("FX Browser", addFXToTrackWindowName)
     
-    if not showing then 
+    if not browserHwnd then 
         reaper.Main_OnCommand(40271, 0) --View: Show FX browser window
-        browserHwnd = reaper.JS_Window_GetFocus()
-        browserName = reaper.JS_Window_GetTitle(browserHwnd)
-        --reaper.ShowConsoleMsg(browserName .. "2\n")
-        showing = browserName == "FX Browser (docked)" or browserName == addFXToTrackWindowName 
+        browserHwnd, browserSearchFieldHwnd, title = findWindowParentWithName("FX Browser", addFXToTrackWindowName)
     end
     
-    local isDocked = browserName == "FX Browser (docked)"
+    local isDocked = title == "FX Browser (docked)"
     
-    return browserHwnd, isDocked
+    return browserHwnd, browserSearchFieldHwnd, isDocked
 end
 
 function openCloseFx(track, fxIndex, open)  
@@ -3866,6 +3879,7 @@ end
 
 function genericModulator(name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, fx, genericModulatorInfo)
     
+    -- make it possible to have it multi output. Needs to change genericModulatorInfo everywhere.
     local numParams = reaper.TrackFX_GetNumParams(track,fxIndex) 
     local isMapped = genericModulatorInfo and genericModulatorInfo.outputParam ~= -1
     
@@ -4813,8 +4827,6 @@ function addingAnyModuleWindow(hwnd, isDocked)
     return open
 end
 
-
-
 function isFXWindowUnderMouse()
     local x, y = reaper.GetMousePosition()
     local hwnd = reaper.JS_Window_FromPoint(x, y)
@@ -4841,6 +4853,7 @@ function updateTouchedFX()
                 parameterUpdated = true
             end
         else
+            -- lastval touched not working, so will try to think of something else. Some left over code still there
             if (lastParameterTouched ~= param or lastFxIndexTouched ~= fxidx or lastTrackIndexTouched ~= trackidx) then --or (lastValTouched and lastValTouched ~= val) then 
                 parameterFound = true 
                 parameterUpdated = true 
@@ -4872,6 +4885,7 @@ function updateTouchedFX()
         end
     end
     
+    
     local retval, trackidx, itemidx, takeidx, fxidx, param = reaper.GetTouchedOrFocusedFX( 0 ) 
     
     if retval and trackidx then
@@ -4879,7 +4893,7 @@ function updateTouchedFX()
         --reaper.ShowConsoleMsg(val .. " - " .. tostring(dragKnob) .. "\n")
         if trackTemp then 
             local p = getAllDataFromParameter(trackTemp,fxidx,param) 
-            local val, baseline = getCurrentVal(p)
+            --local val, baseline = getCurrentVal(p)
             local deltaParam = reaper.TrackFX_GetNumParams(trackTemp, fxidx) - 1  
             if isMouseDown then  
                 if not fxWindowClicked then 
@@ -4923,11 +4937,11 @@ function updateTouchedFX()
                 -- we keep checking that delta is set, so we are ready for next click
                 
                 -- if we have not found the parameter (like clicking Rea plugins) we find it on release
-                if fxWindowClicked and not parameterFound and (not settings.forceMapping) or (settings.forceMapping and not focusDelta) then  
+                if fxWindowClicked and (not parameterFound and (not settings.forceMapping) or (settings.forceMapping and not focusDelta)) then  
                     setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp, deltaParam)
                 end 
                 
-                if settings.forceMapping and param ~= deltaParam then      
+                if settings.forceMapping and param ~= deltaParam then    
                     -- sets the Delta value to it's current value, to clear the last touched or focused fx
                     local deltaVal = reaper.TrackFX_GetParam(trackTemp, fxidx, deltaParam)
                     reaper.TrackFX_SetParam(trackTemp, fxidx, deltaParam, deltaVal) 
@@ -5166,8 +5180,6 @@ local function loop()
     if stopMappingOnRelease and isMouseReleased then map = false; sliderNumber = false; stopMappingOnRelease = nil end
     
     
-    if not fxnumber then fxnumber = 0 end
-    if not paramnumber then paramnumber = 0 end
     --if not track then track = reaper.GetTrack(0,0) end
     if track then
         _, trackName = reaper.GetTrackName(track)
@@ -5194,6 +5206,9 @@ local function loop()
             lastTrack = track
         end
         
+        
+        if not fxnumber then fxnumber = 0 end
+        if not paramnumber then paramnumber = 0 end
         --if not lastCollabsModules then lastCollabsModules = {} end 
     else
         --trackName = "Select a track or touch a plugin parameter"
@@ -5291,7 +5306,6 @@ local function loop()
     colorMappingLight = colorMapping & 0xFFFFFFFF55
     
     colorSelectOverlay = settings.colors.selectOverlay
-    colorSelectOverlayLight = colorSelectOverlay & 0xFFFFFFFF55
     
     colorButtons = settings.colors.buttons
     colorButtonsActive = settings.colors.buttonsActive
@@ -5832,7 +5846,10 @@ local function loop()
                     if settings.showLastClicked then
                         p = paramnumber and focusedTrackFXParametersData[paramnumber + 1] or {}
                         parameterNameAndSliders("parameter",pluginParameterSlider,p , focusedParamNumber,nil,nil,nil,nil,moduleWidth,nil,nil,nil,true)
-                        hasExtraLine = p.isParameterLinkActive and settings.showExtraLineInParameters
+                        hasExtraLine = settings.showExtraLineInParameters
+                        if not p.isParameterLinkActive then
+                            reaper.ImGui_InvisibleButton(ctx, "extraline dummy", 22,22)
+                        end
                     end
                     
                     if settings.showParameterOptionsOnTop then 
@@ -6090,7 +6107,7 @@ local function loop()
                               elseif val.func == "LFO" then 
                                   containerPos, insert_position = insertLocalLfoFxAndAddContainerMapping(track)
                               elseif val.func == "Any" then 
-                                  browserHwnd, isDocked = openFxBrowserOnSpecificTrack() 
+                                  browserHwnd, browserSearchFieldHwnd, isDocked = openFxBrowserOnSpecificTrack() 
                                   fx_before = getAllTrackFXOnTrackSimple(track)  
                               end
                               click = true
@@ -6100,49 +6117,6 @@ local function loop()
                       end   
                   end
   
-                  
-                  if browserHwnd then
-                      firstBrowserHwnd = firstBrowserHwnd and firstBrowserHwnd + 1 or 0 
-                      
-                      fx_after = getAllTrackFXOnTrackSimple(track)
-                      if #fx_after > #fx_before then
-                          local newFxIndex
-                          for i, fx in ipairs(fx_after) do
-                              if not fx_before[i] or fx.name ~= fx_before[i].name then
-                                  newFxIndex = fx.fxIndex
-                                  break;
-                              end
-                          end
-                          -- An FX was added
-                          openCloseFx(track, newFxIndex, false)
-                          containerPos, insert_position = movePluginToContainer(track, newFxIndex )
-                          browserHwnd = nil
-                      end
-                      
-                      if not browserSearchField then 
-                          browserSearchField = reaper.JS_Window_GetFocus()
-                      end
-                      
-                      if not addingAnyModuleWindow(browserHwnd, isDocked) then
-                          browserHwnd = nil
-                      end
-                      
-                      -- first time after creating overlay we focus browser and search field
-                      if firstBrowserHwnd == 1 and browserSearchField then
-                          reaper.JS_Window_SetFocus(browserHwnd)
-                          reaper.JS_Window_SetFocus(browserSearchField)
-                      end
-                      
-                      local visible = reaper.JS_Window_IsVisible(browserHwnd) 
-                      if not browserHwnd or not visible then   
-                          browserHwnd = nil
-                      end
-                  else
-                      -- we clear for next time
-                      fx_before = nil
-                      fx_after = nil
-                      firstBrowserHwnd = nil
-                  end  
                   
                   reaper.ImGui_Separator(ctx)
                   --[[
@@ -6265,6 +6239,53 @@ local function loop()
               
               return click
           end
+          
+          
+          
+          if browserHwnd then 
+              firstBrowserHwnd = firstBrowserHwnd and firstBrowserHwnd + 1 or 0 
+              
+              fx_after = getAllTrackFXOnTrackSimple(track)
+              if #fx_after > #fx_before then
+                  local newFxIndex
+                  local fxName
+                  for i, fx in ipairs(fx_after) do
+                      if not fx_before[i] or fx.name ~= fx_before[i].name then
+                          newFxIndex = fx.fxIndex
+                          fxName = fx.name
+                          break;
+                      end
+                  end
+                  -- An FX was added
+                  openCloseFx(track, newFxIndex, false) 
+                  reaper.TrackFX_SetNamedConfigParm( track, newFxIndex, 'renamed_name', fxName:gsub("^[^:]+: ", "")) 
+                  containerPos, insert_position = movePluginToContainer(track, newFxIndex )
+                  renameModulatorNames(track, modulationContainerPos)
+                  browserHwnd = nil
+              end
+               
+              if not addingAnyModuleWindow(browserHwnd, isDocked) then
+                  browserHwnd = nil
+              end
+              
+              -- first time after creating overlay we focus browser and search field
+              if firstBrowserHwnd == 1 and browserSearchFieldHwnd then
+                  reaper.JS_Window_SetFocus(browserHwnd)
+                  reaper.JS_Window_SetFocus(browserSearchFieldHwnd)
+              end
+              
+              local visible = reaper.JS_Window_IsVisible(browserHwnd) 
+              if not browserHwnd or not visible then   
+                  browserHwnd = nil
+              end
+          else
+              -- we clear for next time
+              fx_before = nil
+              fx_after = nil
+              firstBrowserHwnd = nil
+              browserSearchFieldHwnd = nil
+              browserHwnd = nil
+          end  
               
                
               
@@ -7240,7 +7261,24 @@ local function loop()
             elseif fxName:match("Note Velocity Modulator") then
                 modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, noteVelocityModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
             else 
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, genericModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m, genericModulatorInfo,m.output)
+                
+                local numParams = reaper.TrackFX_GetNumParams(track,fxIndex) 
+                local output = {}
+                -- make possible to have multiple outputs
+                local genericModulatorInfo = {outputParam = -1, indexInContainerMapping = -1}
+                for p = 0, numParams -1 do
+                    --retval, buf = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, "param." .. p .. ".container_map.hint_id" )
+                    -- we would have to enable multiple outputs here later
+                    retval, buf = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, "container_map.get." .. fxIndex .. "." .. p )
+                    if retval then
+                        table.insert(output, p)
+                        genericModulatorInfo = {outputParam = p, indexInContainerMapping = tonumber(buf)}
+                        break
+                    end
+                end
+                
+                -- FETCH genericModulator INFO HERE
+                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, genericModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m, genericModulatorInfo,output)
             end
             
             
