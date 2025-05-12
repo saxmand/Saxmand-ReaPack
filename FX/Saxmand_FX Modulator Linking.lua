@@ -6,9 +6,11 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed issues when removing mappings, not setting values correctly on some jsfx plugins
---   + added back in the option to have downwards, bipolar, upwards mapping mode as well.
-
+--   + fixed mappings window height in vertical
+--   + fixed sizing issue in parameters, when removing mappings
+--   + fixed crash when deleting modulator while mapping is on
+--   + saving colorset is updated, with overwrite info. 
+--   + saving colorset is updated, with overwrite info. 
 
 local version = "0.6.6"
 
@@ -306,6 +308,10 @@ local defaultSettings = {
     showRemoveCrossParameter = true,
     showExtraLineInParameters = false,
     
+    showEnableInParameters = true,
+    showWidthInParameters = true,
+    showBipolarInParameters = true,
+    
       -- Modules 
     showModulesPanel = true, 
     
@@ -313,6 +319,7 @@ local defaultSettings = {
     showRemoveCrossModulator = true, 
     visualizerSize = 2,
     showAddModulatorButton = true,
+    showAddModulatorButtonBefore = false,
     
     showRemoveCrossMapping = true,
     showEnableInMappings = true,
@@ -325,7 +332,7 @@ local defaultSettings = {
     keepWhenClickingInAppWindow = true,
     onlyKeepShowingWhenClickingFloatingWindow = false,
     
-    
+    pulsateMappingButton = true,
     mappingModeBipolar = true,
     defaultMappingWidth = 0,
     defaultMappingWidthLFO = 0,
@@ -814,6 +821,9 @@ end
 
 function deleteModule(track, fxIndex, modulationContainerPos)
     if fxIndex then 
+        if map == fxIndex then 
+            stopMapping()
+        end
         if reaper.TrackFX_Delete(track, fxIndex) then
             selectedModule = false
             local mappings = (parameterLinks and parameterLinks[tostring(fxIndex)]) and parameterLinks[tostring(fxIndex)] or {} 
@@ -835,10 +845,14 @@ function deleteModule(track, fxIndex, modulationContainerPos)
     end
 end
 
+function stopMapping()
+    map = false
+    sliderNumber = false
+end
+
 function mapModulatorActivate(fxIndex, sliderNum, fxInContainerIndex, name)
     if not fxIndex or map == fxIndex then 
-        map = false
-        sliderNumber = false
+        stopMapping()
     else  
         --parameterTouched = nil
         lastParameterTouched = nil
@@ -2857,7 +2871,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
         
         reaper.ImGui_SetCursorPos(ctx, startPosX,startPosY)
         local visualName = ("Use " .. name)
-        if (canBeMapped and not mapOutput) then visualName = ("Map " .. name) end
+        if (canBeMapped and not mapOutput) then visualName = name end --("Map " .. name) end
         if (hideParametersFromModulator == p.guid) then 
             local hidden = trackSettings.hideParametersFromModulator and trackSettings.hideParametersFromModulator[p.guid] and trackSettings.hideParametersFromModulator[p.guid][p.param]
             visualName = (hidden and "Hidding "  or "Showing ") .. name 
@@ -2871,6 +2885,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
         local overlayColor = borderColor & 0xFFFFFFFF55
         
         reaper.ImGui_InvisibleButton(ctx,  visualName .. "##map" .. buttonId,  areaWidth, endPosY - startPosY - 4)
+        local mapToolTip
         if ImGui.IsItemClicked(ctx) then
             paramnumber = param
             ignoreScroll = true
@@ -2881,7 +2896,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
                 local setOffset = (isLFO and (settings.mappingModeBipolar and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultLFODirection - 3)/2) or ((settings.mappingModeBipolar and settings.defaultBipolar and -0.5 or 0) or (settings.defaultDirection - 3) / 2))
                 setParamaterToLastTouched(track, modulationContainerPos, map, fxIndex, param, p.value, setOffset, setWidth)
                 if settings.mapOnce then stopMappingOnRelease = true end
-                
+                mapToolTip = "Click to map " .. name
             elseif mapOutput then 
                 mapParameterToContainer(track, modulationContainerPos, fxIndex, param)
             elseif hideParametersFromModulator == p.guid then
@@ -2889,14 +2904,17 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
                 saveTrackSettings(track)
             end
         end
+        setToolTipFunc(mapToolTip)
         if parStartPosX then
             reaper.ImGui_DrawList_AddRectFilled(draw_list, parStartPosX - padW, parStartPosY - padH, parStartPosX + areaWidth + padW, parEndPosY  + padH, overlayColor,4,nil)
             reaper.ImGui_DrawList_AddRect(draw_list, parStartPosX - padW, parStartPosY - padH, parStartPosX + areaWidth + padW, parEndPosY  + padH, borderColor,4,nil,1)
             
+            
             local textW = reaper.ImGui_CalcTextSize(ctx, visualName, 0, 0)
             -- value text
+            ImGui.PushClipRect(ctx, parStartPosX, parStartPosY, parStartPosX + areaWidth, parEndPosY, true)
             reaper.ImGui_DrawList_AddText(draw_list, posXOffset + areaWidth/2 - textW/2, parStartPosY+2, colorText, visualName)
-        end
+        end ImGui.PopClipRect(ctx) 
     end
     
     if stopMappingOnRelease and isMouseReleased then map = false; sliderNumber = false; stopMappingOnRelease = nil end
@@ -4097,6 +4115,32 @@ function appSettingsWindow()
         return ret 
     end
     
+    function inputInMenu(name, tag, width, toolTip, double, min, max) 
+        toolTip = toolTip and toolTip or nil
+        reaper.ImGui_SetNextItemWidth(ctx, width / 2)
+        if double then
+            ret, val = reaper.ImGui_InputDouble(ctx, "##" .. name .. tag, settings[tag], nil, nil, "%0.0f")
+        else
+            ret, val = reaper.ImGui_InputInt(ctx, "##" .. name .. tag, settings[tag])
+        end
+        if ret then
+            if min and val < min then val = min end
+            if max and val > max then val = max end
+            settings[tag] = val
+            saveSettings()
+        end
+        setToolTipFunc(toolTip)
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_AlignTextToFramePadding(ctx)
+        reaper.ImGui_Text(ctx, name)
+        setToolTipFunc(toolTip)
+        if reaper.ImGui_IsItemClicked(ctx) then
+            settings[tag] = defaultSettings[tag]
+            saveSettings()
+        end
+        return ret 
+    end
+    
     
     function modifiersSettingsModule(tag, preTag)
         local modifiers = {"Super", "Ctrl","Shift",  "Alt"}
@@ -4122,14 +4166,14 @@ function appSettingsWindow()
         end
     end
     
-    local ret, vertical = reaper.ImGui_Checkbox(ctx,"Vertical",settings.vertical)
+    local ret, vertical = reaper.ImGui_Checkbox(ctx,"Vertical layout",settings.vertical)
     if ret then 
         settings.vertical = vertical 
         saveSettings()
        -- reaper.ImGui_CloseCurrentPopup(ctx) 
     end
     reaper.ImGui_SameLine(ctx)
-    local ret, showToolTip = reaper.ImGui_Checkbox(ctx,"Show tips",settings.showToolTip)
+    local ret, showToolTip = reaper.ImGui_Checkbox(ctx,"Show tooltips",settings.showToolTip)
     if ret then 
         settings.showToolTip = showToolTip
         saveSettings()
@@ -4167,293 +4211,396 @@ function appSettingsWindow()
     reaper.ImGui_NewLine(ctx)
     if reaper.ImGui_BeginTabBar(ctx, '##SettingsTabs') then
         if reaper.ImGui_BeginTabItem(ctx, 'Layout') then
-        
-            if reaper.ImGui_BeginChild(ctx, "layoutchild",nil,nil,nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()) then
-                --[[
-                ret, useFineFaders = reaper.ImGui_Checkbox(ctx,"Use fine faders",settings.useFineFaders)
-                if ret then 
-                    reaper.SetExtState(stateName, "useFineFaders", useFineFaders and "1" or "0", true)
-                end
-                if reaper.ImGui_IsItemHovered(ctx) and settings.showToolTip then
-                    reaper.ImGui_SetTooltip(ctx,"If enabled the faders will have more fine control\n - Use Shift for for higher values\n - Use Alt for lower")  
-                end
-                ]]
+            
+            --if reaper.ImGui_BeginChild(ctx, "layoutchild",nil,nil,nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()) then
+                reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_CellPadding(), 10, 3)
+                
+                if reaper.ImGui_BeginTable(ctx, "modifierTable", 5, reaper.ImGui_TableFlags_ScrollX() | reaper.ImGui_TableFlags_ScrollY() | reaper.ImGui_TableFlags_SizingFixedFit(), nil, nil, nil) then
                         
-                
-                reaper.ImGui_BeginGroup(ctx) 
-                
-                
-                reaper.ImGui_TextColored(ctx, colorGrey, "GENERAL:")
-                
-                if sliderInMenu("Modules width", "partsWidth", menuWidth, 140, 400, "Set the width of modules. ONLY in horizontal mode") then 
-                    setWindowWidth = true
-                end
-                
-                sliderInMenu("Modules height", "modulesHeightVertically", menuWidth, 80, 550, "Set the height of modules. ONLY in vertical mode") 
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Limite modulator height",settings.limitModulatorHeightToModulesHeight) 
-                if ret then 
-                    settings.limitModulatorHeightToModulesHeight = val
-                    saveSettings()
-                end
-                setToolTipFunc("Limit modulators height to the modules height in vertical mode")  
-                
-                
-                --reaper.ImGui_NewLine(ctx)
-                
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Track color around lock",settings.trackColorAroundLock) 
-                if ret then 
-                    settings.trackColorAroundLock = val
-                    saveSettings()
-                end
-                setToolTipFunc("Have track color shown as a border around the lock")  
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Track color as line",settings.showTrackColorLine) 
-                if ret then 
-                    settings.showTrackColorLine = val
-                    saveSettings()
-                end
-                setToolTipFunc("Have track color as a line on the left in horizontal mode or on top in vertical mode") 
-                
-                sliderInMenu("Track color line size", "trackColorLineSize", menuWidth, 1, 6, "Set the size of the color line") 
-                
-                
-                reaper.ImGui_EndGroup(ctx)
-                
-                reaper.ImGui_SameLine(ctx)
-                reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + 16)
-                
-                reaper.ImGui_BeginGroup(ctx) 
-                reaper.ImGui_TextColored(ctx, colorGrey, "PLUGINS:")
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel##plugins",settings.showPluginsPanel) 
-                if ret then 
-                    settings.showPluginsPanel = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show or hide the plugins panel")  
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Hide plugin type from name",settings.hidePluginTypeName) 
-                if ret then 
-                    settings.hidePluginTypeName = val
-                    saveSettings()
-                end
-                setToolTipFunc("Hide plugin type from name")  
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show containers",settings.showContainers) 
-                if ret then 
-                    settings.showContainers = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show FX container in the plugin list")  
-                
-                if settings.showContainers then
-                    local ret, val = reaper.ImGui_Checkbox(ctx,"Color containers",settings.colorContainers) 
+                        reaper.ImGui_TableSetupScrollFreeze(ctx, 0,1)
+                        --reaper.ImGui_TableHeadersRow(ctx)
+                        reaper.ImGui_TableNextRow(ctx)
+                        
+                        
+                        local groups =  {"GENERAL", "PLUGINS", "PARAMETERS", "MODULES", "MODULATORS"}
+                        for i, g in ipairs(groups) do
+                            
+                            reaper.ImGui_TableSetColumnIndex(ctx,i-1)
+                            reaper.ImGui_TextColored(ctx, colorGrey, g)
+                            
+                        end
+                        
+                        --
+                        
+                    
+                    
+                --end
+                --
+                --[[
+                    ret, useFineFaders = reaper.ImGui_Checkbox(ctx,"Use fine faders",settings.useFineFaders)
                     if ret then 
-                        settings.colorContainers = val
+                        reaper.SetExtState(stateName, "useFineFaders", useFineFaders and "1" or "0", true)
+                    end
+                    if reaper.ImGui_IsItemHovered(ctx) and settings.showToolTip then
+                        reaper.ImGui_SetTooltip(ctx,"If enabled the faders will have more fine control\n - Use Shift for for higher values\n - Use Alt for lower")  
+                    end
+                    ]]
+                    
+                    
+                    --reaper.ImGui_BeginGroup(ctx) 
+                    
+                    
+                    --
+                    reaper.ImGui_TableNextRow(ctx)
+                    reaper.ImGui_TableSetColumnIndex(ctx,0)
+                    
+                    
+                    reaper.ImGui_TextColored(ctx, colorGrey, "Panels/Modules")
+                    
+                    if sliderInMenu("Panels width", "partsWidth", menuWidth, 140, 400, "Set the max width of panels. ONLY in horizontal mode") then 
+                        setWindowWidth = true
+                    end
+                    
+                    sliderInMenu("Panels height", "modulesHeightVertically", menuWidth, 80, 550, "Set the max height of panels. ONLY in vertical mode") 
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Limit module height in vertical mode",settings.limitModulatorHeightToModulesHeight) 
+                    if ret then 
+                        settings.limitModulatorHeightToModulesHeight = val
                         saveSettings()
                     end
-                    setToolTipFunc("Color FX container grey in the plugin list")  
-                end
-                 
-                
-                sliderInMenu("Indents size for containers", "indentsAmount", menuWidth, 0, 8, "Set how large a visual indents size is shown for container content in the plugin list")
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Allow horizontal scroll",settings.allowHorizontalScroll) 
-                if ret then 
-                    settings.allowHorizontalScroll = val
-                    saveSettings()
-                end
-                setToolTipFunc("Allow to scroll horizontal in the plugin list, when namas are too big for module")  
-                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Open all",settings.showOpenAll) 
-                if ret then 
-                    settings.showOpenAll = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show Open all button in plugins area")  
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Add Track FX",settings.showAddTrackFX) 
-                if ret then 
-                    settings.showAddTrackFX = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show Add Track FX button in plugins area")  
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show above##plugins",settings.showPluginOptionsOnTop) 
-                if ret then 
-                    settings.showPluginOptionsOnTop = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show Open All and Add Track FX on top of plugins")  
-                
-                
-                reaper.ImGui_EndGroup(ctx)
-                
-                reaper.ImGui_SameLine(ctx)
-                reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + 16)
-                
-                reaper.ImGui_BeginGroup(ctx) 
-                
-                reaper.ImGui_TextColored(ctx, colorGrey, "PARAMETERS:")
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel##parameters",settings.showParametersPanel) 
-                if ret then 
-                    settings.showParametersPanel = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show or hide the parameters panel")  
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show search field",settings.showSearch) 
-                if ret then 
-                    settings.showSearch = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show search field in parameters area")  
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Searching disables only mapped##",settings.searchClearsOnlyMapped) 
-                if ret then 
-                    settings.searchClearsOnlyMapped = val
-                    saveSettings()
-                end
-                setToolTipFunc("When enabled this will disable only mapped when searching") 
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show last clicked parameter##",settings.showLastClicked) 
-                if ret then 
-                    settings.showLastClicked = val
-                    saveSettings()
-                end
-                setToolTipFunc("When enabled this will show the last clicked parameter below the search field")  
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show only mapped button",settings.showOnlyMapped) 
-                if ret then 
-                    settings.showOnlyMapped = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show only mapped toggle in parameters area")  
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show above##parameters",settings.showParameterOptionsOnTop) 
-                if ret then 
-                    settings.showParameterOptionsOnTop = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show search field, only mapped on top of mappings")  
-                
-                
-                
-                sliderInMenu("Max parameters shown", "maxParametersShown", menuWidth, 0, 512, "Will only fetch X amount of parameters from focused FX. 0 will show all. If you have problems with performance reduce the amount") 
-                
-                
-                reaper.ImGui_TextColored(ctx, colorTextDimmed, "Buttons")
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show remove##parameters",settings.showRemoveCrossParameter) 
-                if ret then 
-                    settings.showRemoveCrossParameter = val
-                    saveSettings()
-                end
-                setToolTipFunc('Show "X" when hovering mapping to remove mapping')
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show extra line when mapped##",settings.showExtraLineInParameters) 
-                if ret then 
-                    settings.showExtraLineInParameters = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show extra line containing enable/disable, knob for width, polarity and mapped modulator name.\nThis is also accesible through modifiers or right click")
-                
-                
-                reaper.ImGui_EndGroup(ctx)
-                
-                reaper.ImGui_SameLine(ctx)
-                reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + 16)
-                
-                reaper.ImGui_BeginGroup(ctx) 
-                
-                reaper.ImGui_TextColored(ctx, colorGrey, "MODULES:")
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel##modules",settings.showModulesPanel) 
-                if ret then 
-                    settings.showModulesPanel = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show or hide the modules panel")  
-                
-                
-                reaper.ImGui_EndGroup(ctx)
-                
-                reaper.ImGui_SameLine(ctx)
-                reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + 16)
-                
-                reaper.ImGui_BeginGroup(ctx) 
-                
-                reaper.ImGui_TextColored(ctx, colorGrey, "MODULATORS:")
-                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show remove##modulator",settings.showRemoveCrossModulator) 
-                if ret then 
-                    settings.showRemoveCrossModulator = val
-                    saveSettings()
-                end
-                setToolTipFunc('Show "X" when hovering modulator to remove modulator') 
-                
-                sliderInMenu("Visualizer size", "visualizerSize", menuWidth, 1, 3, "Set the size of the visualizer (output) for modulators")  
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show add button (+)##mappings",settings.showAddModulatorButton) 
-                if ret then 
-                    settings.showAddModulatorButton = val
-                    saveSettings()
-                end
-                setToolTipFunc('Show a small "+" after the last modulator, that you can click to add a new modulator') 
-                 
-                reaper.ImGui_TextColored(ctx, colorTextDimmed, "Mappings area buttons")
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show remove##mappings",settings.showRemoveCrossMapping) 
-                if ret then 
-                    settings.showRemoveCrossMapping = val
-                    saveSettings()
-                end
-                setToolTipFunc('Show "X" when hovering mapping to remove mapping') 
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show enable##",settings.showEnableInMappings) 
-                if ret then 
-                    settings.showEnableInMappings = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show enable/disable button in mappings panel") 
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show bipolar##",settings.showBipolarInMappings) 
-                if ret then 
-                    settings.showBipolarInMappings = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show bipolar button in mappings panel") 
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show width##",settings.showWidthInMappings) 
-                if ret then 
-                    settings.showWidthInMappings = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show width knob in mappings panel") 
-                
-                reaper.ImGui_EndGroup(ctx)
-                
-                
-                reaper.ImGui_SameLine(ctx)
-                reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + 16)
-                reaper.ImGui_InvisibleButton(ctx,"dummy", 1,1)
-                
-                reaper.ImGui_EndChild(ctx)
+                    setToolTipFunc("Limit modulators height to panels height set above in vertical mode")  
+                    
+                    
+                    --reaper.ImGui_NewLine(ctx)
+                    
+                    
+                    reaper.ImGui_NewLine(ctx)
+                    reaper.ImGui_TextColored(ctx, colorGrey, "Track coloring")
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Track color around lock",settings.trackColorAroundLock) 
+                    if ret then 
+                        settings.trackColorAroundLock = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Have track color shown as a border around the lock")  
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Track color as line",settings.showTrackColorLine) 
+                    if ret then 
+                        settings.showTrackColorLine = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Have track color as a line on the left in horizontal mode or on top in vertical mode") 
+                    
+                    sliderInMenu("Track color line size", "trackColorLineSize", menuWidth, 1, 6, "Set the size of the color line") 
+                    
+                    
+                    
+                    
+                    --reaper.ImGui_EndGroup(ctx)
+                    
+                    --reaper.ImGui_SameLine(ctx)
+                    --reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + 16)
+                    
+                    --reaper.ImGui_BeginGroup(ctx) 
+                    --reaper.ImGui_TextColored(ctx, colorGrey, "PLUGINS:")
+                    
+                    --reaper.ImGui_TableNextRow(ctx)
+                    reaper.ImGui_TableNextColumn(ctx)
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel##plugins",settings.showPluginsPanel) 
+                    if ret then 
+                        settings.showPluginsPanel = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show or hide the plugins panel")  
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Hide plugin type from name",settings.hidePluginTypeName) 
+                    if ret then 
+                        settings.hidePluginTypeName = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Hide plugin type from name")  
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Allow horizontal scrolling",settings.allowHorizontalScroll) 
+                    if ret then 
+                        settings.allowHorizontalScroll = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Allow to scroll horizontal in the plugin list, when namas are too big for module") 
+                    
+                    
+                    reaper.ImGui_TextColored(ctx, colorGrey, "Panel Controls")
+                    
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show at top of panel##plugins",settings.showPluginOptionsOnTop) 
+                    if ret then 
+                        settings.showPluginOptionsOnTop = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show Open All and Add Track FX at the top of the plugins panel")  
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Open all" button',settings.showOpenAll) 
+                    if ret then 
+                        settings.showOpenAll = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show Open all button in plugins area")  
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add FX" button',settings.showAddTrackFX) 
+                    if ret then 
+                        settings.showAddTrackFX = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show a button that will allow to add track fx (not a modulator) in the plugins panel")  
+                    
+                    
+                    reaper.ImGui_TextColored(ctx, colorGrey, "Containers")
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show containers",settings.showContainers) 
+                    if ret then 
+                        settings.showContainers = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show FX container in the plugin list")  
+                    
+                    if settings.showContainers then
+                        local ret, val = reaper.ImGui_Checkbox(ctx,"Color containers",settings.colorContainers) 
+                        if ret then 
+                            settings.colorContainers = val
+                            saveSettings()
+                        end
+                        setToolTipFunc("Color FX container grey in the plugin list")  
+                    end
+                     
+                    
+                    sliderInMenu("Indent size for containers", "indentsAmount", menuWidth, 0, 8, "Set how large a visual indents size is shown for container content in the plugin list")
+                     
+                     
+                    --[[
+                    
+                    reaper.ImGui_EndGroup(ctx)
+                    
+                    reaper.ImGui_SameLine(ctx)
+                    reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + 16)
+                    
+                    reaper.ImGui_BeginGroup(ctx) 
+                    ]]
+                    
+                    reaper.ImGui_TableNextColumn(ctx)
+                    
+                    --reaper.ImGui_TextColored(ctx, colorGrey, "PARAMETERS:")
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel##parameters",settings.showParametersPanel) 
+                    if ret then 
+                        settings.showParametersPanel = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show or hide the parameters panel")  
+                    
+                    
+                    
+                    inputInMenu("Max parameters shown", "maxParametersShown", 100, "Will only fetch X amount of parameters from focused FX. 0 will show all.\nIf you have problems with performance reduce the amount might help", true, 0, nil) 
+                    
+                    
+                    
+                    reaper.ImGui_TextColored(ctx, colorGrey, "Panel Controls")
+                    
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show at top of panel##parameters",settings.showParameterOptionsOnTop) 
+                    if ret then 
+                        settings.showParameterOptionsOnTop = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show search field, only mapped and last clicked parameter on top of the mappings panel")  
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show search field",settings.showSearch) 
+                    if ret then 
+                        settings.showSearch = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show search field in parameters panel")  
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Searching disables only mapped##",settings.searchClearsOnlyMapped) 
+                    if ret then 
+                        settings.searchClearsOnlyMapped = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('When enabled this will disable to "Only mapped" toggle, when searching') 
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Only mapped" button',settings.showOnlyMapped) 
+                    if ret then 
+                        settings.showOnlyMapped = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show only mapped toggle in parameters panel")  
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show last clicked parameter##",settings.showLastClicked) 
+                    if ret then 
+                        settings.showLastClicked = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show the last clicked parameter below the search field")  
+                    
+                    
+                    
+                    reaper.ImGui_TextColored(ctx, colorTextDimmed, "Mapping area buttons")
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show remove button (x)##parameters",settings.showRemoveCrossParameter) 
+                    if ret then 
+                        settings.showRemoveCrossParameter = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('Show "X" when hovering map parameter to remove mapping')
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show extra controls when mapped##",settings.showExtraLineInParameters) 
+                    if ret then 
+                        settings.showExtraLineInParameters = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("When a parameter is mapped, show an extra line containing enable/disable, knob for width, polarity and mapped modulator name.\nThese functions are also accesible through modifiers or right click")
+                    
+                    
+                    if settings.showExtraLineInParameters then
+                        reaper.ImGui_Indent(ctx)
+                        local ret, val = reaper.ImGui_Checkbox(ctx,"Show enable/disable checkbox##parameters",settings.showEnableInParameters) 
+                        if ret then 
+                            settings.showEnableInParameters = val
+                            saveSettings()
+                        end
+                        setToolTipFunc("Show enable/disable check box on mapped parameters") 
+                        
+                        
+                        local ret, val = reaper.ImGui_Checkbox(ctx,"Show bipolar toggle/mode switch##parameters",settings.showBipolarInParameters) 
+                        if ret then 
+                            settings.showBipolarInParameters = val
+                            saveSettings()
+                        end
+                        setToolTipFunc("Show bipolar button or mode switch on mapped parameters") 
+                        
+                        
+                        local ret, val = reaper.ImGui_Checkbox(ctx,"Show width knob##parameters",settings.showWidthInParameters) 
+                        if ret then 
+                            settings.showWidthInParameters = val
+                            saveSettings()
+                        end
+                        setToolTipFunc("Show width knob on mapped parameters") 
+                        reaper.ImGui_Unindent(ctx)
+                    end
+                    
+                    --[[
+                    reaper.ImGui_EndGroup(ctx)
+                    
+                    reaper.ImGui_SameLine(ctx)
+                    reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + 16)
+                    
+                    reaper.ImGui_BeginGroup(ctx) 
+                    ]]
+                    
+                    reaper.ImGui_TableNextColumn(ctx)
+                    
+                    --reaper.ImGui_TextColored(ctx, colorGrey, "MODULES:")
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel##modules",settings.showModulesPanel) 
+                    if ret then 
+                        settings.showModulesPanel = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show or hide the modules panel")  
+                    
+                    --[[
+                    reaper.ImGui_EndGroup(ctx)
+                    
+                    reaper.ImGui_SameLine(ctx)
+                    reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + 16)
+                    
+                    reaper.ImGui_BeginGroup(ctx) 
+                    ]]
+                    
+                    reaper.ImGui_TableNextColumn(ctx)
+                    --reaper.ImGui_TextColored(ctx, colorGrey, "MODULATORS:")
+                     
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show remove button (x)##modulator",settings.showRemoveCrossModulator) 
+                    if ret then 
+                        settings.showRemoveCrossModulator = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('Show "X" when hovering modulator to remove modulator') 
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show add button (+) at start##mappings",settings.showAddModulatorButtonBefore) 
+                    if ret then 
+                        settings.showAddModulatorButtonBefore = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('Show a small "+" before the first modulator, that you can click to add a new modulator') 
+                     
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show add button (+) at end##mappings",settings.showAddModulatorButton) 
+                    if ret then 
+                        settings.showAddModulatorButton = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('Show a small "+" after the last modulator, that you can click to add a new modulator') 
+                     
+                     
+                    sliderInMenu("Default visualizer size", "visualizerSize", menuWidth, 1, 3, "Set the size of the visualizer (output) for modulators")  
+                     
+                    reaper.ImGui_TextColored(ctx, colorTextDimmed, "Mappings area buttons")
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show remove button (x)##mappings",settings.showRemoveCrossMapping) 
+                    if ret then 
+                        settings.showRemoveCrossMapping = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('Show "X" when hovering mapping to remove mapping') 
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show enable/disable checkbox##",settings.showEnableInMappings) 
+                    if ret then 
+                        settings.showEnableInMappings = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show enable/disable check box on mappings") 
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show bipolar toggle/mode switch##",settings.showBipolarInMappings) 
+                    if ret then 
+                        settings.showBipolarInMappings = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show bipolar button or mode switch on mappings") 
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show width knob##",settings.showWidthInMappings) 
+                    if ret then 
+                        settings.showWidthInMappings = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show width knob on mappings") 
+                    --[[
+                    reaper.ImGui_EndGroup(ctx)
+                    
+                    
+                    reaper.ImGui_SameLine(ctx)
+                    reaper.ImGui_SetCursorPosX(ctx, reaper.ImGui_GetCursorPosX(ctx) + 16)
+                    reaper.ImGui_InvisibleButton(ctx,"dummy", 1,1)
+                    ]]
+                    
+                    reaper.ImGui_EndTable(ctx)
+                --end
+                --reaper.ImGui_EndChild(ctx)
             end
+            
+            reaper.ImGui_PopStyleVar(ctx)
                 
             ImGui.EndTabItem(ctx)
         end 
@@ -4515,6 +4662,14 @@ function appSettingsWindow()
             reaper.ImGui_BeginGroup(ctx) 
             
             
+            
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Pulsate mapping button",settings.pulsateMappingButton) 
+            if ret then 
+                settings.pulsateMappingButton = val
+                saveSettings()
+            end
+            setToolTipFunc("If enabled the mapping output from a modulator will pulsate when mapping")
             
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Biploar mapping mode##LFO",settings.mappingModeBipolar) 
@@ -4620,18 +4775,49 @@ function appSettingsWindow()
               reaper.ImGui_TextColored(ctx, colorTextDimmed, 'Name:') 
               
               reaper.ImGui_SetNextItemWidth(ctx, 248)
-              local ret, fileName = reaper.ImGui_InputText(ctx, "##nameColorSet", settings.selectedColorSet) 
+              if not tempName then 
+                  tempName = settings.selectedColorSet 
+                  reaper.ImGui_SetKeyboardFocusHere(ctx)
+              end
+              ret, tempName = reaper.ImGui_InputText(ctx, "##nameColorSet", tempName) 
               
-              reaper.ImGui_SetItemDefaultFocus(ctx)
-              if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter()) or ImGui.Button(ctx, 'Save', 120, 0) then  
-                  ImGui.CloseCurrentPopup(ctx) 
-                  if fileName then
-                      saveFile(json.encodeToJson(settings.colors), fileName, colorFolderName) 
-                      settings.selectedColorSet = fileName
+              
+              local disableSave = tempName == "Light" or tempName == "Dark"
+              local nameExists = false
+              
+              if not disableSave then
+                  for _, name in ipairs(allColorSets) do
+                      if name == tempName then
+                          nameExists = true
+                      end 
                   end
               end
+              
+              local addToFile = disableSave and "--@noindex\n" or ""
+              --if disableSave then reaper.ImGui_BeginDisabled(ctx) end
+              if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter()) or (saveWithKeyCommand or reaper.ImGui_Button(ctx, 'Save', 120, 0)) then  
+                  if tempName then
+                      saveFile(addToFile .. json.encodeToJson(settings.colors), tempName, colorFolderName) 
+                      settings.selectedColorSet = tempName
+                      saveSettings()
+                      tempName = nil
+                  end
+                  reaper.ImGui_CloseCurrentPopup(ctx) 
+              end
+              --if disableSave then reaper.ImGui_EndDisabled(ctx) end
+              
               ImGui.SameLine(ctx)
-              if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape()) or ImGui.Button(ctx, 'Cancel', 120, 0) then ImGui.CloseCurrentPopup(ctx) end
+              if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape()) or ImGui.Button(ctx, 'Cancel', 120, 0) then 
+                  tempName = nil
+                  reaper.ImGui_CloseCurrentPopup(ctx) 
+              end
+              local infoLine = (not disableSave and nameExists) and 
+                  "Name exist, saving will overwrite the set" or 
+                  (disableSave and tempName) and
+                  (tempName .. " is a factory set and gets overwritten on updates")
+                  or "  "
+              
+              reaper.ImGui_TextColored(ctx,colorTextDimmed, infoLine)
               
               
               ImGui.EndPopup(ctx)
@@ -4721,142 +4907,145 @@ function appSettingsWindow()
         end
         
         if reaper.ImGui_BeginTabItem(ctx, 'Key commands') then --, true, reaper.ImGui_TabItemFlags_SetSelected()) then
-            
-            reaper.ImGui_TextColored(ctx, colorGrey, "Horizontal scroll in modulators area")
-            sliderInMenu("Scrolling speed", "scrollingSpeedOfHorizontalScroll", menuWidth, -100, 100, "Set how fast to scroll the horizontal scroll") 
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Scroll horizontal anywhere",settings.scrollModulatorsHorizontalAnywhere) 
-            if ret then 
-                settings.scrollModulatorsHorizontalAnywhere = val
-                saveSettings()
-            end
-            setToolTipFunc("With this enabled you can scroll the modulators area horizontally anywhere on the app.\nWith this on you should disable Allow scrolling in the plugins area")   
-            
-            
-            reaper.ImGui_TextColored(ctx, colorGrey, "Vertical scroll in modulators area")
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Use vertical scroll to scroll horizontal",settings.useVerticalScrollToScrollModulatorsHorizontally) 
-            if ret then 
-                settings.useVerticalScrollToScrollModulatorsHorizontally = val
-                saveSettings()
-            end
-            setToolTipFunc("With this enabled you can scroll the modulators area horizontally with vertical mouse scroll")   
-            
-            if settings.useVerticalScrollToScrollModulatorsHorizontally then
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Only scroll on top or bottom (making a deadzone in the middle)",settings.onlyScrollVerticalHorizontalOnTopOrBottom) 
+            if reaper.ImGui_BeginChild(ctx, "layoutchild",nil,nil,nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()) then
+                
+                reaper.ImGui_TextColored(ctx, colorGrey, "Horizontal scroll in modulators area")
+                sliderInMenu("Scrolling speed", "scrollingSpeedOfHorizontalScroll", menuWidth, -100, 100, "Set how fast to scroll the horizontal scroll") 
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Scroll horizontal anywhere",settings.scrollModulatorsHorizontalAnywhere) 
                 if ret then 
-                    settings.onlyScrollVerticalHorizontalOnTopOrBottom = val
+                    settings.scrollModulatorsHorizontalAnywhere = val
                     saveSettings()
                 end
-                setToolTipFunc("This will only allow scrolling when on top or bottom of the modulators area")   
+                setToolTipFunc("With this enabled you can scroll the modulators area horizontally anywhere on the app.\nWith this on you should disable Allow scrolling in the plugins area")   
                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Only scroll horizontal with modifier",settings.onlyScrollVerticalHorizontalScrollWithModifier) 
+                
+                reaper.ImGui_TextColored(ctx, colorGrey, "Vertical scroll in modulators area")
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Use vertical scroll to scroll horizontal",settings.useVerticalScrollToScrollModulatorsHorizontally) 
                 if ret then 
-                    settings.onlyScrollVerticalHorizontalScrollWithModifier = val
+                    settings.useVerticalScrollToScrollModulatorsHorizontally = val
                     saveSettings()
                 end
-                setToolTipFunc("Will only scroll when holding down the selected modifier")   
+                setToolTipFunc("With this enabled you can scroll the modulators area horizontally with vertical mouse scroll")   
                 
-                if settings.onlyScrollVerticalHorizontalScrollWithModifier then
-                    reaper.ImGui_AlignTextToFramePadding(ctx)
-                    reaper.ImGui_TextColored(ctx, colorText, "Modifiers to use:")
-                    reaper.ImGui_SameLine(ctx)
-                    modifiersSettingsModule("modifierEnablingScrollVerticalHorizontal")
-                end
-                
-                
-                sliderInMenu("Scrolling speed of vertical horizontal scroll", "scrollingSpeedOfVerticalHorizontalScroll", menuWidth, -100, 100, "Set how fast to scroll the horizontal vertical scroll") 
-            end
-            
-            reaper.ImGui_TextColored(ctx, colorGrey, "Modifiers settings")
-            
-            
-            if reaper.ImGui_BeginTable(ctx, "modifierTable", 2,  reaper.ImGui_TableFlags_SizingFixedFit() | reaper.ImGui_TableFlags_NoHostExtendX()) then
-                local i = 0
-                local modifiersOptionsAlphabetic = {}
-                for name, _ in pairs(settings.modifierOptions) do
-                    table.insert(modifiersOptionsAlphabetic, name)
-                end
-                table.sort(modifiersOptionsAlphabetic)
-                for i, name in ipairs(modifiersOptionsAlphabetic) do
-                    local value = settings.modifierOptions[name]
-                    reaper.ImGui_TableNextColumn(ctx)
+                if settings.useVerticalScrollToScrollModulatorsHorizontally then
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Only scroll on top or bottom (making a deadzone in the middle)",settings.onlyScrollVerticalHorizontalOnTopOrBottom) 
+                    if ret then 
+                        settings.onlyScrollVerticalHorizontalOnTopOrBottom = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("This will only allow scrolling when on top or bottom of the modulators area")   
                     
-                    reaper.ImGui_AlignTextToFramePadding(ctx)
-                    reaper.ImGui_TextColored(ctx, colorText, prettifyString(name))
-                    reaper.ImGui_TableNextColumn(ctx) 
-                    modifiersSettingsModule(name, "modifierOptions")
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Only scroll horizontal with modifier",settings.onlyScrollVerticalHorizontalScrollWithModifier) 
+                    if ret then 
+                        settings.onlyScrollVerticalHorizontalScrollWithModifier = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Will only scroll when holding down the selected modifier")   
                     
-                    if name == "fineAdjust" then
-                        sliderInMenu("Fine adjust amount", "fineAdjustAmount", menuWidth, 2, 200, "Set how fine the fine adjust key should be. Higher is finer") 
+                    if settings.onlyScrollVerticalHorizontalScrollWithModifier then
+                        reaper.ImGui_AlignTextToFramePadding(ctx)
+                        reaper.ImGui_TextColored(ctx, colorText, "Modifiers to use:")
+                        reaper.ImGui_SameLine(ctx)
+                        modifiersSettingsModule("modifierEnablingScrollVerticalHorizontal")
                     end
                     
-                    if name == "scrollValue" then
-                        sliderInMenu("Scroll value speed", "scrollValueSpeed", menuWidth, 1, 100, "Set how much scrolling value, will change the value") 
+                    
+                    sliderInMenu("Scrolling speed of vertical horizontal scroll", "scrollingSpeedOfVerticalHorizontalScroll", menuWidth, -100, 100, "Set how fast to scroll the horizontal vertical scroll") 
+                end
+                
+                reaper.ImGui_TextColored(ctx, colorGrey, "Modifiers settings" .. (modifierStr ~= "" and (" (pressed: " .. modifierStr .. ")") or ""))
+                
+                
+                if reaper.ImGui_BeginTable(ctx, "modifierTable", 2,  reaper.ImGui_TableFlags_SizingFixedFit() | reaper.ImGui_TableFlags_NoHostExtendX()) then
+                    local i = 0
+                    local modifiersOptionsAlphabetic = {}
+                    for name, _ in pairs(settings.modifierOptions) do
+                        table.insert(modifiersOptionsAlphabetic, name)
+                    end
+                    table.sort(modifiersOptionsAlphabetic)
+                    for i, name in ipairs(modifiersOptionsAlphabetic) do
+                        local value = settings.modifierOptions[name]
+                        reaper.ImGui_TableNextColumn(ctx)
+                        
+                        reaper.ImGui_AlignTextToFramePadding(ctx)
+                        reaper.ImGui_TextColored(ctx, colorText, prettifyString(name))
+                        reaper.ImGui_TableNextColumn(ctx) 
+                        modifiersSettingsModule(name, "modifierOptions")
+                        
+                        if name == "fineAdjust" then
+                            sliderInMenu("Fine adjust amount", "fineAdjustAmount", menuWidth, 2, 200, "Set how fine the fine adjust key should be. Higher is finer") 
+                        end
+                        
+                        if name == "scrollValue" then
+                            sliderInMenu("Scroll value speed", "scrollValueSpeed", menuWidth, 1, 100, "Set how much scrolling value, will change the value") 
+                        end
+                        
+                        if i < #modifiersOptionsAlphabetic then
+                            reaper.ImGui_TableNextRow(ctx)
+                        end
+                        
                     end
                     
-                    if i < #modifiersOptionsAlphabetic then
-                        reaper.ImGui_TableNextRow(ctx)
-                    end
+                    reaper.ImGui_EndTable(ctx)
                     
                 end
                 
-                reaper.ImGui_EndTable(ctx)
                 
-            end
-            
-            
-            commandWithMostKeys = 0
-            for index, info in ipairs(keyCommandSettings) do 
-                if commandWithMostKeys < #info.commands then
-                    commandWithMostKeys = #info.commands 
+                commandWithMostKeys = 0
+                for index, info in ipairs(keyCommandSettings) do 
+                    if commandWithMostKeys < #info.commands then
+                        commandWithMostKeys = #info.commands 
+                    end
                 end
-            end
-            
-            reaper.ImGui_TextColored(ctx, colorGrey, "Key commands")
-            --reaper.ImGui_NewLine(ctx)
-            reaper.ImGui_Separator(ctx)
-            
-            
-            if ImGui.BeginTable(ctx, 'keyCommandsTable', commandWithMostKeys+2, reaper.ImGui_TableFlags_NoHostExtendX() | reaper.ImGui_TableFlags_SizingFixedFit()) then
-                for index = 1, #keyCommandSettings do
-                    local info = keyCommandSettings[index]
-                    local name = info.name
-                    local commands = info.commands
-                    ImGui.TableNextRow(ctx)
-                    ImGui.TableSetColumnIndex(ctx, 0)
-                    reaper.ImGui_TextColored(ctx,colorGrey, name .. ":")
-                    for column = 1, commandWithMostKeys+1 do 
-                        ImGui.TableSetColumnIndex(ctx, column)
-                        command = commands[column]
-                        if command then
-                            if colorButton(command .. "##"..name..column,colorText,colorButtons,colorButtons,colorOrange,"Remove key command", colorOrange) then 
-                                table.remove(commands,column)
-                                reaper.SetExtState(stateName,"keyCommandSettings", json.encodeToJson(keyCommandSettings), true)
-                            end
-                        elseif column == #commands + 1 then
-                            if addKey == name then
-                                if isEscape then
-                                    addKey = nil
-                                    isAnyPopupOpen = true
+                
+                reaper.ImGui_TextColored(ctx, colorGrey, "Key commands")
+                --reaper.ImGui_NewLine(ctx)
+                reaper.ImGui_Separator(ctx)
+                
+                
+                if ImGui.BeginTable(ctx, 'keyCommandsTable', commandWithMostKeys+2, reaper.ImGui_TableFlags_NoHostExtendX() | reaper.ImGui_TableFlags_SizingFixedFit()) then
+                    for index = 1, #keyCommandSettings do
+                        local info = keyCommandSettings[index]
+                        local name = info.name
+                        local commands = info.commands
+                        ImGui.TableNextRow(ctx)
+                        ImGui.TableSetColumnIndex(ctx, 0)
+                        reaper.ImGui_TextColored(ctx,colorGrey, name .. ":")
+                        for column = 1, commandWithMostKeys+1 do 
+                            ImGui.TableSetColumnIndex(ctx, column)
+                            command = commands[column]
+                            if command then
+                                if colorButton(command .. "##"..name..column,colorText,colorButtons,colorButtons,colorOrange,"Remove key command", colorOrange) then 
+                                    table.remove(commands,column)
+                                    reaper.SetExtState(stateName,"keyCommandSettings", json.encodeToJson(keyCommandSettings), true)
+                                end
+                            elseif column == #commands + 1 then
+                                if addKey == name then
+                                    if isEscape then
+                                        addKey = nil
+                                        isAnyPopupOpen = true
+                                    else
+                                        addKeyCommand(index)
+                                    end
                                 else
-                                    addKeyCommand(index)
+                                    if colorButton("add new##"..name,colorBlue,colorButtons,colorButtons,colorButtonsHover,"Add key command") then
+                                        addKey = name
+                                    end
                                 end
-                            else
-                                if colorButton("add new##"..name,colorBlue,colorButtons,colorButtons,colorButtonsHover,"Add key command") then
-                                    addKey = name
-                                end
-                            end
-                        end 
+                            end 
+                        end
                     end
+                    ImGui.EndTable(ctx)
                 end
-                ImGui.EndTable(ctx)
+                if colorButton("Reset to default", colorOrange,colorButtons,colorButtons, colorButtonsHover) then
+                    keyCommandSettings = keyCommandSettingsDefault
+                    reaper.SetExtState(stateName,"keyCommandSettings", json.encodeToJson(keyCommandSettings), true)
+                end
+                
+                reaper.ImGui_EndChild(ctx)
             end
-            if colorButton("Reset to default", colorOrange,colorButtons,colorButtons, colorButtonsHover) then
-                keyCommandSettings = keyCommandSettingsDefault
-                reaper.SetExtState(stateName,"keyCommandSettings", json.encodeToJson(keyCommandSettings), true)
-            end
-            
             
             ImGui.EndTabItem(ctx) 
         end
@@ -5171,10 +5360,12 @@ local function loop()
     isAnyMouseDown = isMouseDown or isMouseRightDown
     
     modifierTable = {}
-    if isSuperPressed then modifierTable.Super = true end
-    if isCtrlPressed then modifierTable.Ctrl = true end
-    if isShiftPressed then modifierTable.Shift = true end
-    if isAltPressed then modifierTable.Alt = true end
+    modifierStr = ""
+    if isSuperPressed then modifierTable.Super = true; modifierStr = modifierStr .. "Super+" end
+    if isCtrlPressed then modifierTable.Ctrl = true; modifierStr = modifierStr .. "Ctrl+" end
+    if isShiftPressed then modifierTable.Shift = true; modifierStr = modifierStr .. "Shift+" end
+    if isAltPressed then modifierTable.Alt = true; modifierStr = modifierStr .. "Alt+" end
+    modifierStr = modifierStr:sub(0,-2)
     
     -- SET ALL MODIFIER OPTIONS
     isScrollValue = compareTwoTables(modifierTable, settings.modifierOptions.scrollValue) 
@@ -5971,13 +6162,16 @@ local function loop()
                         p = paramnumber and focusedTrackFXParametersData[paramnumber + 1] or {}
                         parameterNameAndSliders("parameter",pluginParameterSlider,p , focusedParamNumber,nil,nil,nil,nil,moduleWidth,nil,nil,nil,true)
                         hasExtraLine = settings.showExtraLineInParameters
-                        if not p.isParameterLinkActive then
+                        if hasExtraLine and not p.isParameterLinkActive then
                             reaper.ImGui_InvisibleButton(ctx, "extraline dummy", 22,22)
                         end
                     end
                     
                     if settings.showParameterOptionsOnTop then 
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Separator(), colorText & 0xFFFFFFFF88)
                         reaper.ImGui_Separator(ctx)
+                        reaper.ImGui_Separator(ctx)
+                        reaper.ImGui_PopStyleColor(ctx)
                     end
                 end
             end
@@ -6025,7 +6219,7 @@ local function loop()
                         --if not someAreActive then settings.onlyMapped = false; saveTrackSettings(track) end
                     end
                     
-                    local curPosY = (settings.showOnlyMapped or settings.showSearch or settings.showLastClicked) and (42 + ((settings.showOnlyMapped or settings.showSearch) and 24 or 0) + (settings.showLastClicked and (48 + (hasExtraLine and 24 or 0)) or 0)) or 40--reaper.ImGui_GetCursorPosY(ctx)
+                    local curPosY = (settings.showOnlyMapped or settings.showSearch or settings.showLastClicked) and (50 + ((settings.showOnlyMapped or settings.showSearch) and 24 or 0) + (settings.showLastClicked and (48 + (hasExtraLine and 24 or 0)) or 0)) or 40--reaper.ImGui_GetCursorPosY(ctx)
                     
                     local _, startPosY = reaper.ImGui_GetCursorScreenPos(ctx)
                     --reaper.ImGui_SetNextWindowSizeConstraints(ctx, tableWidth-16, 40, tableWidth-16, height-curPosY)
@@ -6655,10 +6849,10 @@ local function loop()
               local isMapping = map == fxIndex
               
               local posX, posY = reaper.ImGui_GetCursorPos(ctx) 
-              local toolTip = (map and (not isMapping and ("Click to map " .. mapName .. "\nPress escape to stop mapping") or "Click or press escape to stop mapping") or "Click to map output")
+              local toolTip = (map and (not isMapping and ("Click to map " .. fx.name .. "\nPress escape to stop mapping " .. mapName) or "Click or press escape to stop mapping") or "Click to map " .. fx.name)
               --local toolTip = (sizeId == 1 or sizeId == 2) and "Click to map output" or (sizeId == 4 and "Click to make waveform small" or "Click to make waveform big")
               local mappingW = reaper.ImGui_CalcTextSize(ctx, "MAPPING", 0 , 0)
-              local nameOverlay = (map and isMapping) and ((isCollabsed or sizeW < mappingW) and "M" or "MAPPING") or ""
+              local nameOverlay = "" -- (map and isMapping) and ((isCollabsed or sizeW < mappingW) and "M" or "MAPPING") or ""
               clicked = reaper.ImGui_Button(ctx, nameOverlay .. "##plotLinesButton" .. fxIndex ,sizeW,sizeH)
               local lineX, lineY = reaper.ImGui_GetItemRectMin(ctx)
               if settings.showToolTip then setToolTipFunc(toolTip) end
@@ -6680,7 +6874,18 @@ local function loop()
               ]]
               
               reaper.ImGui_SetCursorPos(ctx, posX, posY) 
-              reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), isMapping and settings.colors.mapping or settings.colors.modulatorOutputBackground)
+              
+              local bgColor = isMapping and colorMapping or settings.colors.modulatorOutputBackground
+              if settings.pulsateMappingButton and isMapping then
+                  local timer = math.floor((reaper.time_precise() * 30)%18) +1
+                  if timer > 10 then timer = 10 - (timer  - 10) end
+                  --reaper.ShowConsoleMsg(timer .. "\n")
+                  local val = {"5","6","7","8","9","A","B","C","E","F"}
+                  local transCol = ("0xFFFFFFFF" .. val[timer] .. val[timer])
+                  bgColor = colorMapping & tonumber(transCol)
+                  --bgColor = colorMappingLight
+              end
+              reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), bgColor)
               reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PlotLines(), settings.colors.modulatorOutput)
               
               reaper.ImGui_PlotLines(ctx, '##'..fxIndex, inputPlots[id], offset[id] - 1, nil, 0, 1, sizeW, sizeH)
@@ -7228,11 +7433,12 @@ local function loop()
               --local useFlags = childFlags
               --useFlags = reaper.ImGui_ChildFlags_Border()
               useFlags = reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_AlwaysAutoResize() | reaper.ImGui_ChildFlags_AutoResizeY()
-              if not settings.limitModulatorHeightToModulesHeight and not vertical then 
+              if not vertical then 
+                  reaper.ImGui_SetNextWindowSizeConstraints(ctx, 40, 60, mappingWidth, mappingHeight)
+                  --mappingHeight = nil
+              else 
                   reaper.ImGui_SetNextWindowSizeConstraints(ctx, 40, 60, mappingWidth, mappingHeight)
                   mappingHeight = nil
-              else
-                  
               end
                   
               
@@ -7518,7 +7724,6 @@ local function loop()
                 return value
             end
         
-              
           
             if settings.sortAsType then 
                 local modulatorsByNames = {}
@@ -7542,6 +7747,17 @@ local function loop()
             local tableWidthCollabsed = 22
             local tableHeightHorizontal = winH- reaper.ImGui_GetCursorPosY(ctx) - 54 - 8
             
+            local addNewModulatorHeight = settings.vertical and tableWidthCollabsed or tableHeightHorizontal 
+            local addNewModulatorWidth = settings.vertical and moduleWidth or tableWidthCollabsed 
+            
+            
+            if settings.showAddModulatorButtonBefore then
+                if titleButtonStyle("+", "Add new modulator", addNewModulatorWidth,true,false, addNewModulatorHeight ) then 
+                    reaper.ImGui_OpenPopup(ctx, 'Add new modulator')  
+                end
+                if not settings.vertical then reaper.ImGui_SameLine(ctx) end
+            end
+            
             if modulationContainerPos then 
                 ignoreRightClick = false
                 for pos, m in ipairs(modulatorNames) do   
@@ -7561,11 +7777,9 @@ local function loop()
             end
          
          
-            local height = settings.vertical and tableWidthCollabsed or tableHeightHorizontal 
-            local tableWidth = settings.vertical and moduleWidth or tableWidthCollabsed 
             --if modulePartButton(title,  (everythingsIsNotMinimized and "Minimize" or "Maximize") ..  " everything", widthOfTrackName, true,false,nil,true,24,  settings.colors.buttonsSpecialHover ) then 
             if settings.showAddModulatorButton then
-                if titleButtonStyle("+", "Add new modulator", tableWidth,true,false, height ) then 
+                if titleButtonStyle("+", "Add new modulator", addNewModulatorWidth,true,false, addNewModulatorHeight ) then 
                     reaper.ImGui_OpenPopup(ctx, 'Add new modulator')  
                 end
             end
@@ -7637,7 +7851,7 @@ local function loop()
         --openFloatingModulesWindow = floatingModulesWindow()
     end
     
-    --settingsOpen = true
+    settingsOpen = true
     if settingsOpen then
        settingsOpen = appSettingsWindow()
     end
