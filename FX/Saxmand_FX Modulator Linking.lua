@@ -1,16 +1,16 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.6.5
+-- @version 0.6.6
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fix position and colors (no transparent is availble) of [ADD] overlay on windows
---   + right click popup for mapped parameters opens left the parameters area
+--   + fixed issues when removing mappings, not setting values correctly on some jsfx plugins
+--   + added back in the option to have downwards, bipolar, upwards mapping mode as well.
 
 
-local version = "0.6.5"
+local version = "0.6.6"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -325,12 +325,15 @@ local defaultSettings = {
     keepWhenClickingInAppWindow = true,
     onlyKeepShowingWhenClickingFloatingWindow = false,
     
+    
+    mappingModeBipolar = true,
     defaultMappingWidth = 0,
-    defaultMappingLFO = 0,
+    defaultMappingWidthLFO = 0,
     defaultBipolarLFO = true,
     defaultBipolar = false,
     mappingWidthOnlyPositive = false,
-    
+    defaultDirection = 3,
+    defaultLFODirection = 2,
     
     
     --defaultDirection = 3,
@@ -1047,9 +1050,9 @@ function disableParameterLink(track, fxnumber, paramnumber, newValue)
     if newValue == "CurrentValue" then
     
     elseif newValue == "MaxValue" then
-        reaper.TrackFX_SetParamNormalized(track,fxnumber,paramnumber,baseline + scale + offset)
+        reaper.TrackFX_SetParam(track,fxnumber,paramnumber,baseline + scale + offset)
     else
-        reaper.TrackFX_SetParamNormalized(track,fxnumber,paramnumber,baseline)-- + offset)
+        reaper.TrackFX_SetParam(track,fxnumber,paramnumber,baseline)-- + offset)
     end
 end
 
@@ -1059,13 +1062,14 @@ function setParameterToBaselineValue(track, fxnumber, paramnumber)
 end
 
 function setBaselineToParameterValue(track, fxnumber, paramnumber) 
-    local value = reaper.TrackFX_GetParamNormalized(track,fxnumber,paramnumber)
+    local value = reaper.TrackFX_GetParam(track,fxnumber,paramnumber)
     --local range = max - min
     reaper.TrackFX_SetNamedConfigParm( track, fxnumber, 'param.'..paramnumber..'.mod.baseline', value)
     
 end
 
 function toggleeModulatorAndSetBaselineAcordingly(track, fxIndex, param, newValue)
+    reaper.ShowConsoleMsg(tostring(newValue) .. "\n")
     if not newValue then
         setParameterToBaselineValue(track, fxIndex, param)  
         reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.active', 0 )
@@ -1485,6 +1489,11 @@ local function getAllDataFromParameter(track,fxIndex,p)
             _, parameterLinkParam = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' ) 
             bipolar = tonumber(offset) == -0.5
             
+            if tonumber(width) >= 0 then
+                direction = offset * 2 + 1
+            else
+                direction = math.abs(offset * 2) - 1
+            end
             
             if tonumber(fxIndex) < 0x200000 then 
                 _, parameterLinkName = reaper.TrackFX_GetParamName(track, parameterLinkEffect, parameterLinkParam)
@@ -1525,7 +1534,7 @@ local function getAllDataFromParameter(track,fxIndex,p)
         
     end
     
-    return {param = p, name = name, value = value, valueNormalized = valueNormalized, min = min, max = max, baseline = tonumber(baseline), width = tonumber(width), offset = tonumber(offset), bipolar = bipolar,
+    return {param = p, name = name, value = value, valueNormalized = valueNormalized, min = min, max = max, baseline = tonumber(baseline), width = tonumber(width), offset = tonumber(offset), bipolar = bipolar, direction = direction,
     valueName = valueName, fxIndex = fxIndex, guid = guid,
     parameterModulationActive = parameterModulationActive, isParameterLinkActive = isParameterLinkActive, parameterLinkEffect = parameterLinkEffect,containerItemFxId = tonumber(containerItemFxId),
     usesEnvelope = usesEnvelope, envelopeValue = envelopeValue, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
@@ -2220,6 +2229,18 @@ function getCurrentVal(p)
 end
 
     
+function changeDirection(track, p)
+    if p.direction == -1 then
+        reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param..'.plink.offset',  -0.5)
+    elseif p.direction == 1 then
+        reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param..'.plink.offset',  p.width < 0 and 0 or -1)
+    else 
+        reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param..'.plink.offset',  p.width < 0 and -1 or 0)
+    end 
+end
+    
+
+    
 function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, currentValue, faderResolution) 
     local currentValueNormalized = (currentValue - min) / range
     local linkWidth = p.width or 1
@@ -2247,21 +2268,37 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         end 
     end
     
-    function setWidthValue(track, p, linkWidth)
+    function setWidthValue(track, p)
         local amount
         local grains = (isFineAdjust and 100 * settings.fineAdjustAmount or 100)
         if isMouseDown then 
-            amount = linkWidth + ((mouse_pos_x - mouseDragStartX) - (mouse_pos_y - mouseDragStartY) * (isApple and -1 or 1)) / grains
+            amount = p.width + ((mouse_pos_x - mouseDragStartX) - (mouse_pos_y - mouseDragStartY) * (isApple and -1 or 1)) / grains
             mouseDragStartX = mouse_pos_x
             mouseDragStartY = mouse_pos_y
         elseif isScrollValue and scrollVertical and scrollVertical ~= 0 then
-            amount = linkWidth - (scrollVertical * ((settings.scrollValueSpeed+50)/100)) / grains
+            amount = p.width - (scrollVertical * ((settings.scrollValueSpeed+50)/100)) / grains
         else
             dragKnob = nil
         end
-        if amount and amount ~= linkWidth then  
+        if amount and amount ~= p.width then  
             if amount < minWidth then amount = minWidth end
             if amount > 1 then amount = 1 end 
+            
+            if not settings.mappingModeBipolar then
+                if amount < 0 then 
+                    if p.direction == -1 and linkOffset ~= 0 then 
+                        reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param..'.plink.offset', 0 )
+                    elseif p.direction == 1 and linkOffset ~= -1 then 
+                        reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param..'.plink.offset', -1 )
+                    end
+                elseif amount >= 0 then
+                    if p.direction == -1 and linkOffset ~= -1 then 
+                        reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param..'.plink.offset', -1 )
+                    elseif p.direction == 1 and linkOffset ~= 0 then 
+                        reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param..'.plink.offset', 0 )
+                    end 
+                end
+            end
             
             
             reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param..'.plink.scale', amount )
@@ -2295,9 +2332,14 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         dragKnob = nil
     end
     
+    
     if dragKnob and dragKnob == "baseline" .. buttonId .. moduleId then
         if isChangeBipolar and reaper.ImGui_IsMouseClicked(ctx,0) then 
-            toggleBipolar(track, p.fxIndex, p.param, p.bipolar)
+            if settings.mappingModeBipolar then
+                toggleBipolar(track, p.fxIndex, p.param, p.bipolar)
+            else
+                changeDirection(track, p)
+            end
         elseif (isAdjustWidth and not map) or (not isAdjustWidth and map) then
             if reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then 
             else
@@ -2436,8 +2478,11 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
         end 
     end
     
-    function drawModulatorDirection(size, bipolar, width, track, fxIndex, param, buttonId, offsetX, offsetY, color, toolTip) 
+    function drawModulatorDirection(size, p, track, fxIndex, param, buttonId, offsetX, offsetY, color, toolTip) 
         local pad = 4
+        local bipolar = p.bipolar
+        local direction = p.direction
+        local width = p.width
         local curPosX, curPosY = reaper.ImGui_GetCursorPos(ctx)
         reaper.ImGui_SetCursorPos(ctx, curPosX + offsetX, curPosY + offsetY)
         local click = false
@@ -2454,19 +2499,26 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
         -- vertical line
         reaper.ImGui_DrawList_AddLine(draw_list, minX + size/2, minY, minX + size/2, minY+size, color)
         -- top arrow 
-        if bipolar or width >= 0 then
+        if settings.mappingModeBipolar and (bipolar or width >= 0) or (direction >= 0) then
             reaper.ImGui_DrawList_AddLine(draw_list, minX+size/angle, minY + size / angle, minX + size/2, minY, color)
             reaper.ImGui_DrawList_AddLine(draw_list, minX+size-size/angle, minY + size / angle, minX + size/2, minY, color)
         end
         
         -- bottom arrow
-        if bipolar or width < 0 then
+        if settings.mappingModeBipolar and (bipolar or width < 0) or (direction <= 0) then
             reaper.ImGui_DrawList_AddLine(draw_list, minX+size/angle, minY + size - size / angle, minX + size/2, minY+size, color)
             reaper.ImGui_DrawList_AddLine(draw_list, minX+size-size/angle, minY + size - size / angle, minX + size/2, minY + size, color)
         end
         
         if not overlayActive then  
-            local toolTipTextHere = (bipolar and "Modulation is bipolar" or "Modulation is not bipolar") .. "\nClick to change"
+            local toolTipTextHere
+            if not settings.mappingModeBipolar then
+                local curDir = directions[p.direction+2]
+                -- TODO: maybe make a relative pos or find closest
+                toolTipTextHere = "Direction: " .. curDir .. "\nClick to change"
+            else
+                local toolTipTextHere = (bipolar and "Modulation is bipolar" or "Modulation is not bipolar") .. "\nClick to change"
+            end
             if parameterModulationActive then
                 toolTip = toolTipTextHere
             end
@@ -2543,9 +2595,13 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
                         if not showingMappings or settings.showBipolarInMappings then
                             
                             reaper.ImGui_SetCursorPos(ctx, curPosX + posXOffset, curPosY + posYOffset)
-                            if drawModulatorDirection(20, p.bipolar, p.width, track, fxIndex, param, buttonId, -2,0, p.bipolar and padColor or colorMappingLight, toolTipText)  then
+                            if drawModulatorDirection(20, p, track, fxIndex, param, buttonId, -2,0, not settings.mappingModeBipolar and colorMapping or (p.bipolar and colorMapping or colorMappingLight), toolTipText)  then
                                 if parameterModulationActive then
-                                    toggleBipolar(track, fxIndex, param, p.bipolar)
+                                    if settings.mappingModeBipolar then
+                                        toggleBipolar(track, p.fxIndex, p.param, p.bipolar)
+                                    else
+                                        changeDirection(track, p)
+                                    end
                                 else   
                                     toggleeModulatorAndSetBaselineAcordingly(track, fxIndex, param, not parameterModulationActive)
                                 end
@@ -2745,7 +2801,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
             end 
             
             reaper.ImGui_SameLine(ctx)
-            if drawModulatorDirection(20, p.bipolar, p.width, track, fxIndex, param, buttonId, 0,0, p.bipolar and colorText or colorTextDimmed) then
+            if drawModulatorDirection(20, p, track, fxIndex, param, buttonId, 0,0, not settings.mappingModeBipolar and colorText or (p.bipolar and colorText or colorTextDimmed)) then
                 toggleBipolar(track, fxIndex, param, p.bipolar) 
             end
             
@@ -2821,8 +2877,9 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
             
             if (canBeMapped and not mapOutput) then
                 local isLFO = mapName:match("LFO") ~= nil
-                
-                setParamaterToLastTouched(track, modulationContainerPos, map, fxIndex, param, p.value, (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100)
+                local setWidth = (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100
+                local setOffset = (isLFO and (settings.mappingModeBipolar and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultLFODirection - 3)/2) or ((settings.mappingModeBipolar and settings.defaultBipolar and -0.5 or 0) or (settings.defaultDirection - 3) / 2))
+                setParamaterToLastTouched(track, modulationContainerPos, map, fxIndex, param, p.value, setOffset, setWidth)
                 if settings.mapOnce then stopMappingOnRelease = true end
                 
             elseif mapOutput then 
@@ -3606,7 +3663,7 @@ function midiCCModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCol
         createSlider(track,fxIndex,"Combo",1,"Fader",nil,nil,1,nil,nil,nil,typeDropDownText,0,"Select CC or pitchbend to control the output")
         createSlider(track,fxIndex,"Combo",2,"Channel",nil,nil,1,nil,nil,nil,channelDropDownText,0,"Select which channel to use") 
 
-        isListening = reaper.TrackFX_GetParamNormalized(track, fxIndex, 3) == 1
+        isListening = reaper.TrackFX_GetParam(track, fxIndex, 3) == 1
         ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorMapping )
         ImGui.PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorMappingLight )
         ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Button(),isListening and colorMapping or colorButtons )
@@ -3614,7 +3671,7 @@ function midiCCModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCol
         reaper.ImGui_PopStyleColor(ctx,3)
         createSlider(track,fxIndex,"Checkbox",7,"Pass through MIDI",nil,nil,1,nil,nil,nil,nil,nil)
         
-        local faderSelection = reaper.TrackFX_GetParamNormalized(track, fxIndex, 1)
+        local faderSelection = reaper.TrackFX_GetParam(track, fxIndex, 1)
         if faderSelection > 0 then
             parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
             parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
@@ -4458,29 +4515,61 @@ function appSettingsWindow()
             reaper.ImGui_BeginGroup(ctx) 
             
             
-            reaper.ImGui_TextColored(ctx, colorGrey, "Mapping mode for modulators")
             
-            sliderInMenu("Width", "defaultMappingWidth", menuWidth, -100, 100, "Set the default width when mapping a parameter") 
-             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Bipolar##others",settings.defaultBipolar) 
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Biploar mapping mode##LFO",settings.mappingModeBipolar) 
             if ret then 
-                settings.defaultBipolar = val
+                settings.mappingModeBipolar = val
                 saveSettings()
             end
-            setToolTipFunc("Set default bipolar state when mapping a parameter")  
+            setToolTipFunc("If enabled mapping a modulator will either be bipolar or not. If disable you have downwards, bipolar and upwards")  
+            
+            
+            reaper.ImGui_TextColored(ctx, colorGrey, "Mapping mode for modulators")
+            sliderInMenu("Width", "defaultMappingWidth", menuWidth, -100, 100, "Set the default width when mapping a parameter") 
+             
+            if settings.mappingModeBipolar then
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Bipolar##others",settings.defaultBipolar) 
+                if ret then 
+                    settings.defaultBipolar = val
+                    saveSettings()
+                end
+                setToolTipFunc("Set default bipolar state when mapping a parameter")  
+            else
+                --reaper.ImGui_TextColored(ctx, colorGrey, "Direction")
+                for i = 1, #directions, 1 do
+                    dir = directions[i]
+                    if reaper.ImGui_RadioButton(ctx, dir, i == settings.defaultDirection) then 
+                        settings.defaultDirection = i
+                        saveSettings()
+                    end
+                    if i < #directions then reaper.ImGui_SameLine(ctx) end
+                end
+            end
             
             
             reaper.ImGui_TextColored(ctx, colorGrey, "Mapping mode for modulators with LFO in the name")
             
             sliderInMenu("Width", "defaultMappingWidthLFO", menuWidth, -100, 100, "Set the default width when mapping a parameter") 
-             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Bipolar##LFO",settings.defaultBipolarLFO) 
-            if ret then 
-                settings.defaultBipolarLFO = val
-                saveSettings()
-            end
-            setToolTipFunc("Set default bipolar state when mapping a parameter")  
             
+            if settings.mappingModeBipolar then
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Bipolar##LFO",settings.defaultBipolarLFO) 
+                if ret then 
+                    settings.defaultBipolarLFO = val
+                    saveSettings()
+                end
+                setToolTipFunc("Set default bipolar state when mapping a parameter")  
+            else
+                --reaper.ImGui_TextColored(ctx, colorGrey, "Direction for modulators with LFO in the name")
+                for i = 1, #directions, 1 do
+                    dir = directions[i]
+                    if reaper.ImGui_RadioButton(ctx, dir, i == settings.defaultLFODirection) then 
+                        settings.defaultLFODirection = i
+                        saveSettings()
+                    end 
+                    if i < #directions then reaper.ImGui_SameLine(ctx) end
+                end
+            end
             
             reaper.ImGui_EndGroup(ctx)
             ImGui.EndTabItem(ctx) 
