@@ -1,19 +1,18 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.6.7
+-- @version 0.6.8
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed mappings window height in vertical
---   + fixed sizing issue in parameters, when removing mappings
---   + fixed crash when deleting modulator while mapping is on
---   + saving colorset is updated, with overwrite info. 
---   + saving colorset is updated, with overwrite info. 
---   + fixed a bunch of bugs 
+--   + fixed two mapping crashes
+--   + fixed missing ACS max volume
+--   + added channel input for ACS
+--   + added default channel input for ACS
 
-local version = "0.6.7"
+
+local version = "0.6.8"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -345,6 +344,7 @@ local defaultSettings = {
     defaultDirection = 3,
     defaultLFODirection = 2,
     
+    defaultAcsTrackAudioChannelInput = 5,
     
     --defaultDirection = 3,
     --defaultLFODirection = 2,
@@ -827,21 +827,22 @@ function deleteModule(track, fxIndex, modulationContainerPos)
         if map == fxIndex then 
             stopMapping()
         end
+        
+        local mappings = (parameterLinks and parameterLinks[tostring(fxIndex)]) and parameterLinks[tostring(fxIndex)] or {} 
+        for i, map in ipairs(mappings) do  
+            local mapFxIndex = map.fxIndex
+            local mapParam = map.param
+            disableParameterLink(track, mapFxIndex, mapParam) 
+        end
+        
+        
+        local guid = reaper.TrackFX_GetFXGUID( track, fxIndex )
+        if trackSettings.hideParametersFromModulator and trackSettings.hideParametersFromModulator[p.guid] then 
+            trackSettings.hideParametersFromModulator[p.guid] = nil
+        end
+        
         if reaper.TrackFX_Delete(track, fxIndex) then
             selectedModule = false
-            local mappings = (parameterLinks and parameterLinks[tostring(fxIndex)]) and parameterLinks[tostring(fxIndex)] or {} 
-            
-            
-            for i, map in ipairs(mappings) do  
-                local mapFxIndex = map.fxIndex
-                local mapParam = map.param
-                disableParameterLink(track, mapFxIndex, mapParam) 
-            end
-            
-            local guid = reaper.TrackFX_GetFXGUID( track, fxIndex )
-            if trackSettings.hideParametersFromModulator and trackSettings.hideParametersFromModulator[p.guid] then 
-                trackSettings.hideParametersFromModulator[p.guid] = nil
-            end
                 
             renameModulatorNames(track, modulationContainerPos)
         end
@@ -854,7 +855,7 @@ function stopMapping()
 end
 
 function mapModulatorActivate(fx, sliderNum, name)
-    if isSuperPressed and trackSettings then
+    if fx and isSuperPressed and trackSettings then
         local newStart = false
         local newVal
         if not trackSettings.bigWaveform[fx.guid] then 
@@ -961,8 +962,17 @@ function insertACSAndAddContainerMapping(track)
     reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.acs.dir', 0)
     reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.acs.dblo', -60)
     reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.acs.dbhi', 12)
-    reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.acs.chan', 2)
-    reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.acs.stereo', 1)
+    
+    local value = settings.defaultAcsTrackAudioChannelInput
+    if value < 4 then
+        reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.' .. "acs.chan", value)   
+    else
+        reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.' .. "acs.chan", value == 4 and 0 or 2)
+    end 
+    reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.' .. "acs.stereo", value < 4 and 0 or 1)
+    
+    --reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.acs.chan', 2)
+    --reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.acs.stereo', 1)
     
     --reaper.TrackFX_SetNamedConfigParm( track, insert_position, 'param.'.."1"..'.mod.visible', 1)
     
@@ -1104,7 +1114,6 @@ function setBaselineToParameterValue(track, fxnumber, paramnumber)
 end
 
 function toggleeModulatorAndSetBaselineAcordingly(track, fxIndex, param, newValue)
-    reaper.ShowConsoleMsg(tostring(newValue) .. "\n")
     if not newValue then
         setParameterToBaselineValue(track, fxIndex, param)  
         reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.active', 0 )
@@ -1515,7 +1524,7 @@ local function getAllDataFromParameter(track,fxIndex,p)
     local offset = 0
     local direction = 0
     local bipolar = false
-    if isParameterLinkActive then
+    if isParameterLinkActive and modulationContainerPos then
         _, parameterLinkEffect = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' )
         if parameterLinkEffect ~= "" then 
             _, baseline = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.mod.baseline') 
@@ -1951,7 +1960,7 @@ function verticalButtonStyle(name, tooltipText, sizeW, verticalName, background,
 end
 
 function setToolTipFunc(text, color)
-    if settings.showToolTip and text and #text > 0 then  
+    if settings.showToolTip and text and #tostring(text) > 0 then  
         ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Border(),colorTextDimmed) 
         ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(),color and color or colorText) 
         ImGui.SetItemTooltip(ctx, text) 
@@ -2099,9 +2108,11 @@ function nativeReaperModuleParameter(track, fxIndex, paramOut,  _type, paramName
     local name = visualName
     
     
-    local ret, currentValue = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName) 
+    local ret, currentValue = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName)    
     if ret and tonumber(currentValue) then
-        valueFormat = (ret and tonumber(currentValue)) and string.format(valueFormat, tonumber(currentValue)) or ""
+        currentValue = tonumber(currentValue)
+        local currentValueNormalized = (currentValue - min) / range
+        valueFormat = (ret and tonumber(currentValue * divide)) and string.format(valueFormat, tonumber(currentValue * divide)) or ""
         
     --function nativeReaperModuleParameter(nameOnSide, buttonId, currentValue,  min, max, divide, valueFormat, sliderFlags, width, _type, colorPos, p, resetValue)
         
@@ -2135,11 +2146,63 @@ function nativeReaperModuleParameter(track, fxIndex, paramOut,  _type, paramName
         
         drawCustomSlider(valueFormat, valueColor, colorPos, currentValue, posXOffset, minX, minY, maxX, maxY, sliderWidthAvailable, sliderFlags,  min, max, sliderGrabWidth)
         
+        --[[
         if dragKnob and dragKnob == buttonId then
             local amount
             local changeResolution = isFineAdjust and faderResolution * settings.fineAdjustAmount or faderResolution
             if isMouseDown then 
-                valueChange = ((mouse_pos_x - mouseDragStartX)) / changeResolution
+                if reaper.ImGui_IsMouseClicked(ctx, 0) and nameOnSide then
+                    --reaper.ShowConsoleMsg(faderResolution .. "\n")
+                end
+                mouseDragWidth = (mouse_pos_x - mouseDragStartX) - (dragKnob:match("Window") ~= nil and (mouse_pos_y - mouseDragStartY) * (isApple and -1 or 1) or 0)
+                amount = currentValueNormalized + mouseDragWidth / changeResolution
+                if sliderFlags then
+                    local curve = 0.5 
+                    amount = scaleLog(amount, min, max, curve)
+                end
+                    
+                mouseDragStartX = mouse_pos_x
+                mouseDragStartY = mouse_pos_y
+            elseif isScrollValue and scrollVertical and scrollVertical ~= 0 then
+                amount = currentValueNormalized - ((scrollVertical * ((settings.scrollValueSpeed+50)/100)) / changeResolution)
+            else
+                --dragKnob = nil
+                -- TRIED DISABLING THESE, SO SCROLL ALSO WORKS WITH FINE VALUES
+                --missingOffset = nil
+                --lastAmount = nil
+            end
+            if amount then 
+                if amount < 0 then amount = 0 end
+                if amount > 1 then amount = 1 end 
+                if amount ~= currentValueNormalized then  
+                    
+                    local addOffset = missingOffset and missingOffset or 0 -- these deals with moving the mouse but the parameter does not change, so we store them and add the difference
+                    local newVal = (amount + addOffset) * range + min
+                    
+                    if ret then reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName, newVal) end  
+                    _, newAmount = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName)
+                    newAmount = tonumber(newAmount)
+                     
+                    newAmountRelative = newAmount and (newAmount - min) / range or 0
+                    -- these deals with moving the mouse but the parameter does not change, so we store them and add the difference to the next time
+                    if lastAmount and lastAmount == amount then
+                        missingOffset = amount - newAmountRelative + (missingOffset and missingOffset or 0)
+                    else
+                    --reaper.ShowConsoleMsg(tostring(lastAmount) .. " == " .. amount .. "reset\n")
+                        missingOffset = 0
+                    end
+                    lastAmount = amount
+                    -----
+                end
+            end 
+        end
+        ]]
+        if dragKnob and dragKnob == buttonId then
+            local amount
+            local changeResolution = isFineAdjust and faderResolution * settings.fineAdjustAmount or faderResolution
+            if isMouseDown then  
+                mouseDragWidth = (mouse_pos_x - mouseDragStartX) - (dragKnob:match("Window") ~= nil and (mouse_pos_y - mouseDragStartY) * (isApple and -1 or 1) or 0)
+                valueChange = mouseDragWidth / changeResolution
                 if sliderFlags then
                     local curve = 0.5 
                     local valueNormalized = getLogPosition(currentValue, min, max, curve)
@@ -2161,11 +2224,12 @@ function nativeReaperModuleParameter(track, fxIndex, paramOut,  _type, paramName
                 
                 if amount < min then amount = min end
                 if amount > max then amount = max end 
-                if ret then reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName, amount/divide) end  
+                if ret then reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName, amount) end  
             end
             
             ignoreScrollHorizontal = true
         end
+        
     end
     
     --[[
@@ -2428,8 +2492,12 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
     
 end
 
-function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min, max, divide, valueFormat, sliderFlags, width, _type, p, showingMappings, resetValue, genericModulatorOutput, parametersWindow, dontShowName, doNotSetFocus)
-
+function pluginParameterSlider(moduleId,nameOnSide, divide, valueFormat, sliderFlags, width, _type, p, showingMappings, resetValue, genericModulatorOutput, parametersWindow, dontShowName, doNotSetFocus)
+    
+    ImGui.BeginGroup(ctx)  
+    
+    local min = p.min
+    local max = p.max
     local divide = divide or 1
     local range = max - min
     
@@ -2447,6 +2515,8 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     local valueName = p.valueName
     local parameterLinkName = p.parameterLinkName 
     local name = p.name and p.name or "NA"
+    
+    local buttonId = fxIndex .. ":" .. param
     
     width = width < 20 and 20 or width
     
@@ -2496,6 +2566,8 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     if name == "Phase" then 
         --reaper.ShowConsoleMsg(tostring(p.baseline) .. "\n")
     end
+    
+    
     
     -- for hiding parameters
     if hideParametersFromModulator and hideParametersFromModulator == p.guid then
@@ -2896,7 +2968,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     
     
     local padW = 1
-    local padH = 1
+    local padH = 0
     if isParameterLinkActive then
         reaper.ImGui_DrawList_AddRect(draw_list, parStartPosX - padW, parStartPosY - padH, parStartPosX + areaWidth + padW, parEndPosY  + padH, padColor,4,nil,1)
     end
@@ -2973,6 +3045,7 @@ function pluginParameterSlider(moduleId,nameOnSide, buttonId, currentValue,  min
     end
     
     
+    reaper.ImGui_EndGroup(ctx)
     --return ret, newValue
 end
 
@@ -3285,85 +3358,19 @@ end
 
 
 function parameterNameAndSliders(moduleId, func2, p, focusedParamNumber, doNotSetFocus, excludeName, showingMappings, nameOnSide, sizeOfFader, resetValue, valueAsString, genericModulatorOutput, parametersWindow) 
-    local isParameterLinkActive = p.isParameterLinkActive
-    local parameterModulationActive = p.parameterModulationActive
-    local containerItemFxId = p.containerItemFxId
-    local fxIndex = p.fxIndex or 0
-    local param = p.param or 0
-    local value = p.valueNormalized --p.value
     local valueNameInput = (p.valueName and p.valueName ~= "") and p.valueName or 0 -- got an error so this is a quick fix
     
     local valueName = valueAsString and ((valueAsString:match("%%") and tonumber(valueNameInput)) and string.format(valueAsString, tonumber(valueNameInput)) or valueAsString) or valueNameInput
-    local min = p.min or 0
-    local max = p.max or 1
-    local usesEnvelope = p.usesEnvelope
-    local parameterLinkEffect = p.parameterLinkEffect
-    local parameterLinkName = p.parameterLinkName
-    local name = p.name
-    local envelopeValue = p.envelopeValue
-    local baseline = p.baseline
-    local linkOffset = p.offset
-    local linkWidth = p.width
-    local buttonId = fxIndex .. ":" .. param
     
-     
-    local inclosingX, inclosingY
     
-    local mapVariable = false
-    if map and (not isParameterLinkActive or (isParameterLinkActive and map ~= containerItemFxId)) then
-        mapVariable = true 
-        ImGui.SetNextItemAllowOverlap(ctx)
-    end 
+    
     local scrollBarOffset = 14
-    local textSize = reaper.ImGui_CalcTextSize(ctx, "Offset", 0,0) + 10 
-    local itemWidth = moduleWidth - 2 - textSize - scrollBarOffset
-    local areaWidth = moduleWidth - scrollBarOffset - 2
     
     local faderWidth = sizeOfFader and sizeOfFader or moduleWidth - scrollBarOffset --(sizeArray and sizeArray.faderWidth) and sizeArray.faderWidth or moduleWidth - scrollBarOffset
-    local parameterMappingWidth = itemWidth
+
     
     
-    ImGui.BeginGroup(ctx)  
-    
-    
-    local startPosX, startPosY = reaper.ImGui_GetCursorPos(ctx)
-    reaper.ImGui_PushStyleVar(ctx, ImGui.StyleVar_GrabMinSize, 2)  
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_CheckMark(),colorMapping) 
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(),semiTransparentGrey)
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(),semiTransparentGrey)
-    --ImGui.PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),semiTransparentGrey) 
-    
-    
-    ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(), param == focusedParamNumber and colorText or (parameterModulationActive and colorMapLightest or colorTextDimmed))
-    
-    
-    
-    local parStartPosX, parStartPosY = reaper.ImGui_GetItemRectMin(ctx)
-    
-    local posX, posY = reaper.ImGui_GetCursorPos(ctx)
-    
-    
-     
-    local sliderValue = usesEnvelope and envelopeValue or ((parameterLinkEffect and parameterModulationActive) and baseline or value) 
-    if mapVariable then ImGui.SetNextItemAllowOverlap(ctx) end -- in order for the overlapping map button to take focus
-    
-    --if isAltPressed and sliderValue ~= 0 then reaper.ShowConsoleMsg(value .. " - "sliderValue .. "\n") end
-    
-    --pluginParameterSlider(visualName, buttonId, currentValue,  min, max, divide, valueFormat, sliderFlags, width, _type, colorPos, hasLink, linkValue, linkWidth)
-    ImGui.SetNextItemWidth(ctx, faderWidth)
-    ret, newValue = pluginParameterSlider(moduleId, nameOnSide, buttonId, sliderValue,min,max,nil, valueName, nil, faderWidth, "Double", p, showingMappings, resetValue, genericModulatorOutput, parametersWindow, excludeName, doNotSetFocus) 
-    
-    
-    
-    reaper.ImGui_PopStyleColor(ctx,4) 
-    ImGui.PopStyleVar(ctx)
-    
-    
-    local endPosX, endPosY = reaper.ImGui_GetCursorPos(ctx)
-    
-    
-    reaper.ImGui_EndGroup(ctx)
-    
+    pluginParameterSlider(moduleId, nameOnSide,nil, valueName, nil, faderWidth, "Double", p, showingMappings, resetValue, genericModulatorOutput, parametersWindow, excludeName, doNotSetFocus)  
 end
 
 function placingOfNextElement()
@@ -3417,11 +3424,11 @@ function createSlider2(track,fxIndex, info, currentValue, setSize)
         if setSize then reaper.ImGui_SetNextItemWidth(ctx,setSize) end
         if _type == "SliderInt" then 
             --ret, val = reaper.ImGui_SliderInt(ctx,visualName.. '##slider' .. name .. fxIndex, math.floor(currentValue * divide), min, max, valueFormat) 
-            ret, val = pluginParameterSlider(visualName, '##slider' ..name .. fxIndex, math.floor(currentValue * divide),min,max, nil,valueFormat, sliderFlags, setSize, "Int", {})
+            ret, val = pluginParameterSlider(visualName, '##slider' ..name .. fxIndex,min,max, nil,valueFormat, sliderFlags, setSize, "Int", {})
             if ret then setParameterButReturnFocus(track, fxIndex, paramIndex, val/divide) end
         elseif _type == "SliderDouble" then --"%d"
             --ret, val= reaper.ImGui_SliderDouble(ctx,visualName.. '##slider' .. name .. fxIndex, currentValue, min, max, valueFormat, sliderFlag)
-            ret, val = pluginParameterSlider(visualName, '##slider' .. name .. fxIndex, currentValue, min, max, nil, valueFormat, sliderFlag, setSize, "Double", {})
+            ret, val = pluginParameterSlider(visualName, '##slider' .. name .. fxIndex, min, max, nil, valueFormat, sliderFlag, setSize, "Double", {})
             if ret then setParameterButReturnFocus(track, fxIndex, paramIndex, val) end
         elseif _type == "SliderDoubleLogarithmic" then --"%d"
         -- NOT USED AT THE MOMENT
@@ -3433,7 +3440,7 @@ function createSlider2(track,fxIndex, info, currentValue, setSize)
         elseif _type == "SliderDoubleLogarithmic2" then --"%d"
             --ret, val= reaper.ImGui_SliderDouble(ctx,visualName.. '##slider' .. name .. fxIndex, (2.7183^currentValue), min, max, valueFormat, sliderFlag)
             --if ret then setParameterNormalizedButReturnFocus(track, fxIndex, paramIndex, math.log(val)) end
-            ret, val = pluginParameterSlider(visualName, '##slider' .. name .. fxIndex, currentValue, min, max, nil, valueFormat, sliderFlag, setSize, "Double", {})
+            ret, val = pluginParameterSlider(visualName, '##slider' .. name .. fxIndex, min, max, nil, valueFormat, sliderFlag, setSize, "Double", {})
             if ret then setParameterButReturnFocus(track, fxIndex, paramIndex, val) end
         elseif _type == "SliderName" then --"%d"
             local hasSliderValueName, sliderValueName = reaper.TrackFX_FormatParamValue(track,fxIndex,paramIndex,currentValue)
@@ -3679,7 +3686,12 @@ function nlfoModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isColla
     createModulationLFOParameter(track, fxIndex, "Checkbox", "lfo.free", "Seek/loop", nil,nil,1,nil,nil,true)  
 end
 
-
+local acsTrackAudioChannel = {"1","2","3","4","1+2","3+4"}
+local acsTrackAudioChannelDropDownText = ""
+for _, t in ipairs(acsTrackAudioChannel) do
+    acsTrackAudioChannelDropDownText = acsTrackAudioChannelDropDownText .. t .. "\0" 
+end
+    
 function acsModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
     paramOut = "1"
      
@@ -3690,13 +3702,35 @@ function acsModulator(name, modulatorsPos, fxIndex, fxInContainerIndex, isCollab
     
     
     if not isCollabsed then 
+        
+        local ret1, chan = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. "acs.chan")  
+        local ret2, stereo = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. "acs.stereo")
+        if ret1 and ret2 then
+            local dropDownSelect = tonumber(stereo) < 1 and tonumber(chan) or (tonumber(chan) == 0 and 4 or 5)
+            
+            reaper.ImGui_SetNextItemWidth(ctx,dropDownSize/2)
+            local ret, value = reaper.ImGui_Combo(ctx, "" .. 'Channel##acsModulator' .. fxIndex, dropDownSelect, acsTrackAudioChannelDropDownText )
+            if ret then  
+                if value < 4 then
+                    reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. "acs.chan", value)   
+                else
+                    reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. "acs.chan", value == 4 and 0 or 2)
+                end
+                    
+                reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. "acs.stereo", value < 4 and 0 or 1)
+                
+            end 
+        end
+        
+        --if ret then reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName, amount) end 
+        
         nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.attack", "Attack", 0, 1000, 1, "%0.0f ms", nil, nil, nil, nil, nil,buttonWidth*2, 300)
         nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.release", "Release", 0, 1000, 1, "%0.0f ms", nil, nil, nil, nil, nil,buttonWidth*2, 300)
         nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.dblo", "Min Volume", -60, 12,1, "%0.2f dB", nil, nil, nil, nil, nil,buttonWidth*2, -60)
-        nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.dbhi", "Strength", 0, 100,100, "%0.1f %%", nil, nil, nil, nil, nil,buttonWidth*2, 100)
-        
+        nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.dbhi", "Max Volume", -60, 12,1, "%0.2f dB", nil, nil, nil, nil, nil,buttonWidth*2, 12)
+        nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.strength", "Strength", 0, 1,100, "%0.1f %%", nil, nil, nil, nil, nil,buttonWidth*2, 100)
         -- THESE ARE NOT RELEVANT TO SEE
-        --nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.strength", "Max Volume", -60, 12,1, "%0.2f dB", nil, nil, nil, nil, nil,buttonWidth*2, 12)
+        
         
         --nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.x2", "X pos", 0, 1,1, "%0.2f dB", nil, nil, nil, nil, nil,buttonWidth*2, 0.5)
         --nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.y2", "Y pos", 0, 1,1, "%0.2f dB", nil, nil, nil, nil, nil,buttonWidth*2, 0.5)
@@ -4714,6 +4748,17 @@ function appSettingsWindow()
                     if i < #directions then reaper.ImGui_SameLine(ctx) end
                 end
             end
+            
+            reaper.ImGui_NewLine(ctx)
+            
+            reaper.ImGui_TextColored(ctx, colorGrey, "ACS track audio channel input")
+            reaper.ImGui_SetNextItemWidth(ctx,100)
+            
+            local ret, value = reaper.ImGui_Combo(ctx, "" .. 'Channel##defaultacsModulator', settings.defaultAcsTrackAudioChannelInput, acsTrackAudioChannelDropDownText )
+            if ret then  
+                settings.defaultAcsTrackAudioChannelInput = value
+                saveSettings() 
+            end 
         end
         
         local groups =  {"General", "Floating Mapper", "Defaults"}
