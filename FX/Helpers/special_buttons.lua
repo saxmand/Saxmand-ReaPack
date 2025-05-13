@@ -221,4 +221,37 @@ function buttons.knob(ctx, id, relativePosX, relativePosY, size, amount, textOnT
     end
 end
 
+        
+function buttons.floatingMapper(ctx, id, size, lock, tooltipText, lockedColor, unlockedColor, background, hover, active, centerColor, vertical)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),hover)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),active)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),background)
+    local clicked = false
+    
+    
+    if reaper.ImGui_Button(ctx,"##" .. id, size, size) then
+        clicked = true
+    end 
+
+
+    if reaper.ImGui_IsItemHovered(ctx) and tooltipText then
+        reaper.ImGui_SetTooltip(ctx,tooltipText)    
+    end
+    local posX, posY = reaper.ImGui_GetItemRectMin(ctx)
+    
+    if vertical then
+        reaper.ImGui_DrawList_AddRect(draw_list, posX + size * 0.1, posY + size * 0.1, posX + size * 0.9, posY + size * 0.9, lock and lockedColor or unlockedColor, 5, nil, 2)
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, posX + size * 0.2, posY + size * 0.3, posX + size * 0.8, posY + size * 0.4, lock and lockedColor or unlockedColor, 5)
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, posX + size * 0.2, posY + size * 0.5, posX + size * 0.8, posY + size * 0.7, lock and lockedColor or unlockedColor, 5)
+    else
+        reaper.ImGui_DrawList_AddRect(draw_list, posX + size * 0.1, posY + size * 0.1, posX + size * 0.9, posY + size * 0.9, lock and lockedColor or unlockedColor, 5, nil, 2)
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, posX + size * 0.3, posY + size * 0.2, posX + size * 0.4, posY + size * 0.8, lock and lockedColor or unlockedColor, 5)
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, posX + size * 0.5, posY + size * 0.2, posX + size * 0.7, posY + size * 0.8, lock and lockedColor or unlockedColor, 5)
+    end
+    
+    reaper.ImGui_PopStyleColor(ctx,3)
+    
+    return clicked 
+end
+
 return buttons

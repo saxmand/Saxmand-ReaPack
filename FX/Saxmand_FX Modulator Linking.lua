@@ -1,15 +1,15 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.7.0
+-- @version 0.7.1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + debugging for modifiers on windows
+--   + added button for floating mapper
 
 
-local version = "0.7.0"
+local version = "0.7.1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -5901,14 +5901,21 @@ local function loop()
         end
         
         
-        local widthOfTrackName = settings.vertical and partsWidth - 24 - 24 or pansHeight - 24 - 48
+        
+        
+        
+        local widthOfTrackName = settings.vertical and partsWidth - 24 - 24 - 24 or pansHeight - 24 - 24 - 48 - 8
         if not settings.vertical then
-            if specialButtons.lock(ctx, "lock", 24, locked, "Lock to selected track", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, trackColor, settings.vertical) then
+            if specialButtons.lock(ctx, "lock", 24, locked, (locked and "Unlock from track" or "Lock to selected track"), colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, trackColor, settings.vertical) then
                 locked = not locked and track or false 
                 --reaper.SetExtState(stateName, "locked", locked and "1" or "0", true)
             end
             
-            reaper.ImGui_SetCursorPos(ctx, x, y + 24)
+            if specialButtons.floatingMapper(ctx, "floatingMapper", 24, settings.useFloatingMapper, (settings.useFloatingMapper and "Disable" or "Enable") .. " floating mapper", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, settings.vertical) then
+                settings.useFloatingMapper = not settings.useFloatingMapper
+            end
+            
+            reaper.ImGui_SetCursorPos(ctx, x, y + 48 + 8)
             if modulePartButton(title,  (everythingsIsNotMinimized and "Minimize" or "Maximize") ..  " everything", widthOfTrackName, true,false,nil,true,24 ) then 
                 hideShowEverything(track, everythingsIsNotMinimized)
             end
@@ -5918,6 +5925,7 @@ local function loop()
                 settingsOpen = not settingsOpen
             end
         end
+        
         
         
         if settings.vertical then
@@ -5931,7 +5939,15 @@ local function loop()
                 hideShowEverything(track, everythingsIsNotMinimized)
             end
             
+            
             reaper.ImGui_SameLine(ctx, widthOfTrackName + 24) 
+            
+            if specialButtons.floatingMapper(ctx, "floatingMapper", 24, settings.useFloatingMapper, (settings.useFloatingMapper and "Disable" or "Enable") .. " floating mapper", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, settings.vertical) then
+                settings.useFloatingMapper = not settings.useFloatingMapper
+            end
+            
+            
+            reaper.ImGui_SameLine(ctx, widthOfTrackName + 48) 
             if specialButtons.lock(ctx, "lock", 24, locked, "Lock to selected track", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, trackColor, settings.vertical) then
                 locked = not locked and track or false 
                 --reaper.SetExtState(stateName, "locked", locked and "1" or "0", true)
