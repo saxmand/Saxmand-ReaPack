@@ -1,15 +1,15 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.6.9
+-- @version 0.7.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed crash from refactoring
+--   + debugging for modifiers on windows
 
 
-local version = "0.6.9"
+local version = "0.7.0"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -5041,8 +5041,15 @@ function appSettingsWindow()
                     
                 end
                 
+                reaper.ImGui_NewLine(ctx)
+                
+                
                 reaper.ImGui_EndTable(ctx)
                 
+            end
+            
+            if modifierStr ~= "" then
+                reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Modifier pressed: " .. modifierStr .. ")")
             end
         end
         
