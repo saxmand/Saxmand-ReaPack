@@ -778,8 +778,6 @@
         <source type="effect" file="../FX Modulator Linking/Note Velocity Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX%20Modulator%20Linking/Note%20Velocity%20Modulator.jsfx</source>
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Helpers/json.lua</source>
         <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Helpers/special_buttons.lua</source>
-        <source file="Color sets/Dark lol.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Color%20sets/Dark%20lol.txt</source>
-        <source file="Color sets/Dark test.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Color%20sets/Dark%20test.txt</source>
         <source file="Color sets/Dark.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Color%20sets/Dark.txt</source>
         <source file="Color sets/Light.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Color%20sets/Light.txt</source>
       </version>
