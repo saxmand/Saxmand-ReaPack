@@ -1,18 +1,15 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.6.8
+-- @version 0.6.9
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed two mapping crashes
---   + fixed missing ACS max volume
---   + added channel input for ACS
---   + added default channel input for ACS
+--   + fixed crash from refactoring
 
 
-local version = "0.6.8"
+local version = "0.6.9"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -2494,10 +2491,12 @@ end
 
 function pluginParameterSlider(moduleId,nameOnSide, divide, valueFormat, sliderFlags, width, _type, p, showingMappings, resetValue, genericModulatorOutput, parametersWindow, dontShowName, doNotSetFocus)
     
+    if not p or not p.fxIndex then return end
+    
     ImGui.BeginGroup(ctx)  
     
-    local min = p.min
-    local max = p.max
+    local min = p.min or 0
+    local max = p.max or 1
     local divide = divide or 1
     local range = max - min
     
