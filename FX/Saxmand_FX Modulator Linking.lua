@@ -1,16 +1,16 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.7.3
+-- @version 0.7.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added first support for pass through short cuts. 
---   + added first support for writting envelopes via script sliders
+--   + removed "add manual passthrough shortcut" as it's not working yet.
+--   + maybe fix hidding parameters after restart 
 
 
-local version = "0.7.3"
+local version = "0.7.4"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -444,6 +444,7 @@ local defaultTrackSettings = {
     showMappings = {},
     renamed = {},
     bigWaveform = {},
+    hideParametersFromModulator = {},
 }
 
 local function saveSettings()
@@ -4241,7 +4242,7 @@ function genericModulator(name, modulationContainerPos, fxIndex, fxInContainerIn
             
             
             --x, y = reaper.ImGui_GetCursorPos(ctx)
-            hide = trackSettings.hideParametersFromModulator and trackSettings.hideParametersFromModulator[fx.guid] and trackSettings.hideParametersFromModulator[fx.guid][p]
+            hide = hideParametersFromModulator ~= fx.guid and trackSettings.hideParametersFromModulator and trackSettings.hideParametersFromModulator[fx.guid] and trackSettings.hideParametersFromModulator[fx.guid][p]
             
             if not hide then
                 if genericModulatorInfo.outputParam == p then reaper.ImGui_BeginDisabled(ctx) end
@@ -5617,10 +5618,10 @@ function appSettingsWindow()
                 listenForPassthroughKeyCommands = not listenForPassthroughKeyCommands 
             end
             
-            reaper.ImGui_SameLine(ctx)
-            if colorButton("Manuel lookup" .. "##forpassthroughshortcuts", colorText, colorButtons,colorButtons, colorButtonsBorder) then
-                reaper.ImGui_OpenPopup(ctx, "Manuel Lookup")
-            end
+            --reaper.ImGui_SameLine(ctx)
+            --if colorButton("Manuel lookup" .. "##forpassthroughshortcuts", colorText, colorButtons,colorButtons, colorButtonsBorder) then
+            --    reaper.ImGui_OpenPopup(ctx, "Manuel Lookup")
+            --end
             
                 
             local center_x, center_y = ImGui.Viewport_GetCenter(ImGui.GetWindowViewport(ctx))
