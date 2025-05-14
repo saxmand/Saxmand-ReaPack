@@ -1,20 +1,16 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.7.2
+-- @version 0.7.3
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added settings options for Modulators panel buttons (sort by name, Map once)
---   + rightclicking a mapped parameter, popup will have the mapped name, and you can click to active mapping on that modulator
---   + Added more option for pulsating mapping color
---   + added Ctrl<>Super swap for windows modifiers
---   + fixed user module not restoring hidden parameters correctly
---   + Added envelope lane button in right click parameter popup
+--   + added first support for pass through short cuts. 
+--   + added first support for writting envelopes via script sliders
 
 
-local version = "0.7.2"
+local version = "0.7.3"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -516,6 +512,7 @@ local keyCommandSettingsDefault = {
     --{name = "Delete", commands  = {"Super+BACKSPACE", "DELETE"}}, 
     {name = "Close", commands  = {"Super+W", "Alt+M"}},
     {name = "Map current toggle", commands  = {"Super+M"}},
+    {name = "Space", commands = {"Space"}},
   }
 
 local keyCommandSettings = keyCommandSettingsDefault
@@ -555,7 +552,12 @@ local function addKeyCommand(index)
 end
 
 
-
+if reaper.HasExtState(stateName,"passThroughKeyCommands") then
+    passThroughKeyCommandsStr = reaper.GetExtState(stateName,"passThroughKeyCommands")
+    passThroughKeyCommands = json.decodeFromJson(passThroughKeyCommandsStr)
+else
+    passThroughKeyCommands = {}
+end
 
 
 function validateTrack(track)
@@ -1579,7 +1581,15 @@ local function getAllDataFromParameter(track,fxIndex,p)
         pointCount = reaper.CountEnvelopePoints(trackEnvelope)
         usesEnvelope = pointCount > 0
         if usesEnvelope then
-            retval, envelopeValue, dVdS, ddVdS, dddVdS = reaper.Envelope_Evaluate( trackEnvelope, playPos, 0, 0 )
+            local playState = reaper.GetPlayState()
+            local target_time
+            if playState == 0 then --not lastEnvelopeInsertPos or lastEnvelopeInsertPos ~= playPos then
+                target_time = reaper.GetCursorPosition()
+            else
+                target_time = playPos
+            end
+            
+            retval, envelopeValue, dVdS, ddVdS, dddVdS = reaper.Envelope_Evaluate( trackEnvelope, target_time, 0, 0 )
         end
     else
         envelopeValue = false
@@ -1598,7 +1608,7 @@ local function getAllDataFromParameter(track,fxIndex,p)
     return {param = p, name = name, value = value, valueNormalized = valueNormalized, min = min, max = max, baseline = tonumber(baseline), width = tonumber(width), offset = tonumber(offset), bipolar = bipolar, direction = direction,
     valueName = valueName, fxIndex = fxIndex, guid = guid,
     parameterModulationActive = parameterModulationActive, isParameterLinkActive = isParameterLinkActive, parameterLinkEffect = parameterLinkEffect,containerItemFxId = tonumber(containerItemFxId),
-    usesEnvelope = usesEnvelope, envelopeValue = envelopeValue, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
+    envelope = trackEnvelope, usesEnvelope = usesEnvelope, envelopeValue = envelopeValue, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
     fxName = fxName,
     }
 end
@@ -2334,6 +2344,7 @@ function getCurrentVal(p)
         -- write automation
         -- first read automation state
         -- then set to touch
+            return p.envelopeValue
         elseif p.parameterLinkEffect and p.parameterModulationActive then
             local _, baseline = reaper.TrackFX_GetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline')
             local val = reaper.TrackFX_GetParam(track, p.fxIndex, p.param)
@@ -2355,7 +2366,16 @@ function changeDirection(track, p)
     end 
 end
     
-
+function envelopeHasPointAtTime(envelope, target_time, time_tolerance)
+  local point_count = reaper.CountEnvelopePoints(envelope)
+  for i = 0, point_count - 1 do
+    local retval, time = reaper.GetEnvelopePoint(envelope, i)
+    if retval and math.abs(time - target_time) <= time_tolerance then
+      return i -- Found a point close enough
+    end
+  end
+  return false
+end
     
 function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, currentValue, faderResolution) 
     local currentValueNormalized = (currentValue - min) / range
@@ -2368,10 +2388,24 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         ignoreThisParameter = p.param
         
         if p.param and p.param > -1 then
-            if p.usesEnvelope then
-            -- write automation
-            -- first read automation state
-            -- then set to touch
+            if p.usesEnvelope then 
+                local playState = reaper.GetPlayState()
+                local target_time
+                if playState == 0 then --not lastEnvelopeInsertPos or lastEnvelopeInsertPos ~= playPos then
+                    target_time = reaper.GetCursorPosition()
+                else
+                    target_time = playPos
+                end
+                
+                pointAtPos = envelopeHasPointAtTime(p.envelope, target_time, 0.0001)
+                if not pointAtPos then 
+                    -- TODO: consider if we should get the last shape and tension
+                    reaper.InsertEnvelopePoint(p.envelope, target_time, amount, 0, 0, true)
+                else 
+                    --reaper.DeleteEnvelopePointEx(p.envelope, -1, pointAtPos)
+                    --reaper.InsertEnvelopePoint(p.envelope, target_time, amount, 0, 0, true)
+                    reaper.SetEnvelopePoint(p.envelope,pointAtPos, target_time, amount, nil,nil,nil)
+                end
             elseif p.parameterLinkEffect and p.parameterModulationActive then
                 reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline', amount ) 
                 local ret, newVal = reaper.TrackFX_GetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline') 
@@ -2438,6 +2472,13 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         missingOffset = nil
         lastAmount = nil
         dragKnob = nil
+        lastDragKnob = nil
+        
+        if p.usesEnvelope and undoStarted then
+            --reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param ..'.plink.active',1 )
+            reaper.Undo_EndBlock("Inserting envelope points", 0)
+            undoStarted = false
+        end
     end
     
     if isMouseDown and dragKnob and dragKnob ~= lastDragKnob then 
@@ -2446,6 +2487,11 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         missingOffset = nil
         lastAmount = nil
         dragKnob = nil
+        if p.usesEnvelope then
+            reaper.Undo_BeginBlock() 
+            --reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param ..'.plink.active',0 )
+            undoStarted = true
+        end
     end
     
     
@@ -3034,7 +3080,7 @@ function pluginParameterSlider(moduleId,nameOnSide, divide, valueFormat, sliderF
             end 
         end
         
-        reaper.ImGui_TextColored(ctx, colorTextDimmed, "Track envelope")
+        reaper.ImGui_TextColored(ctx, colorTextDimmed, "Envelope lane")
         local envelopeShowing = reaper.GetFXEnvelope(track, fxIndex, param, false) 
         if not envelopeShowing then 
             if reaper.ImGui_Checkbox(ctx, "Visible", false) then 
@@ -4254,12 +4300,12 @@ function setColorSet(index, allColorSets)
     saveSettings()
 end
 
-local function colorButton(title, textColor, buttonColor, activeColor, hoverColor, toolTipText, toolTipTextColor)
+local function colorButton(title, textColor, buttonColor, activeColor, hoverColor, toolTipText, toolTipTextColor, sizeW)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), buttonColor)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), activeColor)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), hoverColor)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), textColor)
-    local click = reaper.ImGui_Button(ctx, title) 
+    local click = reaper.ImGui_Button(ctx, title, sizeW) 
     if toolTipText and reaper.ImGui_IsItemHovered(ctx) then 
         if toolTipTextColor then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), toolTipTextColor) end
         reaper.ImGui_SetTooltip(ctx,toolTipText)
@@ -5374,6 +5420,133 @@ function appSettingsWindow()
             end
         end
         
+        function textConvert(name)
+        
+          local textConverts = {
+          ["Escape"]= "ESC",
+          ["Enter"]= "Return",
+          ["DownArrow"]= "Down",
+          ["UpArrow"]= "Up",
+          ["LeftArrow"]= "Left",
+          ["RightArrow"]= "Right",
+          ["Comma"]= ",",
+          ["Period"]= ".",
+          ["Keypad0"]= "NumPad 0",
+          ["Keypad1"]= "NumPad 1",
+          ["Keypad2"]= "NumPad 2",
+          ["Keypad3"]= "NumPad 3",
+          ["Keypad4"]= "NumPad 4",
+          ["Keypad5"]= "NumPad 5",
+          ["Keypad6"]= "NumPad 6",
+          ["Keypad7"]= "NumPad 7",
+          ["Keypad8"]= "NumPad 8",
+          ["Keypad9"]= "NumPad 9",
+          ["KeypadDecimal"]= "NumPad .",
+          ["KeypadEnter"]= "Return",
+          ["KeypadAdd"]= "NumPad +",
+          ["KeypadSubtract"]= "NumPad -",
+          ["KeypadDivide"]= "NumPad /",
+          ["KeypadMultiply"]= "NumPad *",
+          ["NumLock"]= "Clear",
+          };
+          
+          if textConverts[name] then
+            return textConverts[name]
+          else
+            return name
+          end
+        end
+        
+        function GetCommandByShortcut(section_id, shortcut)
+            -- Check REAPER version
+            local version = tonumber(reaper.GetAppVersion():match('[%d.]+'))
+            if version < 6.71 then return end
+            -- On MacOS, replace Ctrl with Cmd etc.
+            --[[local is_macos = reaper.GetOS():match('OS')
+            if is_macos then
+                shortcut = shortcut:gsub('Ctrl%+', 'Cmd+', 1)
+                shortcut = shortcut:gsub('Alt%+', 'Opt+', 1)
+            end]]
+            -- Go through all actions of the section
+            local sec = reaper.SectionFromUniqueID(section_id)
+            local i = 0
+            repeat
+                local cmd, stringName = reaper.kbd_enumerateActions(sec, i)
+                if cmd ~= 0 then
+                    -- Go through all shortcuts of each action
+                    for n = 0, reaper.CountActionShortcuts(sec, cmd) - 1 do
+                        -- Find the action that matches the given shortcut
+                        local _, desc = reaper.GetActionShortcutDesc(sec, cmd, n, '')
+                        if desc == shortcut then return cmd, n, stringName end
+                    end
+                end
+                i = i + 1
+            until cmd == 0
+        end
+        
+        
+        function lookForShortcutWithShortcut(shortcut)
+            section_id = 0
+            action_id, n, stringName = GetCommandByShortcut(section_id, shortcut)
+            if action_id then
+              action_name = reaper.kbd_getTextFromCmd(action_id, section_id) 
+              extensionName = reaper.ReverseNamedCommandLookup(action_id)
+              local isExternal = false
+              if extensionName and #extensionName > 0 then
+                  action_id = extensionName
+                  isExternal = true
+              end
+              local addCommand = true
+              for index, info in ipairs(passThroughKeyCommands) do 
+                  if info.name == action_name then 
+                      addCommand = false
+                  end
+              end
+              --if addCommand then 
+              return {name = action_name, key = lastChar, scriptKeyPress = scriptKeyPress, command = action_id, external = isExternal} 
+          end
+        end
+        
+        function listeningForKeyCommand()
+            
+            local modifierText = (isSuperPressed and "Cmd+" or "") .. (isAltPressed and "Opt+" or "") .. (isShiftPressed and "Shift+" or "") .. (isCtrlPressed and "Control+" or "")
+            for key, name in pairs(tableOfAllKeys) do
+              if reaper.ImGui_IsKeyDown(ctx, key) then 
+                if name:match("Left") ~= nil or name:match("Right") ~= nil then
+                else
+                  fullChar = modifierText.. textConvert(name)
+                  if not lastChar or lastChar ~= fullChar then lastChar = fullChar end
+                end
+              end
+            end
+            
+            if lastChar then 
+                section_id = 0
+                action_id, n, stringName = GetCommandByShortcut(section_id, lastChar)
+                if action_id then
+                  action_name = reaper.kbd_getTextFromCmd(action_id, section_id) 
+                  extensionName = reaper.ReverseNamedCommandLookup(action_id)
+                  local isExternal = false
+                  if extensionName and #extensionName > 0 then
+                      action_id = extensionName
+                      isExternal = true
+                  end
+                  local addCommand = true
+                  for index, info in ipairs(passThroughKeyCommands) do 
+                      if info.name == action_name then 
+                          addCommand = false
+                      end
+                  end
+                  if addCommand then 
+                      scriptKeyPress = checkKeyPress() 
+                      table.insert(passThroughKeyCommands, {name = action_name, key = lastChar, scriptKeyPress = scriptKeyPress, command = action_id, external = isExternal}) 
+                      reaper.SetExtState(stateName,"passThroughKeyCommands", json.encodeToJson(passThroughKeyCommands), true)
+                  end
+                  lastChar = nil
+              end
+            end
+        end
+        
         
         function set.KeyCommands()
             commandWithMostKeys = 0
@@ -5382,6 +5555,7 @@ function appSettingsWindow()
                     commandWithMostKeys = #info.commands 
                 end
             end
+            
             
             
             
@@ -5410,7 +5584,7 @@ function appSettingsWindow()
                                     addKeyCommand(index)
                                 end
                             else
-                                if colorButton("add new##"..name,colorBlue,colorButtons,colorButtons,colorButtonsHover,"Add key command") then
+                                if colorButton("add new##"..name,colorBlue,colorButtons,colorButtons,colorButtonsBorder,"Add key command") then
                                     addKey = name
                                 end
                             end
@@ -5423,6 +5597,85 @@ function appSettingsWindow()
                 keyCommandSettings = keyCommandSettingsDefault
                 reaper.SetExtState(stateName,"keyCommandSettings", json.encodeToJson(keyCommandSettings), true)
             end
+            
+            reaper.ImGui_NewLine(ctx)
+            
+            
+            reaper.ImGui_AlignTextToFramePadding(ctx)
+            reaper.ImGui_TextColored(ctx, listenForPassthroughKeyCommands and colorMappingPulsating or colorTextDimmed, "Pass through shortcuts")
+            
+            if isEscapeKey then
+                listenForPassthroughKeyCommands = false
+            end
+             
+            if listenForPassthroughKeyCommands then
+                listeningForKeyCommand()
+            end
+            
+            reaper.ImGui_SameLine(ctx)
+            if colorButton((listenForPassthroughKeyCommands and "Listening" or "Listen") .. "##forpassthroughshortcuts", listenForPassthroughKeyCommands and colorMappingPulsating or colorMapping, colorButtons,colorButtons, colorButtonsBorder) then
+                listenForPassthroughKeyCommands = not listenForPassthroughKeyCommands 
+            end
+            
+            reaper.ImGui_SameLine(ctx)
+            if colorButton("Manuel lookup" .. "##forpassthroughshortcuts", colorText, colorButtons,colorButtons, colorButtonsBorder) then
+                reaper.ImGui_OpenPopup(ctx, "Manuel Lookup")
+            end
+            
+                
+            local center_x, center_y = ImGui.Viewport_GetCenter(ImGui.GetWindowViewport(ctx))
+            ImGui.SetNextWindowPos(ctx, center_x, center_y, ImGui.Cond_Appearing, 0.5, 0.5)
+            
+            
+            if ImGui.BeginPopupModal(ctx,  "Manuel Lookup", nil, ImGui.WindowFlags_AlwaysAutoResize) then
+              ImGui.Text(ctx, 'All those beautiful files will be deleted.\nThis operation cannot be undone!')
+              ImGui.Separator(ctx)
+              
+              local shortCutSearch = reaper.ImGui_InputText(ctx, "Write short cut as written in action window","")
+              --static int unused_i = 0;
+              --ImGui.Combo("Combo", &unused_i, "Delete\0Delete harder\0");
+        
+              
+              if ImGui.Button(ctx, 'OK', 120, 0) then ImGui.CloseCurrentPopup(ctx) end
+              ImGui.SetItemDefaultFocus(ctx)
+              ImGui.SameLine(ctx)
+              if ImGui.Button(ctx, 'Cancel', 120, 0) or isEscapeKey then ImGui.CloseCurrentPopup(ctx) end
+              ImGui.EndPopup(ctx)
+            end
+            
+            
+            
+            local longestKeyW = 0
+            for index, info in ipairs(passThroughKeyCommands) do 
+                local keyW = reaper.ImGui_CalcTextSize(ctx, info.key)
+                if longestKeyW < keyW + 16 then longestKeyW = keyW + 16 end
+            end
+            
+            if ImGui.BeginTable(ctx, 'passThroughKeyCommands', 3, reaper.ImGui_TableFlags_NoHostExtendX() | reaper.ImGui_TableFlags_SizingFixedFit()) then
+                
+                for index, info in ipairs(passThroughKeyCommands) do 
+                    local name = info.name
+                    local key = info.key
+                    
+                    
+                    ImGui.TableNextRow(ctx)
+                    ImGui.TableSetColumnIndex(ctx, 0)
+                    if colorButton(key .. "##passthrough"..name .. index,colorText,colorButtons,colorButtons,colorOrange,"Remove passthrough shortcut of " .. key, colorOrange, longestKeyW) then 
+                        table.remove(passThroughKeyCommands,index)
+                        reaper.SetExtState(stateName,"passThroughKeyCommands", json.encodeToJson(passThroughKeyCommands), true)
+                    end  
+                    
+                    reaper.ImGui_AlignTextToFramePadding(ctx)
+                    reaper.ImGui_TableNextColumn(ctx)
+                    reaper.ImGui_TextColored(ctx,colorGrey, name)
+                    
+                end
+                ImGui.EndTable(ctx)
+            end
+            
+            reaper.ImGui_NewLine(ctx)
+            
+            
         end
             
        --if reaper.ImGui_BeginChild(ctx, "keycommands",nil,nil,nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()) then
@@ -5779,6 +6032,8 @@ local function loop()
     isMouseDown              = (state & 0x01) ~= 0
     isMouseReleased          = (state & 0x01) == 0
     isMouseRightDown         = (state & 0x02) ~= 0
+    
+    isEscapeKey = reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Escape(),false)
     
     
     isMouseClick = isMouseDown and not isMouseDownStart
@@ -8477,10 +8732,12 @@ local function loop()
     local newKeyPressed = checkKeyPress()  
     if not newKeyPressed then lastKeyPressedTime = nil; lastKeyPressedTimeInitial = nil end
     if not lastKeyPressed or lastKeyPressed ~= newKeyPressed then 
+        local alreadyUsed = false
         for _, info in ipairs(keyCommandSettings) do 
             local name = info.name
             for _, command in ipairs(info.commands) do
                 if command == newKeyPressed then
+                    alreadyUsed = true
                     if name == "Close" then 
                         open = false
                     elseif name == "Undo" then
@@ -8496,10 +8753,22 @@ local function loop()
                                 end
                             end  
                         end
-                    end  
+                    end
                 end 
             end
         end 
+        
+        for _, s in ipairs(passThroughKeyCommands) do
+            
+            if s.scriptKeyPress == newKeyPressed then
+                if s.external then
+                    commandLookUp = ('_' .. s.command)
+                    reaper.Main_OnCommand(reaper.NamedCommandLookup(commandLookUp), 0)
+                else
+                    reaper.Main_OnCommand(s.command, 0)
+                end
+            end
+        end
         
         lastKeyPressed = newKeyPressed
         lastKeyPressedTimeInitial = lastKeyPressedTimeInitial and lastKeyPressedTimeInitial or time
