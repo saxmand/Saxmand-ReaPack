@@ -1,14 +1,15 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.7.6
+-- @version 0.7.7
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added first iteration of an XY pad
+--   + fixed crash on LFO adding
+--   + fixed crash on adding new key command
 
-local version = "0.7.6"
+local version = "0.7.7"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -46,7 +47,7 @@ initializeContext()
 
 reaper.ImGui_SetConfigVar(ctx,reaper.ImGui_ConfigVar_MacOSXBehaviors(),0)
 local isApple = reaper.GetOS():match("mac")
-local isWin= reaper.GetOS():match("win")
+local isWin= reaper.GetOS():lower():match("win")
 
 function checkIfPluginIsInstalled(name)
      function jsfx_exists(name)
@@ -528,7 +529,7 @@ local keyCommandSettingsDefault = {
     --{name = "Delete", commands  = {"Super+BACKSPACE", "DELETE"}}, 
     {name = "Close", commands  = {"Super+W", "Alt+M"}},
     {name = "Map current toggle", commands  = {"Super+M"}},
-    {name = "Space", commands = {"Space"}},
+    {name = "Open Settings", commands = {"F2"}},
   }
 
 local keyCommandSettings = keyCommandSettingsDefault
@@ -536,6 +537,54 @@ if reaper.HasExtState(stateName,"keyCommandSettings") then
     keyCommandSettingsStr = reaper.GetExtState(stateName,"keyCommandSettings")
     keyCommandSettings = json.decodeFromJson(keyCommandSettingsStr)
 end
+
+
+-- BACKWARDS COMPATABILITY
+for key, value in pairs(keyCommandSettingsDefault) do
+    if type(value) == "table" then 
+        if keyCommandSettings[key] == nil then
+            keyCommandSettings[key] = {}
+        end
+        
+        for subKey, subValue in pairs(value) do
+            if keyCommandSettings[key][subKey] == nil then
+                keyCommandSettings[key][subKey] = subValue
+            end
+        end
+    else  
+        if keyCommandSettings[key] == nil then
+            keyCommandSettings[key] = value
+        end
+    end
+end
+
+
+local function checkKeyPress() 
+    local altKey
+    for next_id = 0, math.huge do
+        local rv, c = ImGui.GetInputQueueCharacter(ctx, next_id)
+        if not rv then break end
+        altKey = utf8.char(c)
+    end
+    local text = "" 
+    local modifierText = (isSuperPressed and "Cmd+" or "") .. (isAltPressed and "Opt+" or "") .. (isShiftPressed and "Shift+" or "") .. (isCtrlPressed and "Control+" or "")
+    for key, keyName in pairs(tableOfAllKeys) do
+      if ImGui.IsKeyDown(ctx, key) then
+        if keyName:find("Left") == nil and keyName:find("Right") == nil then
+            --text = isSuperPressed and text .. "Super+" or text
+            --text = isCtrlPressed and text .. "Ctrl+" or text
+            --text = isShiftPressed and text .. "Shift+" or text
+            --text = isAltPressed and text .. "Alt+" or text
+            text = modifierText.. textConvert(keyName)
+            addKey = nil 
+            return text, altKey
+        end
+      end
+    end
+    return altKey
+end
+
+
 
 local function addKeyCommand(index)
     local color = (reaper.time_precise()*10)%10 < 5 and colorOrange or colorGrey
@@ -653,34 +702,6 @@ function lookForShortcutWithShortcut(shortcut)
         return {name = action_name, key = lastChar, scriptKeyPress = scriptKeyPress, command = action_id, external = isExternal} 
     end
 end
-
-
-
-local function checkKeyPress() 
-    local altKey
-    for next_id = 0, math.huge do
-        local rv, c = ImGui.GetInputQueueCharacter(ctx, next_id)
-        if not rv then break end
-        altKey = utf8.char(c)
-    end
-    local text = "" 
-    local modifierText = (isSuperPressed and "Cmd+" or "") .. (isAltPressed and "Opt+" or "") .. (isShiftPressed and "Shift+" or "") .. (isCtrlPressed and "Control+" or "")
-    for key, keyName in pairs(tableOfAllKeys) do
-      if ImGui.IsKeyDown(ctx, key) then
-        if keyName:find("Left") == nil and keyName:find("Right") == nil then
-            --text = isSuperPressed and text .. "Super+" or text
-            --text = isCtrlPressed and text .. "Ctrl+" or text
-            --text = isShiftPressed and text .. "Shift+" or text
-            --text = isAltPressed and text .. "Alt+" or text
-            text = modifierText.. textConvert(keyName)
-            addKey = nil 
-            return text, altKey
-        end
-      end
-    end
-    return altKey
-end
-
 
 --[[
 function findAnyShortCut(shortCut)
@@ -8145,10 +8166,10 @@ local function loop()
               local isMapping = map == fxIndex and sliderNumber == param
               
               nameOverlay = ""
-              nameForMapping = nameForMapping
+              nameForMapping = fx.name
               if #fx.output > 1 then
                   _, paramName = reaper.TrackFX_GetParamName(track, fxIndex, param)
-                  nameForMapping = fx.name .. ": " .. paramName
+                  nameForMapping = nameForMapping .. ": " .. paramName
                   nameOverlay = paramName
               end
               --end
@@ -9369,13 +9390,18 @@ local function loop()
     
     local time = reaper.time_precise()
     local newKeyPressed, altKeyPressed = checkKeyPress()  
-    if not newKeyPressed then lastKeyPressedTime = nil; lastKeyPressedTimeInitial = nil end
-    if (not lastKeyPressed or not lastAltKeyPressed) or (lastKeyPressed ~= newKeyPressed and lastAltKeyPressed ~= altKeyPressed) then 
+    
+    if not newKeyPressed or not altKeyPressed then 
+        lastKeyPressedTime = nil; 
+        --lastKeyPressedTimeInitial = nil 
+    end
+    if (not lastKeyPressed) or ((newKeyPressed  and lastKeyPressed ~= newKeyPressed) or (altKeyPressed and lastAltKeyPressed ~= altKeyPressed)) then 
         local alreadyUsed = false
         for _, info in ipairs(keyCommandSettings) do 
             local name = info.name
             for _, command in ipairs(info.commands) do
                 if command == newKeyPressed or command == altKeyPressed then
+                --reaper.ShowConsoleMsg("hej\n")
                     alreadyUsed = true
                     if name == "Close" then 
                         open = false
@@ -9392,7 +9418,10 @@ local function loop()
                                 end
                             end  
                         end
+                    elseif name == "Open Settings" then
+                        settingsOpen = not settingsOpen
                     end
+                    lastKeyPressedTimeInitial = time
                 end 
             end
         end 
@@ -9410,6 +9439,7 @@ local function loop()
                     else
                         reaper.Main_OnCommand(s.command, 0)
                     end
+                    lastKeyPressedTimeInitial = time
                 end
             else 
                 for _, s in ipairs(passThroughKeyCommands) do
@@ -9420,23 +9450,22 @@ local function loop()
                         else
                             reaper.Main_OnCommand(s.command, 0)
                         end
+                        lastKeyPressedTimeInitial = time
                     end
                 end
             end
         end
         
-         
         
         
         lastKeyPressed = newKeyPressed
         lastAltKeyPressed = altKeyPressed
-        lastKeyPressedTimeInitial = lastKeyPressedTimeInitial and lastKeyPressedTimeInitial or time
     else
         -- hardcoded repeat values
-        if lastKeyPressedTimeInitial and time - lastKeyPressedTimeInitial > 0.5 then
+        if lastKeyPressedTimeInitial and time - lastKeyPressedTimeInitial > 0.1 then
             if lastKeyPressedTime and time - lastKeyPressedTime > 0.2 then 
-                --lastKeyPressed = nil
-                --lastAltKeyPressed = nil
+                lastKeyPressed = nil
+                lastAltKeyPressed = nil
             --else 
             end 
             
