@@ -238,16 +238,55 @@ function buttons.floatingMapper(ctx, id, size, lock, tooltipText, lockedColor, u
         reaper.ImGui_SetTooltip(ctx,tooltipText)    
     end
     local posX, posY = reaper.ImGui_GetItemRectMin(ctx)
+    local adjustSize = 0
+    posX = posX + adjustSize
+    posY = posY + adjustSize
+    size = size - adjustSize
     
+    reaper.ImGui_DrawList_AddRect(draw_list, posX + size * 0.1, posY + size * 0.1, posX + size * 0.9, posY + size * 0.9, lock and lockedColor or unlockedColor, 5, nil, 1)
     if vertical then
-        reaper.ImGui_DrawList_AddRect(draw_list, posX + size * 0.1, posY + size * 0.1, posX + size * 0.9, posY + size * 0.9, lock and lockedColor or unlockedColor, 5, nil, 2)
         reaper.ImGui_DrawList_AddRectFilled(draw_list, posX + size * 0.2, posY + size * 0.3, posX + size * 0.8, posY + size * 0.4, lock and lockedColor or unlockedColor, 5)
         reaper.ImGui_DrawList_AddRectFilled(draw_list, posX + size * 0.2, posY + size * 0.5, posX + size * 0.8, posY + size * 0.7, lock and lockedColor or unlockedColor, 5)
-    else
-        reaper.ImGui_DrawList_AddRect(draw_list, posX + size * 0.1, posY + size * 0.1, posX + size * 0.9, posY + size * 0.9, lock and lockedColor or unlockedColor, 5, nil, 2)
+    else        
         reaper.ImGui_DrawList_AddRectFilled(draw_list, posX + size * 0.3, posY + size * 0.2, posX + size * 0.4, posY + size * 0.8, lock and lockedColor or unlockedColor, 5)
         reaper.ImGui_DrawList_AddRectFilled(draw_list, posX + size * 0.5, posY + size * 0.2, posX + size * 0.7, posY + size * 0.8, lock and lockedColor or unlockedColor, 5)
     end
+    
+    reaper.ImGui_PopStyleColor(ctx,3)
+    
+    return clicked 
+end
+
+function buttons.envelopeSettings(ctx, id, size, enabled, tooltipText, enabledColor, disabledColor, background, hover, active, centerColor, vertical)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),hover)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),active)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),background)
+    local clicked = false
+    
+    
+    if reaper.ImGui_Button(ctx,"##" .. id, size, size) then
+        clicked = true
+    end 
+
+
+    if reaper.ImGui_IsItemHovered(ctx) and tooltipText then
+        reaper.ImGui_SetTooltip(ctx,tooltipText)    
+    end
+    local posX, posY = reaper.ImGui_GetItemRectMin(ctx)
+    
+    reaper.ImGui_DrawList_AddRect(draw_list, posX + size * 0.1, posY + size * 0.1, posX + size * 0.9, posY + size * 0.9, enabled and enabledColor or disabledColor, 5, nil, 1)
+    
+    local circleSize = 0.085
+    
+    local points = vertical and {{x = 0.3, y = 0.6}, {x= 0.5, y  = 0.3}, {x = 0.7, y = 0.5}} or {{x = 0.6, y = 0.3}, {x= 0.3, y  = 0.5}, {x = 0.5, y = 0.7}}
+    
+    for i, p in ipairs(points) do
+        reaper.ImGui_DrawList_AddCircleFilled(draw_list, posX + size * (p.x+ 0.02), posY + size * (p.y+ 0.02), size * circleSize, enabled and enabledColor or disabledColor)
+        if i < #points then
+            reaper.ImGui_DrawList_AddLine(draw_list, posX + size * p.x, posY + size *p.y, posX + size * points[i+1].x, posY + size * points[i+1].y, enabled and enabledColor or disabledColor, size * circleSize/2)
+        end
+    end
+    
     
     reaper.ImGui_PopStyleColor(ctx,3)
     
