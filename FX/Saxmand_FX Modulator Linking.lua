@@ -1,14 +1,17 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.8.0
+-- @version 0.8.1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + Removed currentValueNormalized from Native lfo, causing a crash for 93Nb
+--   + fixed an issue where the envelope lane of the first parameter of the first instrument was shown without it being pressed
+--   + Added Button Modulator
+--   + Added Macro Modulator
+--   + Added Midi Out Modulator
 
-local version = "0.8.0"
+local version = "0.8.1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1314,7 +1317,11 @@ function getOutputArrayForModulator(track, fxName, fxIndex, modulationContainerP
     elseif fxName:match("Note Velocity Modulator") then
         return {0} 
     elseif fxName:match("XY Modulator") then
-        return {0, 1}
+        return {0, 1} 
+    elseif fxName:match("Button Modulator") then
+        return {0} 
+    elseif fxName:match("Macro Modulator") then
+        return {0}
     else  
         return getOutputAndInfoForGenericModulator(track,fxIndex,modulationContainerPos)
     end
@@ -4555,6 +4562,53 @@ function xyModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCol
     setToolTipFunc("Click to send XY output.\n - Hold down Ctrl to open large pad")
 end
 
+function buttonModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
+    p = getAllDataFromParameter(track,fxIndex,0)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), p.currentValue >= 0.5 and colorButtonsHover or colorButtons)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), p.currentValue >= 0.5 and colorButtonsHover or colorButtons)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), p.currentValue >= 0.5 and colorButtonsHover or colorButtons)
+    if reaper.ImGui_Button(ctx, "Button", buttonWidth*2, 40) then 
+        reaper.TrackFX_SetParam(track, fxIndex, 1, p.currentValue > 0.5 and 0 or 1)
+    end
+    reaper.ImGui_PopStyleColor(ctx, 3)
+    
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+end
+
+
+function macroModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, false, buttonWidth*2, 0) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+end
+
+function midiOutModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
+    -- msg type
+    --parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,0), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    
+    local list = {"Note Off","Note On","Polyphonic Aftertouch","Control Change","Program Change","Channel Aftertouch","Pitch Bend"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    local p = getAllDataFromParameter(track,fxIndex,0)
+    local midiType = list[p.value + 1]
+    createSlider(track,fxIndex,"Combo",0,"Timer",nil,nil,1,nil,nil,nil,listText,0,"Select MIDI output type")
+    -- msg2
+    if p.value < 5 then
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    else 
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    end
+    -- msg3
+    -- channel
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    -- pb
+end
+
 
 
 function abSliderModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
@@ -6212,7 +6266,21 @@ function appSettingsWindow()
     function menus.About()
         reaper.ImGui_TextColored(ctx, colorGrey, "Version " .. version) 
         reaper.ImGui_NewLine(ctx)
-        --reaper.ImGui_TextColored(ctx, colorGrey, "Version " .. version) 
+        local appreaciationText = ""
+        appreaciationText  = appreaciationText  .. "Thanks to all the early adopters/testers for giving feedback, finding bugs and help shape the script.\n"
+        appreaciationText  = appreaciationText  .. "Here I should mention especially:\n - "
+        local users = {"Seventh Sam", "Vagelis", "Digitt", "93Nb", "deeb", "tonalstates", "Khron Studio", "AndreiMir", "MCJ"}
+        appreaciationText  = appreaciationText  .. table.concat(users, "\n - ")
+        
+        appreaciationText  = appreaciationText  .. "\n"
+        appreaciationText  = appreaciationText  .. "\n"
+        appreaciationText  = appreaciationText  .. "This script took many month to complete. So many moving parts.\n"
+        appreaciationText  = appreaciationText  .. "If you use it and like it, consider donating a bit for all the time spend.\n"
+        --appreaciationText  = appreaciationText  .. "r\n"
+        reaper.ImGui_TextColored(ctx, colorGrey, appreaciationText) 
+        if reaper.ImGui_Button(ctx, "DONATE") then
+            openWebpage("https://www.paypal.com/paypalme/saxmand")
+        end
     end
     
     
@@ -6418,7 +6486,7 @@ end
 
     
 function updateVisibleEnvelopes(track, p)
-    if settings.showEnvelope then 
+    if settings.showEnvelope and fxnumber and paramnumber then 
         if settings.showSingleEnvelope then
              hideShowAllTrackEnvelopes(track, p.envelope)
         end
@@ -6890,8 +6958,8 @@ local function loop()
         end
         
         
-        if not fxnumber then fxnumber = 0 end
-        if not paramnumber then paramnumber = 0 end
+        --if not fxnumber then fxnumber = 0 end
+        --if not paramnumber then paramnumber = 0 end
         --if not lastCollabsModules then lastCollabsModules = {} end 
     else
         --trackName = "Select a track or touch a plugin parameter"
@@ -7802,10 +7870,23 @@ local function loop()
             
             { 
               name = "XY",
-              tooltip = "XY pad to control",
+              tooltip = "XY pad to control two parameters",
               func = "general",
               insertName = "JS: XY Modulator"
             },
+            { 
+              name = "Button",
+              tooltip = "A button toggle",
+              func = "general",
+              insertName = "JS: Button Modulator"
+            },
+            { 
+              name = "Macro",
+              tooltip = "A slider for control a single parameter",
+              func = "general",
+              insertName = "JS: Macro Modulator"
+            },
+            
             
           } 
           
@@ -7964,7 +8045,7 @@ local function loop()
                   reaper.ImGui_Separator(ctx)
                   
                   
-                  menuHeader("Extra [" .. 1 .."]", "showExtra", "extra functions")
+                  menuHeader("Extra [" .. 2 .."]", "showExtra", "extra functions")
                   if settings.showExtra then  
                   
                       -- set realearn params on the run after the first one
@@ -7986,6 +8067,12 @@ local function loop()
                           click = true
                       end  
                       if not isReaLearnInstalled then reaper.ImGui_PopStyleColor(ctx) end
+                      
+                      if moduleButton("+ MIDI Out", "Output a midi message") then
+                          containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: MIDI Out Modulator", "Midi Out")  
+                          currentFocus = reaper.JS_Window_GetFocus()
+                          click = true
+                      end
                   end
                   
                   reaper.ImGui_Separator(ctx)
@@ -8626,7 +8713,12 @@ local function loop()
                       
                       
                           local hasGui = fx.fxName:match("ACS Native Modulator") ~= nil
-                          if hideParametersFromModulator ~= fx.guid and fx.fxName:match("LFO Native Modulator") == nil  and fx.fxName:match("XY Modulator") == nil then
+                          if hideParametersFromModulator ~= fx.guid and fx.fxName:match("LFO Native Modulator") == nil  
+                              and fx.fxName:match("XY Modulator") == nil 
+                              and fx.fxName:match("Button Modulator") == nil 
+                              and fx.fxName:match("Macro Modulator") == nil 
+                              
+                              then
                               openGui(track, fxIndex, name, hasGui, "", false)
                           end
                           reaper.ImGui_Separator(ctx)
@@ -9053,6 +9145,16 @@ local function loop()
                 modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, noteVelocityModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output) 
             elseif fxName:match("XY Modulator") then
                 modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, xyModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
+            
+            elseif fxName:match("Button Modulator") then
+                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, buttonModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output) 
+            elseif fxName:match("Macro Modulator") then
+                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, macroModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
+                
+                
+            elseif fxName:match("MIDI Out") then
+                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, midiOutModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
+                
             else 
                 
                 local numParams = reaper.TrackFX_GetNumParams(track,fxIndex) 

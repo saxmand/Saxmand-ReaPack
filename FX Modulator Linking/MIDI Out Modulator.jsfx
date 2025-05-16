@@ -1,0 +1,80 @@
+desc:MIDI Out Modulator
+author: saxmand
+version: 1.0
+noindex: true
+changelog: Initial release
+
+/**
+ * JSFX : MIDI Fader Modulator
+ * Author: Jesper Ankarfeldt
+ * Reaper forum : 
+ * Licence: GPL v3
+ * REAPER: 7.0
+ * Version: 10 (2024-11-14)
+ */
+
+slider1:msg1Select=3<0,6,1{Note Off,Note On,Poly AT,CC,Program Ch,Channel AT,Pitch Bend}>Type
+slider2:msg2=0<0,127,1>Message
+slider3:msg3=0<0,127,1>Value
+slider4:Ch=0<0,15,1>Channel
+slider5:pitchbend=8192<0,16383,1>Pitch Bend
+
+@init
+msg_types = 0;
+msg_types[0] = $x80; // Note Off
+msg_types[1] = $x90; // Note On
+msg_types[2] = $xA0; // Polyphonic Aftertouch
+msg_types[3] = $xB0; // Control Change
+msg_types[4] = $xC0; // Program Change
+msg_types[5] = $xD0; // Channel Aftertouch
+msg_types[6] = $xE0; // Pitch Bend
+
+prev_msg1 = -1;
+prev_msg2 = -1;
+prev_msg3 = -1;
+
+@slider
+msg1 = msg_types[msg1Select] + Ch;
+
+msg1Select == 6 ? (
+    // Pitch Bend (14-bit): split into LSB and MSB
+    lsb = pitchbend & 0x7F;
+    msb = (pitchbend >> 7) & 0x7F;
+    new_msg2 = lsb;
+    new_msg3 = msb;
+) : (
+    msg3 != prev_msg3 ? (
+    new_msg2 = msg2;
+    new_msg3 = msg3;
+    );
+);
+
+@block
+// Only send if message changed
+(new_msg2 != prev_msg2 || new_msg3 != prev_msg3) ? (
+    midisend(0, msg1, new_msg2 | (new_msg3 << 8));
+    prev_msg1 = msg1;
+    prev_msg2 = new_msg2;
+    prev_msg3 = new_msg3;
+);
+
+
+@gfx
+
+gfx_h = 300; // Height in pixels
+gfx_set(1, 1, 1, 0.15);
+gfx_rect(0, 0, gfx_w, gfx_h);
+gfx_setfont(1, "Arial", 16); // Font slot 1 with custom font and size
+gfx_set(1, 1, 1, 1); // Set color to white (RGBA: 1, 1, 1, 1)
+
+function drawCenteredText(text, posY) (
+    w = h = 0;
+    gfx_measurestr(text, w, h);
+    gfx_x = (gfx_w - w) / 2;
+    gfx_y = posY;
+    gfx_printf(text);
+);
+
+drawCenteredText("This plugin is part of ''Saxmand_FX Modulator Linking''.", 10);
+drawCenteredText("The script helps working with modulators.", 30);
+drawCenteredText("Run the script to map and adjust parameters.",50);
