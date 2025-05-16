@@ -257,7 +257,7 @@ function buttons.floatingMapper(ctx, id, size, lock, tooltipText, lockedColor, u
     return clicked 
 end
 
-function buttons.envelopeSettings(ctx, id, size, enabled, tooltipText, enabledColor, disabledColor, background, hover, active, centerColor, vertical)
+function buttons.envelopeSettings(ctx, id, size, enabled, tooltipText, enabledColor, disabledColor, background, hover, active, centerColor, vertical, enabledColorText, disabledColorText, fill)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(),hover)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),active)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),background)
@@ -274,12 +274,17 @@ function buttons.envelopeSettings(ctx, id, size, enabled, tooltipText, enabledCo
     end
     local posX, posY = reaper.ImGui_GetItemRectMin(ctx)
     
+    if fill then
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, posX + size * 0.1+1, posY + size * 0.1+1, posX + size * 0.9-1, posY + size * 0.9-1, fill, 5)
+    end
     reaper.ImGui_DrawList_AddRect(draw_list, posX + size * 0.1, posY + size * 0.1, posX + size * 0.9, posY + size * 0.9, enabled and enabledColor or disabledColor, 5, nil, 1)
     
     local circleSize = 0.085
     
     local points = vertical and {{x = 0.3, y = 0.6}, {x= 0.5, y  = 0.3}, {x = 0.7, y = 0.5}} or {{x = 0.6, y = 0.3}, {x= 0.3, y  = 0.5}, {x = 0.5, y = 0.7}}
     
+    enabledColor = enabledColorText and enabledColorText or enabledColor
+    disabledColor = disabledColorText and disabledColorText or disabledColor
     for i, p in ipairs(points) do
         reaper.ImGui_DrawList_AddCircleFilled(draw_list, posX + size * (p.x+ 0.02), posY + size * (p.y+ 0.02), size * circleSize, enabled and enabledColor or disabledColor)
         if i < #points then

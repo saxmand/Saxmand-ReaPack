@@ -1,15 +1,15 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.7.7
+-- @version 0.7.8
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed crash on LFO adding
+--   + bug fixes
 --   + fixed crash on adding new key command
 
-local version = "0.7.7"
+local version = "0.7.8"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -247,6 +247,16 @@ colorDarkGreen = reaper.ImGui_ColorConvertDouble4ToU32(20 / 255, 100 / 255, 32 /
 
 colorOrange = reaper.ImGui_ColorConvertDouble4ToU32(1,0.2,0.2,1)
 
+
+function rgbColor(r,g,b, a)
+   return reaper.ImGui_ColorConvertDouble4ToU32(r / 255, g / 255, b / 255, a and a or 1)
+end
+colorTrimRead = rgbColor(92,93,93)   -- 117 122 118
+colorRead = rgbColor(42,254,190)   -- 117 122 118
+colorTouch = rgbColor(254,180,37)   -- 117 122 118
+colorWrite = rgbColor(254,38,116)   -- 117 122 118
+colorLatch = rgbColor(172,38,254)   -- 117 122 118
+colorLatchPreview = rgbColor(36,176,254)   -- 117 122 118
             
 
 local defaultSettings = {
@@ -289,6 +299,9 @@ local defaultSettings = {
     trackColorAroundLock = true,
     showTrackColorLine = false,
     trackColorLineSize = 2,
+    
+      -- others
+    useAutomationColorOnEnvelopeButton = false,
     
       -- Plugins 
     showPluginsPanel = true,
@@ -428,6 +441,8 @@ local defaultSettings = {
       
       removeCross = colorWhite,
       removeCrossHover = colorRedHidden,
+      
+      envelopeButtonBackground = colorDarkGrey,
     },
     selectedColorSet = "Dark",
     
@@ -1915,18 +1930,28 @@ local function getAllDataFromParameter(track,fxIndex,p)
     }
 end
 
-function hideAllTrackEnvelopes(track, ignoreEnvelope)
+
+
+function hideShowAllTrackEnvelopes(track, ignoreEnvelope, show, onlyActive)
     if not track then return end
   
     local envCount = reaper.CountTrackEnvelopes(track)
     for i = 0, envCount - 1 do
         local envelope = reaper.GetTrackEnvelope(track, i)
-        if envelope and envelope ~= ignoreEnvelope then  
-            local singleEnvelopePoint = reaper.CountEnvelopePoints(envelope) == 1
-            if singleEnvelopePoint then
-                reaper.DeleteEnvelopePointEx(envelope,-1,0)
+        if envelope and envelope ~= ignoreEnvelope then   
+            _, envelopeActive = reaper.GetSetEnvelopeInfo_String(envelope, "ACTIVE", "", false)
+            envelopeActive = envelopeActive == "1"
+            if show then 
+                if not onlyActive or envelopeActive then
+                    reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "1", true)
+                end
             else
-                reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "0", true)
+                local singleEnvelopePoint = reaper.CountEnvelopePoints(envelope) == 1
+                if singleEnvelopePoint then
+                    reaper.DeleteEnvelopePointEx(envelope,-1,0)
+                else
+                    reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "0", true)
+                end
             end
         end
     end
@@ -1935,14 +1960,33 @@ function hideAllTrackEnvelopes(track, ignoreEnvelope)
     reaper.UpdateArrange()
 end
 
-function showAllEnvelopesInTheirLanes(track, ignoreEnvelope)
+function showAllEnvelopesInTheirLanesOrNot(track, ignoreEnvelope, mediaLane)
     if not track then return end
   
     local envCount = reaper.CountTrackEnvelopes(track)
     for i = 0, envCount - 1 do
         local envelope = reaper.GetTrackEnvelope(track, i)
         if envelope and envelope ~= ignoreEnvelope then 
-            reaper.GetSetEnvelopeInfo_String(envelope, "SHOWLANE", "1", true)
+            reaper.GetSetEnvelopeInfo_String(envelope, "SHOWLANE", mediaLane and "0" or "1", true)
+        end
+    end
+  
+    reaper.TrackList_AdjustWindows(false)
+    reaper.UpdateArrange()
+end
+
+function armAllVisibleTrackEnvelopes(track, visible, disarm)
+    if not track then return end
+  
+    local envCount = reaper.CountTrackEnvelopes(track)
+    for i = 0, envCount - 1 do
+        local envelope = reaper.GetTrackEnvelope(track, i)
+        if envelope then 
+            local isVisible = reaper.GetSetEnvelopeInfo_String(envelope, "SHOWLANE", "1", false)
+            isVisible = isVisible == "1"
+            if not visibile or isVisible then 
+                reaper.GetSetEnvelopeInfo_String(envelope, "ARM", disarm and "0" or "1", true)
+            end
         end
     end
   
@@ -5014,6 +5058,34 @@ function envelopeSettings()
     
     if not settings.showEnvelope then reaper.ImGui_EndDisabled(ctx) end
     
+    reaper.ImGui_Separator(ctx)
+    if reaper.ImGui_Button(ctx, "Show all active track envelopes") then
+        hideShowAllTrackEnvelopes(track, nil, true, true)
+    end
+    
+    if reaper.ImGui_Button(ctx, "Hide all track envelopes") then
+        hideShowAllTrackEnvelopes(track, nil, false)
+    end
+    
+    if reaper.ImGui_Button(ctx, "Arm all visible track envelopes") then
+        armAllVisibleTrackEnvelopes(track, true, false)
+    end
+    
+    if reaper.ImGui_Button(ctx, "Disam all track envelopes") then
+        armAllVisibleTrackEnvelopes(track, false, true)
+    end
+    
+    if reaper.ImGui_Button(ctx, "Show all visible track envelopes in envelope lanes") then
+        showAllEnvelopesInTheirLanesOrNot(track, nil, false)
+    end
+    
+    if reaper.ImGui_Button(ctx, "Show all visible track envelopes in media lanes") then
+        showAllEnvelopesInTheirLanesOrNot(track, nil, true)
+    end 
+    reaper.ImGui_Separator(ctx)
+    reaper.ImGui_TextColored(ctx, colorTextDimmed, "Track automation mode:")
+    
+    automationRadioSelect(track)
     --[[
     
     local ret, val = reaper.ImGui_Checkbox(ctx,"Add additional point before newly inserted envelopes##",settings.insertEnvelopeBeforeAddingNewEnvelopePoint) 
@@ -5203,6 +5275,17 @@ function appSettingsWindow()
             setToolTipFunc("Have track color as a line on the left in horizontal mode or on top in vertical mode") 
             
             sliderInMenu("Track color line size", "trackColorLineSize", menuWidth, 1, 6, "Set the size of the color line") 
+            
+            reaper.ImGui_NewLine(ctx)
+            reaper.ImGui_TextColored(ctx, colorGrey, "Others")
+            
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Automation color on envelope button",settings.useAutomationColorOnEnvelopeButton) 
+            if ret then 
+                settings.useAutomationColorOnEnvelopeButton = val
+                saveSettings()
+            end
+            setToolTipFunc("Show the automation color on the envelope button drawing. Set the background in color settings for better visibility") 
         end
         
         
@@ -5551,7 +5634,7 @@ function appSettingsWindow()
         
         local set = {}
         
-        local ret, val = reaper.ImGui_Checkbox(ctx,"Biploar mapping mode##LFO",settings.mappingModeBipolar) 
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Bipolar mapping mode##LFO",settings.mappingModeBipolar) 
         if ret then 
             settings.mappingModeBipolar = val
             saveSettings()
@@ -5561,7 +5644,7 @@ function appSettingsWindow()
         
         function set.General()
             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"New mapping uses previous map settings if already mapped",settings.usePreviousMapSettingsWhenOverwrittingMapping) 
+            local ret, val = reaper.ImGui_Checkbox(ctx,"New mapping uses previous mapping's width and direction",settings.usePreviousMapSettingsWhenOverwrittingMapping) 
             if ret then 
                 settings.usePreviousMapSettingsWhenOverwrittingMapping = val
                 saveSettings()
@@ -6178,23 +6261,25 @@ function appSettingsWindow()
     return open
 end
 
+    
+local automationTypes = {"Trim/Read", "Read", "Touch", "Write", "Latch", "Latch Preview"}
+local automationTypesShort = {"Te", "Re", "To", "Wr", "La", "Lp"}
+local automationTypesDescription = {"Envelopes are active but faders are all for time", "Play faders with armed envelopes", "Record fader movements to armed envelopes", "Record fader movements after first movement", "Allow adjusting parameters but do not apply to envelopes", "Record fader positions to armed envelopes"}
+local automationTypesColors = {colorsAutomationButton and colorTrimRead or colorAlmostWhite, colorRead, colorTouch, colorWrite, colorLatch, colorLatchPreview}
+
 function automationButton(track)
     --centerText("Timebase", colorLightGrey, posXOffset, widthWithPadding, 0, posYOffset) 
     --posYOffset = posYOffset + 16 
-    local automationStrings = {"Trim/Read", "Read", "Touch", "Write", "Latch", "Latch Prevw"}
-    local automationColors = {colorsAutomationButton and colorTrimRead or colorAlmostWhite, colorRead, colorTouch, colorWrite, colorLatch, colorLatchPreview}
     local automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
-    local automationString = automationStrings[automation+1]
-    local color = automationColors[automation+1]
-    if colorsAutomationButton then
+    local automationString = automationTypes[automation+1]
+    local color = automationTypesColors[automation+1]
+    
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), color)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), color)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), color)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorBlack)
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorsOnButtonsBorders and colorBlack or colorBlack)
-    else 
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), color)
-    end
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorText)
+        
     
     if reaper.ImGui_Button(ctx, automationString .. "##" .. tostring(track), widthWithPadding) then
         --reaper.ImGui_OpenPopup(ctx, "timebasePopup")
@@ -6210,7 +6295,7 @@ function automationButton(track)
     
     if reaper.ImGui_BeginPopup(ctx, 'automation') then 
         if track == selectedTracks[1] then 
-            for i, name in ipairs(automationStrings) do 
+            for i, name in ipairs(automationTypes) do 
                 if reaper.ImGui_Button(ctx,name) then
                     reaper.SetMediaTrackInfo_Value(track, "I_AUTOMODE", i - 1)
                 end
@@ -6220,6 +6305,46 @@ function automationButton(track)
         --setWindowsToTop = false
         reaper.ImGui_EndPopup(ctx)
     end 
+end
+
+function automationRadioSelect(track)
+    local automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
+    for i, a in ipairs(automationTypes) do
+        automationColor = automationTypesColors[i]
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), automationColor)
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(), automationColor)
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(), automationColor)
+        if reaper.ImGui_RadioButton(ctx, a .. " (" .. automationTypesDescription[i]:lower() .. ")", i - 1 == automation) then 
+            reaper.SetMediaTrackInfo_Value(track, "I_AUTOMODE", i - 1)
+        end
+        setToolTipFunc()
+        --reaper.ImGui_PopStyleColor(ctx, 3)
+    end
+end
+
+
+function smallAutomationButton(track, id, size)
+    
+    local automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
+    local name = automationTypesShort[automation+1]
+    local color = automationTypesColors[automation+1]
+    
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorDarkGrey)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorDarkGrey)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorDarkGrey)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), color)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorText)
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
+        
+    if reaper.ImGui_Button(ctx, name .. "##smallautomation" .. id .. tostring(track), size, size) then
+        --reaper.ImGui_OpenPopup(ctx, "timebasePopup")
+        local newValue = automation + 1 < #automationTypes and automation + 1 or 0
+        reaper.SetMediaTrackInfo_Value(track, "I_AUTOMODE", newValue, 0, true)
+    end 
+    setToolTipFunc(automationTypesDescription[automation + 1])
+    
+    reaper.ImGui_PopStyleColor(ctx, 5)
+    reaper.ImGui_PopStyleVar(ctx)
 end
 
 function addingAnyModuleWindow(hwnd) 
@@ -6294,7 +6419,7 @@ end
 function updateVisibleEnvelopes(track, p)
     if settings.showEnvelope then 
         if settings.showSingleEnvelope then
-             hideAllTrackEnvelopes(track, p.envelope)
+             hideShowAllTrackEnvelopes(track, p.envelope)
         end
         
         if not p.envelope then 
@@ -6302,11 +6427,14 @@ function updateVisibleEnvelopes(track, p)
         else
             reaper.GetSetEnvelopeInfo_String(p.envelope, "VISIBLE", "1", true)
         end 
-        if settings.showClickedInMediaLane then 
-            showAllEnvelopesInTheirLanes(track, p.envelope)
-            reaper.GetSetEnvelopeInfo_String(p.envelope, "SHOWLANE", "0", true)
-        else
-            reaper.GetSetEnvelopeInfo_String(p.envelope, "SHOWLANE", "1", true)
+        
+        if p.envelope then
+            if settings.showClickedInMediaLane then 
+                showAllEnvelopesInTheirLanesOrNot(track, p.envelope)
+                reaper.GetSetEnvelopeInfo_String(p.envelope, "SHOWLANE", "0", true)
+            else
+                reaper.GetSetEnvelopeInfo_String(p.envelope, "SHOWLANE", "1", true)
+            end
         end
         
         reaper.TrackList_AdjustWindows(false)
@@ -6334,8 +6462,9 @@ function updateMapping()
     --lastFxIndexTouched = nil
     --lastParameterTouched = nil
     --track = trackTouched
-    
-    updateVisibleEnvelopes(track, p)
+    if p then
+        updateVisibleEnvelopes(track, p)
+    end
 end
 
 local _, lastTrackIndexTouched, lastItemIndexTouched, lastTakeIndexTouched, lastFxIndexTouched, lastParameterTouched = reaper.GetTouchedOrFocusedFX( 0 ) 
@@ -6693,8 +6822,6 @@ local function loop()
     local scrollFlags = isScrollValue and reaper.ImGui_WindowFlags_NoScrollWithMouse() or reaper.ImGui_WindowFlags_None()
     
     
-  
-    
     
     
     
@@ -6793,7 +6920,7 @@ local function loop()
                     fxnumber = f.fxIndex
                 end
             end
-        end
+        end 
     else 
         fxnumber = nil
         focusedTrackFXNames = {}
@@ -6925,6 +7052,18 @@ local function loop()
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_WindowRounding(), 8) 
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ChildRounding(), 5.0)
     local varPush = 3
+    
+    
+    --- COLOR STUFF
+    local automationColor
+    local fillEnvelopeButton
+    if track and settings.useAutomationColorOnEnvelopeButton then
+        local automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE') 
+        automationTypesColors = {colorText, colorRead, colorTouch, colorWrite, colorLatch, colorLatchPreview}
+        automationColor = automationTypesColors[automation+1]
+        fillEnvelopeButton = settings.colors.envelopeButtonBackground
+    end
+    --------
     
     local mainFlags = reaper.ImGui_WindowFlags_TopMost()
     if not settings.allowCollapsingMainWindow then
@@ -7112,7 +7251,7 @@ local function loop()
             offset = offset + 24
             
             reaper.ImGui_SetCursorPos(ctx, x, y + offset)
-            specialButtons.envelopeSettings(ctx, "envelopeSettings", 24, settings.showEnvelope, (settings.showEnvelope and "Disable" or "Enable") .. " showing envelope on parameter click\n - right click for more options", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, settings.vertical)
+            specialButtons.envelopeSettings(ctx, "envelopeSettings", 24, settings.showEnvelope, (settings.showEnvelope and "Disable" or "Enable") .. " showing envelope on parameter click\n - right click for more options", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, settings.vertical, automationColor, automationColor, fillEnvelopeButton)
             clickEnvelopeSettings()
             offset = offset + 24 + 8
             
@@ -7145,7 +7284,7 @@ local function loop()
             
             
             
-            specialButtons.envelopeSettings(ctx, "envelopeSettings", 24, settings.showEnvelope, (settings.showEnvelope and "Disable" or "Enable") .. " floating mapper\n - right click for more options", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, settings.vertical)
+            specialButtons.envelopeSettings(ctx, "envelopeSettings", 24, settings.showEnvelope, (settings.showEnvelope and "Disable" or "Enable") .. " floating mapper\n - right click for more options", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, settings.vertical, automationColor, automationColor, fillEnvelopeButton)
             clickEnvelopeSettings()
             offset = offset + 24
             reaper.ImGui_SameLine(ctx, offset) 
@@ -7773,7 +7912,7 @@ local function loop()
                   reaper.ImGui_Separator(ctx)
                   ]]
                   
-                  local count = #settings.userModulators
+                  local count = #settings.userModulators + 1
                   menuHeader("User [" .. count .."]", "showPreset", "modulator presets")
                   if settings.showPreset then  
                       if moduleButton("+ [ANY]", "Add any FX as a modulator") then 
@@ -7814,9 +7953,12 @@ local function loop()
                               removeCustomModule = i 
                               removeCustomModuleName = visualName
                               openRemoveCustomModule = true
+                              click = false
                           end
                       end 
+                      
                   end
+                  
                   
                   reaper.ImGui_Separator(ctx)
                   
@@ -7927,22 +8069,25 @@ local function loop()
               
                
               
-          if openRemoveCustomModule then
-              ImGui.OpenPopup(ctx, 'Remove custom module') 
-              openRemoveCustomModule = false
-          end
           
-          if reaper.ImGui_BeginPopup(ctx, 'Remove custom module', nil) then
-              if reaper.ImGui_Button(ctx, "Remove " .. removeCustomModuleName) or reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Enter(),false) then
-                  table.remove(settings.userModulators, removeCustomModule)
-                  saveSettings()
-                  reaper.ImGui_CloseCurrentPopup(ctx)
+          
+          function removeCustomModulePopup()
+              if openRemoveCustomModule then
+                  ImGui.OpenPopup(ctx, 'Remove custom module') 
+                  openRemoveCustomModule = false
               end
-              if reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Escape(),false) then
-                  reaper.ImGui_CloseCurrentPopup(ctx)
-              end
-              ImGui.EndPopup(ctx)
-          end 
+              if reaper.ImGui_BeginPopup(ctx, 'Remove custom module') then
+                  if reaper.ImGui_Button(ctx, "Remove " .. removeCustomModuleName) or reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Enter(),false) then
+                      table.remove(settings.userModulators, removeCustomModule)
+                      saveSettings()
+                      reaper.ImGui_CloseCurrentPopup(ctx)
+                  end
+                  if reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Escape(),false) then
+                      reaper.ImGui_CloseCurrentPopup(ctx)
+                  end
+                  ImGui.EndPopup(ctx)
+              end 
+          end
           
           
           if settings.showModulesPanel then
@@ -7967,7 +8112,7 @@ local function loop()
                           reaper.ImGui_EndMenuBar(ctx)
                       end
                       modulesPanel()
-                      
+                      removeCustomModulePopup()
                       
                       reaper.ImGui_EndChild(ctx)
                   
@@ -8234,7 +8379,7 @@ local function loop()
               
               local mappings = fx.mappings
               
-              toolTipText = ((isCollabsed and "Maximize " or "Minimize ") .. name .. "\n - Right click for more options")
+              toolTipText = ((isCollabsed and "Maximize " or "Minimize ") .. name .. "\n - right click for more options")
               
               click = false 
               
@@ -8563,7 +8708,7 @@ local function loop()
               if mouseX >= minX and mouseX <= maxX and mouseY >= minY and mouseY <= maxY then
                   if  reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then 
                       selectedModule = fxIndex
-                      openPopupForModule = true
+                      --openPopupForModule = true
                       --ImGui.OpenPopup(ctx, 'popup##' .. fxIndex) 
                   end
                   if  reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Left(),false) then 
@@ -9102,12 +9247,30 @@ local function loop()
                 end
             end
             
-            if reaper.ImGui_BeginPopup(ctx, 'Add new modulator') then
-                if modulesPanel() then
-                    reaper.ImGui_CloseCurrentPopup(ctx)
+            if reaper.ImGui_BeginPopup(ctx, 'Add new modulator') then 
+                
+                --if reaper.ImGui_BeginChild(ctx, "child of floating modules", nil, nil, reaper.ImGui_ChildFlags_AutoResizeX()| reaper.ImGui_ChildFlags_AutoResizeY() | reaper.ImGui_ChildFlags_AlwaysAutoResize()) then
+                    if modulesPanel() then 
+                        if not isSuperPressed then
+                            reaper.ImGui_CloseCurrentPopup(ctx)
+                        end
+                    end
+                --    reaper.ImGui_EndChild(ctx) 
+                --end
+                
+                
+                --[[ 
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Close after add",settings.closeModulesPopupOnAdd) 
+                if ret then 
+                    settings.closeModulesPopupOnAdd = val
+                    saveSettings()
                 end
+                setToolTipFunc("Close modules popup when adding a modulator") 
+                ]]
+                removeCustomModulePopup()
                 reaper.ImGui_EndPopup(ctx)
             end
+            
             
             --reaper.ImGui_EndTable(ctx)
             ImGui.EndChild(ctx)
@@ -9175,7 +9338,9 @@ local function loop()
     end
     
     function floatingMappedParameterWindow(trackTouched, fxIndexTouched, parameterTouched)
-    
+        
+        
+        
         if hwndWindowOnTouchParam and reaper.JS_Window_IsVisible(hwndWindowOnTouchParam) and floatingMapperWin and mousePosOnTouchedParam and settings.openFloatingMapperRelativeToMouse and settings.openFloatingMapperRelativeToMousePos then 
             local x, y
             if settings.openFloatingMapperRelativeToMousePos.x == 0 then x = mousePosOnTouchedParam.x + settings.openFloatingMapperRelativeToMousePos.x - floatingMapperWin.w/2 end
@@ -9215,6 +9380,13 @@ local function loop()
         if not rv then return open end
         if not trackTouched or not fxIndexTouched or not parameterTouched then return false end
         
+        if not reaper.JS_Window_IsVisible(hwndWindowOnTouchParam) then  
+            --hwndWindowOnTouchParam = reaper.TrackFX_GetFloatingWindow(track, fxIndexTouched)
+            --if not reaper.JS_Window_IsVisible(hwndWindowOnTouchParam) then 
+                open = false
+            --end
+        end
+        
         if reaper.ImGui_BeginMenuBar(ctx) then
             
             
@@ -9236,38 +9408,51 @@ local function loop()
         
         
         reaper.ImGui_SetCursorPos(ctx, 3, 3)
-        specialButtons.floatingMapper(ctx, "floatingMapper", 20, settings.useFloatingMapper, "Click for floating mapper settings", colorTextDimmed, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, true)
+        if specialButtons.lock(ctx, "lock", 20, locked, (locked and "Unlock from track" or "Lock to selected track"), colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, trackColor, true) then
+            locked = not locked and track or false 
+            --reaper.SetExtState(stateName, "locked", locked and "1" or "0", true)
+        end
+        
+        
+        --local startPosX, startPosY = reaper.ImGui_GetItemRectMin(ctx)
+        
+        
+        reaper.ImGui_SetCursorPos(ctx, 3+20, 3)
+        specialButtons.envelopeSettings(ctx, "envelopeSettings", 20, settings.showEnvelope, (settings.showEnvelope and "Disable" or "Enable") .. " showing envelope on parameter click\n - right click for more options", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, true, automationColor, automationColor, fillEnvelopeButton)
+        clickEnvelopeSettings()
+        
+        --[[
+        reaper.ImGui_SetCursorPos(ctx, 3+40, 3)
+        specialButtons.floatingMapper(ctx, "floatingMapper", 20, settings.useFloatingMapper, "Click for floating mapper settings", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, true)
         if reaper.ImGui_IsItemClicked(ctx) then 
             reaper.ImGui_OpenPopup(ctx, "floatingMapperButton")  
+        end ]]
+        --reaper.ImGui_SetCursorPos(ctx, 3+40, 3)
+        --smallAutomationButton(track, "floating", 16)
+        
+        local headerW = reaper.ImGui_CalcTextSize(ctx, "Mapper", 0,0)
+        --reaper.ImGui_SetCursorPos(ctx, (winW) / 2 - headerW / 2, 4)
+        reaper.ImGui_SetCursorPos(ctx, 3+40, 0)
+        local posX = reaper.ImGui_GetCursorPosX(ctx)
+        
+        reaper.ImGui_PushFont(ctx, font2)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorTransparent)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorTransparent)
+        --reaper.ImGui_Text(ctx, "Mapper")
+        reaper.ImGui_Button(ctx, "Mapper", winW - posX - 22)
+        reaper.ImGui_PopFont(ctx)
+        reaper.ImGui_PopStyleColor(ctx, 3)
+        setToolTipFunc("Click for floating mapper settings")
+        if reaper.ImGui_IsItemClicked(ctx) then 
+            reaper.ImGui_OpenPopup(ctx, "floatingMapperButton") 
         end 
-        --local startPosX, startPosY = reaper.ImGui_GetItemRectMin(ctx)
         
         
         if reaper.ImGui_BeginPopup(ctx, "floatingMapperButton") then 
             floatingMapperSettings() 
             reaper.ImGui_EndPopup(ctx)
         end
-        
-        reaper.ImGui_SetCursorPos(ctx, 3+20, 3)
-        specialButtons.envelopeSettings(ctx, "envelopeSettings", 20, settings.showEnvelope, (settings.showEnvelope and "Disable" or "Enable") .. " showing envelope on parameter click\n - right click for more options", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, settings.vertical)
-        if reaper.ImGui_IsItemClicked(ctx) then 
-            reaper.ImGui_OpenPopup(ctx, "envelopeSettings")  
-        end 
-        --local startPosX, startPosY = reaper.ImGui_GetItemRectMin(ctx)
-        
-        
-        if reaper.ImGui_BeginPopup(ctx, "envelopeSettings") then 
-            envelopeSettings() 
-            reaper.ImGui_EndPopup(ctx)
-        end
-        
-        local headerW = reaper.ImGui_CalcTextSize(ctx, "Mapper", 0,0)
-        reaper.ImGui_SetCursorPos(ctx, winW / 2 - headerW / 2 - 6, 4)
-        
-        reaper.ImGui_PushFont(ctx, font2)
-        reaper.ImGui_Text(ctx, "Mapper")
-        reaper.ImGui_PopFont(ctx)
-        
         
         if (not lastWinW or lastWinW == winW) and specialButtons.close(ctx,winW-22,6,12,false,"closeFloatingMapper", colorTransparent, colorBlack,colorTextDimmed, settings.colors.removeCrossHover) then 
             open = false
