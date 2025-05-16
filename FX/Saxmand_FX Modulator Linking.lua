@@ -1,15 +1,14 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.7.8
+-- @version 0.7.9
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + bug fixes
---   + fixed crash on adding new key command
+--   + Enlarging xy pad will be at center of mouse the first time
 
-local version = "0.7.8"
+local version = "0.7.9"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -4523,7 +4522,7 @@ end
 function largeXyPad(name, id, track, fxIndex, pX, pY)
     
     reaper.ImGui_SetNextWindowSize(ctx, 500,500, reaper.ImGui_Cond_FirstUseEver())
-    reaper.ImGui_SetNextWindowPos(ctx, screenWidth / 2 - 250, screenHeight/ 2 - 250, reaper.ImGui_Cond_FirstUseEver())
+    reaper.ImGui_SetNextWindowPos(ctx, mouse_pos_x_imgui - 250, mouse_pos_y_imgui - 250, reaper.ImGui_Cond_FirstUseEver())
     
     
     local rv, open = reaper.ImGui_Begin(ctx, 'Large XY Pad##'..id, true, reaper.ImGui_WindowFlags_NoDocking() | reaper.ImGui_WindowFlags_TopMost() | reaper.ImGui_WindowFlags_NoCollapse() ) 
