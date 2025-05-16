@@ -1,14 +1,14 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.7.9
+-- @version 0.8.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + Enlarging xy pad will be at center of mouse the first time
+--   + Removed currentValueNormalized from Native lfo, causing a crash for 93Nb
 
-local version = "0.7.9"
+local version = "0.8.0"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -2518,7 +2518,7 @@ function nativeReaperModuleParameter(track, fxIndex, paramOut,  _type, paramName
     local ret, currentValue = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName)    
     if ret and tonumber(currentValue) then
         currentValue = tonumber(currentValue)
-        local currentValueNormalized = p.currentValueNormalized
+        --local currentValueNormalized = p.currentValueNormalized
         valueFormat = (ret and tonumber(currentValue * divide)) and string.format(valueFormat, tonumber(currentValue * divide)) or ""
         
     --function nativeReaperModuleParameter(nameOnSide, buttonId, currentValue,  min, max, divide, valueFormat, sliderFlags, width, _type, colorPos, p, resetValue)
@@ -6211,6 +6211,8 @@ function appSettingsWindow()
     
     function menus.About()
         reaper.ImGui_TextColored(ctx, colorGrey, "Version " .. version) 
+        reaper.ImGui_NewLine(ctx)
+        --reaper.ImGui_TextColored(ctx, colorGrey, "Version " .. version) 
     end
     
     
