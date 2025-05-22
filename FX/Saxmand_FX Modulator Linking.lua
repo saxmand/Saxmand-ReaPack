@@ -1,17 +1,16 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.8.1
+-- @version 0.8.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed an issue where the envelope lane of the first parameter of the first instrument was shown without it being pressed
---   + Added Button Modulator
---   + Added Macro Modulator
---   + Added Midi Out Modulator
+--   + Envelope lane hidding is now split up so you choose if it hides envelopes with points as well.
+--   + Added Macro 4 Modulator
+--   + made "open plugin" button automatically resize
 
-local version = "0.8.1"
+local version = "0.8.2"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
