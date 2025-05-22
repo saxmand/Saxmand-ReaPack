@@ -1,16 +1,17 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.8.2
+-- @version 0.8.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + Envelope lane hidding is now split up so you choose if it hides envelopes with points as well.
---   + Added Macro 4 Modulator
---   + made "open plugin" button automatically resize
+--   + fixed tooltip for envelope and floating mapper in vertical mode
+--   + fixed escape being pased through
+--   + fixed parameters area not properly calcualting scroll area when search was hidden 
+--   + fixed not enabling mapping when changing parameter on FX window, if mapping was bypassed
 
-local version = "0.8.2"
+local version = "0.8.4"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -2837,12 +2838,12 @@ end
 function setParameterFromFxWindowParameterSlide(track, p)
     if p.usesEnvelope then
         if p.parameterLinkActive then
-            momentarilyDisabledParameterLink = true
+            momentarilyDisabledParameterLink = p.parameterModulationActive
             reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.active', "0")
         end
         setEnvelopePointAdvanced(track, p, p.value)
     elseif p.parameterLinkActive then 
-        momentarilyDisabledParameterLink = true
+        momentarilyDisabledParameterLink = p.parameterModulationActive
         reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.active', "0")
         reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline', p.value) 
         --reaper.TrackFX_SetParam(track, p.fxIndex, p.param, p.value)
@@ -7397,12 +7398,12 @@ local function loop()
             
             
             
-            specialButtons.envelopeSettings(ctx, "envelopeSettings", 24, settings.showEnvelope, (settings.showEnvelope and "Disable" or "Enable") .. " floating mapper\n - right click for more options", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, settings.vertical, automationColor, automationColor, fillEnvelopeButton)
+            specialButtons.envelopeSettings(ctx, "envelopeSettings", 24, settings.showEnvelope, (settings.showEnvelope and "Disable" or "Enable") .. " showing envelope on parameter click\n - right click for more options", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, settings.vertical, automationColor, automationColor, fillEnvelopeButton)
             clickEnvelopeSettings()
             offset = offset + 24
             reaper.ImGui_SameLine(ctx, offset) 
             
-            specialButtons.floatingMapper(ctx, "floatingMapper", 24, settings.useFloatingMapper, (settings.showEnvelope and "Disable" or "Enable") .. " showing envelope on parameter click\n - right click for more options", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, settings.vertical)
+            specialButtons.floatingMapper(ctx, "floatingMapper", 24, settings.useFloatingMapper, (settings.showEnvelope and "Disable" or "Enable") .. " floating mapper\n - right click for more options", colorText, colorTextDimmed, colorTransparent, settings.colors.buttonsSpecialHover, settings.colors.buttonsSpecialActive, settings.colors.appBackground, settings.vertical)
             clickFloatingMapperButton()
             
             offset = offset + 24
@@ -7673,7 +7674,7 @@ local function loop()
         
         if settings.showParametersPanel then
             function searchAndOnlyMapped()
-                if settings.showOnlyMapped or settings.showSearch then
+                if settings.showOnlyMapped or settings.showSearch or settings.showLastClicked then
                     if not settings.showParameterOptionsOnTop then 
                         reaper.ImGui_Separator(ctx)
                     end
@@ -9801,7 +9802,7 @@ local function loop()
             end
         end 
         --local shortCut 
-        if not alreadyUsed then
+        if not alreadyUsed and newKeyPressed ~= "ESC" then
             shortCut = getPressedShortcut()
             if settings.passAllUnusedShortcutThrough then
                 local s = lookForShortcutWithShortcut(newKeyPressed)
