@@ -1,16 +1,14 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.8.6
+-- @version 0.8.7
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added a note counter modulator
---   + added [E] for envelope indication on parameter names
---   + added settings to disable indication of envelope in parameter name
+--   + added a reset value for note counter modulator
 
-local version = "0.8.6"
+local version = "0.8.7"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -3321,7 +3319,7 @@ function pluginParameterSlider(moduleId,nameOnSide, divide, valueFormat, sliderF
             mouseDragStartX = mouse_pos_x
             mouseDragStartY = mouse_pos_y
             if not isMouseDown and not anyModifierIsPressed then 
-                local toolTip1 = "Drag to set baseline of " .. name .. "\n - hold Shift for fine resolution\n - right click for more options"
+                local toolTip1 = "Drag to set " .. (parameterLinkActive and "baseline" or "value" ).. " of " .. name .. "\n - hold Shift for fine resolution\n - right click for more options"
                 local toolTip2 = parameterLinkActive and "-- " .. parameterLinkName .. " --"
                 local toolTip3 = parameterLinkActive and " - hold Ctrl to change width\n - hold Alt and scroll to change value\n - hold Super to turn bipolar " .. (p.bipolar and "off" or "on")
                 
