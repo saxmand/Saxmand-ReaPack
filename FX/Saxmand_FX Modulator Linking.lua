@@ -1,14 +1,16 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.8.5
+-- @version 0.8.6
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added extra option to only hide previous last touch envelope lane
+--   + added a note counter modulator
+--   + added [E] for envelope indication on parameter names
+--   + added settings to disable indication of envelope in parameter name
 
-local version = "0.8.5"
+local version = "0.8.6"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -328,6 +330,8 @@ local defaultSettings = {
     showEnableInParameters = true,
     showWidthInParameters = true,
     showBipolarInParameters = true,
+    
+    showEnvelopeIndicationInName = true,
     
       -- Modules 
     showModulesPanel = true, 
@@ -1313,6 +1317,8 @@ function getOutputArrayForModulator(track, fxName, fxIndex, modulationContainerP
         return {0}
     elseif fxName:match("Keytracker Modulator") then
         return {0}
+    elseif fxName:match("Note Counter Modulator") then
+        return {0} 
     elseif fxName:match("Note Velocity Modulator") then
         return {0} 
     elseif fxName:match("XY Modulator") then
@@ -1887,7 +1893,8 @@ local function getAllDataFromParameter(track,fxIndex,p)
     local usesEnvelope = false
     if trackEnvelope then
         envelopePointCount = reaper.CountEnvelopePoints(trackEnvelope)
-        --_, envelopeActive = reaper.GetSetEnvelopeInfo_String(envelope, "ACTIVE", "", false)
+        _, envelopeActive = reaper.GetSetEnvelopeInfo_String(trackEnvelope, "ACTIVE", "", false)
+        envelopeActive = envelopeActive == "1"
         
         usesEnvelope = envelopePointCount > 0-- and envelopeActive == "1"
         if usesEnvelope then
@@ -1933,7 +1940,7 @@ local function getAllDataFromParameter(track,fxIndex,p)
     return {param = p, name = name, currentValue = currentValue, currentValueNormalized = currentValueNormalized,  value = value, valueNormalized = valueNormalized, min = min, max = max, range = range, baseline = tonumber(baseline), width = tonumber(width), offset = tonumber(offset), bipolar = bipolar, direction = direction,
     valueName = valueName, fxIndex = fxIndex, guid = guid,
     parameterModulationActive = parameterModulationActive, parameterLinkActive = parameterLinkActive, parameterLinkEffect = parameterLinkEffect,containerItemFxId = tonumber(containerItemFxId),
-    envelope = trackEnvelope, usesEnvelope = usesEnvelope, singleEnvelopePointAtStart = singleEnvelopePointAtStart, envelopeValue = envelopeValueAtPos, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
+    envelope = trackEnvelope, usesEnvelope = usesEnvelope,envelopeActive = envelopeActive, singleEnvelopePointAtStart = singleEnvelopePointAtStart, envelopeValue = envelopeValueAtPos, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
     fxName = fxName,
     }
 end
@@ -3034,6 +3041,7 @@ function pluginParameterSlider(moduleId,nameOnSide, divide, valueFormat, sliderF
     local parameterModulationActive = p.parameterModulationActive
     local hasLink = parameterLinkActive and parameterModulationActive
     
+    
     local parameterLinkEffect = p.parameterLinkEffect
     
     local linkValue = p.valueNormalized -- p.value 
@@ -3112,7 +3120,14 @@ function pluginParameterSlider(moduleId,nameOnSide, divide, valueFormat, sliderF
         if not trackSettings.hideParametersFromModulator[p.guid] then trackSettings.hideParametersFromModulator[p.guid] = {} end
     end
     
-    local showName = type(nameOnSide) == "string" and nameOnSide or name
+    
+    local hasEnvelope = p.usesEnvelope
+    local singleEnvelopePointAtStart = p.singleEnvelopePointAtStart
+    local envelopeActive = p.envelopeActive 
+    local envelopeAddName = (settings.showEnvelopeIndicationInName and hasEnvelope and not singleEnvelopePointAtStart) and (envelopeActive and "[E] " or "[e] ") or ""
+    
+    
+    local showName = envelopeAddName .. (type(nameOnSide) == "string" and nameOnSide or name)
     
     function toggleBipolar(track, fxIndex, param, bipolar)
         if bipolar then
@@ -4453,6 +4468,41 @@ function keytrackerModulator(id, name, modulatorsPos, fxIndex, fxInContainerInde
     createSlider(track,fxIndex,"Checkbox",8,"Pass through MIDI",nil,nil,1,nil,nil,nil,nil,nil) 
 end
 
+
+function noteCounterModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
+    
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    
+    local list = {"Off","Smooth", "Constant"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    
+    createSlider(track,fxIndex,"Combo",2,"Timer",nil,nil,1,nil,nil,nil,listText,0,"Set the timer mode for changing the value")
+
+    local useTimer = reaper.TrackFX_GetParam(track, fxIndex, 1) > 0
+    if useTimer then
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    end 
+    
+    local list = {"Up","Down", "Up & Down", "Random"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    
+    createSlider(track,fxIndex,"Combo",4,"Direction",nil,nil,1,nil,nil,nil,listText,0,"Set the timer mode for changing the value")
+     
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,5), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,8), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    
+    createSlider(track,fxIndex,"Checkbox",9,"Pass through MIDI",nil,nil,1,nil,nil,nil,nil,nil) 
+end
+
 function noteVelocityModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
     local list = {"Off","Smooth", "Constant"}
     local listText = ""
@@ -5575,6 +5625,14 @@ function appSettingsWindow()
                 reaper.ImGui_Unindent(ctx)
                 
             if not settings.showExtraLineInParameters then reaper.ImGui_PopStyleColor(ctx) end
+            
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Show envelope indication in name##parameters",settings.showEnvelopeIndicationInName) 
+            if ret then 
+                settings.showEnvelopeIndicationInName = val
+                saveSettings()
+            end
+            setToolTipFunc("Show [E] in parameter name if the parameter is controlled by an envelope. If the envelope is not active [e] will be shown") 
         end    
         
         
@@ -7930,10 +7988,16 @@ local function loop()
               insertName = "JS: MIDI Fader Modulator"
             },
             { 
-              name = "Note velocity",
+              name = "Note Counter",
+              tooltip = "Use note counting as a modulator",
+              func = "general",
+              insertName = "JS: Note Counter Modulator"
+            },
+            { 
+              name = "Note Velocity",
               tooltip = "Use note velocity as a modulator",
               func = "general",
-              insertName = "JS: Note velocity Modulator"
+              insertName = "JS: Note Velocity Modulator"
             },
             { 
               name = "4-in-1-out",
@@ -9238,6 +9302,8 @@ local function loop()
                 modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, _4in1Out, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
             elseif fxName:match("Keytracker Modulator") then
                 modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, keytrackerModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
+            elseif fxName:match("Note Counter Modulator") then
+                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, noteCounterModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output) 
             elseif fxName:match("Note Velocity Modulator") then
                 modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, noteVelocityModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output) 
             elseif fxName:match("XY Modulator") then

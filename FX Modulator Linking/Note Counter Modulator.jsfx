@@ -1,0 +1,126 @@
+desc:Note Counter Modulator
+author: saxmand
+version: 1.0
+noindex: true
+changelog: Initial release
+
+/**
+ * JSFX : MIDI Fader Modulator
+ * Author: Jesper Ankarfeldt
+ * Reaper forum : 
+ * Licence: GPL v3
+ * REAPER: 7.0
+ * Version: 10 (2025-04-29)
+ */
+
+
+slider1:0<0,1,0.001>Output
+slider2:maximum=4<2,100,1>Steps
+slider3:timer=0<0,2,1{Off,Smooth,Constant}>Timer
+slider4:speed=500<1,5000,1>Speed (ms)
+slider5:direction=0<0,3,1{Up, Down, Up & Down, Random}>Direction
+slider6:reset_slider=0<0,1,1>Reset
+
+slider7:offset=0<0,1,0.01>Offset
+slider8:width=1<-1,1,0.01>Width
+slider9:scale=1<-4,4,0.01>Scale
+slider10:passthrough=1<0,1,1>Pass Through
+
+options:no_meter
+
+@init
+
+ext_noinit = 1;
+target = 0;
+current = 0;
+counter = 0;
+cur_dir = 0;
+
+
+@slider
+speed = max(speed, 1); // Avoid 0 speed
+
+@block
+while (
+  midirecv(t, msg1, msg2, msg3)
+)(
+  status = msg1 & 0xF0;
+  (status == 0x90) ? (    
+    msg3 > 0 ? (
+      direction == 0 ? (
+          counter >= maximum ? counter = 0;
+          counter += 1;
+      ): direction == 1 ? (
+          counter -= 1;
+          counter <= 0 ? counter = maximum;          
+      ): direction == 2 ? (
+          counter >= maximum ? cur_dir = 1;
+          cur_dir == 0 ? (
+              counter += 1;
+          ):(
+              counter -= 1;
+          );          
+          counter <= 1 ? cur_dir = 0;                        
+      ): direction == 3 ? (
+          counter = floor(rand() * maximum + 0.5);
+      );
+
+      target = (counter - 1)/(maximum-1);
+
+      passthrough == 1 ? midisend(t, msg1, msg2, msg3);
+    );
+  ):(
+    midisend(t, msg1, msg2, msg3);
+  );
+);
+
+@sample
+trigger_again == 1 ? (
+    reset_slider == 1 ? (
+        counter = 0;
+        cur_dir = 0;
+    );
+);
+trigger_again = reset_slider == 0;
+
+
+delta = target - current;
+
+(timer == 0) ? (
+  current = target;
+)
+: timer == 1 ? (
+  current += delta * 0.1/speed;
+)
+: (
+  step = 0.022/speed;
+  current += (delta > step) ? step :
+            (delta < -step) ? -step : delta;
+);
+
+out = current*width*scale+offset; 
+out < 0 ? out = 0;
+out > 1 ? out = 1;
+slider1 = out;
+
+
+
+@gfx
+
+gfx_h = 300; // Height in pixels
+gfx_set(1, 1, 1, 0.15);
+gfx_rect(0, 0, gfx_w, gfx_h);
+gfx_setfont(1, "Arial", 16); // Font slot 1 with custom font and size
+gfx_set(1, 1, 1, 1); // Set color to white (RGBA: 1, 1, 1, 1)
+
+function drawCenteredText(text, posY) (
+    w = h = 0;
+    gfx_measurestr(text, w, h);
+    gfx_x = (gfx_w - w) / 2;
+    gfx_y = posY;
+    gfx_printf(text);
+);
+
+drawCenteredText("This plugin is part of ''Saxmand_FX Modulator Linking''.", 10);
+drawCenteredText("The script helps working with modulators.", 30);
+drawCenteredText("Run the script to map and adjust parameters.",50);
