@@ -1,0 +1,63 @@
+desc:Macro 4 Modulator
+author: saxmand
+version: 1.0
+noindex: true
+changelog: Initial release
+
+/**
+ * JSFX : 4-in-1-out Modulator
+ * Author: Jesper Ankarfeldt
+ * Reaper forum : 
+ * Licence: GPL v3
+ * REAPER: 7.0
+ * Version: 10 (2024-11-14)
+ */
+
+slider1:0<0,1,0.001>1
+slider2:input1=0<0,1,0.001>Macro 1
+slider3:offset1=0<0,1,0.01>Offset
+slider4:width1=1<-1,1,0.01>Width
+
+slider5:0<0,1,0.001>2
+slider6:input2=0<0,1,0.001>Macro 2
+slider7:offset2=0<0,1,0.01>Offset
+slider8:width2=1<-1,1,0.01>Width
+
+slider9:0<0,1,0.001>3
+slider10:input3=0<0,1,0.001>Macro 3
+slider11:offset3=0<0,1,0.01>Offset
+slider12:width3=1<-1,1,0.01>Width
+
+slider13:0<0,1,0.001>4
+slider14:input4=0<0,1,0.001>Macro 4
+slider15:offset4=0<0,1,0.01>Offset
+slider16:width4=1<-1,1,0.01>Width
+
+options:no_meter
+
+@init
+
+@slider
+slider1 = offset1 + (input1*width1);
+slider5 = offset2 + (input2*width2);
+slider9 = offset3 + (input3*width3);
+slider13 = offset4 + (input4*width4);
+
+@gfx
+gfx_h = 100; // Height in pixels
+gfx_set(1, 1, 1, 0.15);
+gfx_rect(0, 0, gfx_w, gfx_h);
+gfx_setfont(1, "Arial", 16); // Font slot 1 with custom font and size
+gfx_set(1, 1, 1, 1); // Set color to white (RGBA: 1, 1, 1, 1)
+
+function drawCenteredText(text, posY) (
+    w = h = 0;
+    gfx_measurestr(text, w, h);
+    gfx_x = (gfx_w - w) / 2;
+    gfx_y = posY;
+    gfx_printf(text);
+);
+
+drawCenteredText("This plugin is part of ''Saxmand_FX Modulator Linking''.", 10);
+drawCenteredText("The script helps working with modulators.", 30);
+drawCenteredText("Run the script to map and adjust parameters.",50);

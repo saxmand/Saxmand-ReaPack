@@ -366,7 +366,8 @@ local defaultSettings = {
       openFloatingMapperRelativeToMousePos = {x= 50, y=50},
     -- envelopes  
       showEnvelope = true,
-      showSingleEnvelope = true,
+      hideEnvelopesWithNoPoints = true,
+      hideEnvelopesWithPoints = false,
       showClickedInMediaLane = false,
       insertEnvelopeBeforeAddingNewEnvelopePoint = true,
       insertEnvelopePointsAtTimeSelection = true,
@@ -1321,11 +1322,14 @@ function getOutputArrayForModulator(track, fxName, fxIndex, modulationContainerP
     elseif fxName:match("Button Modulator") then
         return {0} 
     elseif fxName:match("Macro Modulator") then
-        return {0}
+        return {0} 
+    elseif fxName:match("Macro 4 Modulator") then
+        return {0, 4, 8, 12}
     else  
         return getOutputAndInfoForGenericModulator(track,fxIndex,modulationContainerPos)
     end
 end
+
 
 function getModulatorNames(track, modulationContainerPos, parameterLinks)
     if modulationContainerPos then
@@ -1951,11 +1955,36 @@ function hideShowAllTrackEnvelopes(track, ignoreEnvelope, show, onlyActive)
                 if not onlyActive or envelopeActive then
                     reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "1", true)
                 end
-            else
+            else 
                 local singleEnvelopePoint = reaper.CountEnvelopePoints(envelope) == 1
                 if singleEnvelopePoint then
                     reaper.DeleteEnvelopePointEx(envelope,-1,0)
                 else
+                    reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "0", true)
+                end
+            end
+        end
+    end
+  
+    reaper.TrackList_AdjustWindows(false)
+    reaper.UpdateArrange()
+end
+
+
+
+function hideTrackEnvelopesUsingSettings(track, ignoreEnvelope)
+    if not track then return end
+  
+    local envCount = reaper.CountTrackEnvelopes(track)
+    for i = 0, envCount - 1 do
+        local envelope = reaper.GetTrackEnvelope(track, i)
+        if envelope and envelope ~= ignoreEnvelope then   
+            local envelopePointsCount = reaper.CountEnvelopePoints(envelope)
+                
+            if settings.hideEnvelopesWithNoPoints and envelopePointsCount == 1 then
+                reaper.DeleteEnvelopePointEx(envelope,-1,0)
+            else
+                if settings.hideEnvelopesWithPoints and envelopePointsCount > 1 then
                     reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "0", true)
                 end
             end
@@ -4584,6 +4613,15 @@ function macroModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, is
     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
 end
 
+
+function macroModulator4(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
+    for i = 0, 3 do 
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1 + i * 4), focusedParamNumber, nil, nil, nil, false, buttonWidth*2, 0) 
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2 + i * 4), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3 + i * 4), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    end
+end
+
 function midiOutModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
     -- msg type
     --parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,0), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
@@ -5101,12 +5139,19 @@ function envelopeSettings()
         end
         setToolTipFunc("Show the focused parameter envelope in the media lane, instead of it's own lane, to easily find it")
          
-        local ret, val = reaper.ImGui_Checkbox(ctx,"Show only focused envelope##",settings.showSingleEnvelope) 
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Hide envelopes without no points##",settings.hideEnvelopesWithNoPoints) 
         if ret then 
-            settings.showSingleEnvelope = val
+            settings.hideEnvelopesWithNoPoints = val
             saveSettings()
         end
-        setToolTipFunc("Hide all other envelopes when focusing an envelope") 
+        setToolTipFunc("Hide envelopes with no envelope points when focusing an a new envelope")  
+        
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Hide envelopes with points##",settings.hideEnvelopesWithPoints) 
+        if ret then 
+            settings.hideEnvelopesWithPoints = val
+            saveSettings()
+        end
+        setToolTipFunc("Hide envelopes with envelope points when focusing an a new envelope") 
         
     
     if not settings.showEnvelope then reaper.ImGui_EndDisabled(ctx) end
@@ -6487,8 +6532,8 @@ end
     
 function updateVisibleEnvelopes(track, p)
     if settings.showEnvelope and fxnumber and paramnumber then 
-        if settings.showSingleEnvelope then
-             hideShowAllTrackEnvelopes(track, p.envelope)
+        if settings.hideEnvelopesWithNoPoints or settings.hideEnvelopesWithPoints then
+             hideTrackEnvelopesUsingSettings(track, p.envelope)
         end
         
         if not p.envelope then 
@@ -7829,6 +7874,12 @@ local function loop()
               requiredToolTip = 'Install the ReaPack by "tilr" first.\nClick to open webpage' 
             },
             { 
+              name = "Button",
+              tooltip = "A button toggle",
+              func = "general",
+              insertName = "JS: Button Modulator"
+            },
+            { 
               name = "Keytracker",
               tooltip = "Use the pitch of notes as a modulator",
               func = "general",
@@ -7838,6 +7889,18 @@ local function loop()
               name = "LFO Native",
               tooltip = "Add an LFO modulator that uses the build in Reaper LFO which is sample accurate",
               func = "LFO" 
+            },
+            { 
+              name = "Macro",
+              tooltip = "A slider for control multiple parameter",
+              func = "general",
+              insertName = "JS: Macro Modulator"
+            }, 
+            { 
+              name = "Macro 4",
+              tooltip = "4 sliders for control multiple parameter",
+              func = "general",
+              insertName = "JS: Macro 4 Modulator"
             },
             { 
               name = "MSEG-1 (tilr)",
@@ -7874,19 +7937,6 @@ local function loop()
               func = "general",
               insertName = "JS: XY Modulator"
             },
-            { 
-              name = "Button",
-              tooltip = "A button toggle",
-              func = "general",
-              insertName = "JS: Button Modulator"
-            },
-            { 
-              name = "Macro",
-              tooltip = "A slider for control a single parameter",
-              func = "general",
-              insertName = "JS: Macro Modulator"
-            },
-            
             
           } 
           
@@ -8261,7 +8311,7 @@ local function loop()
               reaper.ImGui_EndGroup(ctx)
           end
           
-          function openGui(track, fxIndex, name, gui, extraIdentifier, isCollabsed) 
+          function openGui(track, fxIndex, name, gui, extraIdentifier, isCollabsed, sizeW, sizeH, visualizerSize) 
               if gui then 
                   local _, currentValue = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.."1"..'.mod.visible' )
                   fxIsShowing = currentValue == "1"
@@ -8272,12 +8322,12 @@ local function loop()
               reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), fxIsShowing and settings.colors.pluginOpen or settings.colors.buttons)
               --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorLightBlue)
               --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorLightGrey)
-              sizeW = isCollabsed and 20 or buttonWidth * 2 + 8 --(moduleWidth-dropDownSize-margin*4)
-              sizeH = isCollabsed and 20 or 20
+              sizeW = sizeW and sizeW or (isCollabsed and 20 or buttonWidth * 2 + 8) --(moduleWidth-dropDownSize-margin*4)
+              sizeH = sizeH and sizeH or (isCollabsed and 20 or 20)
               if gui then
-                  title = isCollabsed and (fxIsShowing and "CG" or "OG") or (fxIsShowing and "Close Gui" or " Open Gui")
+                  title = isCollabsed and (fxIsShowing and "CG" or "OG") or ((fxIsShowing and "Close" or "Open") .. (visualizerSize == 2 and "\n" or " ") .. "Gui")
               else
-                  title = isCollabsed and (fxIsShowing and "CP" or "OP") or (fxIsShowing and "Close Plugin" or " Open Plugin")
+                  title = isCollabsed and (fxIsShowing and "CP" or "OP") or ((fxIsShowing and "Close" or "Open") .. (visualizerSize == 2 and "\n" or " ") .. "Plugin")
               end
               if reaper.ImGui_Button(ctx,title .."##"..fxIndex .. (extraIdentifier and extraIdentifier or ""), sizeW,sizeH) then
                   if gui then
@@ -8520,13 +8570,19 @@ local function loop()
                           
                           reaper.ImGui_SetCursorPos(ctx, reaper.ImGui_GetCursorPosX(ctx)-7, reaper.ImGui_GetCursorPosY(ctx))
                           
-                          
-                          for _, output in ipairs(outputArray) do 
+                          -- TODO: when adding modules with more outputs than 4 then make another solutiong
+                          for i, output in ipairs(outputArray) do 
+                              if i > 1 then 
+                                  reaper.ImGui_SetCursorPos(ctx, reaper.ImGui_GetCursorPosX(ctx)-7, reaper.ImGui_GetCursorPosY(ctx)-4)
+                              end
+                              
                               if drawFaderFeedback(20,20, fxIndex, output, 0, 1, isCollabsed, fx) then 
                                   mapModulatorActivate(fx,output, name, nil, #outputArray == 1)
-                              end  
-                              
-                              
+                              end   
+                          end
+                          -- dummy button for modules without an output area
+                          if #outputArray == 0 then
+                              reaper.ImGui_InvisibleButton(ctx, "dummy", 1,1)
                           end
                           
                           
@@ -8554,9 +8610,11 @@ local function loop()
                           reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),settings.colors.menuBarActive)
                           reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),colorTransparent)
                           
+                          local widthForButton = modulatorWidth - 20 * (#outputArray) - 24 - 16
                           
-                          
-                          reaper.ImGui_Button(ctx, name .. "##" .. fxIndex)
+                          reaper.ImGui_Button(ctx, "##" .. fxIndex, widthForButton)
+                          local buttonX, buttonY = reaper.ImGui_GetItemRectMin(ctx)
+                          reaper.ImGui_DrawList_AddText(draw_list, buttonX+4, buttonY+3, colorText, name)
                           
                           reaper.ImGui_PopFont(ctx)
                           reaper.ImGui_PopStyleColor(ctx, 3)
@@ -8571,14 +8629,15 @@ local function loop()
                           end
                           
                           reaper.ImGui_SetCursorPosY(ctx, 1)
-                          reaper.ImGui_SetCursorPosX(ctx, modulatorWidth - 20 - 24)
                           
-                          for _, output in ipairs(outputArray) do 
+                          for i, output in ipairs(outputArray) do  
+                              reaper.ImGui_SameLine(ctx)
+                              reaper.ImGui_SetCursorPosX(ctx, modulatorWidth - (20 * (#outputArray - i)) - 44)
+                              
                               if drawFaderFeedback(20,20, fxIndex, output, 0, 1, isCollabsed, fx) then 
                                   mapModulatorActivate(fx,output, name, nil, #outputArray == 1)
-                              end  
-                              
-                          end
+                              end   
+                          end 
                           
                           reaper.ImGui_SetCursorPosY(ctx, 4)
                           reaper.ImGui_SetCursorPosX(ctx, modulatorWidth - 20)
@@ -8685,9 +8744,11 @@ local function loop()
                                   
                                   size = buttonWidth * 2 / reversedVisualizerSize
                                   if visualizerSize == 1 and #outputArray > 1 then
-                                      size = size - 4
+                                      size = size - 3
+                                  elseif visualizerSize == 2 then
+                                      size = size + 2
                                   elseif visualizerSize == 3 then
-                                      size = size + 8
+                                      size = size + 12
                                   end
                                   
                                   for i, output in ipairs(outputArray) do 
@@ -8710,18 +8771,43 @@ local function loop()
                                   end
                               end
                           end
-                      
-                      
+                          
+                          
                           local hasGui = fx.fxName:match("ACS Native Modulator") ~= nil
-                          if hideParametersFromModulator ~= fx.guid and fx.fxName:match("LFO Native Modulator") == nil  
-                              and fx.fxName:match("XY Modulator") == nil 
-                              and fx.fxName:match("Button Modulator") == nil 
-                              and fx.fxName:match("Macro Modulator") == nil 
-                              
+                          local fxName = fx.fxName
+                          if hideParametersFromModulator ~= fx.guid and 
+                            (fxName:match("ADSR%-1") ~= nil 
+                            or fxName:match("MSEG%-1") ~= nil 
+                            or fxName:match("ACS Native Modulator") ~= nil 
+                            or genericModulatorInfo )
                               then
-                              openGui(track, fxIndex, name, hasGui, "", false)
+                              
+                              local sizeW = buttonWidth * 2 + 12
+                              local sizeH = 20
+                              visualizerSize = (trackSettings.bigWaveform and trackSettings.bigWaveform[fx.guid]) and trackSettings.bigWaveform[fx.guid] or settings.visualizerSize
+                              
+                              if #outputArray % 4 * visualizerSize < 3 then
+                              --(#outputArray < 4 and #outputArray % 2 == 1) or (#outputArray > 4 and #outputArray % 4 == 1) then
+                                  
+                                  reaper.ImGui_SameLine(ctx)
+                                  
+                                  if (#outputArray % 4) * visualizerSize == 1 then
+                                      sizeW = buttonWidth /2 * 3 + 4
+                                      --sizeH = 2 * 20 
+                                  end
+                                  if (#outputArray % 4) * visualizerSize == 2 then
+                                      sizeW = buttonWidth + 4
+                                      sizeH = 2 * 20 
+                                  end
+                                  
+                              end
+                              
+                              openGui(track, fxIndex, name, hasGui, "", false, sizeW, sizeH, visualizerSize)
                           end
-                          reaper.ImGui_Separator(ctx)
+                          
+                          if #outputArray > 0 then
+                              reaper.ImGui_Separator(ctx)
+                          end
                           
                           local curPosY = reaper.ImGui_GetCursorPosY(ctx)
                           
@@ -9150,7 +9236,9 @@ local function loop()
                 modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, buttonModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output) 
             elseif fxName:match("Macro Modulator") then
                 modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, macroModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
-                
+            elseif fxName:match("Macro 4 Modulator") then
+                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, macroModulator4, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
+                    
                 
             elseif fxName:match("MIDI Out") then
                 modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, midiOutModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
