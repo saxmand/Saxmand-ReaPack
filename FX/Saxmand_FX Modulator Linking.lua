@@ -1,17 +1,14 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.8.4
+-- @version 0.8.5
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed tooltip for envelope and floating mapper in vertical mode
---   + fixed escape being pased through
---   + fixed parameters area not properly calcualting scroll area when search was hidden 
---   + fixed not enabling mapping when changing parameter on FX window, if mapping was bypassed
+--   + added extra option to only hide previous last touch envelope lane
 
-local version = "0.8.4"
+local version = "0.8.5"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -366,6 +363,7 @@ local defaultSettings = {
       openFloatingMapperRelativeToMousePos = {x= 50, y=50},
     -- envelopes  
       showEnvelope = true,
+      hideEnvelopesIfLastTouched = true,
       hideEnvelopesWithNoPoints = true,
       hideEnvelopesWithPoints = false,
       showClickedInMediaLane = false,
@@ -1979,9 +1977,11 @@ function hideTrackEnvelopesUsingSettings(track, ignoreEnvelope)
     for i = 0, envCount - 1 do
         local envelope = reaper.GetTrackEnvelope(track, i)
         if envelope and envelope ~= ignoreEnvelope then   
+            --hideEnvelopesIfLastTouched
+             
             local envelopePointsCount = reaper.CountEnvelopePoints(envelope)
                 
-            if settings.hideEnvelopesWithNoPoints and envelopePointsCount == 1 then
+            if envelopePointsCount == 1  and ((settings.hideEnvelopesIfLastTouched and lastFocusedEnvelope and lastFocusedEnvelope == envelope) or settings.hideEnvelopesWithNoPoints)then
                 reaper.DeleteEnvelopePointEx(envelope,-1,0)
             else
                 if settings.hideEnvelopesWithPoints and envelopePointsCount > 1 then
@@ -1990,6 +1990,8 @@ function hideTrackEnvelopesUsingSettings(track, ignoreEnvelope)
             end
         end
     end
+    
+    lastFocusedEnvelope = ignoreEnvelope--p.envelope
   
     reaper.TrackList_AdjustWindows(false)
     reaper.UpdateArrange()
@@ -5137,7 +5139,14 @@ function envelopeSettings()
             settings.showClickedInMediaLane = val
             saveSettings()
         end
-        setToolTipFunc("Show the focused parameter envelope in the media lane, instead of it's own lane, to easily find it")
+        setToolTipFunc("Show the focused parameter envelope in the media lane, instead of it's own lane, to easily find it") 
+         
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Hide envelopes if previous last touched##",settings.hideEnvelopesIfLastTouched) 
+        if ret then 
+            settings.hideEnvelopesIfLastTouched = val
+            saveSettings()
+        end
+        setToolTipFunc("Hide the previous last touched envelope if it has no envelope points.\nThis mode is a bit experimental")  
          
         local ret, val = reaper.ImGui_Checkbox(ctx,"Hide envelopes without no points##",settings.hideEnvelopesWithNoPoints) 
         if ret then 
@@ -6532,7 +6541,7 @@ end
     
 function updateVisibleEnvelopes(track, p)
     if settings.showEnvelope and fxnumber and paramnumber then 
-        if settings.hideEnvelopesWithNoPoints or settings.hideEnvelopesWithPoints then
+        if settings.hideEnvelopesWithNoPoints or settings.hideEnvelopesWithPoints or settings.hideEnvelopesIfLastTouched then
              hideTrackEnvelopesUsingSettings(track, p.envelope)
         end
         
@@ -6571,14 +6580,16 @@ function updateMapping()
         scrollToParameter = false
     end
     
+    
+    if p then
+        updateVisibleEnvelopes(track, p)
+    end
+    
     lastFxNumber = fxnumber
     lastParamNumber = paramnumber
     --lastFxIndexTouched = nil
     --lastParameterTouched = nil
     --track = trackTouched
-    if p then
-        updateVisibleEnvelopes(track, p)
-    end
 end
 
 local _, lastTrackIndexTouched, lastItemIndexTouched, lastTakeIndexTouched, lastFxIndexTouched, lastParameterTouched = reaper.GetTouchedOrFocusedFX( 0 ) 
