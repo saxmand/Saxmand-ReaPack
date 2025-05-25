@@ -1,19 +1,14 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.8.8-b1
+-- @version 0.8.8-b2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added SNJUK2 Steps modulator
---   + added SNJUK2 Toggle Select 4 modulator
---   + added SNJUK2 Pitch 12 modulator
---   + added SNJUK2 LFO modulator
---   + added SNJUK2 Math modulator
---   + added SNJUK2 MIDI Envelope modulator
+--   + fixed not getting mapped values properly
 
-local version = "0.8.8-b1"
+local version = "0.8.8-b2"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1801,13 +1796,15 @@ local function getAllDataFromParameter(track,fxIndex,p)
             -- TODO: we should find the actual fxindex and param within the modulation container, and then gather name etc from there
             if tonumber(fxIndex) < 0x200000 then 
                 _, parameterLinkName = reaper.TrackFX_GetParamName(track, parameterLinkEffect, parameterLinkParam)  
-                ret, parameterLinkFXIndex = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'param.'..parameterLinkParam..'.container_map.fx_index' )
+                ret, parameterLinkFXIndexInContainer = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'param.'..parameterLinkParam..'.container_map.fx_index' )
+                ret, parameterLinkFXIndex = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'container_item.' ..  parameterLinkFXIndexInContainer)
+                
                 -- overwrite the parameter to be the parameter that's within the modulation container
                 _, parameterLinkParam = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'param.'..parameterLinkParam..'.container_map.fx_parm' )
                 parameterLinkParam = tonumber(parameterLinkParam)
-                local _, originalName = reaper.TrackFX_GetNamedConfigParm( track, parameterLinkFXIndex, 'fx_name' )
+                local retName, originalName = reaper.TrackFX_GetNamedConfigParm( track, parameterLinkFXIndex, 'fx_name' )
                 
-                local outputsForLinkedModulator = getOutputArrayForModulator(track,originalName, parameterLinkFXIndex, modulationContainerPos)
+                local outputsForLinkedModulator = getOutputArrayForModulator(track, originalName, parameterLinkFXIndex, modulationContainerPos)
                 
                 local colon_pos = parameterLinkName:find(":")
                 --reaper.ShowConsoleMsg(tostring(parameterLinkName) .. "1\n")
