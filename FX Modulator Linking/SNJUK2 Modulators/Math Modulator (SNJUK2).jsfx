@@ -1,0 +1,39 @@
+desc: Math Modulator (SNJUK2)
+noindex: true
+
+//  Update 17.08.2023 by Snjuk
+
+slider11:0<-100,100,1>MODULATOR  
+slider2:0<-100,100,1>A      
+slider3:0<-100,100,1>B      
+
+slider4:0<0,4,1{MUL,ADD,SUB,MIN,MAX}>Mode
+
+@slider
+
+m = slider11;
+a = slider2;
+b = slider3;
+mode = slider4;
+
+mul = a*b/100;
+add = a + b;
+sub = a - b;
+mini = min(a,b);
+maxi = max(a,b);
+
+mode == 0 ? m = mul;
+mode == 1 ? m = add;
+mode == 2 ? m = sub;
+mode == 3 ? m = mini;
+mode == 4 ? m = maxi;
+
+slider11 = m;
+
+
+@gfx  100 100
+
+
+  gfx_set(0.3,0.3,0.3,1);
+  gfx_rect(0,0,gfx_w,gfx_h);
+

@@ -1,0 +1,305 @@
+desc:MIDI Envelope Modulator (SNJUK2)
+noindex: true
+
+//Zenvelope v 2 mod by Snjuk
+// 26.11.23
+
+options:no_meter
+
+import dwelx.zenvelib.v1.jsfx-inc
+import gfxlib.jsfx-inc 
+
+slider1:0<0,5000,1>Delay (ms) 
+slider2:200<1,5000,1>A (ms) 
+slider3:300<1,5000,1>D (ms) 
+slider4:-42<-50,0,1>S (dB) 
+slider5:100<1,10000,1>R (ms) 
+
+slider10:-20<-99,99,1>A shape 
+slider11:50<-99,99,1>D shape 
+slider12:20<-99,99,1>R shape 
+
+slider13:vel=0<0,1,1> -velocity
+
+slider15:amount=100<0,100,1>-Amount 
+slider16:mi=0<0,100,1>-Min 
+slider17:ma=100<0,100,1>-Max 
+
+slider19:pass=1<0,1,1> -Passthrough source MIDI
+
+slider21:N_mi=0<0,127,1> -Note min
+slider22:N_ma=127<0,127,1> -Note min
+
+slider29:1<0,1,1{Off,On}>-Trigger
+
+slider40:0<0,127,1>-CC Out 
+slider43:ch=0<0,15,1{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>-Out Ch 
+
+slider60:0<0,100,1>-MODULATOR
+
+@init
+
+// declare refresh function with modifying coefficients
+function refresh(_delayC,_attackC,_decayC,_sustainC,_releaseC,_attackSC,_decaySC,_releaseSC,_intensityC,_clampbC,_clamptC) (
+  // normalize shape ratios for library
+  slider10 < 0 ? attackS = (200 + slider10) / 100 - 1 : attackS = (100 - slider10) / 100 + 1;
+  slider11 < 0 ? decayS = (200 + slider11) / 100 : decayS = (100 - slider11) / 100;
+  slider12 < 0 ? releaseS = (200 + slider12) / 100 : releaseS = (100 - slider12) / 100;
+
+  // use very high ratio for almost linear shape (if any slider is zero)
+  attackS == 2 ? attackS = 10000 : attackS *= _attackSC;
+  decayS == 1 ? decayS = 10000 : decayS *= _decaySC;
+  releaseS == 1 ? releaseS = 10000 : releaseS *= _releaseSC;
+
+  // update envelope values
+  plugin.zen_update(slider1*_delayC,slider2*_attackC,slider3*_decayC,slider4-_sustainC,slider5*_releaseC,attackS,decayS,releaseS,100*_intensityC,_clampbC,100*_clamptC);
+  plugin.zen_gfxUpdate(460,110);  // update graphical values and coordinates
+);
+
+offset = 0;
+
+noteOn  = $x90;
+noteOff = $x80;
+
+function isNoteOn ()(noteStatus == noteOn && msg3);
+
+function isNoteOff()(noteStatus == noteOff || (noteStatus == noteOn && msg3 == 0));
+
+@slider
+
+refresh(1,1,1,0,1,1,1,1,1,1,1);
+
+
+@block
+
+ while (midirecv(offset,msg1,msg2,msg3)) (
+       velocity = msg3;
+       noteStatus = msg1 & $xF0;
+       Note = msg2;
+       isNoteOn() ? (
+         Note >= floor(N_mi) && Note <= floor(N_ma) ? (
+         plugin.zen_trigger(slider29) ):(  
+         pass == 1 ? midisend(offset,msg1,msg2,msg3));
+       ):
+       isNoteOff() ? (
+          plugin.zen_release();
+          pass == 1 ? midisend(offset,msg1,msg2,msg3);
+       ): pass == 1 ? midisend(offset,msg1,msg2,msg3);
+  );
+       
+          vel == 0 ? sens = 1 : sens = velocity/127;
+ slider60 = mi + (env-1) * sens * amount/100 * (ma - mi)/100;  // slider for parameter modulation
+     
+            channel = ch + 176;
+                 cc = slider40;
+                val =  slider60/100 *127;
+                cc != 0 ? midisend(offset,channel,cc,val); 
+
+@sample
+
+env = floor(plugin.zen_process()*100);  // main processing function
+spl0 *= env;
+spl1 *= env;
+
+ 
+@gfx 250 100
+
+gfx_clear = 50 + 50 * 256 + 50 * 65536;
+
+ gfx_set(0.15,0.15,0.15,1);
+ _x = 65; _y = 10;
+ _w = 208; _h = 112;
+ gfx_rect(_x,_y,_w+2,_h); 
+
+plugin.zen_gfxDraw();
+gfx_setfont(1, 0, 12); gfx_x = 213; gfx_y = 5; gfx_drawstr("Zenvelope v2");
+
+
+        mouse.update_mouse_state();
+       
+       
+       click = (mouse_cap&1) && !(last_cap&1) ? 1 : 0;
+       last_cap = mouse_cap;
+
+    function rad(d)
+                ( d * $pi / 180 );
+                
+                
+    function Round_knob (_x _y _r) (       //  Draw a knob   m - slider
+    
+     gfx_x = _x; gfx_y = _y;
+    
+    // gfx_rect(_x-_r-7,_y-_r-7,2*_r+14,2*_r+14,0);  // collision area
+     
+    gfx_set(0.5,0.5,0.5,1);                                                        // knob
+    gfx_circle(_x,_y,_r-1,1);
+    
+    start = -128 + (mi*0.02)*130;
+    end = start + (ma - mi)/100*((env-1)/100 * sens)*amount/100 * 260;
+    
+    start < -130 ? start = -130; start > 130 ? start = 130;
+    end < -130 ? end = -130; end > 130 ? end = 130;
+    
+    a = 2;
+    loop (10,
+    gfx_set(0.8,0.8,0.8,1);                                                         // dot
+    gfx_arc(_x,_y,_r-a,rad(start),rad(start+1),1);
+    a += 1;
+    );
+    
+    gfx_set(1,0.49,0.06,1);                                                                         // mod
+    gfx_arc(_x,_y,_r+5,rad(start),rad(end));                                        // mod+
+    gfx_arc(_x,_y,_r+4,rad(start),rad(end));                           
+    );
+    
+    
+ //  ------------------------------------------------Big knob
+     
+     Round_knob(32,30,15);
+     
+     gfx_set(0.9,0.9,0.9,1);
+     gfx_x = 14; gfx_y = 75;
+     gfx_setfont(1,"Arial bold",13);
+     gfx_drawstr("CC");
+     
+     gfx_set(0.9,0.9,0.9,1);
+     gfx_x = 14; gfx_y = 95;
+     gfx_drawstr("CH");
+     
+     gfx_set(0.9,0.9,0.9,1);
+     gfx_x = 14; gfx_y = 54;
+     gfx_drawstr("Val");
+     
+     gfx_set(1,0.49,0.06,1);
+     gfx_x = 39; gfx_y = 55;
+     gfx_drawnumber(slider60/100*127,0);
+     
+     draw_knob_empty(32,75,22,13,40,"",0,0,127,0,sprintf(#, "%.f", floor(slider(40))));    //CC
+     draw_knob_empty(32,95,22,13,43,"",0,0,15,0,sprintf(#, "%.f", floor(slider(43)+1)));   //Ch
+     
+     
+  // -----------------------------------------Last click for MODULATOR button
+   
+ _x = 12 ;
+ _y = 122 ;
+ _w = 42 ; 
+ _h = 16 ;
+ 
+     mouse_in_rect (_x,_y,_w,_h) ? (
+      gfx_set(0.24,0.86,1,1);
+      gfx_setfont(1,"Arial bold fat",12);
+      gfx_x = 65; gfx_y = 122;
+      gfx_drawstr("Click set MODULATOR LastTouched ");
+      gfx_set(1,0.88,0.26,1);
+      gfx_x = 65; gfx_y = 135;
+      gfx_drawstr("Link any parameter to MODULATOR");
+   );
+      bam = 0;
+           click ? (
+     mouse_in_rect (_x,_y,_w,_h) ? (
+      bam = 1;
+      slider_automate(slider60);
+   );
+ );
+ 
+ gfx_set(0.4,0.4,0.4,1);          
+ gfx_x =_x ; gfx_y =_y ;
+ gfx_rect(_x , _y, _w, _h, 0);
+ bam == 1  ? gfx_set(0.24,0.86,1,1) : gfx_set(1,0.88,0.26,1);
+ gfx_circle(_x+15,_y+8,3,1);
+ gfx_line(_x+14,_y+8,_x+29,_y+8);
+ gfx_line(_x+27,_y+6,_x+27,_y+10);
+ gfx_line(_x+26,_y+5,_x+26,_y+11);
+ gfx_line(_x+27,_y+6,_x+27,_y+10);
+ gfx_line(_x+28,_y+7,_x+28,_y+9);
+ 
+//-----------------------------------------------------
+
+     gfx_set(0.9,0.9,0.9,1);
+     gfx_x = 280; gfx_y = 9;
+     gfx_drawstr("Min");
+     
+     gfx_set(0.9,0.9,0.9,1);
+     gfx_x = 280; gfx_y = 29;
+     gfx_drawstr("Max");
+     
+     gfx_set(0.9,0.9,0.9,1);
+     gfx_x = 280; gfx_y = 49;
+     gfx_drawstr("Amou");
+     
+     gfx_set(0,0.7,1,1);
+     gfx_x = 280; gfx_y = 69;
+     gfx_drawstr("N min");
+     
+     gfx_set(0,0.7,1,1);
+     gfx_x = 280; gfx_y = 89;
+     gfx_drawstr("N max");
+     
+     draw_knob_empty(315,10,22,13,16,"",0,0,100,0,sprintf(#, "%.f", slider(16)));     //min
+     draw_knob_empty(315,30,22,13,17,"",100,0,100,0,sprintf(#, "%.f", slider(17)));   //max
+     draw_knob_empty(315,50,22,13,15,"",100,0,100,0,sprintf(#, "%.f", slider(15)));   //amount
+     
+     draw_knob_empty(315,70,22,13,21,"",0,0,127,0,sprintf(#, "%.f", floor(slider(21))));     //Note min
+     draw_knob_empty(315,90,22,13,22,"",127,0,127,0,sprintf(#, "%.f", floor(slider(22))));   //Note max
+     
+     draw_button_empty (227, 125, 48, 18, "Pass", slider(19));
+     mouse.left_click && mouse_in_rect(227, 125 , 48, 18) ? (
+       slider(19) = !slider(19);
+       sliderchange(slider19);
+       slider_automate(slider19);
+     );
+     
+     mouse_in_rect(227, 125, 48, 18) ? (
+     gfx_set(0.24,0.86,1,1);
+     gfx_setfont(1,"Arial bold fat",13);
+     gfx_x = 65; gfx_y = 122;
+     gfx_drawstr("Passthrough source MIDI ");
+     );
+     
+     draw_button_empty (285, 125, 48, 18, "Vel", slider(13));
+     mouse.left_click && mouse_in_rect(285, 125 , 48, 18) ? (
+       slider(13) = !slider(13);
+       sliderchange(slider13);
+       slider_automate(slider13);
+     );
+     
+     mouse_in_rect(285, 125 , 48, 18) ? (
+     gfx_set(0.24,0.86,1,1);
+     gfx_setfont(1,"Arial bold fat",13);
+     gfx_x = 65; gfx_y = 122;
+     gfx_drawstr("Velocity Sensitivity ");
+     );
+     
+ 
+
+//------------------------------------------------------------
+      
+  function on_knob_move (nslider, slider_min, slider_max, slider_is_log, factor) (
+    factor *= mouse.control ? 0.05 : 1;
+  
+      inc = (slider_max - slider_min) / 100 * -factor;
+      slider(nslider) += inc;
+  
+    slider(nslider) > slider_max ? slider(nslider) = slider_max;
+    slider(nslider) < slider_min ? slider(nslider) = slider_min;
+    sliderchange(slider(nslider));
+    slider_automate(slider(nslider));
+  );
+  
+  wheelknob_nslider ? (
+    on_knob_move(wheelknob_nslider, wheelknob_min, wheelknob_max, wheelknob_is_log, mouse.wheel * -7);
+  );
+  
+  selknob_nslider && mouse.left && mouse.dy != 0 ? (
+    on_knob_move(selknob_nslider, selknob_min, selknob_max, selknob_is_log, mouse.dy);
+  );
+  
+  doubleclk_nslider ? (
+    sliderchange(slider(doubleclk_nslider));
+    slider_automate(slider(doubleclk_nslider));
+    doubleclk_nslider = 0;
+  );
+  
+  gfx_setcursor(selknob_nslider ? 32511 : 0);
+  !mouse.wheel ? wheelknob_nslider = 0;
+  !mouse.left ? selknob_nslider = 0;

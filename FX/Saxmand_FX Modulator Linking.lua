@@ -1,14 +1,19 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.8.7
+-- @version 0.8.8-b1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added a reset value for note counter modulator
+--   + added SNJUK2 Steps modulator
+--   + added SNJUK2 Toggle Select 4 modulator
+--   + added SNJUK2 Pitch 12 modulator
+--   + added SNJUK2 LFO modulator
+--   + added SNJUK2 Math modulator
+--   + added SNJUK2 MIDI Envelope modulator
 
-local version = "0.8.7"
+local version = "0.8.8-b1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1280,58 +1285,6 @@ function movePluginToContainer(track, originalIndex)
     return modulationContainerPos, insert_position
 end
 
-function getOutputAndInfoForGenericModulator(track,fxIndex,modulationContainerPos)
-    local numParams = reaper.TrackFX_GetNumParams(track,fxIndex) 
-    local output = {}
-    -- make possible to have multiple outputs
-    local genericModulatorInfo = {outputParam = -1, indexInContainerMapping = -1}
-    for p = 0, numParams -1 do
-        --retval, buf = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, "param." .. p .. ".container_map.hint_id" )
-        -- we would have to enable multiple outputs here later
-        retval, buf = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, "container_map.get." .. fxIndex .. "." .. p )
-        if retval then
-            table.insert(output, p)
-            genericModulatorInfo = {outputParam = p, indexInContainerMapping = tonumber(buf)}
-            break
-        end
-    end
-    return output, genericModulatorInfo
-end
-
-function getOutputArrayForModulator(track, fxName, fxIndex, modulationContainerPos)
-    if fxName:match("LFO Native Modulator") then
-        return {0}
-    elseif fxName:match("ADSR%-1") then
-        return {10}
-    elseif fxName:match("MSEG%-1") then
-        return {10}
-    elseif fxName:match("MIDI Fader Modulator") then
-        return {0}
-    elseif fxName:match("AB Slider Modulator") then
-        return {0}
-    elseif fxName:match("ACS Native Modulator") then
-        return {0}
-    elseif fxName:match("4%-in%-1%-out Modulator") then
-        return {0}
-    elseif fxName:match("Keytracker Modulator") then
-        return {0}
-    elseif fxName:match("Note Counter Modulator") then
-        return {0} 
-    elseif fxName:match("Note Velocity Modulator") then
-        return {0} 
-    elseif fxName:match("XY Modulator") then
-        return {0, 1} 
-    elseif fxName:match("Button Modulator") then
-        return {0} 
-    elseif fxName:match("Macro Modulator") then
-        return {0} 
-    elseif fxName:match("Macro 4 Modulator") then
-        return {0, 4, 8, 12}
-    else  
-        return getOutputAndInfoForGenericModulator(track,fxIndex,modulationContainerPos)
-    end
-end
-
 
 function getModulatorNames(track, modulationContainerPos, parameterLinks)
     if modulationContainerPos then
@@ -1352,14 +1305,19 @@ function getModulatorNames(track, modulationContainerPos, parameterLinks)
             
             local mappings = (parameterLinks and parameterLinks[tostring(fxIndex)]) and parameterLinks[tostring(fxIndex)] or {}
             local output = getOutputArrayForModulator(track, fxOriginalName, fxIndex, modulationContainerPos)
+            local outputNames = getOutputNameArrayForModulator(track, fxOriginalName, fxIndex, modulationContainerPos)
             
             local mappingNames = {}
              
-            for _, out in ipairs(output) do
+            for i, out in ipairs(output) do
                 _, paramName = reaper.TrackFX_GetParamName(track, fxIndex, out)
                 local mappingName = fxName 
                 if #output > 1 then 
-                    mappingName = mappingName .. ": " .. paramName
+                    if outputNames then
+                        mappingName = mappingName .. ": " .. outputNames[i]
+                    else
+                        mappingName = mappingName .. ": " .. paramName
+                    end
                 end
                 mappingNames[out] = mappingName
             end
@@ -1367,7 +1325,7 @@ function getModulatorNames(track, modulationContainerPos, parameterLinks)
             local isCollabsed = trackSettings.collabsModules[guid]
             --if not nameCount[fxName] then nameCount[fxName] = 1 else nameCount[fxName] = nameCount[fxName] + 1 end
             --table.insert(containerData, {name = fxName .. " " .. nameCount[fxName], fxIndex = tonumber(fxIndex)})
-            table.insert(containerData, {name = fxName, fxIndex = tonumber(fxIndex), guid = guid, fxInContainerIndex = c, fxName = fxOriginalName, mappings = mappings, output = output, mappingNames = mappingNames})
+            table.insert(containerData, {name = fxName, fxIndex = tonumber(fxIndex), guid = guid, fxInContainerIndex = c, fxName = fxOriginalName, mappings = mappings, output = output, mappingNames = mappingNames, outputNames = outputNames})
             fxIndexs[fxIndex] = true
             if not isCollabsed then allIsCollabsed = false end
             if isCollabsed then allIsNotCollabsed = false end
@@ -1915,8 +1873,16 @@ local function getAllDataFromParameter(track,fxIndex,p)
     end
     
     local value, min, max = reaper.TrackFX_GetParam(track,fxIndex,p)
+    local hasSteps, step, smallStep, largeStep, isToggle =  reaper.TrackFX_GetParameterStepSizes(track, fxIndex, p)
     
-    local range = max - min
+    local isInverted = max < min
+    if isInverted then
+        local temp = min
+        min = max
+        max = temp
+    end 
+    local range = math.abs(max - min)
+    
     local valueNormalized = reaper.TrackFX_GetParamNormalized(track, fxIndex, p)
     if min ~= 0 or max ~= 1 and parameterLinkActive then
         --_, fxName = reaper.TrackFX_GetFXName(track, fxIndex)
@@ -1939,7 +1905,8 @@ local function getAllDataFromParameter(track,fxIndex,p)
     valueName = valueName, fxIndex = fxIndex, guid = guid,
     parameterModulationActive = parameterModulationActive, parameterLinkActive = parameterLinkActive, parameterLinkEffect = parameterLinkEffect,containerItemFxId = tonumber(containerItemFxId),
     envelope = trackEnvelope, usesEnvelope = usesEnvelope,envelopeActive = envelopeActive, singleEnvelopePointAtStart = singleEnvelopePointAtStart, envelopeValue = envelopeValueAtPos, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
-    fxName = fxName,
+    fxName = fxName, 
+    hasSteps = hasSteps, step = step, smallStep = smallStep, largeStep = largeStep, isToggle = isToggle
     }
 end
 
@@ -1995,8 +1962,6 @@ function hideTrackEnvelopesUsingSettings(track, ignoreEnvelope)
             end
         end
     end
-    
-    lastFocusedEnvelope = ignoreEnvelope--p.envelope
   
     reaper.TrackList_AdjustWindows(false)
     reaper.UpdateArrange()
@@ -3033,7 +2998,7 @@ function pluginParameterSlider(moduleId,nameOnSide, divide, valueFormat, sliderF
     local min = p.min or 0
     local max = p.max or 1
     local divide = divide or 1
-    local range = max - min
+    local range = p.range -- max - min
     
     local parameterLinkActive = p.parameterLinkActive
     local parameterModulationActive = p.parameterModulationActive
@@ -4164,60 +4129,59 @@ function createModulationLFOParameter(track, fxIndex,  _type, paramName, visualN
     return newValue and newValue or currentValue
 end
 
+local noteTempos = {
+    {name = "32 D", value = 4*32*1.5},    -- 0.1875
+    {name = "32", value = 4*32},          -- 0.125
 
+    {name = "16 D", value = 4*16*1.5},    -- 0.375
+    {name = "32 T", value = 4*32/1.5},    -- 0.083333...
+    {name = "16", value = 4*16},          -- 0.25
+
+    {name = "8 D", value = 4*8*1.5},      -- 0.75
+    {name = "16 T", value = 4*16/1.5},    -- 0.166666...
+    {name = "8", value = 4*8},            -- 0.5
+
+    {name = "4 D", value = 4*4*1.5},      -- 1.5
+    {name = "8 T", value = 4*8/1.5},      -- 0.333333...
+    {name = "4", value = 4*4},            -- 1
+
+    {name = "2 D", value = 4*2*1.5},      -- 3
+    {name = "4 T", value = 4*4/1.5},      -- 0.666666...
+    {name = "2", value = 4*2},            -- 2
+
+    {name = "1 D", value = 4*1*1.5},      -- 6
+    {name = "2 T", value = 4*2/1.5},      -- 1.333333...
+    {name = "1", value = 4*1},            -- 4
+
+    {name = "1/2 D", value = 4*0.5*1.5},  -- 3
+    {name = "1 T", value = 4*1/1.5},      -- 2.666666...
+    {name = "1/2", value = 4*0.5},        -- 2
+
+    {name = "1/4 D", value = 4*0.25*1.5}, -- 1.5
+    {name = "1/2 T", value = 4*0.5/1.5},  -- 1.333333...
+    {name = "1/4", value = 4*0.25},       -- 1
+
+    {name = "1/8 D", value = 4*0.125*1.5},-- 0.75
+    {name = "1/4 T", value = 4*0.25/1.5}, -- 0.666666...
+    {name = "1/8", value = 4*0.125},      -- 0.5
+
+    {name = "1/16 D", value = 4*0.0625*1.5}, -- 0.375
+    {name = "1/8 T", value = 4*0.125/1.5},   -- 0.333333...
+    {name = "1/16", value = 4*0.0625},       -- 0.25
+
+    {name = "1/32 D", value = 4*0.03125*1.5}, -- 0.1875
+    {name = "1/16 T", value = 4*0.0625/1.5},  -- 0.166666...
+    {name = "1/32", value = 4*0.03125},       -- 0.125
+
+    {name = "1/64 D", value = 4*0.015625*1.5}, -- 0.09375
+    {name = "1/32 T", value = 4*0.03125/1.5},  -- 0.083333...
+    {name = "1/64", value = 4*0.015625},       -- 0.0625
+}
 
 
 
 
 function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
-    local noteTempos = {
-        {name = "32 D", value = 4*32*1.5},    -- 0.1875
-        {name = "32", value = 4*32},          -- 0.125
-    
-        {name = "16 D", value = 4*16*1.5},    -- 0.375
-        {name = "32 T", value = 4*32/1.5},    -- 0.083333...
-        {name = "16", value = 4*16},          -- 0.25
-    
-        {name = "8 D", value = 4*8*1.5},      -- 0.75
-        {name = "16 T", value = 4*16/1.5},    -- 0.166666...
-        {name = "8", value = 4*8},            -- 0.5
-    
-        {name = "4 D", value = 4*4*1.5},      -- 1.5
-        {name = "8 T", value = 4*8/1.5},      -- 0.333333...
-        {name = "4", value = 4*4},            -- 1
-    
-        {name = "2 D", value = 4*2*1.5},      -- 3
-        {name = "4 T", value = 4*4/1.5},      -- 0.666666...
-        {name = "2", value = 4*2},            -- 2
-    
-        {name = "1 D", value = 4*1*1.5},      -- 6
-        {name = "2 T", value = 4*2/1.5},      -- 1.333333...
-        {name = "1", value = 4*1},            -- 4
-    
-        {name = "1/2 D", value = 4*0.5*1.5},  -- 3
-        {name = "1 T", value = 4*1/1.5},      -- 2.666666...
-        {name = "1/2", value = 4*0.5},        -- 2
-    
-        {name = "1/4 D", value = 4*0.25*1.5}, -- 1.5
-        {name = "1/2 T", value = 4*0.5/1.5},  -- 1.333333...
-        {name = "1/4", value = 4*0.25},       -- 1
-    
-        {name = "1/8 D", value = 4*0.125*1.5},-- 0.75
-        {name = "1/4 T", value = 4*0.25/1.5}, -- 0.666666...
-        {name = "1/8", value = 4*0.125},      -- 0.5
-    
-        {name = "1/16 D", value = 4*0.0625*1.5}, -- 0.375
-        {name = "1/8 T", value = 4*0.125/1.5},   -- 0.333333...
-        {name = "1/16", value = 4*0.0625},       -- 0.25
-    
-        {name = "1/32 D", value = 4*0.03125*1.5}, -- 0.1875
-        {name = "1/16 T", value = 4*0.0625/1.5},  -- 0.166666...
-        {name = "1/32", value = 4*0.03125},       -- 0.125
-    
-        {name = "1/64 D", value = 4*0.015625*1.5}, -- 0.09375
-        {name = "1/32 T", value = 4*0.03125/1.5},  -- 0.083333...
-        {name = "1/64", value = 4*0.015625},       -- 0.0625
-    }
     
     paramOut = "1"
     
@@ -4467,9 +4431,41 @@ function keytrackerModulator(id, name, modulatorsPos, fxIndex, fxInContainerInde
 end
 
 
-function noteCounterModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
+function counterModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
+    local list = {"Up","Down", "Up & Down", "Random"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
     
-    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    createSlider(track,fxIndex,"Combo",7,"Direction",nil,nil,1,nil,nil,nil,listText,0,"Set the direction of the counter")
+    -- steps
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+     
+    
+    local list = {"Note","Trigger", "Both"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    
+    createSlider(track,fxIndex,"Combo",1,"Mode",nil,nil,1,nil,nil,nil,listText,0,"Set wether to trigger from a note or a trigger")
+    
+    -- use trigger
+    if reaper.TrackFX_GetParam(track, fxIndex, 1) ~= 0 then
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    end
+    -- use note, add threshold
+    if reaper.TrackFX_GetParam(track, fxIndex, 1) ~= 1 then
+        -- trigger threshold for notes
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    end
+    
+    -- reset 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,8), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    -- reset value
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,9), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    
     
     local list = {"Off","Smooth", "Constant"}
     local listText = ""
@@ -4477,26 +4473,16 @@ function noteCounterModulator(id, name, modulatorsPos, fxIndex, fxInContainerInd
         listText = listText .. t .. "\0" 
     end
     
-    createSlider(track,fxIndex,"Combo",2,"Timer",nil,nil,1,nil,nil,nil,listText,0,"Set the timer mode for changing the value")
+    createSlider(track,fxIndex,"Combo",5,"Timer",nil,nil,1,nil,nil,nil,listText,0,"Set the timer mode for changing the value")
+    
 
-    local useTimer = reaper.TrackFX_GetParam(track, fxIndex, 1) > 0
+    local useTimer = reaper.TrackFX_GetParam(track, fxIndex, 5) > 0
     if useTimer then
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
     end 
     
-    local list = {"Up","Down", "Up & Down", "Random"}
-    local listText = ""
-    for _, t in ipairs(list) do
-        listText = listText .. t .. "\0" 
-    end
-    
-    createSlider(track,fxIndex,"Combo",4,"Direction",nil,nil,1,nil,nil,nil,listText,0,"Set the timer mode for changing the value")
-     
-    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,5), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
-    
-    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
-    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
-    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,8), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,10), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,11), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
     
     createSlider(track,fxIndex,"Checkbox",9,"Pass through MIDI",nil,nil,1,nil,nil,nil,nil,nil) 
 end
@@ -4797,111 +4783,436 @@ end
 
 
 function adsrModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
-    if not isCollabsed then
-        local _, min, max = reaper.TrackFX_GetParam(track, fxIndex, 0)
-        local ret, visuelValue = reaper.TrackFX_GetFormattedParamValue(track, fxIndex, 0) 
-        if ret and tonumber(visualValue) then 
-            parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,0), focusedParamNumber, nil, nil, nil, "Attack", buttonWidth*2, 5.01, math.floor(tonumber(visualValue)) .. " ms") 
-        end
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, "A.Tension", buttonWidth*2, 0, "%0.2f") 
-        
-        local _, min, max = reaper.TrackFX_GetParam(track, fxIndex, 1)
-        local ret, visuelValue = reaper.TrackFX_GetFormattedParamValue(track, fxIndex, 1) 
-        if ret and tonumber(visualValue) then 
-            parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, "Decay", buttonWidth*2, 5.3, math.floor(tonumber(visualValue)) .. " ms")
-        end
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,8), focusedParamNumber, nil, nil, nil, "D.Tension", buttonWidth*2, 0, "%0.2f") 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, "Sustain", buttonWidth*2, 80, "%0.0f") 
- 
-        local _, min, max = reaper.TrackFX_GetParam(track, fxIndex, 3)
-        local ret, visuelValue = reaper.TrackFX_GetFormattedParamValue(track, fxIndex, 3) 
-        if ret and tonumber(visualValue) then 
-            parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, "Release", buttonWidth*2, 6.214, math.floor(tonumber(visualValue)) .. " ms")
-        end
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,9), focusedParamNumber, nil, nil, nil, "R.Tension", buttonWidth*2, 0, "%0.2f") 
-        
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, "Min", buttonWidth*2, 0, "%0.0f") 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,5), focusedParamNumber, nil, nil, nil, "Max", buttonWidth*2, 100, "%0.0f") 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, "Smooth", buttonWidth*2, 0, "%0.0f") 
-    end
+     local _, min, max = reaper.TrackFX_GetParam(track, fxIndex, 0)
+     local ret, visualValue = reaper.TrackFX_GetFormattedParamValue(track, fxIndex, 0) 
+     if ret and tonumber(visualValue) then 
+         parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,0), focusedParamNumber, nil, nil, nil, "Attack", buttonWidth*2, 5.01, math.floor(tonumber(visualValue)) .. " ms") 
+     end
+     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, "A.Tension", buttonWidth*2, 0, "%0.2f") 
+     
+     local _, min, max = reaper.TrackFX_GetParam(track, fxIndex, 1)
+     local ret, visualValue = reaper.TrackFX_GetFormattedParamValue(track, fxIndex, 1) 
+     if ret and tonumber(visualValue) then 
+         parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, "Decay", buttonWidth*2, 5.3, math.floor(tonumber(visualValue)) .. " ms")
+     end
+     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,8), focusedParamNumber, nil, nil, nil, "D.Tension", buttonWidth*2, 0, "%0.2f") 
+     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, "Sustain", buttonWidth*2, 80, "%0.0f") 
+
+     local _, min, max = reaper.TrackFX_GetParam(track, fxIndex, 3)
+     local ret, visualValue = reaper.TrackFX_GetFormattedParamValue(track, fxIndex, 3) 
+     if ret and tonumber(visualValue) then 
+         parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, "Release", buttonWidth*2, 6.214, math.floor(tonumber(visualValue)) .. " ms")
+     end
+     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,9), focusedParamNumber, nil, nil, nil, "R.Tension", buttonWidth*2, 0, "%0.2f") 
+     
+     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, "Min", buttonWidth*2, 0, "%0.0f") 
+     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,5), focusedParamNumber, nil, nil, nil, "Max", buttonWidth*2, 100, "%0.0f") 
+     parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, "Smooth", buttonWidth*2, 0, "%0.0f") 
 end
 
 
 
 
-function msegModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
+function msegModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
+    local triggers = {"Sync","Free", "MIDI", "Manual"}
+    local triggersDropDownText = ""
+    for _, t in ipairs(triggers) do
+        triggersDropDownText = triggersDropDownText .. t .. "\0" 
+    end
     
-    reaper.ImGui_TableNextColumn(ctx)
-     
+    local tempoSync = {"Off","1/16", "1/8", "1/4", "1/2","1/1", "2/1","4/1","1/16 T", "1/8 T", "1/4 T", "1/2 T","1/1 T","1/16 D", "1/8 D", "1/4 D", "1/2 D","1/1 D"}
+    local tempoSyncDropDownText = ""
+    for _, t in ipairs(tempoSync) do
+        tempoSyncDropDownText = tempoSyncDropDownText .. t .. "\0" 
+    end
     
-    --reaper.ImGui_TableNextRow(ctx)
-    if not isCollabsed then
-        
-        local triggers = {"Sync","Free", "MIDI", "Manual"}
-        local triggersDropDownText = ""
-        for _, t in ipairs(triggers) do
-            triggersDropDownText = triggersDropDownText .. t .. "\0" 
-        end
-        
-        local tempoSync = {"Off","1/16", "1/8", "1/4", "1/2","1/1", "2/1","4/1","1/16 T", "1/8 T", "1/4 T", "1/2 T","1/1 T","1/16 D", "1/8 D", "1/4 D", "1/2 D","1/1 D"}
-        local tempoSyncDropDownText = ""
-        for _, t in ipairs(tempoSync) do
-            tempoSyncDropDownText = tempoSyncDropDownText .. t .. "\0" 
-        end
-        
-        --createSlider(track,fxIndex,"SliderDouble",0,"Pattern",1,12,100,"%0.0f",nil,nil,nil,nil) 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,0), focusedParamNumber, nil, nil, nil, "Pattern", buttonWidth*2, 0, "%0.0f") 
-        
-        createSlider(track,fxIndex,"Combo",1,"Trigger",nil,nil,1,nil,nil,nil,triggersDropDownText,0,"Select how to trigger pattern")
-        scrollHoveredDropdown(reaper.TrackFX_GetParam(track, fxIndex, 1), track,fxIndex, 1, triggers,nil, 0, #triggers-1)
-        
-        createSlider(track,fxIndex,"Combo",2,"Tempo Sync",nil,nil,1,nil,nil,nil,tempoSyncDropDownText,0,"Select if the tempo should sync")
-        scrollHoveredDropdown(reaper.TrackFX_GetParam(track, fxIndex, 2), track,fxIndex, 2, tempoSync,nil, 0, #tempoSync-1)
-        
-        local syncOff = reaper.TrackFX_GetParam(track, fxIndex, 2)
-        if math.floor(syncOff) == 0  then 
-          parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, "Rate", buttonWidth*2, 0, "%0.2f Hz") 
-        end
-        
-        
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, "Phase", buttonWidth*2, 0, "%0.2f") 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,5), focusedParamNumber, nil, nil, nil, "Min", buttonWidth*2, 0, "%0.0f") 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, "Max", buttonWidth*2, 100, "%0.0f") 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, "Smooth", buttonWidth*2, 0, "%0.0f") 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,8), focusedParamNumber, nil, nil, nil, "Att. Smooth", buttonWidth*2, 0, "%0.0f") 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,9), focusedParamNumber, nil, nil, nil, "Rel. Smooth", buttonWidth*2, 0, "%0.0f") 
-        
-        -- RETRIGGER DOES NOT WORK. PROBABLY CAUSE IT*S A SLIDER WITH 1 STEP ONLY.
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,13), focusedParamNumber, nil, nil, nil, "Retrigger", buttonWidth*2, 0, "%0.0f") 
-        --createSlider(track,fxIndex,"SliderDouble",13,"Retrigger",0,1,1,"%0.0f",nil,nil,nil,nil)
-        --createSlider(track,fxIndex,"SliderDouble",14,"Vel Modulation",0,1,1,"%0.2f",nil,nil,nil,nil)
+    --createSlider(track,fxIndex,"SliderDouble",0,"Pattern",1,12,100,"%0.0f",nil,nil,nil,nil) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,0), focusedParamNumber, nil, nil, nil, "Pattern", buttonWidth*2, 0, "%0.0f") 
+    
+    createSlider(track,fxIndex,"Combo",1,"Trigger",nil,nil,1,nil,nil,nil,triggersDropDownText,0,"Select how to trigger pattern")
+    scrollHoveredDropdown(reaper.TrackFX_GetParam(track, fxIndex, 1), track,fxIndex, 1, triggers,nil, 0, #triggers-1)
+    
+    createSlider(track,fxIndex,"Combo",2,"Tempo Sync",nil,nil,1,nil,nil,nil,tempoSyncDropDownText,0,"Select if the tempo should sync")
+    scrollHoveredDropdown(reaper.TrackFX_GetParam(track, fxIndex, 2), track,fxIndex, 2, tempoSync,nil, 0, #tempoSync-1)
+    
+    local syncOff = reaper.TrackFX_GetParam(track, fxIndex, 2)
+    if math.floor(syncOff) == 0  then 
+      parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, "Rate", buttonWidth*2, 0, "%0.2f Hz") 
     end
     
     
-    --mapButton(fxIndex, name)
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, "Phase", buttonWidth*2, 0, "%0.2f") 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,5), focusedParamNumber, nil, nil, nil, "Min", buttonWidth*2, 0, "%0.0f") 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, "Max", buttonWidth*2, 100, "%0.0f") 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, "Smooth", buttonWidth*2, 0, "%0.0f") 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,8), focusedParamNumber, nil, nil, nil, "Att. Smooth", buttonWidth*2, 0, "%0.0f") 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,9), focusedParamNumber, nil, nil, nil, "Rel. Smooth", buttonWidth*2, 0, "%0.0f") 
     
-    --reaper.ImGui_Spacing(ctx)
-    
-    --endModulator(name, startPosX, startPosY, fxIndex)
+    -- RETRIGGER DOES NOT WORK. PROBABLY CAUSE IT*S A SLIDER WITH 1 STEP ONLY.
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,13), focusedParamNumber, nil, nil, nil, "Retrigger", buttonWidth*2, 0, "%0.0f") 
+    --createSlider(track,fxIndex,"SliderDouble",13,"Retrigger",0,1,1,"%0.0f",nil,nil,nil,nil)
+    --createSlider(track,fxIndex,"SliderDouble",14,"Vel Modulation",0,1,1,"%0.2f",nil,nil,nil,nil)
 end
 
 
 
 
 function _4in1Out(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, "Input 1", buttonWidth*2, 1) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, "Input 2", buttonWidth*2, 1) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, "Input 3", buttonWidth*2, 1) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, "Input 4", buttonWidth*2, 1) 
+end
+
+
+
+
+
+function snjuk2LfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
+    local list = {"Sine","Square","Saw L","Saw R","Triangle","Random","Step"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    createSlider(track,fxIndex,"Combo",2,"Shape",nil,nil,1,nil,nil,nil,listText,0,"Select shape of LFO")
+    if reaper.TrackFX_GetParam(track, fxIndex, 2) == 6 then
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,22), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    end
     
-    --if settings.vertical or not isCollabsed then reaper.ImGui_SameLine(ctx) end
-    reaper.ImGui_TableNextColumn(ctx)
+    createSlider(track,fxIndex,"Checkbox",6,"Sync",nil,nil,1,nil,nil,nil,nil,nil) 
+    if reaper.TrackFX_GetParam(track, fxIndex, 6) == 0 then
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, nil) 
+    else
+        local curVal = reaper.TrackFX_GetParam(track, fxIndex, 8)
+        local visualVal = curVal .. ""
+        for _, v in ipairs(noteTempos) do
+            if curVal == v.value then
+                visualVal = v.name
+                break;
+            end
+        end
+        a = getAllDataFromParameter(track,fxIndex,8)
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,8), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1, visualVal)  
+    end
     
-    if not isCollabsed then 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, "Input 1", buttonWidth*2, 1) 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, "Input 2", buttonWidth*2, 1) 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, "Input 3", buttonWidth*2, 1) 
-        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, "Input 4", buttonWidth*2, 1) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,9), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,10), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,17), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+end
+
+
+function snjuk2MathModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
+    local list = {"Multiply","Add","Substract","Minimum","Maximum"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    createSlider(track,fxIndex,"Combo",2,"Mode",nil,nil,1,nil,nil,nil,listText,0,"Select how to combine input A and B")
+    -- a
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,0), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    -- b
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+end
+
+
+function snjuk2MidiEnvelopeModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx)
+    -- delay
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,0), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    -- a (ms)
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,1), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    -- d (ms)
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,2), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,3), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0)
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,4), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,5), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+end
+
+function snjuk2Pitch12Modulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,24), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0)
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,25), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0)
+end
+ 
+function snjuk2ToggleSelect4Modulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, false, buttonWidth*2, 0)
+    
+    
+    createSlider(track,fxIndex,"Checkbox",4,"Toggle",nil,nil,1,nil,nil,nil,nil,nil) 
+    createSlider(track,fxIndex,"Checkbox",6,"Fill",nil,nil,1,nil,nil,nil,nil,nil) 
+    
+end
+
+ 
+function snjuk2StepsModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx) 
+    local list = {"Play","Hold","Note"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    createSlider(track,fxIndex,"Combo",10,"Mode",nil,nil,1,nil,nil,nil,listText,0,"Select the mode for the output. Play only outputs when playing")
+    if reaper.TrackFX_GetParam(track, fxIndex, 10) == 1 then
+        parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,11), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
     end
     
     
+    -- timebase 
+    local timeBase = {"1/1", "1/2", "1/4", "1/8", "1/16", "1/32"} 
+    local curVal = reaper.TrackFX_GetParam(track, fxIndex, 5)
+    local timebaseName = timeBase[curVal]
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,5), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 2)
+    
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,6), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 1) 
+    -- smooth
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,7), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    
+    
+    ret, newValue = reaper.ImGui_Checkbox(ctx, "Reverse" .. "##" .. paramName .. fxIndex, reaper.TrackFX_GetParam(track, fxIndex, 2) == 0)
+    if ret then 
+        setParameterButReturnFocus(track, fxIndex, 2, newValue and "0" or "2")
+    end
+    
+    
+    -- reset
+    parameterNameAndSliders("modulator",pluginParameterSlider, getAllDataFromParameter(track,fxIndex,16), focusedParamNumber, nil, nil, nil, true, buttonWidth*2, 0) 
+    
+    
+    --p = getAllDataFromParameter(track,fxIndex,13)
+    --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), p.currentValue >= 0.5 and colorButtonsHover or colorButtons)
+    --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), p.currentValue >= 0.5 and colorButtonsHover or colorButtons)
+    --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), p.currentValue >= 0.5 and colorButtonsHover or colorButtons)
+    if reaper.ImGui_Button(ctx, "Randomize", buttonWidth*2, 20) then 
+        reaper.TrackFX_SetParam(track, fxIndex, 13, 1)
+    end
+    --reaper.ImGui_PopStyleColor(ctx, 3)
 end
+ 
+
+ 
+local factoryModules = {
+    { 
+      name = "AB Slider",
+      tooltip = "Map two positions A and B of plugin parameters on the selected track. Only parameters changed will be mapped",
+      func = "general",
+      insertName = "JS: AB Slider Modulator",
+      output = {0}, 
+      layout = abSliderModulator,
+    },
+    { 
+      name = "ACS Native",
+      tooltip = "Add an Audio Control Signal (sidechain) modulator which uses the build in Reaper ACS",
+      func = "ACS",
+      insertName = "JS: ACS Native Modulator",
+      output = {0}, 
+      layout = acsModulator,
+      showOpenGui = true,
+    },
+    { 
+      name = "ADSR-1 (tilr)",
+      rename = "ADSR",
+      tooltip = "Add an ADSR that uses the plugin created by tilr",
+      func = "general",
+      insertName = "JS: ADSR-1",
+      required = isAdsr1Installed,
+      website = "https://forum.cockos.com/showthread.php?t=286951",
+      requiredToolTip = 'Install the ReaPack by "tilr" first.\nClick to open webpage',
+      output = {10}, 
+      layout = adsrModulator,
+      showOpenGui = true,
+    },
+    { 
+      name = "Button",
+      tooltip = "A button toggle",
+      func = "general",
+      insertName = "JS: Button Modulator",
+      output = {0}, 
+      layout = buttonModulator,
+    },
+    { 
+      name = "Counter",
+      tooltip = "Count note or trigger input as a modulator",
+      func = "general",
+      insertName = "JS: Counter Modulator",
+      output = {0}, 
+      layout = counterModulator,
+    },
+    { 
+      name = "Keytracker",
+      tooltip = "Use the pitch of notes as a modulator",
+      func = "general",
+      insertName = "JS: Keytracker Modulator",
+      output = {0}, 
+      layout = keytrackerModulator,
+    },
+    { 
+      name = "LFO Native",
+      tooltip = "Add an LFO modulator that uses the build in Reaper LFO which is sample accurate",
+      func = "LFO",
+      insertName = "JS: LFO Native Modulator",
+      output = {0}, 
+      layout = nlfoModulator,
+    }, 
+    { 
+      name = "LFO (snjuk2)",
+      tooltip = "Add an LFO modulator that uses the LFO build by SNJUK2",
+      func = "general",
+      insertName = "JS: LFO Modulator (SNJUK2)",
+      output = {23}, 
+      layout = snjuk2LfoModulator,
+      showOpenGui = true,
+    },
+    { 
+      name = "Macro",
+      tooltip = "A slider for control multiple parameter",
+      func = "general",
+      insertName = "JS: Macro Modulator",
+      output = {0}, 
+      layout = macroModulator,
+    }, 
+    { 
+      name = "Macro 4",
+      tooltip = "4 sliders for control multiple parameter",
+      func = "general",
+      insertName = "JS: Macro 4 Modulator",
+      output = {0, 4, 8, 12}, 
+      layout = macroModulator4,
+    }, 
+    { 
+      name = "Math",
+      tooltip = "4 sliders for control multiple parameter",
+      func = "general",
+      insertName = "JS: Math Modulator (SNJUK2)",
+      output = {3}, 
+      layout = snjuk2MathModulator,
+    },
+    { 
+      name = "MSEG-1 (tilr)",
+      rename = "MSEG",
+      tooltip = "Add a multi-segment LFO / Envelope generator\nthat uses the plugin created by tilr",
+      func = "general",
+      insertName = "JS: MSEG-1",
+      required = isAdsr1Installed,
+      website = "https://forum.cockos.com/showthread.php?t=286951",
+      requiredToolTip = 'Install the ReaPack by "tilr" first.\nClick to open webpage',
+      output = {10}, 
+      layout = msegModulator,
+      showOpenGui = true,
+    },
+    { 
+      name = "MIDI Envelope",
+      tooltip = "Trigger an envelope with midi note input",
+      func = "general",
+      insertName = "JS: MIDI Envelope Modulator (SNJUK2)",
+      output = {18}, 
+      layout = snjuk2MidiEnvelopeModulator,
+      showOpenGui = true,
+    },
+    { 
+      name = "MIDI Fader",
+      tooltip = "Use a MIDI fader as a modulator",
+      func = "general",
+      insertName = "JS: MIDI Fader Modulator",
+      output = {0}, 
+      layout = midiCCModulator,
+    },
+    { 
+      name = "Note Velocity",
+      tooltip = "Use note velocity as a modulator",
+      func = "general",
+      insertName = "JS: Note Velocity Modulator",
+      output = {0}, 
+      layout = noteVelocityModulator,
+    },
+    { 
+      name = "Pitch 12",
+      tooltip = "Have a modulator with 12 outputs, one for each midi pitch",
+      func = "general",
+      insertName = "JS: Pitch 12 Modulator (SNJUK2)",
+      output = {12,13,14,15,16,17,18,19,20,21,22,23}, 
+      outputNames = {"C", "C#", "D", "D#", "E", "F", "F#","G","G#","A","A#","B"},
+      layout = snjuk2Pitch12Modulator,
+    }, 
+    { 
+      name = "Steps (snjuk2)",
+      tooltip = "Set steps as output for this modulators",
+      func = "general",
+      insertName = "JS: Steps Modulator (SNJUK2)",
+      output = {19}, 
+      layout = snjuk2StepsModulator,
+      showOpenGui = true,
+    },
+    { 
+      name = "Toggle Select 4",
+      tooltip = "Slide through 4 different outputs as modulators",
+      func = "general",
+      insertName = "JS: Toggle Select 4 Modulator (SNJUK2)",
+      output = {0,1,2,3}, 
+      layout = snjuk2ToggleSelect4Modulator,
+    },
+    { 
+      name = "4-in-1-out",
+      tooltip = "Map 4 inputs to 1 output",
+      func = "general",
+      insertName = "JS: 4-in-1-out Modulator",
+      output = {0}, 
+      layout = _4in1Out,
+    },
+    
+    { 
+      name = "XY",
+      tooltip = "XY pad to control two parameters",
+      func = "general",
+      insertName = "JS: XY Modulator",
+      output = {0, 1}, 
+      layout = xyModulator,
+    }, 
+}
+
+local extraModules = {
+    name = "MIDI Output",
+}
+
+
+function getOutputAndInfoForGenericModulator(track,fxIndex,modulationContainerPos)
+    local numParams = reaper.TrackFX_GetNumParams(track,fxIndex) 
+    local output = {}
+    -- make possible to have multiple outputs
+    local genericModulatorInfo = {outputParam = -1, indexInContainerMapping = -1}
+    for p = 0, numParams -1 do
+        --retval, buf = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, "param." .. p .. ".container_map.hint_id" )
+        -- we would have to enable multiple outputs here later
+        retval, buf = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, "container_map.get." .. fxIndex .. "." .. p )
+        if retval then
+            table.insert(output, p)
+            genericModulatorInfo = {outputParam = p, indexInContainerMapping = tonumber(buf)}
+            break
+        end
+    end
+    return output, genericModulatorInfo
+end
+
+function getOutputArrayForModulator(track, fxName, fxIndex, modulationContainerPos)
+    local output
+    for _, mod in ipairs(factoryModules) do
+        if fxName == mod.insertName or fxName:match(mod.insertName) ~= nil then
+            return mod.output 
+        end
+    end
+    if not output then
+        return getOutputAndInfoForGenericModulator(track,fxIndex,modulationContainerPos)
+    end
+end
+
+function getOutputNameArrayForModulator(track, fxName, fxIndex, modulationContainerPos)
+    for _, mod in ipairs(factoryModules) do
+        if fxName == mod.insertName or fxName:match(mod.insertName) ~= nil and mod.outputNames then
+            return mod.outputNames
+        end
+    end
+end
+
 
 
 
@@ -6616,6 +6927,8 @@ function updateVisibleEnvelopes(track, p)
             end
         end
         
+        lastFocusedEnvelope = p.envelope--p.envelope
+        
         reaper.TrackList_AdjustWindows(false)
         reaper.UpdateArrange()
     end
@@ -7917,101 +8230,8 @@ local function loop()
         ------------------------
         -- MODULES -------------
         ------------------------
+
         
-        local factoryModules = {
-            { 
-              name = "AB Slider",
-              tooltip = "Map two positions A and B of plugin parameters on the selected track. Only parameters changed will be mapped",
-              func = "general",
-              insertName = "JS: AB Slider Modulator"
-            },
-            { 
-              name = "ACS Native",
-              tooltip = "Add an Audio Control Signal (sidechain) modulator which uses the build in Reaper ACS",
-              func = "ACS" 
-            },
-            { 
-              name = "ADSR-1 (tilr)",
-              rename = "ADSR",
-              tooltip = "Add an ADSR that uses the plugin created by tilr",
-              func = "general",
-              insertName = "JS: ADSR-1",
-              required = isAdsr1Installed,
-              website = "https://forum.cockos.com/showthread.php?t=286951",
-              requiredToolTip = 'Install the ReaPack by "tilr" first.\nClick to open webpage' 
-            },
-            { 
-              name = "Button",
-              tooltip = "A button toggle",
-              func = "general",
-              insertName = "JS: Button Modulator"
-            },
-            { 
-              name = "Keytracker",
-              tooltip = "Use the pitch of notes as a modulator",
-              func = "general",
-              insertName = "JS: Keytracker Modulator"
-            },
-            { 
-              name = "LFO Native",
-              tooltip = "Add an LFO modulator that uses the build in Reaper LFO which is sample accurate",
-              func = "LFO" 
-            },
-            { 
-              name = "Macro",
-              tooltip = "A slider for control multiple parameter",
-              func = "general",
-              insertName = "JS: Macro Modulator"
-            }, 
-            { 
-              name = "Macro 4",
-              tooltip = "4 sliders for control multiple parameter",
-              func = "general",
-              insertName = "JS: Macro 4 Modulator"
-            },
-            { 
-              name = "MSEG-1 (tilr)",
-              rename = "MSEG",
-              tooltip = "Add a multi-segment LFO / Envelope generator\nthat uses the plugin created by tilr",
-              func = "general",
-              insertName = "JS: MSEG-1",
-              required = isAdsr1Installed,
-              website = "https://forum.cockos.com/showthread.php?t=286951",
-              requiredToolTip = 'Install the ReaPack by "tilr" first.\nClick to open webpage' 
-            },
-            { 
-              name = "MIDI Fader",
-              tooltip = "Use a MIDI fader as a modulator",
-              func = "general",
-              insertName = "JS: MIDI Fader Modulator"
-            },
-            { 
-              name = "Note Counter",
-              tooltip = "Use note counting as a modulator",
-              func = "general",
-              insertName = "JS: Note Counter Modulator"
-            },
-            { 
-              name = "Note Velocity",
-              tooltip = "Use note velocity as a modulator",
-              func = "general",
-              insertName = "JS: Note Velocity Modulator"
-            },
-            { 
-              name = "4-in-1-out",
-              tooltip = "Map 4 inputs to 1 output",
-              func = "general",
-              insertName = "JS: 4-in-1-out Modulator"
-            },
-            
-            { 
-              name = "XY",
-              tooltip = "XY pad to control two parameters",
-              func = "general",
-              insertName = "JS: XY Modulator"
-            },
-            
-          } 
           
           
             
@@ -8458,7 +8678,7 @@ local function loop()
           
           
           
-          local function drawFaderFeedback(sizeW, sizeH, fxIndex, param, min, max, isCollabsed, fx)
+          local function drawFaderFeedback(sizeW, sizeH, fxIndex, param, min, max, isCollabsed, fx, index)
               local sizeId =  4-- isCollabsed and (settings.vertical and 1 or 2) or ((trackSettings.bigWaveform and trackSettings.bigWaveform[fx.guid]) and 4 or 3)
               
               local sizeId = isCollabsed and 1 or (trackSettings.bigWaveform and trackSettings.bigWaveform[fx.guid]) and trackSettings.bigWaveform[fx.guid] or settings.visualizerSize
@@ -8526,7 +8746,11 @@ local function loop()
               if #fx.output > 1 then
                   _, paramName = reaper.TrackFX_GetParamName(track, fxIndex, param)
                   nameForMapping = nameForMapping .. ": " .. paramName
-                  nameOverlay = paramName
+                  if fx.outputNames and fx.outputNames[index] then
+                      nameOverlay = fx.outputNames[index]
+                  else
+                      nameOverlay = paramName
+                  end
               end
               --end
               local posX, posY = reaper.ImGui_GetCursorPos(ctx) 
@@ -8534,10 +8758,13 @@ local function loop()
               --local toolTip = (sizeId == 1 or sizeId == 2) and "Click to map output" or (sizeId == 4 and "Click to make waveform small" or "Click to make waveform big")
               local mappingW = reaper.ImGui_CalcTextSize(ctx, "MAPPING", 0 , 0)
               --local nameOverlay = "" -- (map and isMapping) and ((isCollabsed or sizeW < mappingW) and "M" or "MAPPING") or ""
-              clicked = reaper.ImGui_Button(ctx, nameOverlay .. "##plotLinesButton" .. fxIndex .. param ,sizeW,sizeH)
+              clicked = reaper.ImGui_Button(ctx, "##plotLinesButton" .. fxIndex .. param ,sizeW,sizeH)
               local lineX, lineY = reaper.ImGui_GetItemRectMin(ctx)
               if settings.showToolTip then setToolTipFunc(toolTip) end
               
+              
+              local textW, textH = reaper.ImGui_CalcTextSize(ctx, nameOverlay, 0,0)
+              reaper.ImGui_DrawList_AddText(draw_list, lineX + sizeW/2 - textW/2, lineY + sizeH/2 - textH/2,  settings.colors.modulatorOutput & 0xFFFFFFFF99, nameOverlay)
               
               local id = fx.guid .. sizeId .. param
               --[[
@@ -8568,8 +8795,6 @@ local function loop()
               
               reaper.ImGui_PopStyleColor(ctx,2)
               --clicked = reaper.ImGui_IsItemClicked(ctx)
-              local textW, textH = reaper.ImGui_CalcTextSize(ctx, nameOverlay, 0,0)
-              reaper.ImGui_DrawList_AddText(draw_list, lineX + sizeW/2 - textW/2, lineY + sizeH/2 - textH/2,  settings.colors.modulatorOutput, nameOverlay)
                
               --if reaper.ImGui_IsItemHovered(ctx) then
               --    reaper.ImGui_SetTooltip(ctx,toolTip)
@@ -8649,7 +8874,7 @@ local function loop()
                                   reaper.ImGui_SetCursorPos(ctx, reaper.ImGui_GetCursorPosX(ctx)-7, reaper.ImGui_GetCursorPosY(ctx)-4)
                               end
                               
-                              if drawFaderFeedback(20,20, fxIndex, output, 0, 1, isCollabsed, fx) then 
+                              if drawFaderFeedback(20,20, fxIndex, output, 0, 1, isCollabsed, fx, i) then 
                                   mapModulatorActivate(fx,output, name, nil, #outputArray == 1)
                               end   
                           end
@@ -8707,7 +8932,7 @@ local function loop()
                               reaper.ImGui_SameLine(ctx)
                               reaper.ImGui_SetCursorPosX(ctx, modulatorWidth - (20 * (#outputArray - i)) - 44)
                               
-                              if drawFaderFeedback(20,20, fxIndex, output, 0, 1, isCollabsed, fx) then 
+                              if drawFaderFeedback(20,20, fxIndex, output, 0, 1, isCollabsed, fx, i) then 
                                   mapModulatorActivate(fx,output, name, nil, #outputArray == 1)
                               end   
                           end 
@@ -8825,7 +9050,7 @@ local function loop()
                                   end
                                   
                                   for i, output in ipairs(outputArray) do 
-                                      if drawFaderFeedback( size,20*visualizerSize, fxIndex, output, 0, 1, isCollabsed, fx) then  
+                                      if drawFaderFeedback( size,20*visualizerSize, fxIndex, output, 0, 1, isCollabsed, fx, i) then  
                                           mapModulatorActivate(fx, output, name, nil, #outputArray == 1)
                                           --trackSettings.bigWaveform[fx.guid] = not trackSettings.bigWaveform[fx.guid]
                                           --saveTrackSettings(track)
@@ -8847,21 +9072,26 @@ local function loop()
                           
                           
                           local hasGui = fx.fxName:match("ACS Native Modulator") ~= nil
+                          local showOpenGui = false
                           local fxName = fx.fxName
+                          for _, mod in ipairs(factoryModules) do
+                              if mod.showOpenGui and (fxName == mod.insertName or fxName:match(mod.insertName) ~= nil) then
+                                  showOpenGui = true
+                                  break;
+                              end
+                          end
+                          
                           if hideParametersFromModulator ~= fx.guid and 
-                            (fxName:match("ADSR%-1") ~= nil 
-                            or fxName:match("MSEG%-1") ~= nil 
-                            or fxName:match("ACS Native Modulator") ~= nil 
-                            or genericModulatorInfo )
+                            (showOpenGui or genericModulatorInfo )
                               then
                               
                               local sizeW = buttonWidth * 2 + 12
                               local sizeH = 20
                               visualizerSize = (trackSettings.bigWaveform and trackSettings.bigWaveform[fx.guid]) and trackSettings.bigWaveform[fx.guid] or settings.visualizerSize
                               
-                              if #outputArray % 4 * visualizerSize < 3 then
+                              if #outputArray % 4 * visualizerSize < 3 and #outputArray % 4 * visualizerSize > 0 then
                               --(#outputArray < 4 and #outputArray % 2 == 1) or (#outputArray > 4 and #outputArray % 4 == 1) then
-                                  
+                                 
                                   reaper.ImGui_SameLine(ctx)
                                   
                                   if (#outputArray % 4) * visualizerSize == 1 then
@@ -9283,62 +9513,42 @@ local function loop()
             
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.modulesBackground)
             
+            local found
             
-            if fxName:match("LFO Native Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, nlfoModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m, nil, m.output) 
-            elseif fxName:match("ADSR%-1") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, adsrModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil, m.output)
-            elseif fxName:match("MSEG%-1") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, msegModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
-            elseif fxName:match("MIDI Fader Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, midiCCModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
-            elseif fxName:match("AB Slider Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, abSliderModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
-            elseif fxName:match("ACS Native Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, acsModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
-            elseif fxName:match("4%-in%-1%-out Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, _4in1Out, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
-            elseif fxName:match("Keytracker Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, keytrackerModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
-            elseif fxName:match("Note Counter Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, noteCounterModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output) 
-            elseif fxName:match("Note Velocity Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, noteVelocityModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output) 
-            elseif fxName:match("XY Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, xyModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
-            
-            elseif fxName:match("Button Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, buttonModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output) 
-            elseif fxName:match("Macro Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, macroModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
-            elseif fxName:match("Macro 4 Modulator") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, macroModulator4, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
-                    
-                
-            elseif fxName:match("MIDI Out") then
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, midiOutModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
-                
-            else 
-                
-                local numParams = reaper.TrackFX_GetNumParams(track,fxIndex) 
-                local output = {}
-                -- make possible to have multiple outputs
-                local genericModulatorInfo = {outputParam = -1, indexInContainerMapping = -1}
-                for p = 0, numParams -1 do
-                    --retval, buf = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, "param." .. p .. ".container_map.hint_id" )
-                    -- we would have to enable multiple outputs here later
-                    retval, buf = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, "container_map.get." .. fxIndex .. "." .. p )
-                    if retval then
-                        table.insert(output, p)
-                        genericModulatorInfo = {outputParam = p, indexInContainerMapping = tonumber(buf)}
-                        break
-                    end
+            for _, mod in ipairs(factoryModules) do
+                if fxName == mod.insertName or fxName:match(mod.insertName) ~= nil then
+                    modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, mod.layout, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m, nil, m.output) 
+                    found = true
+                    break;
                 end
-                
-                -- FETCH genericModulator INFO HERE
-                modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, genericModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m, genericModulatorInfo,output)
             end
             
+            
+            if not found then  
+                if fxName:match("MIDI Out") then
+                    modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, midiOutModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m,nil,m.output)
+                    
+                else 
+                    
+                    local numParams = reaper.TrackFX_GetNumParams(track,fxIndex) 
+                    local output = {}
+                    -- make possible to have multiple outputs
+                    local genericModulatorInfo = {outputParam = -1, indexInContainerMapping = -1}
+                    for p = 0, numParams -1 do
+                        --retval, buf = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, "param." .. p .. ".container_map.hint_id" )
+                        -- we would have to enable multiple outputs here later
+                        retval, buf = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, "container_map.get." .. fxIndex .. "." .. p )
+                        if retval then
+                            table.insert(output, p)
+                            genericModulatorInfo = {outputParam = p, indexInContainerMapping = tonumber(buf)}
+                            break
+                        end
+                    end
+                    
+                    -- FETCH genericModulator INFO HERE
+                    modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, genericModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m, genericModulatorInfo,output)
+                end
+            end
             
             reaper.ImGui_PopStyleColor(ctx, 1)
         end
