@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.0
+-- @version 0.9.1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,11 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + changing playpos to use next audio block for catching the envelope position 
---   + changed MIDI Envelope to actually passthrough midi notes
---   + changed MIDI Envelope to be called ADSR for ease sake, as that's what it is
+--   + fixed width crash
 
-local version = "0.9.0"
+local version = "0.9.1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1965,10 +1963,11 @@ local function getAllDataFromParameter(track,fxIndex,p)
                 if playState == 0 then --not lastEnvelopeInsertPos or lastEnvelopeInsertPos ~= playPos then
                     target_time = reaper.GetCursorPosition()
                 else
-                    target_time = playPos2
+                    target_time = playPos2 
                 end
-                
-                retval, envelopeValueAtPos, dVdS, ddVdS, dddVdS = reaper.Envelope_Evaluate( trackEnvelope, target_time, 0, 0 )
+                local _, block_size = reaper.GetAudioDeviceInfo("BSIZE")
+                local _, sample_rate = reaper.GetAudioDeviceInfo("SRATE")
+                retval, envelopeValueAtPos, dVdS, ddVdS, dddVdS = reaper.Envelope_Evaluate( trackEnvelope, target_time, tonumber(sample_rate), tonumber(block_size) )
                 if envelopePointCount == 1 then
                     local ret, time, firstEnvelopeValue = reaper.GetEnvelopePoint(trackEnvelope, 0)
                     if ret and time == 0 then
@@ -3568,7 +3567,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     local buttonId = fxIndex .. ":" .. param
     local id = buttonId .. moduleId
     
-    width = width < 20 and 20 or width
+    width = (not width or width < 20) and 20 or width
     
     --local maxScrollBar = math.floor(reaper.ImGui_GetScrollMaxY(ctx))
     --local areaWidth = width + (maxScrollBar == 0 and 12 or - 2)
@@ -5732,7 +5731,7 @@ end
 
 
 
-function genericModulator(id, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, fx, genericModulatorInfo)
+function genericModulator(id, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, fx, genericModulatorInfo, modulatorParameterWidth)
     
     -- make it possible to have it multi output. Needs to change genericModulatorInfo everywhere.
     local numParams = reaper.TrackFX_GetNumParams(track,fxIndex) 
