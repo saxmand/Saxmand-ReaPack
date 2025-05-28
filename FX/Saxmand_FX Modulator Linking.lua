@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.1
+-- @version 0.9.1-b1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,7 +17,7 @@
 -- @changelog
 --   + fixed width crash
 
-local version = "0.9.1"
+local version = "0.9.1-b1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1965,9 +1965,9 @@ local function getAllDataFromParameter(track,fxIndex,p)
                 else
                     target_time = playPos2 
                 end
-                local _, block_size = reaper.GetAudioDeviceInfo("BSIZE")
-                local _, sample_rate = reaper.GetAudioDeviceInfo("SRATE")
-                retval, envelopeValueAtPos, dVdS, ddVdS, dddVdS = reaper.Envelope_Evaluate( trackEnvelope, target_time, tonumber(sample_rate), tonumber(block_size) )
+                --local _, block_size = reaper.GetAudioDeviceInfo("BSIZE")
+                --local _, sample_rate = reaper.GetAudioDeviceInfo("SRATE")
+                retval, envelopeValueAtPos, dVdS, ddVdS, dddVdS = reaper.Envelope_Evaluate( trackEnvelope, target_time, 0, 0 )
                 if envelopePointCount == 1 then
                     local ret, time, firstEnvelopeValue = reaper.GetEnvelopePoint(trackEnvelope, 0)
                     if ret and time == 0 then
