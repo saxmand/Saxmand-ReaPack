@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.8.9
+-- @version 0.9.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,17 +15,11 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + Complete re-design of buttons
---   + Adding knobs
---   + Re-organized a bit in Settings Window
---   + Added more options for modifier clicks
---   + Added step mode for changing parameter values
---   + Added 7 new modulators from SNJUK2
---   + Added modulator to right click context menu of parameters
---   + fixed position of outputs when more than 1 and collabsed modulator
---   + many bug fixes especially on floating mapper
+--   + changing playpos to use next audio block for catching the envelope position 
+--   + changed MIDI Envelope to actually passthrough midi notes
+--   + changed MIDI Envelope to be called ADSR for ease sake, as that's what it is
 
-local version = "0.8.9"
+local version = "0.9.0"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1971,7 +1965,7 @@ local function getAllDataFromParameter(track,fxIndex,p)
                 if playState == 0 then --not lastEnvelopeInsertPos or lastEnvelopeInsertPos ~= playPos then
                     target_time = reaper.GetCursorPosition()
                 else
-                    target_time = playPos
+                    target_time = playPos2
                 end
                 
                 retval, envelopeValueAtPos, dVdS, ddVdS, dddVdS = reaper.Envelope_Evaluate( trackEnvelope, target_time, 0, 0 )
@@ -3042,7 +3036,7 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
         reaper.ImGui_DrawList_AddRectFilled(draw_list, minX, sliderBgMinY, maxX, sliderBgMaxY, sliderBg, 4) 
         
         local posX = getPosXForLine(sliderGrabOffsetX, sliderGrabWidthAvailable, currentValue, sliderFlags, min, max)
-        local scliderCenterGrabPosX = getPosXForLine(minX + 1, sliderWidthAvailable - 2, currentValue, sliderFlags, min, max)
+        local sliderCenterGrabPosX = getPosXForLine(minX + 1, sliderWidthAvailable - 2, currentValue, sliderFlags, min, max)
         local sliderCenterPosX = getPosXForLine(minX, sliderWidthAvailable, currentValue, sliderFlags, min, max)
         
         if parameterLinkActive then  
@@ -3070,7 +3064,7 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
              
             local playingPosX = getPosXForLine(sliderGrabOffsetX, sliderGrabWidthAvailable, linkValue, sliderFlags, min, max)
             
-            reaper.ImGui_DrawList_AddRectFilled(draw_list, scliderCenterGrabPosX - 1, sliderBgMinY, scliderCenterGrabPosX + 1, sliderBgMaxY, settings.colors.sliderOutput, 0)
+            reaper.ImGui_DrawList_AddRectFilled(draw_list, sliderCenterGrabPosX - 1, sliderBgMinY, sliderCenterGrabPosX + 1, sliderBgMaxY, settings.colors.sliderOutput, 0)
             reaper.ImGui_DrawList_AddRectFilled(draw_list, playingPosX - sliderGrabWidth / 2, sliderMinY, playingPosX + sliderGrabWidth / 2, sliderMaxY, settings.colors.sliderOutput, 4)
         else 
             reaper.ImGui_DrawList_AddRectFilled(draw_list, posX - sliderGrabWidth / 2, sliderMinY, posX + sliderGrabWidth / 2, sliderMaxY, settings.colors.sliderOutput, 4)
@@ -5514,10 +5508,20 @@ local factoryModules = {
       output = {0}, 
       layout = acsModulator,
       showOpenGui = true,
+    }, 
+    { 
+      name = "ADSR (snjuk2)",
+      --rename = "MIDI Envelope",
+      tooltip = "Trigger an envelope with midi note input",
+      func = "general",
+      insertName = "JS: MIDI Envelope Modulator (SNJUK2)",
+      output = {18}, 
+      layout = snjuk2MidiEnvelopeModulator,
+      showOpenGui = true,
     },
     { 
       name = "ADSR-1 (tilr)",
-      rename = "ADSR",
+      rename = "ADSR (tilr)",
       tooltip = "Add an ADSR that uses the plugin created by tilr",
       func = "general",
       insertName = "JS: ADSR-1",
@@ -5615,16 +5619,6 @@ local factoryModules = {
       requiredToolTip = 'Install the ReaPack by "tilr" first.\nClick to open webpage',
       output = {10}, 
       layout = msegModulator,
-      showOpenGui = true,
-    },
-    { 
-      name = "MIDI Envelope (snjuk2)",
-      rename = "MIDI Envelope",
-      tooltip = "Trigger an envelope with midi note input",
-      func = "general",
-      insertName = "JS: MIDI Envelope Modulator (SNJUK2)",
-      output = {18}, 
-      layout = snjuk2MidiEnvelopeModulator,
       showOpenGui = true,
     },
     { 
@@ -7848,6 +7842,7 @@ local dock_id, is_docked
 local runs = -1
 local function loop() 
     playPos = reaper.GetPlayPosition() 
+    playPos2 = reaper.GetPlayPosition2() 
     runs = runs + 1
     popupAlreadyOpen = false
     
