@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.3
+-- @version 0.9.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,10 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed right click not opening correct menus on vertical mode
---   + updated floating mapper to act better when clicking value twice, closing window or clicking outside
+--   + adding master track support
 
-local version = "0.9.3"
+local version = "0.9.4"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1890,23 +1889,24 @@ local function setNativeACSParamSettings(track,fxIndex, settings)
     end 
 end
 
-local function getAllDataFromParameter(track,fxIndex,p) 
-    local _, name = reaper.TrackFX_GetParamName(track,fxIndex,p)
-    local retValueName, valueName = reaper.TrackFX_GetFormattedParamValue(track,fxIndex,p)
+local function getAllDataFromParameter(tr,fxIndex,p) 
+    if not tr or not validateTrack(tr) then return {} end
+    local _, name = reaper.TrackFX_GetParamName(tr,fxIndex,p)
+    local retValueName, valueName = reaper.TrackFX_GetFormattedParamValue(tr,fxIndex,p)
     
     -- we filter internal and midi parameters from plugin parameter list
     if name:lower():match("midi cc") == nil and name:lower() ~= "internal" and valueName ~= "-" then 
-        local fx_name_ret, fxName = reaper.TrackFX_GetFXName(track, fxIndex, "") 
-        local _, parameterLinkActive = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.active')
+        local fx_name_ret, fxName = reaper.TrackFX_GetFXName(tr, fxIndex, "") 
+        local _, parameterLinkActive = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.active')
         parameterLinkActive = parameterLinkActive == "1" 
-        local guid = reaper.TrackFX_GetFXGUID( track, fxIndex )
+        local guid = reaper.TrackFX_GetFXGUID( tr, fxIndex )
         
         -- special setting, to rename for nicer view in parameters
         if fxName == "Track controls" then
             name = name:gsub("^Main p%d+:%s*", "")
         end 
         
-        local _, parameterModulationActive = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.mod.active')
+        local _, parameterModulationActive = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.mod.active')
         parameterModulationActive = parameterModulationActive == "1"
         local mappingName
         local baseline = false
@@ -1915,15 +1915,15 @@ local function getAllDataFromParameter(track,fxIndex,p)
         local direction = 0
         local bipolar = false
         if parameterLinkActive and modulationContainerPos then
-            _, parameterLinkEffect = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' )
+            _, parameterLinkEffect = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.effect' )
             if parameterLinkEffect ~= "" then 
-                _, baseline = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.mod.baseline') 
+                _, baseline = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.mod.baseline') 
                 baseline = tonumber(baseline)
-                _, offset = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.offset')
+                _, offset = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.offset')
                 offset = tonumber(offset)
-                _, width = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.scale')
+                _, width = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.scale')
                 width = tonumber(width)
-                _, parameterLinkParam = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' ) 
+                _, parameterLinkParam = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.param' ) 
                 parameterLinkParam = tonumber(parameterLinkParam)
                 bipolar = tonumber(offset) == -0.5
                 
@@ -1935,41 +1935,47 @@ local function getAllDataFromParameter(track,fxIndex,p)
                 
                 -- TODO: we should find the actual fxindex and param within the modulation container, and then gather name etc from there
                 if tonumber(fxIndex) < 0x200000 then 
-                    _, parameterLinkName = reaper.TrackFX_GetParamName(track, parameterLinkEffect, parameterLinkParam)  
-                    ret, parameterLinkFXIndexInContainer = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'param.'..parameterLinkParam..'.container_map.fx_index' )
-                    parameterLinkFXIndexInContainer = tonumber(parameterLinkFXIndexInContainer)
-                    ret, parameterLinkFXIndex = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'container_item.' ..  parameterLinkFXIndexInContainer)
-                    parameterLinkFXIndex = tonumber(parameterLinkFXIndex)
-                    
-                    -- overwrite the parameter to be the parameter that's within the modulation container
-                    _, parameterLinkParam = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'param.'..parameterLinkParam..'.container_map.fx_parm' )
-                    parameterLinkParam = tonumber(parameterLinkParam)
-                    local retName, originalName = reaper.TrackFX_GetNamedConfigParm( track, parameterLinkFXIndex, 'fx_name' )
-                    
-                    local outputsForLinkedModulator = getOutputArrayForModulator(track, originalName, parameterLinkFXIndex, modulationContainerPos)
-                    
-                    local colon_pos = parameterLinkName:find(":")
-                    --reaper.ShowConsoleMsg(tostring(parameterLinkName) .. "1\n")
-                    if #outputsForLinkedModulator == 1 and colon_pos then
-                        parameterLinkName = parameterLinkName:sub(1, colon_pos - 1) 
+                    _, parameterLinkName = reaper.TrackFX_GetParamName(tr, parameterLinkEffect, parameterLinkParam)  
+                    ret, parameterLinkFXIndexInContainer = reaper.TrackFX_GetNamedConfigParm( tr, modulationContainerPos, 'param.'..parameterLinkParam..'.container_map.fx_index' )
+                    if ret then
+                        parameterLinkFXIndexInContainer = tonumber(parameterLinkFXIndexInContainer) 
+                        ret, parameterLinkFXIndex = reaper.TrackFX_GetNamedConfigParm( tr, modulationContainerPos, 'container_item.' ..  parameterLinkFXIndexInContainer)
+                        if ret then
+                            parameterLinkFXIndex = tonumber(parameterLinkFXIndex)
+                            
+                            -- overwrite the parameter to be the parameter that's within the modulation container
+                            ret, parameterLinkParam = reaper.TrackFX_GetNamedConfigParm( tr, modulationContainerPos, 'param.'..parameterLinkParam..'.container_map.fx_parm' )
+                            if ret then
+                                parameterLinkParam = tonumber(parameterLinkParam)
+                                local retName, originalName = reaper.TrackFX_GetNamedConfigParm( tr, parameterLinkFXIndex, 'fx_name' )
+                                
+                                local outputsForLinkedModulator = getOutputArrayForModulator(tr, originalName, parameterLinkFXIndex, modulationContainerPos)
+                                
+                                local colon_pos = parameterLinkName:find(":")
+                                --reaper.ShowConsoleMsg(tostring(parameterLinkName) .. "1\n")
+                                if #outputsForLinkedModulator == 1 and colon_pos then
+                                    parameterLinkName = parameterLinkName:sub(1, colon_pos - 1) 
+                                end
+                            end
+                        end
                     end
                     --reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - " .. parameterLinkEffect .. " - " .. parameterLinkParam .. " - "..#outputsForLinkedModulator  .. " - " .. parameterLinkName .. "\n")
                 else
-                   ret, parameterLinkFXIndex = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'container_item.' .. parameterLinkEffect )
+                   ret, parameterLinkFXIndex = reaper.TrackFX_GetNamedConfigParm( tr, modulationContainerPos, 'container_item.' .. parameterLinkEffect )
                    parameterLinkFXIndex = tonumber(parameterLinkFXIndex)
                    
                    if ret then
-                      _, parameterLinkName = reaper.TrackFX_GetNamedConfigParm( track, parameterLinkFXIndex, 'renamed_name' )
-                      local _, originalName = reaper.TrackFX_GetNamedConfigParm( track, parameterLinkFXIndex, 'fx_name' )
-                      local outputsForLinkedModulator = getOutputArrayForModulator(track,originalName, parameterLinkFXIndex, modulationContainerPos)
+                      _, parameterLinkName = reaper.TrackFX_GetNamedConfigParm( tr, parameterLinkFXIndex, 'renamed_name' )
+                      local _, originalName = reaper.TrackFX_GetNamedConfigParm( tr, parameterLinkFXIndex, 'fx_name' )
+                      local outputsForLinkedModulator = getOutputArrayForModulator(tr,originalName, parameterLinkFXIndex, modulationContainerPos)
                       
                       if not parameterLinkName then
-                          _, parameterLinkName = reaper.TrackFX_GetFXName(track, parameterLinkIndex)
+                          _, parameterLinkName = reaper.TrackFX_GetFXName(tr, parameterLinkIndex)
                       end
                        
                        --reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - " .. parameterLinkEffect .. " - " .. parameterLinkParam .. " - "..#outputsForLinkedModulator  .. " - " .. parameterLinkName .. " - ".. originalName .. "\n")
                       if #outputsForLinkedModulator > 1 then
-                          _, paramName = reaper.TrackFX_GetParamName(track, parameterLinkFXIndex, parameterLinkParam)
+                          _, paramName = reaper.TrackFX_GetParamName(tr, parameterLinkFXIndex, parameterLinkParam)
                           parameterLinkName = parameterLinkName .. ": " .. paramName
                           
                       end
@@ -1985,7 +1991,7 @@ local function getAllDataFromParameter(track,fxIndex,p)
         local parameterModulationActive = parameterLinkActive and parameterModulationActive -- and parameterLinkEffect
         
         local envelopePointCount, singleEnvelopePointAtStart, usesEnvelope, firstEnvelopeValue, envelopeValueAtPos
-        local trackEnvelope = reaper.GetFXEnvelope(track,fxIndex,p,false)
+        local trackEnvelope = reaper.GetFXEnvelope(tr,fxIndex,p,false)
         local usesEnvelope = false
         if trackEnvelope then
             envelopePointCount = reaper.CountEnvelopePoints(trackEnvelope)
@@ -2013,8 +2019,8 @@ local function getAllDataFromParameter(track,fxIndex,p)
             end
         end
         
-        local value, min, max = reaper.TrackFX_GetParam(track,fxIndex,p)
-        local hasSteps, step, smallStep, largeStep, isToggle =  reaper.TrackFX_GetParameterStepSizes(track, fxIndex, p)
+        local value, min, max = reaper.TrackFX_GetParam(tr,fxIndex,p)
+        local hasSteps, step, smallStep, largeStep, isToggle =  reaper.TrackFX_GetParameterStepSizes(tr, fxIndex, p)
         
         local isInverted = max < min
         if isInverted then
@@ -2029,7 +2035,7 @@ local function getAllDataFromParameter(track,fxIndex,p)
             --reaper.ShowConsoleMsg(fxName .. " - ".. name .. " - " .. step .. " - " .. range/step .. " - "  .. tostring(isToggle) .. "\n")
         end
         
-        local valueNormalized = reaper.TrackFX_GetParamNormalized(track, fxIndex, p)
+        local valueNormalized = reaper.TrackFX_GetParamNormalized(tr, fxIndex, p)
         if min ~= 0 or max ~= 1 and parameterLinkActive then
             --_, fxName = reaper.TrackFX_GetFXName(track, fxIndex)
             
@@ -3816,7 +3822,6 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
       
       if not popupAlreadyOpen and reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then  --parameterLinkActive and 
           reaper.ImGui_OpenPopup(ctx, 'popup##' .. buttonId)  
-          reaper.ShowConsoleMsg(modulatorAreaHeight.. " - " .. mouse_pos_y_imgui -modulatorAreaY .. "\n")
           --popupAlreadyOpen = true
       end
       
@@ -4260,23 +4265,23 @@ local function openFxBrowserOnSpecificTrack()
     local index = reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER")
     local trackTitleIndex = "Track " .. math.floor(index)
     local ret, name = reaper.GetTrackName(track)
+    local addFXToTrackWindowNameSimple = "Add FX to " .. trackTitleIndex
     local addFXToTrackWindowName = "Add FX to " .. trackTitleIndex .. (name == trackTitleIndex and "" or (' "' .. name .. '"'))
     reaper.SetOnlyTrackSelected(track, true)
     
-    
     -- check if window is already open, if it is we start by closing it
     --local hwnd = reaper.JS_Window_Find(addFXToTrackWindowName, true) 
-    --local visible = reaper.JS_Window_IsVisible(hwnd)  
+    --local visible = reaper.JS_Window_IsVisible(hwnd)   
     --if (hwnd and visible) then
     --    reaper.Main_OnCommand(40271, 0) --View: Show FX browser window
     --end
     
     reaper.Main_OnCommand(40271, 0) --View: Show FX browser window
-    local browserHwnd, browserSearchFieldHwnd, title = findWindowParentWithName("FX Browser", addFXToTrackWindowName)
+    local browserHwnd, browserSearchFieldHwnd, title = findWindowParentWithName("FX Browser", addFXToTrackWindowName, addFXToTrackWindowNameSimple)
     
     if not browserHwnd then 
         reaper.Main_OnCommand(40271, 0) --View: Show FX browser window
-        browserHwnd, browserSearchFieldHwnd, title = findWindowParentWithName("FX Browser", addFXToTrackWindowName)
+        browserHwnd, browserSearchFieldHwnd, title = findWindowParentWithName("FX Browser", addFXToTrackWindowName, addFXToTrackWindowNameSimple)
     end
     
     --local isDocked = title == "FX Browser (docked)"
@@ -5149,7 +5154,7 @@ function midiOutModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, 
     -- msg type
     --pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,0), nil, nil, nil, true, modulatorParameterWidth, 0) 
     
-    local list = {"Note Off","Note On","Polyphonic Aftertouch","Control Change","Program Change","Channel Aftertouch","Pitch Bend"}
+    local list = {"Note On/Off", "Note Off","Note On","Polyphonic Aftertouch","Control Change","Program Change","Channel Aftertouch","Pitch Bend"}
     local listText = ""
     for _, t in ipairs(list) do
         listText = listText .. t .. "\0" 
@@ -5158,7 +5163,7 @@ function midiOutModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, 
     local midiType = list[p.value + 1]
     createSlider(track,fxIndex,"Combo",0,"Timer",nil,nil,1,nil,nil,nil,listText,0,"Select MIDI output type", modulatorParameterWidth)
     -- msg2
-    if p.value < 5 then
+    if p.value ~= 5 then
         pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,1), nil, nil, nil, true, modulatorParameterWidth, 0) 
         pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,2), nil, nil, nil, true, modulatorParameterWidth, 0) 
     else 
@@ -7615,6 +7620,7 @@ function isFXWindowUnderMouse()
         local title = reaper.JS_Window_GetTitle(hwnd)
         if title and (title:match("FX:") ~= nil or title:match("VST") ~= nil or title:match("JS:") ~= nil or title:match("Clap:") ~= nil) then
         --if title and title:match(" - Track") ~= nil then
+          
           return true, title, hwnd
         end
         hwnd = reaper.JS_Window_GetParent(hwnd)
@@ -7736,13 +7742,27 @@ function updateTouchedFX()
     
     local retval, trackidx, itemidx, takeidx, fxidx, param = reaper.GetTouchedOrFocusedFX( 0 ) 
     if retval and trackidx and not modulatorFxIndexes[fxidx] then
-        local trackTemp = reaper.GetTrack(0,trackidx)   
+        if trackidx == -1 then
+           trackTemp  = reaper.GetMasterTrack(0)
+            --reaper.ShowConsoleMsg("master\n")
+        else
+            --reaper.ShowConsoleMsg("not master\n")
+           trackTemp = reaper.GetTrack(0, trackidx)
+        end
+        
+        if settings.focusFollowsFxClicks and trackTemp and track ~= trackTemp and validateTrack(trackTemp) then
+            if settings.trackSelectionFollowFocus then
+                reaper.SetOnlyTrackSelected(trackTemp)
+            end
+            track = trackTemp
+        end
+        
+        local deltaParam = reaper.TrackFX_GetNumParams(trackTemp, fxidx) - 1  
         --reaper.ShowConsoleMsg(val .. " - " .. tostring(dragKnob) .. "\n")
-        if trackTemp then 
+        if trackTemp and deltaParam ~= param then 
             local p = getAllDataFromParameter(trackTemp,fxidx,param) 
             
-            local deltaParam = reaper.TrackFX_GetNumParams(trackTemp, fxidx) - 1  
-            if isMouseDown then  
+            if isMouseDown and not mouseInsideFloatingMapper and not mouseInsideAppWindow then  
                 if isMouseClick then 
                     fxWindowClicked, _, clickedHwnd = isFXWindowUnderMouse() 
                     -- trying to catch the clicked modulator when not using force, through project state change count
@@ -8073,7 +8093,7 @@ local function loop()
     end
         
     
-    firstSelectedTrack = reaper.GetSelectedTrack(0,0)
+    firstSelectedTrack = reaper.GetSelectedTrack2(0,0, true)
     if not track or (firstSelectedTrack ~= track and not locked) then 
         track = firstSelectedTrack 
         
@@ -8082,16 +8102,17 @@ local function loop()
     
     
     
-    if not mouseInsideFloatingMapper and not mouseInsideAppWindow then
+    --if not mouseInsideFloatingMapper and not mouseInsideAppWindow then
         if updateTouchedFX() then
             if settings.focusFollowsFxClicks and trackTouched and track ~= trackTouched and validateTrack(trackTouched) then
                 if settings.trackSelectionFollowFocus then
-                    reaper.SetOnlyTrackSelected(trackTouched)
+                 --   reaper.SetOnlyTrackSelected(trackTouched)
                 end
-                track = trackTouched
+                --track = trackTouched
+                --reaper.ShowConsoleMsg("hej\n")
             end
         end
-    end
+    --end
      
     
     
@@ -10873,12 +10894,17 @@ local function loop()
     
     if isAnyMouseDown then
         local alreadyHidden = not showFloatingMapper
-        if settings.onlyKeepShowingWhenClickingFloatingWindow and not fxWindowClicked then
-            showFloatingMapper = false
-        end
-        if not alreadyHidden and reaper.ImGui_IsMousePosValid(ctx) and (settings.keepWhenClickingInAppWindow or (not settings.keepWhenClickingInAppWindow and clickedInFloatingWindow)) then
+        
+        if (settings.keepWhenClickingInAppWindow and reaper.ImGui_IsMousePosValid(ctx) or (not settings.keepWhenClickingInAppWindow and mouseInsideFloatingMapper)) then
             showFloatingMapper = true
+        else
+            if settings.onlyKeepShowingWhenClickingFloatingWindow and not fxWindowClicked then
+                showFloatingMapper = false
+            end
         end
+        --if not alreadyHidden and reaper.ImGui_IsMousePosValid(ctx) and ) then
+        --    showFloatingMapper = true
+        --end
     end
     
     reaper.ImGui_PopStyleColor(ctx, colorsPush)
