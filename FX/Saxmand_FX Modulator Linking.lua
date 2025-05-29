@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.2
+-- @version 0.9.3
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,12 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added better support for shortcut pass through
---   + fixed to not use pass through when a text box is open
---   + added back in fix for getting missing values when changing parameters with steps, if use steps is not enabled. 
---   + fixed crash when re-enabling a modulator mapping
+--   + fixed right click not opening correct menus on vertical mode
+--   + updated floating mapper to act better when clicking value twice, closing window or clicking outside
 
-local version = "0.9.2"
+local version = "0.9.3"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -3811,13 +3809,15 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     
     
     
-   
+    
     -- Check if the mouse is within the button area
     if parStartPosX and mouse_pos_x_imgui >= parStartPosX and mouse_pos_x_imgui <= parStartPosX + areaWidth and
-       mouse_pos_y_imgui >= parStartPosY and mouse_pos_y_imgui <= parEndPosY then
-      if reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then  --parameterLinkActive and 
+       mouse_pos_y_imgui >= parStartPosY and mouse_pos_y_imgui <= parEndPosY and (not modulatorAreaHeight or modulatorAreaHeight >= mouse_pos_y_imgui - modulatorAreaY) then
+      
+      if not popupAlreadyOpen and reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then  --parameterLinkActive and 
           reaper.ImGui_OpenPopup(ctx, 'popup##' .. buttonId)  
-          popupAlreadyOpen = true
+          reaper.ShowConsoleMsg(modulatorAreaHeight.. " - " .. mouse_pos_y_imgui -modulatorAreaY .. "\n")
+          --popupAlreadyOpen = true
       end
       
       if reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Left(),false) then 
@@ -5883,14 +5883,14 @@ function floatingMapperSettings()
     end
     setToolTipFunc("Hide when clicking anything that's not the floating window")
     
-    
+    reaper.ImGui_Indent(ctx)
     local ret, val = reaper.ImGui_Checkbox(ctx,"Keep when clicking in app window##",settings.keepWhenClickingInAppWindow) 
     if ret then 
         settings.keepWhenClickingInAppWindow = val
         saveSettings()
     end
     setToolTipFunc("Do not hide when clicking the FX Modulator Linking app") 
-    
+    reaper.ImGui_Unindent(ctx)
     
     if sliderInMenu("Parameter width", "floatingMapperParameterWidth", menuSliderWidth, 140, 400, "Set the width of the parameter in the floating mapper window") then 
         --setWindowWidth = true
@@ -7619,8 +7619,8 @@ function isFXWindowUnderMouse()
         end
         hwnd = reaper.JS_Window_GetParent(hwnd)
     end
-  
-    return false, ""
+    local clickedHwndUpdate = reaper.JS_Window_IsVisible(clickedHwnd) and clickedHwnd or nil
+    return nil, "", clickedHwndUpdate
 end
 
     
@@ -7833,10 +7833,10 @@ function updateTouchedFX()
                 -- we remove the variables for next click
                 parameterChanged = nil
                 parameterFound = nil
-                fxWindowClicked = nil
+                --fxWindowClicked = nil
                 --dragKnob = nil
                 lastValTouched = nil
-                clickedHwnd = nil
+                --clickedHwnd = nil
                 --hwndWindowOnTouchParam = nil
             end
         end
@@ -7942,6 +7942,10 @@ local function loop()
     isEscapeKey = reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Escape(),false)
     if isMouseReleased then
         dragKnob = nil
+        
+        if not reaper.JS_Window_IsVisible(clickedHwnd) then
+            clickedHwnd = nil
+        end
     end
     
     isMouseClick = isMouseDown and not isMouseDownStart
@@ -8078,13 +8082,14 @@ local function loop()
     
     
     
-    
-    if updateTouchedFX() then
-        if settings.focusFollowsFxClicks and trackTouched and track ~= trackTouched and validateTrack(trackTouched) then
-            if settings.trackSelectionFollowFocus then
-                reaper.SetOnlyTrackSelected(trackTouched)
+    if not mouseInsideFloatingMapper and not mouseInsideAppWindow then
+        if updateTouchedFX() then
+            if settings.focusFollowsFxClicks and trackTouched and track ~= trackTouched and validateTrack(trackTouched) then
+                if settings.trackSelectionFollowFocus then
+                    reaper.SetOnlyTrackSelected(trackTouched)
+                end
+                track = trackTouched
             end
-            track = trackTouched
         end
     end
      
@@ -8319,6 +8324,7 @@ local function loop()
         
         local winW, winH = reaper.ImGui_GetWindowSize(ctx)
         local winX, winY = reaper.ImGui_GetWindowPos(ctx) 
+        mouseInsideAppWindow = mouse_pos_x_imgui >= winX and mouse_pos_x_imgui <= winX + winW and mouse_pos_y_imgui >= winY and mouse_pos_y_imgui <= winY + winH
         
         focusedHwnd = reaper.JS_Window_GetFocus()
         focusedParent = reaper.JS_Window_GetParent(focusedHwnd)
@@ -8346,7 +8352,7 @@ local function loop()
         
         is_docked = reaper.ImGui_IsWindowDocked(ctx)
         
-        mouseInsideAppWindow = mouse_pos_x_imgui >= winX and mouse_pos_x_imgui <= winX + winW and mouse_pos_y_imgui >= winY and mouse_pos_y_imgui <= winY + winH
+        
         --[[clickingApp = false
         if  then 
             if isAnyMouseDown  then
@@ -9950,11 +9956,15 @@ local function loop()
                           if floating or (vertical and not settings.limitModulatorHeightToModulesHeight) then 
                               --useFlags = reaper.ImGui_ChildFlags_AlwaysAutoResize() | reaper.ImGui_ChildFlags_AutoResizeY()
                               --useWindowFlags = reaper.ImGui_WindowFlags_re()
+                              
+                              modulatorAreaHeight = nil
                           else 
+                              modulatorAreaHeight = paramsHeight
                               reaper.ImGui_SetNextWindowSizeConstraints(ctx, 0, 40, modulatorWidth, paramsHeight)
                           end
                           local id = "params" .. name .. fxIndex .. (floating and "floating" or "normal")
-                          if reaper.ImGui_BeginChild(ctx, id, modulatorWidth-16, nil, useFlags,useWindowFlags) then  
+                          if reaper.ImGui_BeginChild(ctx, id, modulatorWidth-16, nil, useFlags,useWindowFlags) then 
+                              modulatorAreaX, modulatorAreaY = reaper.ImGui_GetItemRectMin(ctx)
                               local maxScrollBar = math.floor(reaper.ImGui_GetScrollMaxY(ctx))
                               local modulatorParameterWidth = modulatorWidth -30 + (maxScrollBar == 0 and 12 or - 2)
                               valuesFromModulator = func(id, name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx, genericModulatorInfo, modulatorParameterWidth)
@@ -10015,10 +10025,9 @@ local function loop()
               if not minX then minX, minY = reaper.ImGui_GetItemRectMin(ctx) end
               if not maxX then maxX, maxY = reaper.ImGui_GetItemRectMax(ctx) end
               --reaper.ImGui_DrawList_AddRect(draw_list, minX, minY, maxX, maxY, selectedModule == fxIndex and (mapActiveFxIndex == fxIndex and colorMap or colorWhite) or colorGrey,4)
-              local mouseX, mouseY = reaper.ImGui_GetMousePos(ctx)
-              
+             
               -- module hoover
-              if mouseX >= minX and mouseX <= maxX and mouseY >= minY and mouseY <= maxY then
+              if mouse_pos_x_imgui >= minX and mouse_pos_x_imgui <= maxX and mouse_pos_y_imgui >= minY and mouse_pos_y_imgui <= maxY then 
                   if  reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then 
                       selectedModule = fxIndex
                       --openPopupForModule = true
@@ -10027,12 +10036,13 @@ local function loop()
                   if  reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Left(),false) then 
                       selectedModule = fxIndex
                   end
+                  
               end
               
               if openPopupForModule and not popupAlreadyOpen then
                   ImGui.OpenPopup(ctx, 'popup##' .. fxIndex) 
-              end
-                  
+              end 
+              
               
               if ImGui.BeginPopup(ctx, 'popup##' .. fxIndex, nil) then
                   if reaper.ImGui_Button(ctx,"Delete##" .. fxIndex) then
@@ -10751,6 +10761,22 @@ local function loop()
         
         local winW, winH = reaper.ImGui_GetWindowSize(ctx)
         local winX, winY = reaper.ImGui_GetWindowPos(ctx) 
+        mouseInsideFloatingMapper = mouse_pos_x_imgui >= winX and mouse_pos_x_imgui <= winX + winW and mouse_pos_y_imgui >= winY and mouse_pos_y_imgui <= winY + winH
+        --[[
+        
+        
+        if mouse_pos_x_imgui >= winX and mouse_pos_x_imgui <= winX + winW and mouse_pos_y_imgui >= winY and mouse_pos_y_imgui <= winY + winH then 
+            
+            if isAnyMouseDown then
+                clickedInFloatingWindow = true 
+            end
+            if isMouseReleased then
+                clickedInFloatingWindow = false
+            end
+            
+        end
+        ]]
+        
         floatingMapperWin = {w = winW, h = winH}
         
         reaper.ImGui_DrawList_AddRectFilled(draw_list, winX,winY,winX+winW,winY+ 16, settings.colors.boxBackground, 8)
@@ -10816,18 +10842,6 @@ local function loop()
         reaper.ImGui_Spacing(ctx)
         
         
-        if mouse_pos_x_imgui >= winX and mouse_pos_x_imgui <= winX + winW and mouse_pos_y_imgui >= winY and mouse_pos_y_imgui <= winY + winH then 
-            
-            if isAnyMouseDown then
-                clickedInFloatingWindow = true 
-            end
-            if isMouseReleased then
-                clickedInFloatingWindow = false
-            end
-            
-        end
-        
-        
         
         local sizeW = settings.floatingMapperParameterWidth
         
@@ -10843,7 +10857,8 @@ local function loop()
     end
     
     
-    if not settings.useFloatingMapper then
+    --fxWindowClicked, _, clickedHwnd
+    if not settings.useFloatingMapper or not clickedHwnd then
         showFloatingMapper = false
     end
     --[[
@@ -10858,7 +10873,7 @@ local function loop()
     
     if isAnyMouseDown then
         local alreadyHidden = not showFloatingMapper
-        if settings.onlyKeepShowingWhenClickingFloatingWindow and not isFXWindowUnderMouse() then
+        if settings.onlyKeepShowingWhenClickingFloatingWindow and not fxWindowClicked then
             showFloatingMapper = false
         end
         if not alreadyHidden and reaper.ImGui_IsMousePosValid(ctx) and (settings.keepWhenClickingInAppWindow or (not settings.keepWhenClickingInAppWindow and clickedInFloatingWindow)) then
