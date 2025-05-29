@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.1-b1
+-- @version 0.9.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,12 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed width crash
+--   + added better support for shortcut pass through
+--   + fixed to not use pass through when a text box is open
+--   + added back in fix for getting missing values when changing parameters with steps, if use steps is not enabled. 
+--   + fixed crash when re-enabling a modulator mapping
 
-local version = "0.9.1-b1"
+local version = "0.9.2"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -354,6 +357,16 @@ local defaultSettings = {
     alignModulatorMappingNameRight = true, 
     showEnvelopeIndicationInName = true,
     
+    -- slider design
+    bigSliderMoving = true,
+    thicknessOfBigValueSlider = 4,
+    thicknessOfSmallValueSlider = 1,
+    
+    thicknessOfBigValueKnob = 2,
+    thicknessOfSmallValueKnob = 1,
+    
+    
+    
       -- Modules 
     showModulesPanel = true, 
     
@@ -371,11 +384,12 @@ local defaultSettings = {
     
     
     
+    
     -- Experimental
     forceMapping = false,
     makeItEasierToChangeParametersThatHasSteps = true,
-    maxAmountOfStepsForStepSlider = 15,
-    movementNeededToChangeStep = 2,
+    maxAmountOfStepsForStepSlider = 30,
+    movementNeededToChangeStep = 3,
     
     -- floating mapper
       useFloatingMapper = false,
@@ -415,6 +429,7 @@ local defaultSettings = {
     
     --lastFocusedSettingsTab = "Layout",
     passAllUnusedShortcutThrough = false,
+    allowPassingKeyboardShortcutsFromThisPage = true,
     
     
     dockIdVertical = {},
@@ -614,6 +629,18 @@ for key, value in pairs(keyCommandSettingsDefault) do
 end
 
 
+local reaper_sections = {
+    ["Main"] = 0,
+    ["MIDI Editor"] = 32060,
+    ["MIDI Event List Editor"] = 32061,
+    ["MIDI Inline Editor"] = 32062,
+    ["Media Explorer"] = 32063,
+    ["MIDI Event Filter"] = 32064
+}
+
+local last_focused_reaper_section_name = "Main"
+local last_focused_reaper_section_id = reaper_sections["Main"]
+
 local function checkKeyPress() 
     local altKey
     for next_id = 0, math.huge do
@@ -737,7 +764,7 @@ end
 
 
 function lookForShortcutWithShortcut(shortcut)
-    section_id = 0
+    section_id = last_focused_reaper_section_id or 0
     action_id, n, stringName = GetCommandByShortcut(section_id, shortcut)
     if action_id then
         action_name = reaper.kbd_getTextFromCmd(action_id, section_id) 
@@ -797,10 +824,11 @@ function getPressedShortcut()
     return lastChar
 end
 
-function listeningForKeyCommand()
+function listeningForKeyCommand(addToPassthroughCommands)
     lastChar = getPressedShortcut()
     if lastChar then 
-        section_id = 0
+        -- TODO: Add multiple section_id's
+        section_id = last_focused_reaper_section_id or 0
         action_id, n, stringName = GetCommandByShortcut(section_id, lastChar)
         if action_id then
           action_name = reaper.kbd_getTextFromCmd(action_id, section_id) 
@@ -810,19 +838,29 @@ function listeningForKeyCommand()
               action_id = extensionName
               isExternal = true
           end
-          local addCommand = true
-          for index, info in ipairs(passThroughKeyCommands) do 
-              if info.name == action_name then 
-                  addCommand = false
-              end
-          end
-          if addCommand then 
-              scriptKeyPress = checkKeyPress() 
-              table.insert(passThroughKeyCommands, {name = action_name, key = lastChar, scriptKeyPress = scriptKeyPress, command = action_id, external = isExternal}) 
-              reaper.SetExtState(stateName,"passThroughKeyCommands", json.encodeToJson(passThroughKeyCommands), true)
+          
+          scriptKeyPress = checkKeyPress() 
+          commandTbl = {name = action_name, key = lastChar, scriptKeyPress = scriptKeyPress, command = action_id, external = isExternal, section_id = section_id}
+          if scriptKeyPressed then
+              
+              if addToPassthroughCommands then
+                  local addCommand = true
+                  for index, info in ipairs(passThroughKeyCommands) do 
+                      if info.name == action_name then 
+                          addCommand = false
+                      end
+                  end
+                  
+                  if addCommand then 
+                      table.insert(passThroughKeyCommands, commandTbl) 
+                      reaper.SetExtState(stateName,"passThroughKeyCommands", json.encodeToJson(passThroughKeyCommands), true)
+                  end 
+              end  
           end
           lastChar = nil
-      end
+        end 
+        
+        return commandTbl
     end
 end
 
@@ -1435,7 +1473,7 @@ function toggleeModulatorAndSetBaselineAcordingly(track, fxIndex, param, newValu
         reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.active', 0 )
     else
         reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.active', 1 )
-        setBaselineToParameterValue(track, fxnumber, param)  
+        setBaselineToParameterValue(track, fxIndex, param)  
     end
 end
 
@@ -2582,7 +2620,6 @@ end
 ------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------
 
-local sliderGrabWidth = 4
 local sliderHeight = 14
 
 
@@ -2675,9 +2712,9 @@ function nativeReaperModuleParameter(track, fxIndex, paramOut,  _type, paramName
                 end
             end  
         end
-         
+        
         local minX, minY = reaper.ImGui_GetItemRectMin(ctx)
-        local posXOffset = minX + sliderGrabWidth /2 + 2 
+        local posXOffset = minX + settings.thicknessOfBigValueSlider /2 + 2 
         local maxX, maxY = reaper.ImGui_GetItemRectMax(ctx)
         
         parStartPosX, parStartPosY = reaper.ImGui_GetItemRectMin(ctx)
@@ -3015,8 +3052,8 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
     local dif = (sliderHeight - settings.heightOfSliderBackground) / 2
     local sliderBgMinY = sliderMinY + dif
     local sliderBgMaxY = sliderMaxY - dif
-    local sliderGrabWidthAvailable = sliderWidthAvailable - sliderGrabWidth
-    local sliderGrabOffsetX = minX + sliderGrabWidth / 2
+    local sliderGrabWidthAvailable = sliderWidthAvailable - settings.thicknessOfBigValueSlider
+    local sliderGrabOffsetX = minX + settings.thicknessOfBigValueSlider / 2
     
     local valTextPosMax = minX + sliderWidthAvailable
     
@@ -3048,25 +3085,26 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
             posX2 = posX2 > maxX and maxX or posX2
             
             if sliderCenterPosX > minX then
-                if posX - posX1 > 4 and sliderCenterPosX - minX > 4  then
-                    reaper.ImGui_DrawList_AddRectFilled(draw_list, sliderCenterPosX - 4, sliderBgMinY, sliderCenterPosX, sliderBgMaxY, colorLeft,0)
-                end
-                reaper.ImGui_DrawList_AddRectFilled(draw_list, posX1, sliderBgMinY, sliderCenterPosX, sliderBgMaxY, colorLeft,4)
+                -- left width 
+                reaper.ImGui_DrawList_AddRectFilled(draw_list, posX1, sliderBgMinY, sliderCenterPosX, sliderBgMaxY, colorLeft,4, reaper.ImGui_DrawFlags_RoundCornersLeft())
             end
              
             if sliderCenterPosX < maxX  then
-                if posX2 - posX > 4 and maxX - sliderCenterPosX > 4 then
-                    reaper.ImGui_DrawList_AddRectFilled(draw_list, sliderCenterPosX, sliderBgMinY, sliderCenterPosX + 4, sliderBgMaxY, colorRight,0)
-                end
-                reaper.ImGui_DrawList_AddRectFilled(draw_list, sliderCenterPosX, sliderBgMinY, posX2, sliderBgMaxY, colorRight,4)
+                -- right width
+                reaper.ImGui_DrawList_AddRectFilled(draw_list, sliderCenterPosX, sliderBgMinY, posX2, sliderBgMaxY, colorRight,4, reaper.ImGui_DrawFlags_RoundCornersRight())
             end
              
             local playingPosX = getPosXForLine(sliderGrabOffsetX, sliderGrabWidthAvailable, linkValue, sliderFlags, min, max)
             
-            reaper.ImGui_DrawList_AddRectFilled(draw_list, sliderCenterGrabPosX - 1, sliderBgMinY, sliderCenterGrabPosX + 1, sliderBgMaxY, settings.colors.sliderOutput, 0)
-            reaper.ImGui_DrawList_AddRectFilled(draw_list, playingPosX - sliderGrabWidth / 2, sliderMinY, playingPosX + sliderGrabWidth / 2, sliderMaxY, settings.colors.sliderOutput, 4)
+            if settings.bigSliderMoving then
+                reaper.ImGui_DrawList_AddRectFilled(draw_list, sliderCenterGrabPosX - settings.thicknessOfSmallValueSlider / 2, sliderBgMinY, sliderCenterGrabPosX + settings.thicknessOfSmallValueSlider / 2, sliderBgMaxY, settings.colors.sliderOutput, 4)
+                reaper.ImGui_DrawList_AddRectFilled(draw_list, playingPosX - settings.thicknessOfBigValueSlider / 2, sliderMinY, playingPosX + settings.thicknessOfBigValueSlider / 2, sliderMaxY, settings.colors.sliderOutput, 4)
+            else
+                reaper.ImGui_DrawList_AddRectFilled(draw_list, sliderCenterGrabPosX - settings.thicknessOfBigValueSlider / 2, sliderMinY, sliderCenterGrabPosX + settings.thicknessOfBigValueSlider / 2, sliderMaxY, settings.colors.sliderOutput, 4)
+                reaper.ImGui_DrawList_AddRectFilled(draw_list, playingPosX - settings.thicknessOfSmallValueSlider / 2, sliderBgMinY, playingPosX + settings.thicknessOfSmallValueSlider / 2, sliderBgMaxY, settings.colors.sliderOutput, 4) 
+            end
         else 
-            reaper.ImGui_DrawList_AddRectFilled(draw_list, posX - sliderGrabWidth / 2, sliderMinY, posX + sliderGrabWidth / 2, sliderMaxY, settings.colors.sliderOutput, 4)
+            reaper.ImGui_DrawList_AddRectFilled(draw_list, posX - settings.thicknessOfBigValueSlider / 2, sliderMinY, posX + settings.thicknessOfBigValueSlider / 2, sliderMaxY, settings.colors.sliderOutput, 4)
         end
         
         
@@ -3108,6 +3146,8 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
         
         if parameterLinkActive then  
             local playingPosAngle = (startPosAngle + linkValue * maxAngel) * (math.pi / 180)
+            local playingPosAngle1 = (startPosAngle + (linkValue - (settings.thicknessOfSmallValueKnob / 100)) * maxAngel) * (math.pi / 180)
+            local playingPosAngle2 = (startPosAngle + (linkValue + (settings.thicknessOfSmallValueKnob / 100))* maxAngel) * (math.pi / 180)
             local modMinValue = baseline + (offset * linkWidth) + (linkWidth < 0 and linkWidth or 0)
             local modMaxValue = modMinValue + math.abs(linkWidth)
             modMinValue = modMinValue < 0 and 0 or modMinValue
@@ -3116,8 +3156,8 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
             local rightModAngle = (startPosAngle + (modMaxValue + 0.01) * maxAngel) * (math.pi / 180) 
             
             local centerAngle = (startPosAngle + (currentValue) * maxAngel) * (math.pi / 180)
-            local centerAngle1 = (startPosAngle + (currentValue - 0.01) * maxAngel) * (math.pi / 180)
-            local centerAngle2 = (startPosAngle + (currentValue + 0.01) * maxAngel) * (math.pi / 180)
+            local centerAngle1 = (startPosAngle + (currentValue - (settings.thicknessOfSmallValueKnob / 100)) * maxAngel) * (math.pi / 180)
+            local centerAngle2 = (startPosAngle + (currentValue + (settings.thicknessOfSmallValueKnob / 100)) * maxAngel) * (math.pi / 180)
         
             reaper.ImGui_DrawList_PathArcTo(draw_list, center_x , center_y, size / 2 - 2, leftModAngle, centerAngle)
             reaper.ImGui_DrawList_PathStroke(draw_list, colorLeft, reaper.ImGui_DrawFlags_None(), 4) 
@@ -3125,16 +3165,15 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
             reaper.ImGui_DrawList_PathArcTo(draw_list, center_x , center_y, size / 2 - 2, centerAngle, rightModAngle)
             reaper.ImGui_DrawList_PathStroke(draw_list, colorRight, reaper.ImGui_DrawFlags_None(), 4) 
             
-            reaper.ImGui_DrawList_PathArcTo(draw_list, center_x , center_y, size / 2 - 2, centerAngle1, centerAngle2)
+            reaper.ImGui_DrawList_PathArcTo(draw_list, center_x , center_y, size / 2 - 2, settings.bigSliderMoving and centerAngle1 or playingPosAngle1, settings.bigSliderMoving and centerAngle2 or playingPosAngle2)
             reaper.ImGui_DrawList_PathStroke(draw_list, settings.colors.sliderOutput, reaper.ImGui_DrawFlags_None(), 4) 
             
             
-            local p2_x = center_x + math.cos(playingPosAngle) * radius * 0.7
-            local p2_y = center_y + math.sin(playingPosAngle) * radius * 0.7
-            reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, p2_x, p2_y, settings.colors.sliderOutput, 2)
-        end
-        if not parameterModulationActive then
-            reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, p2_x, p2_y, settings.colors.sliderOutput, 2)
+            local p2_x = center_x + math.cos(settings.bigSliderMoving and playingPosAngle or centerAngle) * radius * 0.7
+            local p2_y = center_y + math.sin(settings.bigSliderMoving and playingPosAngle or centerAngle) * radius * 0.7
+            reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, p2_x, p2_y, settings.colors.sliderOutput, settings.thicknessOfBigValueKnob)
+        else
+            reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, p2_x, p2_y, settings.colors.sliderOutput, settings.thicknessOfBigValueKnob)
         end
         
         
@@ -3443,7 +3482,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
                 if amount < 0 then amount = 0 end
                 if amount > 1 then amount = 1 end 
                 if amount ~= currentValueNormalized then  
-                    local addOffset = 0 -- SEEMS REDUDANT FOR NOW missingOffset and missingOffset or 0 -- these deals with moving the mouse but the parameter does not change, so we store them and add the difference
+                    local addOffset = useStepsChange and 0 or (missingOffset and missingOffset or 0) -- these deals with moving the mouse but the parameter does not change, so we store them and add the difference
                     local newVal = (amount + addOffset) * range + min
                     if native then 
                         reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.paramOut..'.' .. p.paramName, newVal)
@@ -3456,17 +3495,17 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
                          
                     -- SEEMS REDUDANT FOR NOW
                     -- these deals with moving the mouse but the parameter does not change, so we store them and add the difference to the next time
-                    --[[
-                    if lastAmount and lastAmount == amount then
-                        local newAmountRelative = newAmount and (newAmount - min) / range or 0
-                        missingOffset = amount - newAmountRelative + (missingOffset and missingOffset or 0)
-                        reaper.ShowConsoleMsg(tostring(newAmount) .. " - " .. newAmountRelative .. " - " .. missingOffset .. " hej\n")
-                    else
-                    --reaper.ShowConsoleMsg(tostring(lastAmount) .. " == " .. amount .. "reset\n")
-                        missingOffset = 0
+                    if not useStepsChange then
+                        if lastAmount and lastAmount == amount then
+                            local newAmountRelative = newAmount and (newAmount - min) / range or 0
+                            missingOffset = amount - newAmountRelative + (missingOffset and missingOffset or 0)
+                        else
+                        --reaper.ShowConsoleMsg(tostring(lastAmount) .. " == " .. amount .. "reset\n")
+                            missingOffset = 0
+                        end
+                        lastAmount = amount
                     end
-                    lastAmount = amount
-                    ]]
+                    
                     -----
                 end
             end
@@ -6295,7 +6334,7 @@ function appSettingsWindow()
                         settings.allowSliderVerticalDrag = val
                         saveSettings()
                     end
-                    setToolTipFunc("When enabled the value change when dragging will be a combination of vertical and horizontal mouse movement, like it is with knobs") 
+                    setToolTipFunc("When enabled the value change when dragging will be a combination of vertical and horizontal mouse movement, like it is with knobs")  
                 else 
                     local ret, val = reaper.ImGui_Checkbox(ctx,"Have parameter knob to the right of parameter name and value##parameters",settings.alignParameterKnobToTheRight) 
                     if ret then 
@@ -6304,6 +6343,22 @@ function appSettingsWindow()
                     end
                     setToolTipFunc("Show the parameter knob to the left or right of of the parameter name and value") 
                 end
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show modulated value on big slider##parameters",settings.bigSliderMoving) 
+                if ret then 
+                    settings.bigSliderMoving = val
+                    saveSettings()
+                end
+                setToolTipFunc("Use knobs for parameters") 
+                if not settings.useKnobs then 
+                    sliderInMenu("Size of big slider line", "thicknessOfBigValueSlider", menuSliderWidth, 1, 5, "Set how thick the big slider line should be") 
+                    sliderInMenu("Size of small slider line", "thicknessOfSmallValueSlider", menuSliderWidth, 1, 5, "Set how thick the small slider line should be") 
+                else
+                    sliderInMenu("Size of big knob line", "thicknessOfBigValueKnob", menuSliderWidth, 1, 5, "Set how thick the big knob line should be") 
+                    sliderInMenu("Size of small knob line", "thicknessOfSmallValueKnob", menuSliderWidth, 1, 5, "Set how thick the small knob line should be")  
+                end
+                 
             reaper.ImGui_Unindent(ctx)
             
             reaper.ImGui_TextColored(ctx, colorTextDimmed, "Show extra controls when mapped:")
@@ -6701,7 +6756,7 @@ function appSettingsWindow()
             setToolTipFunc("This will make a smaller mouse movement or scroll change the parameter if it has steps.\nThis might be confusing when not using knobs, as knobs are already relative but sliders aren't") 
             
             reaper.ImGui_Indent(ctx)
-            sliderInMenu("Max amount of steps for a parameter to use this mode", "maxAmountOfStepsForStepSlider", menuSliderWidth, 1, 40, "Set the max amount of steps that a paramter can have to use this mode")
+            sliderInMenu("Max amount of steps for a parameter to use this mode", "maxAmountOfStepsForStepSlider", menuSliderWidth, 1, 100, "Set the max amount of steps that a paramter can have to use this mode")
             sliderInMenu("Movement needed to change step", "movementNeededToChangeStep", menuSliderWidth, 1, 10, "Set how large a moment is needed to change the parameter")
             reaper.ImGui_Unindent(ctx)
             
@@ -6854,6 +6909,7 @@ function appSettingsWindow()
         reaper.ImGui_Separator(ctx)
         
         if ImGui.BeginPopupModal(ctx, 'Save color set', nil , reaper.ImGui_WindowFlags_AlwaysAutoResize() ) then
+          ignoreKeypress = true
           reaper.ImGui_TextColored(ctx, colorTextDimmed, 'Name:') 
           
           reaper.ImGui_SetNextItemWidth(ctx, 248)
@@ -7156,6 +7212,17 @@ function appSettingsWindow()
         
         
         function set.KeyCommands()
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Block shortcut from this page",settings.allowPassingKeyboardShortcutsFromThisPage) 
+            if ret then 
+                settings.allowPassingKeyboardShortcutsFromThisPage = val
+                saveSettings()
+            end
+            setToolTipFunc("Block all shortcuts when on this page")  
+            
+            ignoreKeypress = settings.allowPassingKeyboardShortcutsFromThisPage
+            
+            
             commandWithMostKeys = 0
             for index, info in ipairs(keyCommandSettings) do 
                 if commandWithMostKeys < #info.commands then
@@ -7184,7 +7251,7 @@ function appSettingsWindow()
                             end
                         elseif column == #commands + 1 then
                             if addKey == name then
-                                if isEscape then
+                                if isEscapeKey then
                                     addKey = nil
                                     isAnyPopupOpen = true
                                 else
@@ -7215,6 +7282,12 @@ function appSettingsWindow()
             end
             setToolTipFunc("This will pass through all shortcuts (that can be recognized by imgui) to reapers main section")  
             
+            
+            --if listenForPassthroughKeyCommands then
+            lastPressedCmdTbl = listeningForKeyCommand(listenForPassthroughKeyCommands)
+            lastFoundCmdTbl = lastPressedCmdTbl or lastPressedCmdTbl or lastFoundCmdTbl
+            --end
+            
             if not settings.passAllUnusedShortcutThrough then
                 reaper.ImGui_AlignTextToFramePadding(ctx)
                 reaper.ImGui_TextColored(ctx, listenForPassthroughKeyCommands and colorMappingPulsating or colorTextDimmed, "Pass through shortcuts")
@@ -7223,9 +7296,6 @@ function appSettingsWindow()
                     listenForPassthroughKeyCommands = false
                 end
                  
-                if listenForPassthroughKeyCommands then
-                    listeningForKeyCommand()
-                end
                 
                 reaper.ImGui_SameLine(ctx)
                 if colorButton((listenForPassthroughKeyCommands and "Listening" or "Listen") .. "##forpassthroughshortcuts", listenForPassthroughKeyCommands and colorMappingPulsating or colorMapping, colorButtons,colorButtons, colorButtonsBorder) then
@@ -7288,6 +7358,17 @@ function appSettingsWindow()
                     ImGui.EndTable(ctx)
                 end
             end
+            
+            reaper.ImGui_NewLine(ctx)
+            
+            reaper.ImGui_TextColored(ctx, colorTextDimmed, "Last pressed shortcut:")
+            if last_focused_reaper_section_name then reaper.ImGui_TextColored(ctx, colorTextDimmed, "Section:       " .. last_focused_reaper_section_name ) end
+            if lastFoundCmdTbl then
+                reaper.ImGui_TextColored(ctx, colorTextDimmed, "Shortcut:       " .. lastFoundCmdTbl.key )
+                reaper.ImGui_TextColored(ctx, colorTextDimmed, "Command:    " .. lastFoundCmdTbl.name)
+            end
+             
+            --reaper.ImGui_TextColored(ctx, colorTextDimmed, last_focused_reaper_section_name)
             
             reaper.ImGui_NewLine(ctx)
             
@@ -7839,11 +7920,13 @@ _, screenHeight, screenWidth = reaper.JS_Window_GetViewportFromRect( 0, 0, 1, 1,
 local fx_before, fx_after, firstBrowserHwnd
 local dock_id, is_docked
 local runs = -1
+            
 local function loop() 
     playPos = reaper.GetPlayPosition() 
     playPos2 = reaper.GetPlayPosition2() 
     runs = runs + 1
     popupAlreadyOpen = false
+    ignoreKeypress = false
     
     minWidth = settings.mappingWidthOnlyPositive and 0 or -1
     
@@ -8228,7 +8311,6 @@ local function loop()
     scrollFlags
     )
     if visible then
-        
         --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), settings.colors.modulesBackground)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.modulesBackground)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarBg(), settings.colors.modulesBackground)
@@ -8237,6 +8319,31 @@ local function loop()
         
         local winW, winH = reaper.ImGui_GetWindowSize(ctx)
         local winX, winY = reaper.ImGui_GetWindowPos(ctx) 
+        
+        focusedHwnd = reaper.JS_Window_GetFocus()
+        focusedParent = reaper.JS_Window_GetParent(focusedHwnd)
+        -- not sure why I need the parent. Maybe different on windows? 
+        if not appHwnd then 
+            appHwnd = reaper.JS_Window_Find(appName, true)
+        end
+        appIsFocused = reaper.JS_Window_GetTitle(focusedParent):match(appName) ~= nil
+        
+        
+        if not appIsFocused then 
+            if focusedParent == reaper.GetMainHwnd() then
+                if last_focused_reaper_section_name ~= "Main" then lastFoundCmdTbl = nil end
+                last_focused_reaper_section_name = "Main"
+                last_focused_reaper_section_id = reaper_sections["Main"]
+            elseif focusedParent == reaper.MIDIEditor_GetActive() then 
+                if last_focused_reaper_section_name ~= "MIDI Editor" then lastFoundCmdTbl = nil end
+                last_focused_reaper_section_name = "MIDI Editor"
+                last_focused_reaper_section_id = reaper_sections["MIDI Editor"]
+                last_focused_midi_editor = focusedHwnd
+            else
+                last_focused_reaper_section_name = "Unknown" 
+            end 
+        end
+        
         is_docked = reaper.ImGui_IsWindowDocked(ctx)
         
         mouseInsideAppWindow = mouse_pos_x_imgui >= winX and mouse_pos_x_imgui <= winX + winW and mouse_pos_y_imgui >= winY and mouse_pos_y_imgui <= winY + winH
@@ -8765,6 +8872,9 @@ local function loop()
                                 settings.onlyMapped = false
                             end
                             saveSettings()
+                        end
+                        if reaper.ImGui_IsItemFocused(ctx) then 
+                            ignoreKeypress = true
                         end
                         reaper.ImGui_SameLine(ctx, posX + searchWidth-8)
                         local hasSearch = settings.search and settings.search ~= ""
@@ -10008,6 +10118,7 @@ local function loop()
               end
               
               if reaper.ImGui_BeginPopup(ctx, 'rename##' .. fxIndex, nil) then
+                  ignoreKeypress = true
                   reaper.ImGui_Text(ctx, "Rename " .. name)
                   reaper.ImGui_SetKeyboardFocusHere(ctx)
                   local originalName = name
@@ -10030,6 +10141,7 @@ local function loop()
               end
               
               if reaper.ImGui_BeginPopup(ctx, 'addModulatorPreset##' .. fxIndex, nil) then
+                  ignoreKeypress = true
                   reaper.ImGui_Text(ctx, "Add modulator settings as preset to MODULES")
                   if addUserModulator then
                       reaper.ImGui_SetKeyboardFocusHere(ctx)
@@ -10787,90 +10899,102 @@ local function loop()
     end
     --------------- KEY COMMANDS ----------------
     
-    local time = reaper.time_precise()
-    local newKeyPressed, altKeyPressed = checkKeyPress()  
-    
-    if not newKeyPressed or not altKeyPressed then 
-        lastKeyPressedTime = nil; 
-        --lastKeyPressedTimeInitial = nil 
-    end
-    if (not lastKeyPressed) or ((newKeyPressed  and lastKeyPressed ~= newKeyPressed) or (altKeyPressed and lastAltKeyPressed ~= altKeyPressed)) then 
-        local alreadyUsed = false
-        for _, info in ipairs(keyCommandSettings) do 
-            local name = info.name
-            for _, command in ipairs(info.commands) do
-                if command == newKeyPressed or command == altKeyPressed then
-                --reaper.ShowConsoleMsg("hej\n")
-                    alreadyUsed = true
-                    if name == "Close" then 
-                        open = false
-                    elseif name == "Undo" then
-                        reaper.Main_OnCommand(40029, 0) --Edit: Undo
-                    elseif name == "Redo" then
-                        reaper.Main_OnCommand(40030, 0) --Edit: Redo    
-                    elseif name == "Map current toggle" then
-                        if modulationContainerPos and selectedModule then 
-                            for pos, m in ipairs(modulatorNames) do  
-                                if selectedModule == m.fxIndex then 
-                                    mapModulatorActivate(m,m.output[1], m.name, true, nil, #m.output == 1) 
-                                    break;
-                                end
-                            end  
-                        end
-                    elseif name == "Open Settings" then
-                        settingsOpen = not settingsOpen
-                    end
-                    lastKeyPressedTimeInitial = time
-                end 
-            end
-        end 
-        --local shortCut 
-        if not alreadyUsed and newKeyPressed ~= "ESC" then
-            shortCut = getPressedShortcut()
-            if settings.passAllUnusedShortcutThrough then
-                local s = lookForShortcutWithShortcut(newKeyPressed)
-                if not s then 
-                    s = lookForShortcutWithShortcut(altKeyPressed)
-                end
-                if s then
-                    if s.external then
-                        reaper.Main_OnCommand(reaper.NamedCommandLookup('_' .. s.command), 0)
-                    else
-                        reaper.Main_OnCommand(s.command, 0)
-                    end
-                    lastKeyPressedTimeInitial = time
-                end
-            else 
-                for _, s in ipairs(passThroughKeyCommands) do
-                    
-                    if s.scriptKeyPress == newKeyPressed or s.scriptKeyPress == altKeyPressed then
-                        if s.external then
-                            reaper.Main_OnCommand(reaper.NamedCommandLookup('_' .. s.command), 0)
-                        else
-                            reaper.Main_OnCommand(s.command, 0)
+    if not ignoreKeypress then
+        local time = reaper.time_precise()
+        local newKeyPressed, altKeyPressed = checkKeyPress()  
+        
+        if not newKeyPressed or not altKeyPressed then 
+            lastKeyPressedTime = nil; 
+            --lastKeyPressedTimeInitial = nil 
+        end
+        if (not lastKeyPressed) or ((newKeyPressed  and lastKeyPressed ~= newKeyPressed) or (altKeyPressed and lastAltKeyPressed ~= altKeyPressed)) then 
+            local alreadyUsed = false
+            for _, info in ipairs(keyCommandSettings) do 
+                local name = info.name
+                for _, command in ipairs(info.commands) do
+                    if command == newKeyPressed or command == altKeyPressed then
+                    --reaper.ShowConsoleMsg("hej\n")
+                        alreadyUsed = true
+                        if name == "Close" then 
+                            open = false
+                        elseif name == "Undo" then
+                            reaper.Main_OnCommand(40029, 0) --Edit: Undo
+                        elseif name == "Redo" then
+                            reaper.Main_OnCommand(40030, 0) --Edit: Redo    
+                        elseif name == "Map current toggle" then
+                            if modulationContainerPos and selectedModule then 
+                                for pos, m in ipairs(modulatorNames) do  
+                                    if selectedModule == m.fxIndex then 
+                                        mapModulatorActivate(m,m.output[1], m.name, true, nil, #m.output == 1) 
+                                        break;
+                                    end
+                                end  
+                            end
+                        elseif name == "Open Settings" then
+                            settingsOpen = not settingsOpen
                         end
                         lastKeyPressedTimeInitial = time
+                    end 
+                end 
+            end 
+            
+            function runCommand(s)
+                local runCmd = s.external and reaper.NamedCommandLookup('_' .. s.command) or s.command
+                if last_focused_reaper_section_id == reaper_sections["MIDI Editor"] then
+                    --reaper.JS_Window_SetFocus(last_focused_midi_editor)
+                    local midi_editor = reaper.MIDIEditor_GetActive()
+                    
+                    if midi_editor then
+                        --last_focused_reaper_section_hwnd
+                        reaper.MIDIEditor_OnCommand(midi_editor, runCmd)
+                    end
+                    --reaper.JS_Window_SetFocus(reaper.JS_Window_GetParent(appHwnd))
+                else
+                    reaper.Main_OnCommand(runCmd, 0)
+                end
+            end
+              
+            --local shortCut 
+            if not alreadyUsed and newKeyPressed ~= "ESC" then
+                shortCut = getPressedShortcut()  
+                if settings.passAllUnusedShortcutThrough then
+                    local s = lookForShortcutWithShortcut(newKeyPressed)
+                    if not s then 
+                        s = lookForShortcutWithShortcut(altKeyPressed)
+                    end
+                    if s then
+                        runCommand(s)
+                        lastKeyPressedTimeInitial = time
+                    end
+                else 
+                    for _, s in ipairs(passThroughKeyCommands) do
+                        
+                        if s.scriptKeyPress == newKeyPressed or s.scriptKeyPress == altKeyPressed then
+                            runCommand(s)
+                            lastKeyPressedTimeInitial = time
+                            break;
+                        end
                     end
                 end
             end
-        end
-        
-        
-        
-        lastKeyPressed = newKeyPressed
-        lastAltKeyPressed = altKeyPressed
-    else
-        -- hardcoded repeat values
-        if lastKeyPressedTimeInitial and time - lastKeyPressedTimeInitial > 0.1 then
-            if lastKeyPressedTime and time - lastKeyPressedTime > 0.2 then 
+            
+            
+            
+            lastKeyPressed = newKeyPressed
+            lastAltKeyPressed = altKeyPressed
+        else
+            -- hardcoded repeat values
+            if lastKeyPressedTimeInitial and time - lastKeyPressedTimeInitial > 0.1 then
+                if lastKeyPressedTime and time - lastKeyPressedTime > 0.2 then 
+                    lastKeyPressed = nil
+                    lastAltKeyPressed = nil
+                --else 
+                end 
+                
                 lastKeyPressed = nil
                 lastAltKeyPressed = nil
-            --else 
-            end 
-            
-            lastKeyPressed = nil
-            lastAltKeyPressed = nil
-            lastKeyPressedTime = time 
+                lastKeyPressedTime = time 
+            end
         end
     end
     
