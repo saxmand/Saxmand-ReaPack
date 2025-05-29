@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.4
+-- @version 0.9.41
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + adding master track support
+--   + adding master track support attempt 2
 
-local version = "0.9.4"
+local version = "0.9.41"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -7717,7 +7717,6 @@ function updateTouchedFX()
             fxIndexTouched = fxidx
             parameterTouched = param
             trackTouched = trackTemp
-            
             fxnumber = fxIndexTouched
             paramnumber = parameterTouched 
             updateMapping()
@@ -7749,13 +7748,13 @@ function updateTouchedFX()
             --reaper.ShowConsoleMsg("not master\n")
            trackTemp = reaper.GetTrack(0, trackidx)
         end
+        --if settings.focusFollowsFxClicks and trackTemp and track ~= trackTemp and validateTrack(trackTemp) then
+            --if settings.trackSelectionFollowFocus then
+            --    reaper.SetOnlyTrackSelected(trackTemp)
+            --end
+            --track = trackTemp
+        --end
         
-        if settings.focusFollowsFxClicks and trackTemp and track ~= trackTemp and validateTrack(trackTemp) then
-            if settings.trackSelectionFollowFocus then
-                reaper.SetOnlyTrackSelected(trackTemp)
-            end
-            track = trackTemp
-        end
         
         local deltaParam = reaper.TrackFX_GetNumParams(trackTemp, fxidx) - 1  
         --reaper.ShowConsoleMsg(val .. " - " .. tostring(dragKnob) .. "\n")
@@ -8094,8 +8093,9 @@ local function loop()
         
     
     firstSelectedTrack = reaper.GetSelectedTrack2(0,0, true)
-    if not track or (firstSelectedTrack ~= track and not locked) then 
+    if not track or not lastFirstSelectedTrack or (firstSelectedTrack ~= lastFirstSelectedTrack and not locked) then 
         track = firstSelectedTrack 
+        lastFirstSelectedTrack = firstSelectedTrack
         
         mapModulatorActivate(nil)
     end
@@ -8106,9 +8106,9 @@ local function loop()
         if updateTouchedFX() then
             if settings.focusFollowsFxClicks and trackTouched and track ~= trackTouched and validateTrack(trackTouched) then
                 if settings.trackSelectionFollowFocus then
-                 --   reaper.SetOnlyTrackSelected(trackTouched)
+                    reaper.SetOnlyTrackSelected(trackTouched)
                 end
-                --track = trackTouched
+                track = trackTouched
                 --reaper.ShowConsoleMsg("hej\n")
             end
         end
