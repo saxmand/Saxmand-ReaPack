@@ -16,6 +16,8 @@
 --   Color sets/*.txt
 -- @changelog
 --   + Added option to remove developer name from plugin name (default is using it)
+--   + fixed floating window not allowing adding modulator on right click
+--   + updated how floating window know what has been clicked
 --   + fixed bug where fx count was a string (corner case)
 --   + fixed Surge XT bug (allow paramters to have the value "-")
 
@@ -195,6 +197,10 @@ end
 -----------------------------------------
 
 
+
+local _, lastTrackIndexTouched, lastItemIndexTouched, lastTakeIndexTouched, lastFxIndexTouched, lastParameterTouched = reaper.GetTouchedOrFocusedFX( 0 ) 
+local fxWindowClicked, clickedHwnd, parameterFound, parameterChanged, focusDelta, projectStateOnRelease, projectStateOnClick, timeClick, fxWindowClickedParameterNotFound
+local lastParameterTouchedMouse, lastFxIndexTouchedMouse, lastTrackIndexTouchedMouse 
 
 
 
@@ -3534,10 +3540,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
             undoStarted = false
         end
         
-        if not reaper.JS_Window_IsVisible(clickedHwnd) then
-            clickedHwnd = nil
-        end
-        lastClickedHwnd = clickedHwnd
+        
     end
     
     if isMouseDown and dragKnob and dragKnob ~= lastDragKnob and dragKnob:match("Window") == nil then 
@@ -7592,22 +7595,6 @@ function addingAnyModuleWindow(hwnd)
     return open
 end
 
-function isFXWindowUnderMouse()
-    local x, y = reaper.GetMousePosition()
-    local hwnd = reaper.JS_Window_FromPoint(x, y)
-  
-    while hwnd ~= nil and reaper.JS_Window_IsWindow(hwnd) do
-        local title = reaper.JS_Window_GetTitle(hwnd)
-        if title and (title:match("FX:") ~= nil or title:match("VST") ~= nil or title:match("JS:") ~= nil or title:match("Clap:") ~= nil) then
-        --if title and title:match(" - Track") ~= nil then
-          
-          return true, title, hwnd
-        end
-        hwnd = reaper.JS_Window_GetParent(hwnd)
-    end
-    local clickedHwndUpdate = reaper.JS_Window_IsVisible(clickedHwnd) and clickedHwnd or nil
-    return nil, "", clickedHwndUpdate
-end
 
     
 function updateVisibleEnvelopes(track, p)
@@ -7665,9 +7652,24 @@ function updateMapping()
     --track = trackTouched
 end
 
-local _, lastTrackIndexTouched, lastItemIndexTouched, lastTakeIndexTouched, lastFxIndexTouched, lastParameterTouched = reaper.GetTouchedOrFocusedFX( 0 ) 
-local fxWindowClicked, clickedHwnd, parameterFound, parameterChanged, focusDelta, projectStateOnRelease, projectStateOnClick, timeClick, fxWindowClickedParameterNotFound
-local lastParameterTouchedMouse, lastFxIndexTouchedMouse, lastTrackIndexTouchedMouse 
+function isFXWindowUnderMouse()
+    local x, y = reaper.GetMousePosition()
+    local hwnd = reaper.JS_Window_FromPoint(x, y)
+  
+    while hwnd ~= nil and reaper.JS_Window_IsWindow(hwnd) do
+        local title = reaper.JS_Window_GetTitle(hwnd)
+        if title and (title:match("FX:") ~= nil or title:match("VST") ~= nil or title:match("JS:") ~= nil or title:match("Clap:") ~= nil) then
+        --if title and title:match(" - Track") ~= nil then
+          clickedHwnd = hwnd
+          --lastClickedHwnd = hwnd
+          return true, title, hwnd
+        end
+        hwnd = reaper.JS_Window_GetParent(hwnd)
+    end
+    --local clickedHwndUpdate = reaper.JS_Window_IsVisible(clickedHwnd) and clickedHwnd or nil
+    return nil, "", clickedHwndUpdate
+end
+
 function updateTouchedFX()
     local parameterUpdated = false
     function setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp, deltaParam, val, lastValTouched)
@@ -7715,6 +7717,9 @@ function updateTouchedFX()
             end
             hwndWindowOnTouchParam = clickedHwnd
             --hwndWindowOnTouchParam = reaper.JS_Window_GetFocus() 
+            --if fxWindowClicked then 
+            lastClickedHwnd = clickedHwnd
+            --end
         end
     end
     
@@ -7743,14 +7748,14 @@ function updateTouchedFX()
             
             if isMouseDown and not mouseInsideFloatingMapper and not mouseInsideAppWindow then  
                 if isMouseClick then 
-                    fxWindowClicked, _, clickedHwnd = isFXWindowUnderMouse() 
+                    fxWindowClicked = isFXWindowUnderMouse() 
                     -- trying to catch the clicked modulator when not using force, through project state change count
                     projectStateOnClick = reaper.GetProjectStateChangeCount(0)
                     projectStateOnRelease = nil
                     fxWindowClickedParameterNotFound = nil
                     parameterFound = false
                 end
-                if fxWindowClicked then 
+                if fxWindowClicked then  
                     focusDelta = false
                     if not parameterFound then 
                         setTouchedValues(trackidx, itemidx, takeidx, fxidx, param, trackTemp, deltaParam, val, lastValTouched)
@@ -7818,6 +7823,7 @@ function updateTouchedFX()
                         if not parameterFound then
                             fxWindowClickedParameterNotFound = true
                         end
+                        
                     end 
                     
                     -- only used for force mapping
@@ -10857,7 +10863,10 @@ local function loop()
         return open 
     end
     
-    
+    if clickedHwnd and not reaper.JS_Window_IsVisible(clickedHwnd) then
+        clickedHwnd = nil
+        lastClickedHwnd = nil
+    end
     --fxWindowClicked, _, clickedHwnd
     if lastClickedHwnd and clickedHwnd and lastClickedHwnd ~= clickedHwnd then
         showFloatingMapper = false
@@ -10872,18 +10881,24 @@ local function loop()
     end ]]
     if showFloatingMapper and validateTrack(track) and track == trackTouched and fxIndexTouched and parameterTouched then
         showFloatingMapper = floatingMappedParameterWindow(trackTouched, fxIndexTouched, parameterTouched) 
+    else
+        --showFloatingMapper = false
     end 
     
     
     
+    
     if isAnyMouseDown then
-        local alreadyHidden = not showFloatingMapper
+        local alreadyHidden = showFloatingMapper == false
         
         if (settings.keepWhenClickingInAppWindow and reaper.ImGui_IsMousePosValid(ctx) or (not settings.keepWhenClickingInAppWindow and mouseInsideFloatingMapper)) then
             showFloatingMapper = true
         else
             if settings.onlyKeepShowingWhenClickingFloatingWindow and not fxWindowClicked then
                 showFloatingMapper = false
+                if not mouseInsideAppWindow and reaper.ImGui_IsMousePosValid(ctx) then
+                    showFloatingMapper = true
+                end
             end
         end
         --if not alreadyHidden and reaper.ImGui_IsMousePosValid(ctx) and ) then
