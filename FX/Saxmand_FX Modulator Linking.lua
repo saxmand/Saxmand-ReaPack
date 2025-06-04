@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.73
+-- @version 0.9.74
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed some parameters not mapping width in when mapping is on if they had the same parameter as the mapping parameter
+--   + added option to see static value on parameters that are being modulated 
 
-local version = "0.9.73"
+local version = "0.9.74"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -346,6 +346,7 @@ local defaultSettings = {
     showParameterOptionsOnTop = true,
     maxParametersShown = 0, 
     alignParameterKnobToTheRight = true,
+    showBaselineInsteadOfModulatedValue = false,
     
     openMappingsPanelPos = "Right",
     openMappingsPanelPosFixedCoordinates = {}, -- not in settings
@@ -3563,6 +3564,11 @@ function convertModifierOptionToString(option)
 end
 
 function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingMappings, nameOnSide, width, resetValue, valueAsString, genericModulatorOutput, parametersWindow, formatString)
+    local parameterLinkActive = p.parameterLinkActive
+    local parameterModulationActive = p.parameterModulationActive
+    local hasLink = parameterLinkActive and parameterModulationActive
+    
+    
     -- 123
     local valueName = p.valueName or ""
     if valueAsString and valueAsString ~= "" then 
@@ -3570,8 +3576,16 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     elseif formatString and tonumber(valueName) then
         valueName = string.format(formatString, tonumber(valueName))
     end
+    
     if p.hasSteps and p.isToggle and tonumber(valueName) then
         valueName = p.valueNormalized == 0 and "Off" or "On"
+    end
+    
+    if hasLink and settings.showBaselineInsteadOfModulatedValue and p.baseline then
+        retStaticValueName, staticValueName = reaper.TrackFX_FormatParamValue( track, p.fxIndex, p.param, p.baseline )
+        if retStaticValueName and staticValueName then
+            valueName = staticValueName
+        end
     end
     
     local name = p.name and p.name or "NA"
@@ -3593,11 +3607,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     local divide = divide or 1
     local range = p.range -- max - min
     
-    local parameterLinkActive = p.parameterLinkActive
-    local parameterModulationActive = p.parameterModulationActive
-    local hasLink = parameterLinkActive and parameterModulationActive
-    
-    
+
     local parameterLinkEffect = p.parameterLinkEffect
     
     local linkValue = p.valueNormalized -- p.value 
@@ -6331,7 +6341,16 @@ function appSettingsWindow()
             reaper.ImGui_Unindent(ctx)
             
             reaper.ImGui_TextColored(ctx, colorTextDimmed, "Show extra controls when mapped:")
-             
+            
+            
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Show baseline value instead of modulated value##parameters",settings.showBaselineInsteadOfModulatedValue) 
+            if ret then 
+                settings.showBaselineInsteadOfModulatedValue = val
+                saveSettings()
+            end
+            setToolTipFunc("Show baseline value instead of modulated value on the slider") 
+            
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Show width knob##parameters",settings.showWidthInParameters) 
             if ret then 
