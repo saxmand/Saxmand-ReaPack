@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.71
+-- @version 0.9.72
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + reupload as it didn't seem to catch the previous
+--   + fixed values being strings after converting other values to numbers causing numerous bugs
 
-local version = "0.9.71"
+local version = "0.9.72"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1163,7 +1163,7 @@ function deleteModule(track, fxIndex, modulationContainerPos, fx)
             stopMapping()
         end
         
-        local mappings = (parameterLinks and parameterLinks[tostring(fxIndex)]) and parameterLinks[tostring(fxIndex)] or {} 
+        local mappings = (parameterLinks and parameterLinks[fxIndex]) and parameterLinks[fxIndex] or {} 
         for i, map in ipairs(mappings) do  
             local mapFxIndex = map.fxIndex
             local mapParam = map.param
@@ -1378,7 +1378,7 @@ function getModulatorNames(track, modulationContainerPos, parameterLinks)
                 fxName = fxOriginalName
             end
             
-            local mappings = (parameterLinks and parameterLinks[tostring(fxIndex)]) and parameterLinks[tostring(fxIndex)] or {}
+            local mappings = (parameterLinks and parameterLinks[fxIndex]) and parameterLinks[fxIndex] or {}
             local output = getOutputArrayForModulator(track, fxOriginalName, fxIndex, modulationContainerPos)
             local outputNames = getOutputNameArrayForModulator(track, fxOriginalName, fxIndex, modulationContainerPos)
             
@@ -1528,8 +1528,7 @@ function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnum
     
     if (retParam and outputPos ~= tonumber(currentOutputPos)) or (retEffect and modulationContainerPos ~= tonumber(currentModulationContainerPos)) then 
         local ret, baseline = reaper.TrackFX_GetNamedConfigParm( track, fxnumber, 'param.'..param..'.mod.baseline')
-        local _, isModActive = reaper.TrackFX_GetNamedConfigParm( track, fxnumber, 'param.'..param..'.mod.active') 
-        isModActive = isModActive == "1"
+        local isModActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxnumber, 'param.'..param..'.mod.active'))) == 1        
         if isModActive then
             if settings.usePreviousMapSettingsWhenOverwrittingMapping then
                 
@@ -1903,7 +1902,7 @@ local function getAllDataFromParameter(tr,fxIndex,p)
     -- we filter internal and midi parameters from plugin parameter list
     if name:lower():match("midi cc") == nil and name:lower() ~= "internal" then -- and valueName ~= "-" then 
         local fx_name_ret, fxName = reaper.TrackFX_GetFXName(tr, fxIndex, "") 
-        local parameterLinkActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.active')))        
+        local parameterLinkActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.active'))) == 1        
         local guid = reaper.TrackFX_GetFXGUID( tr, fxIndex )
         
         -- special setting, to rename for nicer view in parameters
@@ -2264,21 +2263,22 @@ function CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
     local numParams = reaper.TrackFX_GetNumParams(track, fxIndex)
     _, fxName = reaper.TrackFX_GetFXName(track, fxIndex)
     for p = 0, numParams - 1 do
-        local linkActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "param." .. p .. ".plink.active"))) == 1
-        local modActive  = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "param." .. p .. ".mod.active") )) == 1
+        local isLinkActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "param." .. p .. ".plink.active"))) == 1
+        --local isModActive  = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "param." .. p .. ".mod.active") )) == 1
+        
         if isLinkActive and modulationContainerPos then 
             local linkFx = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' ))) -- index of the fx that's linked. if outside modulation folder, it will be modulation folder index
             local linkParam = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' )))  -- parameter of the fx that's linked. 
             local fxIndexInContainer = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.fx_index')))
             --local _, linkFxIndex = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.hint_id')
             if isModulator then 
-                linkFxIndex = tostring(get_fx_id_from_container_path(track, modulationContainerPos+1, linkFx + 1)) -- test hierarchy
+                linkFxIndex = tonumber(get_fx_id_from_container_path(track, modulationContainerPos+1, linkFx + 1)) -- test hierarchy
             else
-                linkFxIndex = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. fxIndexInContainer)))
+                linkFxIndex = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. fxIndexInContainer)))                
             end
-            parameterLinkName = select(2, reaper.TrackFX_GetParamName(track, isModulator and tonumber(linkFxIndex) or tonumber(modulationContainerPos), tonumber(linkParam)))
+            --parameterLinkName = select(2, reaper.TrackFX_GetParamName(track, isModulator and tonumber(linkFxIndex) or tonumber(modulationContainerPos), tonumber(linkParam)))
           
-            local linkedName = select(2, reaper.TrackFX_GetParamName(track, fxIndex, p))
+            --local linkedName = select(2, reaper.TrackFX_GetParamName(track, fxIndex, p))
             if not pLinks[linkFxIndex] then pLinks[linkFxIndex] = {} end
             --if not parameterLinks[linkFx][linkParam][fxIndex] then 
               --  parameterLinks[linkFx][linkParam] = 0
@@ -4682,7 +4682,7 @@ function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isC
         if not hovered[fxIndex]  then hovered[fxIndex] = {} end
         for i, plots in ipairs(shapesPlots) do
             --ImGui.SetNextItemAllowOverlap(ctx)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),focusedShape == tostring(i-1) and colorButtonsActive or (hovered and hovered[fxIndex][i]) and colorButtonsHover or colorButtons )
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),focusedShape == i-1 and colorButtonsActive or (hovered and hovered[fxIndex][i]) and colorButtonsHover or colorButtons )
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PlotLines(), colorText )
             
             reaper.ImGui_PlotLines(ctx, '', plots, 0, nil, -1.0, 1.0, buttonSizeW, buttonSizeH)
