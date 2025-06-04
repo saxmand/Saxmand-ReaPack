@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.6
+-- @version 0.9.6.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -16,12 +16,14 @@
 --   Color sets/*.txt
 -- @changelog
 --   + Added option to remove developer name from plugin name (default is using it)
+--   + Added more option for PLUGINS area, to open on single click and to hide plugin number
 --   + fixed floating window not allowing adding modulator on right click
 --   + updated how floating window know what has been clicked
 --   + fixed bug where fx count was a string (corner case)
 --   + fixed Surge XT bug (allow paramters to have the value "-")
+--   + fixed missing floating window support for AU plugins
 
-local version = "0.9.6"
+local version = "0.9.6.2"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -334,6 +336,9 @@ local defaultSettings = {
     allowHorizontalScroll = false,
     hidePluginTypeName = true,
     hideDeveloperName = true,
+    showPluginNumberInPluginOverview = true,
+    showPluginNumberColumn = true,
+    openPluginWhenClickingName = false,
     
     showOpenAll = true, 
     showAddTrackFX = true,
@@ -1090,8 +1095,7 @@ end
 -- ACTIONS ------
 
 function renameModulatorNames(track, modulationContainerPos)
-    local ret, fxAmount = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count')
-    fxAmount = tonumber(fxAmount)
+    local fxAmount = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count')))
     if not fxAmount then return end
     if fxAmount == 0 then
         reaper.TrackFX_Delete(track, modulationContainerPos)
@@ -1099,7 +1103,7 @@ function renameModulatorNames(track, modulationContainerPos)
     
     function goTroughNames(counterArray, savedArray)
         for c = 0, fxAmount -1 do  
-            local _, fxIndex = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. c) 
+            local fxIndex = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. c)))            
             local renamed, fxName = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, 'renamed_name')
             local nameWithoutNumber = fxName:gsub(" %[%d+%]$", "")
             if not renamed or fxName == "" then
@@ -1124,10 +1128,10 @@ function renameModulatorNames(track, modulationContainerPos)
 end
 
 function getModulatorModulesNameCount(track, modulationContainerPos, name, returnName)
-    local _, fxAmount = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count')
+    local fxAmount = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count')))
     local nameCount = 0
     for c = 0, fxAmount -1 do  
-        local _, fxIndex = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. c) 
+        local fxIndex = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. c)))
         local _, fxName = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, 'fx_name')
         if fxName:match(name) then
             nameCount = nameCount + 1
@@ -1261,7 +1265,7 @@ end
 function insertContainerAddPluginAndRename(track, name, newName)
     reaper.Undo_BeginBlock()
     local modulationContainerPos = addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
-    local position_of_FX_in_container = select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count')) + 1
+    local position_of_FX_in_container = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count'))) + 1
     local parent_FX_count = reaper.TrackFX_GetCount(track)
     local position_of_container = modulationContainerPos+1
     
@@ -1349,7 +1353,7 @@ end
 
 function movePluginToContainer(track, originalIndex)
     local modulationContainerPos = addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
-    local position_of_FX_in_container = select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count')) + 1
+    local position_of_FX_in_container = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count'))) + 1
     local parent_FX_count = reaper.TrackFX_GetCount(track)
     local position_of_container = modulationContainerPos+1
     
@@ -1365,14 +1369,14 @@ end
 
 function getModulatorNames(track, modulationContainerPos, parameterLinks)
     if modulationContainerPos then
-        local _, fxAmount = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count')
+        local fxAmount = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_count')))
         local containerData = {}
         local fxIndexs = {}
         allIsCollabsed = true
         allIsNotCollabsed = true
         
-        for c = 0, tonumber(fxAmount) -1 do  
-            local _, fxIndex = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. c)  
+        for c = 0, fxAmount -1 do  
+            local fxIndex = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. c) ))
             local _, fxOriginalName = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, 'original_name')
             local renamed, fxName = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, 'renamed_name')
             local guid = reaper.TrackFX_GetFXGUID( track, fxIndex )
@@ -1412,10 +1416,10 @@ function getModulatorNames(track, modulationContainerPos, parameterLinks)
 end
 
 function getParameterLinkValues(track, fxIndex, param)
-    local ret, baseline = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.baseline')
-    local ret, scale = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.scale')
-    local ret, offset = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.offset')
-    return tonumber(baseline), tonumber(scale), tonumber(offset)
+    local baseline = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.baseline')))
+    local scale = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.scale')))
+    local offset = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.offset')))
+    return baseline, scale, offset
 end
 
 function disableParameterLink(track, fxnumber, paramnumber, newValue) 
@@ -1433,7 +1437,7 @@ function disableParameterLink(track, fxnumber, paramnumber, newValue)
 end
 
 function setParameterToBaselineValue(track, fxnumber, paramnumber) 
-    local ret, baseline = reaper.TrackFX_GetNamedConfigParm( track, fxnumber, 'param.'..paramnumber..'.mod.baseline')
+    local baseline = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxnumber, 'param.'..paramnumber..'.mod.baseline')))
     reaper.TrackFX_SetParam(track,fxnumber,paramnumber,baseline)
 end
 
@@ -1445,7 +1449,7 @@ function setBaselineToParameterValue(track, fxnumber, paramnumber)
 end
 
 function flipWidthValue(track, fxIndex, param) 
-    local ret, scale = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.scale')
+    local scale = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.scale')))
     reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.scale', - scale)
 end
 
@@ -1518,7 +1522,7 @@ end
 
 function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnumber, param, value, offsetForce, scaleForce, valueForce)
     if tonumber(fxnumber) < 0x2000000 then
-       ret, outputPos = reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam )
+       outputPos = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam )))
     else
        -- could this be done in a better way? -- I need to get the position of the FX inside the container
        outputPos = mapActiveParam -- this is the paramater in the lfo plugin 
@@ -1635,14 +1639,14 @@ function getTrackPluginsParameterLinkValues(name, clearType)
             -- Iterate through all parameters for the current FX
             local param_count = reaper.TrackFX_GetNumParams(track, fxIndex)
             for param = 0, param_count - 1 do
-                _, parameterLinkActive = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.active')
-                parameterLinkActive = parameterLinkActive == "1"
+                local parameterLinkActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.active'))) == 1
+                
                 -- we ignore values that have parameter link activated
                 if parameterLinkActive then
-                    _, parameterLinkEffect = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.effect' )
+                    local parameterLinkEffect = select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.effect' ))
                     if parameterLinkEffect ~= "" then
-                        _, parameterLinkParam = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.param' )
-                        _, parameterLinkName = reaper.TrackFX_GetParamName(track, parameterLinkEffect, parameterLinkParam)
+                        local parameterLinkParam = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.param' )))
+                        local parameterLinkName = select(2, reaper.TrackFX_GetParamName(track, parameterLinkEffect, parameterLinkParam))
                         if parameterLinkName:match(name) then
                             local baseline, scale, offset = getParameterLinkValues(track, fxIndex, param) 
                             
@@ -1702,8 +1706,8 @@ function getTrackPluginValues(track, fx)
             -- Iterate through all parameters for the current FX
             local param_count = reaper.TrackFX_GetNumParams(track, fxIndex)
             for param = 0, param_count - 1 do
-                _, parameterLinkActive = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.active')
-                parameterLinkActive = parameterLinkActive == "1"
+                local parameterLinkActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.active'))) == 1
+                
                 -- we ignore values that have parameter link activated
                 if not parameterLinkActive then
                     local valueNormalized = reaper.TrackFX_GetParamNormalized(track, fxIndex, param)
@@ -1832,12 +1836,11 @@ local function getAllTrackFxParamValues(track,fxIndex)
     if track and fxIndex then
         local paramCount = reaper.TrackFX_GetNumParams(track, fxIndex) - 1
         for p = 0, paramCount do 
-            local _, parameterLinkActive = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.active')
-            local parameterLinkActive = parameterLinkActive == "1"
+            local parameterLinkActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.active'))) == 1            
             if parameterLinkActive then
-                _, parameterLinkEffect = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' )
+                local parameterLinkEffect = select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' ))
                 if parameterLinkEffect ~= "" then  
-                    _, baseline = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.mod.baseline') 
+                    baseline = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.mod.baseline')))
                     --_, offset = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.offset')
                     --_, width = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.scale')
                     table.insert(data, baseline)
@@ -1864,7 +1867,7 @@ local nativeLfoList = {"active","dir","phase","speed","strength","temposync","fr
 local function getNativeLFOParamSettings(track,fxIndex) 
     local data = {} 
     for _, l in ipairs(nativeLfoList) do 
-        local _, val = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.."1"..'.lfo.' .. l) 
+        local val = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.."1"..'.lfo.' .. l) ))
         data[l] = val
     end 
     return data
@@ -1884,7 +1887,7 @@ local nativeAcsList = {"active","dir","strength","attack","release","dblo","dbhi
 local function getNativeACSParamSettings(track,fxIndex) 
     local data = {} 
     for _, l in ipairs(nativeAcsList) do 
-        local _, val = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.."1"..'.acs.' .. l) 
+        local val = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.."1"..'.acs.' .. l) ))
         data[l] = val
     end 
     return data
@@ -1906,8 +1909,7 @@ local function getAllDataFromParameter(tr,fxIndex,p)
     -- we filter internal and midi parameters from plugin parameter list
     if name:lower():match("midi cc") == nil and name:lower() ~= "internal" then -- and valueName ~= "-" then 
         local fx_name_ret, fxName = reaper.TrackFX_GetFXName(tr, fxIndex, "") 
-        local _, parameterLinkActive = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.active')
-        parameterLinkActive = parameterLinkActive == "1" 
+        local parameterLinkActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.active')))        
         local guid = reaper.TrackFX_GetFXGUID( tr, fxIndex )
         
         -- special setting, to rename for nicer view in parameters
@@ -1915,8 +1917,7 @@ local function getAllDataFromParameter(tr,fxIndex,p)
             name = name:gsub("^Main p%d+:%s*", "")
         end 
         
-        local _, parameterModulationActive = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.mod.active')
-        parameterModulationActive = parameterModulationActive == "1"
+        local parameterModulationActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.mod.active'))) == 1
         local mappingName
         local baseline = false
         local width = 0
@@ -1924,16 +1925,12 @@ local function getAllDataFromParameter(tr,fxIndex,p)
         local direction = 0
         local bipolar = false
         if parameterLinkActive and modulationContainerPos then
-            _, parameterLinkEffect = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.effect' )
+            parameterLinkEffect = select(2, reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.effect' ))
             if parameterLinkEffect ~= "" then 
-                _, baseline = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.mod.baseline') 
-                baseline = tonumber(baseline)
-                _, offset = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.offset')
-                offset = tonumber(offset)
-                _, width = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.scale')
-                width = tonumber(width)
-                _, parameterLinkParam = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.param' ) 
-                parameterLinkParam = tonumber(parameterLinkParam)
+                baseline = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.mod.baseline') ))
+                offset = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.offset')))
+                width = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.scale')))
+                parameterLinkParam = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.param' )))
                 bipolar = tonumber(offset) == -0.5
                 
                 if tonumber(width) >= 0 then
@@ -1974,8 +1971,8 @@ local function getAllDataFromParameter(tr,fxIndex,p)
                    parameterLinkFXIndex = tonumber(parameterLinkFXIndex)
                    
                    if ret then
-                      _, parameterLinkName = reaper.TrackFX_GetNamedConfigParm( tr, parameterLinkFXIndex, 'renamed_name' )
-                      local _, originalName = reaper.TrackFX_GetNamedConfigParm( tr, parameterLinkFXIndex, 'fx_name' )
+                      parameterLinkName = select(2, reaper.TrackFX_GetNamedConfigParm( tr, parameterLinkFXIndex, 'renamed_name' ))
+                      local originalName = select(2, reaper.TrackFX_GetNamedConfigParm( tr, parameterLinkFXIndex, 'fx_name' ))
                       local outputsForLinkedModulator = getOutputArrayForModulator(tr,originalName, parameterLinkFXIndex, modulationContainerPos)
                       
                       if not parameterLinkName then
@@ -2273,23 +2270,21 @@ function CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
     local numParams = reaper.TrackFX_GetNumParams(track, fxIndex)
     _, fxName = reaper.TrackFX_GetFXName(track, fxIndex)
     for p = 0, numParams - 1 do
-        local _, linkActive = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "param." .. p .. ".plink.active")
-        local _, modActive  = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "param." .. p .. ".mod.active") 
-        local isLinkActive = linkActive == "1"
-        local isModActive  = modActive == "1"
+        local linkActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "param." .. p .. ".plink.active"))) == 1
+        local modActive  = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "param." .. p .. ".mod.active") )) == 1
         if isLinkActive and modulationContainerPos then 
-            local _, linkFx = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' ) -- index of the fx that's linked. if outside modulation folder, it will be modulation folder index
-            local _, linkParam = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' )  -- parameter of the fx that's linked. 
-            local _, fxIndexInContainer = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.fx_index')
+            local linkFx = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' ))) -- index of the fx that's linked. if outside modulation folder, it will be modulation folder index
+            local linkParam = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' )))  -- parameter of the fx that's linked. 
+            local fxIndexInContainer = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.fx_index')))
             --local _, linkFxIndex = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.hint_id')
             if isModulator then 
                 linkFxIndex = tostring(get_fx_id_from_container_path(track, modulationContainerPos+1, linkFx + 1)) -- test hierarchy
             else
-                _, linkFxIndex = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. fxIndexInContainer)
+                linkFxIndex = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. fxIndexInContainer)))
             end
-            _, parameterLinkName = reaper.TrackFX_GetParamName(track, isModulator and tonumber(linkFxIndex) or tonumber(modulationContainerPos), tonumber(linkParam))
+            parameterLinkName = select(2, reaper.TrackFX_GetParamName(track, isModulator and tonumber(linkFxIndex) or tonumber(modulationContainerPos), tonumber(linkParam)))
           
-            local _, linkedName = reaper.TrackFX_GetParamName(track, fxIndex, p)
+            local linkedName = select(2, reaper.TrackFX_GetParamName(track, fxIndex, p))
             if not pLinks[linkFxIndex] then pLinks[linkFxIndex] = {} end
             --if not parameterLinks[linkFx][linkParam][fxIndex] then 
               --  parameterLinks[linkFx][linkParam] = 0
@@ -2330,10 +2325,10 @@ function getAllTrackFXOnTrack(track)
     local function getPluginsRecursively(track, fxContainerIndex, indent, fxCount, isModulator, fxContainerName)
         if fxCount then 
             for subFxIndex = 0, fxCount - 1 do
-                local ret, fxIndex = reaper.TrackFX_GetNamedConfigParm( track, fxContainerIndex, "container_item." .. subFxIndex )
+                local fxIndex = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxContainerIndex, "container_item." .. subFxIndex )))
                 local retval, fxName = reaper.TrackFX_GetFXName(track, fxIndex, "") -- Get the FX name'
                 local retval, fxOriginalName = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "fx_name") -- Get the FX name
-                local retval, container_count = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, "container_count" )
+                local container_count = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, "container_count" )))
                 local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
                 local isEnabled = reaper.TrackFX_GetEnabled(track, fxIndex)
                 local isOpen = reaper.TrackFX_GetOpen(track,fxIndex)
@@ -3338,7 +3333,7 @@ function setParam(track, p, amount)
             return setEnvelopePointAdvanced(track, p, amount)
         elseif p.parameterLinkEffect and p.parameterModulationActive then
             reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline', amount ) 
-            local ret, newVal = reaper.TrackFX_GetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline') 
+            local newVal = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline') ))
             return newVal 
             
         else 
@@ -4003,8 +3998,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                 close = true
             end 
             
-            local _, isModVisible = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.visible')
-            isModVisible = isModVisible == "1"
+            local isModVisible = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.visible'))) == 1            
             local toggleText = isModVisible and "Hide" or "Show"
             if reaper.ImGui_Button(ctx,toggleText .. " parameter\nmodulation/link window##show" .. buttonId) then 
                 reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.visible', isModVisible and 0 or 1 )
@@ -4530,7 +4524,7 @@ end
 
 function createSliderForNativeLfoSettings(track,fxnumber,paramnumber,name,min,max,sliderFlag)
     reaper.ImGui_SetNextItemWidth(ctx,dropDownSize)
-    _, currentValue = reaper.TrackFX_GetNamedConfigParm( track, fxnumber, 'param.'..paramnumber..'.lfo.' .. name) 
+    local currentValue = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxnumber, 'param.'..paramnumber..'.lfo.' .. name) ))
     ret, value = reaper.ImGui_SliderDouble(ctx, name.. '##lfo' .. name .. fxnumber, currentValue, min, max, nil, sliderFlag)
     if ret then 
         reaper.TrackFX_SetNamedConfigParm( track, fxnumber, 'param.'..paramnumber..'.lfo.' .. name, value) 
@@ -4574,8 +4568,8 @@ end
 
 
 function createModulationLFOParameter(track, fxIndex,  _type, paramName, visualName, min, max, divide, valueFormat, sliderFlags, checkboxFlipped, dropDownText, dropdownOffset,tooltip, modulatorParameterWidth) 
-    local ret, currentValue = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName)
-    if ret and currentValue then 
+    local currentValue = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName)))
+    if currentValue then 
         scrollValue = nil
         --reaper.ImGui_Text(ctx,visualName)
         --visualName = ""
@@ -4688,7 +4682,7 @@ function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isC
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorTransparent)
         
         if not shapesPlots then shapesPlots, shapeNames = createShapesPlots() end  
-        local _, focusedShape = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.lfo.' .. "shape")  
+        local focusedShape = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.lfo.' .. "shape")))
     
         if not hovered then hovered = {} end
         if not hovered[fxIndex]  then hovered[fxIndex] = {} end
@@ -4740,8 +4734,8 @@ function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isC
     else  
         -- speed drop down menu
         reaper.ImGui_SetNextItemWidth(ctx,dropDownSize)
-        local ret, currentValue = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.lfo.' .. paramName) 
-        if ret then
+        local currentValue = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.lfo.' .. paramName)))
+        if currentValue then
             local smallest_difference = math.huge  -- Start with a large number
         
             for i, division in ipairs(noteTempos) do
@@ -6435,6 +6429,23 @@ function appSettingsWindow()
             end
             setToolTipFunc("Show or hide the plugins panel")  
             
+             
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Show column with plugin open status",settings.showPluginNumberColumn) 
+            if ret then 
+                settings.showPluginNumberColumn = val
+                saveSettings()
+            end
+            setToolTipFunc("Show a column to the right of plugin names with the plugin number and if a color if it's open.\nIf the parameter area is hidden this will be hidden automatically.")  
+            reaper.ImGui_Indent(ctx)
+            
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show plugin number in overview",settings.showPluginNumberInPluginOverview) 
+                if ret then 
+                    settings.showPluginNumberInPluginOverview = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show the plugin number in the plugins overview")  
+            reaper.ImGui_Unindent(ctx)
+            
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Hide plugin type from name",settings.hidePluginTypeName) 
             if ret then 
@@ -6461,6 +6472,12 @@ function appSettingsWindow()
             
             reaper.ImGui_TextColored(ctx, colorGrey, "Panel Controls")
             
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Open plugin when clicking name##",settings.openPluginWhenClickingName) 
+            if ret then 
+                settings.openPluginWhenClickingName = val
+                saveSettings()
+            end
+            setToolTipFunc("Open plugin when clicking name, instead of focusing the plugin and needing doubleclick to open.\nIf enabled, clicking the plugin number will focus the plugin.\nIf the parameters area is not shown the plugins will always be open on single click")  
             
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Show at top of panel##plugins",settings.showPluginOptionsOnTop) 
@@ -7658,7 +7675,7 @@ function isFXWindowUnderMouse()
   
     while hwnd ~= nil and reaper.JS_Window_IsWindow(hwnd) do
         local title = reaper.JS_Window_GetTitle(hwnd)
-        if title and (title:match("FX:") ~= nil or title:match("VST") ~= nil or title:match("JS:") ~= nil or title:match("Clap:") ~= nil) then
+        if title and (title:match("FX:") ~= nil or title:match("VST") ~= nil or title:match("JS:") ~= nil or title:match("Clap:") ~= nil or title:match("AU:") ~= nil or title:match("AUi:") ~= nil) then
         --if title and title:match(" - Track") ~= nil then
           clickedHwnd = hwnd
           --lastClickedHwnd = hwnd
@@ -8675,21 +8692,31 @@ local function loop()
                     if settings.allowHorizontalScroll then
                         pluginFlags = pluginFlags | reaper.ImGui_TableFlags_ScrollX()
                     end
+                     
+                    local columnAmount = (settings.showPluginNumberColumn and settings.showParametersPanel) and 2 or 1
+                    
+                    local openPluginOnSingleClick = settings.openPluginWhenClickingName or not settings.showParametersPanel
                     
                     local offset = settings.showOpenAll or settings.showAddTrackFX
-                    if reaper.ImGui_BeginTable(ctx, 'PluginsTable',2,pluginFlags, 0, 0) then -- (offset and (height -  64) or 0)) then
+                    if reaper.ImGui_BeginTable(ctx, 'PluginsTable',columnAmount,pluginFlags, 0, 0) then -- (offset and (height -  64) or 0)) then
                         
                         --ImGui.TableHeadersRow(ctx)
                         
-                        ImGui.TableSetupColumn(ctx, 'one', reaper.ImGui_TableColumnFlags_WidthFixed(), 16)--settings.partsWidth-60) -- Default to 100.0
+                        if columnAmount > 1 then
+                            ImGui.TableSetupColumn(ctx, 'one', reaper.ImGui_TableColumnFlags_WidthFixed(), 16)--settings.partsWidth-60) -- Default to 100.0
+                        
                         --ImGui.TableSetupColumn(ctx, 'two', ImGui.TableColumnFlags_WidthFixed, 20.0) -- Default to 200.0
-                        reaper.ImGui_TableSetupScrollFreeze(ctx, 1,0)
+                            reaper.ImGui_TableSetupScrollFreeze(ctx, 1,0)
+                        end
                         
                         reaper.ImGui_TableNextColumn(ctx)
                         local count = 0
                         for i, f in ipairs(focusedTrackFXNames) do 
                             --if (settings.includeModulators) or (not settings.includeModulators and (not f.isModulator)) then
                             if not f.isModulator and (settings.showContainers or (not settings.showContainers and not f.isContainer)) then
+                                local tooltipOpen = (not f.isOpen and "Open " or "Close ") .. f.name .. " window"
+                                local tooltipFocus = "Click to focus on " .. f.name .. " parameters\n- Double click to open or close"
+                                
                                 count  = count  + 1
                                 local name = f.name
                                 if settings.hidePluginTypeName then
@@ -8703,42 +8730,62 @@ local function loop()
                                 if f.indent then name = string.rep(indentStr, f.indent) .. name end
                                 
                                 local isFocused = tonumber(fxnumber) == tonumber(f.fxIndex)
-                                if isFocused then
-                                    --name = "> " .. name
+                                --isFocused =  settings.showPluginNumberColumn and isFocused or true
+                                if not settings.showPluginNumberColumn or not settings.showParametersPanel then
+                                    isFocused = f.isOpen
                                 end
+                                
                                 
                                 reaper.ImGui_TableNextRow(ctx)
                                  
                                 
-                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), f.isFloating and settings.colors.pluginOpen or settings.colors.pluginOpenInContainer)
-                                reaper.ImGui_TableNextColumn(ctx)
-                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), isFocused and colorText or colorTextDimmed)
-                                if reaper.ImGui_Selectable(ctx, (isFocused and ">" or count) .. '##' .. f.fxIndex, f.isOpen ,nil) then 
-                                    
-                                    openCloseFx(track, f.fxIndex, not f.isOpen)
-                                end  
-                                setToolTipFunc((not f.isOpen and "Open " or "Close ") .. f.name .. " window")
-                                reaper.ImGui_PopStyleColor(ctx)
                                 
-                                reaper.ImGui_PopStyleColor(ctx, 1)
                                 reaper.ImGui_TableNextColumn(ctx)
+                                if columnAmount > 1 then
+                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), f.isFloating and settings.colors.pluginOpen or settings.colors.pluginOpenInContainer)
+                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), isFocused and colorText or colorTextDimmed)
+                                    if reaper.ImGui_Selectable(ctx, ((isFocused and settings.showParametersPanel) and ">" or (settings.showPluginNumberInPluginOverview and count or "")) .. '##' .. f.fxIndex, f.isOpen ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                                        if openPluginOnSingleClick then
+                                            fxnumber = f.fxIndex
+                                            paramnumber = 0 
+                                            focusedFxNumber = f.fxIndex 
+                                            if reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
+                                               openCloseFx(track, f.fxIndex, not f.isOpen)
+                                            end
+                                        else
+                                            openCloseFx(track, f.fxIndex, not f.isOpen)
+                                        end
+                                    end  
+                                    setToolTipFunc(openPluginOnSingleClick and tooltipFocus or tooltipOpen)
+                                    reaper.ImGui_PopStyleColor(ctx)
+                                    
+                                    reaper.ImGui_PopStyleColor(ctx, 1)
+                                    reaper.ImGui_TableNextColumn(ctx)
+                                end
                                 
                                 --if reaper.ImGui_Checkbox(ctx, "##FXOpen" ..i, f.isOpen) then 
                                 --    openCloseFx(track, f.fxIndex, not f.isOpen)
                                 --end
+                                
+                                if not settings.showPluginNumberColumn or not settings.showParametersPanel then
+                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), f.isFloating and settings.colors.pluginOpen or settings.colors.pluginOpenInContainer)
+                                end
                                 
                                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), (settings.colorContainers and f.isContainer) and colorTextDimmed or colorText)
                                 if reaper.ImGui_Selectable(ctx, name .. '##' .. f.fxIndex, isFocused ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
                                    fxnumber = f.fxIndex
                                    paramnumber = 0 
                                    focusedFxNumber = f.fxIndex 
-                                   if reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
+                                   if (not openPluginOnSingleClick and reaper.ImGui_IsMouseDoubleClicked(ctx, 0)) or openPluginOnSingleClick then
                                       openCloseFx(track, f.fxIndex, not f.isOpen)
                                    end
                                 end 
                                 
                                 reaper.ImGui_PopStyleColor(ctx, 1)
-                                setToolTipFunc("Click to focus on " .. f.name .. " parameters\n- Double click to open or close")
+                                if not settings.showPluginNumberColumn or not settings.showParametersPanel then
+                                    reaper.ImGui_PopStyleColor(ctx, 1)
+                                end
+                                setToolTipFunc(not openPluginOnSingleClick and tooltipFocus or tooltipOpen)
                                 
                                 if scrollPlugin and tonumber(f.param) == tonumber(scrollPlugin) then
                                     reaper.ImGui_SetScrollHereY(ctx, 0)
@@ -9409,8 +9456,7 @@ local function loop()
           
           function openGui(track, fxIndex, name, gui, extraIdentifier, isCollabsed, sizeW, sizeH, visualizerSize) 
               if gui then 
-                  local _, currentValue = reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.."1"..'.mod.visible' )
-                  fxIsShowing = currentValue == "1"
+                  fxIsShowing = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'.."1"..'.mod.visible' ))) == 1                  
               else
                   fxIsShowing = reaper.TrackFX_GetOpen(track,fxIndex)
                   fxIsFloating = reaper.TrackFX_GetFloatingWindow(track,fxIndex)
