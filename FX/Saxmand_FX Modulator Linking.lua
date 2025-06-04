@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.6.2
+-- @version 0.9.7
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,15 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + Added option to remove developer name from plugin name (default is using it)
---   + Added more option for PLUGINS area, to open on single click and to hide plugin number
---   + fixed floating window not allowing adding modulator on right click
---   + updated how floating window know what has been clicked
---   + fixed bug where fx count was a string (corner case)
---   + fixed Surge XT bug (allow paramters to have the value "-")
---   + fixed missing floating window support for AU plugins
+--   + reupload as it didn't seem to catch the previous
 
-local version = "0.9.6.2"
+local version = "0.9.7"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
