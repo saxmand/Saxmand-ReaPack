@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.72
+-- @version 0.9.73
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed values being strings after converting other values to numbers causing numerous bugs
+--   + fixed some parameters not mapping width in when mapping is on if they had the same parameter as the mapping parameter
 
-local version = "0.9.72"
+local version = "0.9.73"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -3422,7 +3422,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
                 end
             elseif isSetParameterValue then
             end
-        elseif not native and ((isAdjustWidth and not mapActiveFxIndex) or (not isAdjustWidth and mapActiveFxIndex and mapActiveFxIndex ~= p.fxIndex and mapActiveParam ~= p.param)) then -- and (mapActiveParam ~= p.param))) then 
+        elseif not native and ((isAdjustWidth and not mapActiveFxIndex) or (not isAdjustWidth and mapActiveFxIndex and (mapActiveFxIndex ~= p.fxIndex or mapActiveParam ~= p.param))) then -- and (mapActiveParam ~= p.param))) then 
             setWidthValue(track, p, linkWidth)
         else 
             local amount
