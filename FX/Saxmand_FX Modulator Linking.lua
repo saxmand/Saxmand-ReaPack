@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.5.1
+-- @version 0.9.6
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,11 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + adding master track support attempt 2
+--   + Added option to remove developer name from plugin name (default is using it)
+--   + fixed bug where fx count was a string (corner case)
+--   + fixed Surge XT bug (allow paramters to have the value "-")
 
-local version = "0.9.5.1"
+local version = "0.9.6"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -324,7 +326,8 @@ local defaultSettings = {
     colorContainers = true,
     indentsAmount = 3,
     allowHorizontalScroll = false,
-    hidePluginTypeName = false,
+    hidePluginTypeName = true,
+    hideDeveloperName = true,
     
     showOpenAll = true, 
     showAddTrackFX = true,
@@ -1362,7 +1365,7 @@ function getModulatorNames(track, modulationContainerPos, parameterLinks)
         allIsCollabsed = true
         allIsNotCollabsed = true
         
-        for c = 0, fxAmount -1 do  
+        for c = 0, tonumber(fxAmount) -1 do  
             local _, fxIndex = reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. c)  
             local _, fxOriginalName = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, 'original_name')
             local renamed, fxName = reaper.TrackFX_GetNamedConfigParm(track, fxIndex, 'renamed_name')
@@ -1895,7 +1898,7 @@ local function getAllDataFromParameter(tr,fxIndex,p)
     local retValueName, valueName = reaper.TrackFX_GetFormattedParamValue(tr,fxIndex,p)
     
     -- we filter internal and midi parameters from plugin parameter list
-    if name:lower():match("midi cc") == nil and name:lower() ~= "internal" and valueName ~= "-" then 
+    if name:lower():match("midi cc") == nil and name:lower() ~= "internal" then -- and valueName ~= "-" then 
         local fx_name_ret, fxName = reaper.TrackFX_GetFXName(tr, fxIndex, "") 
         local _, parameterLinkActive = reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.active')
         parameterLinkActive = parameterLinkActive == "1" 
@@ -3530,6 +3533,11 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
             reaper.Undo_EndBlock("Inserting envelope points", 0)
             undoStarted = false
         end
+        
+        if not reaper.JS_Window_IsVisible(clickedHwnd) then
+            clickedHwnd = nil
+        end
+        lastClickedHwnd = clickedHwnd
     end
     
     if isMouseDown and dragKnob and dragKnob ~= lastDragKnob and dragKnob:match("Window") == nil then 
@@ -4526,74 +4534,39 @@ function createSliderForNativeLfoSettings(track,fxnumber,paramnumber,name,min,ma
     end
 end
 
-
-function createSlider2(track,fxIndex, info, currentValue, setSize) 
-    local _type = info._type
-    local paramIndex = info.paramIndex
-    local name = info.name
-    local min = info.min
-    local max = info.max
-    local divide = info.divide
-    local valueFormat = info.valueFormat
-    local sliderFlag = info.sliderFlag
-    local checkboxFlipped = info.sliderFlag
-    local dropDownText = info.dropDownText
-    local dropdownOffset = info.dropdownOffset
-    local tooltip = info.tooltip
-    
-    
-    currentValue = currentValue and currentValue or reaper.TrackFX_GetParam(track, fxIndex, paramIndex)
-    if _type == "SliderDoubleLogarithmic" then 
-        currentValue2 = reaper.TrackFX_GetParam(track, fxIndex, paramIndex)
-    end
-    
-    if currentValue then
-        --buttonTransparent(name, dropDownSize )
-        visualName = name
-        scrollValue = nil
-        
-        
-        
-        if setSize then 
-            local textW = reaper.ImGui_CalcTextSize(ctx, visualName,0,0)
-            reaper.ImGui_SetNextItemWidth(ctx,setSize - textW-4) 
-        end
-        if _type == "Combo" then
-            ret, val = reaper.ImGui_Combo(ctx, visualName.. '##slider' .. name .. fxIndex, math.floor(currentValue)+dropdownOffset, dropDownText)
-            if ret then setParameterButReturnFocus(track, fxIndex, paramIndex, val - dropdownOffset) end
-            scrollValue = 1
-        elseif _type == "Checkbox" then
-            ret, val = reaper.ImGui_Checkbox(ctx, '##slider' .. name .. fxIndex, currentValue == (checkboxFlipped and 0 or 1)) 
-            if ret then   
-                val = checkboxFlipped and (val and 0 or 1) or (val and 1 or 0)
-                setParameterButReturnFocus(track, fxIndex, paramIndex, val) 
-            end
-            scrollValue = 1
-            local _, y = reaper.ImGui_GetItemRectMin(ctx)
-            local x = reaper.ImGui_GetItemRectMax(ctx)
-            reaper.ImGui_DrawList_AddText(draw_list, x + 2,y+2, colorText, visualName)
-            
-        elseif _type == "ButtonToggle" then
-            if reaper.ImGui_Button(ctx, name.. '##slider' .. name .. fxIndex,setSize and setSize or dropDownSize,buttonSizeH) then
-                setParameterButReturnFocus(track, fxIndex, paramIndex, currentValue == 1 and 0 or 1) 
-            end 
-        end 
-        if val == true then val = 1 end
-        if val == false then val = 0 end
-        if tooltip and settings.showToolTip then reaper.ImGui_SetItemTooltip(ctx,tooltip) end 
-        return ret, val
-    end
-end
-
 -- wrap slider in to mapping function
 function createSlider(track,fxIndex, _type,paramIndex,name,min,max,divide, valueFormat,sliderFlag, checkboxFlipped, dropDownText, dropdownOffset,tooltip, width)  
     local info = {_type = _type,paramIndex =paramIndex,name = name,min = min,max =max,divide=divide, valueFormat = valueFormat,sliderFlag = sliderFlag, checkboxFlipped =checkboxFlipped, dropDownText = dropDownText, dropdownOffset = dropdownOffset,tooltip =tooltip}
     local sizeW = width and width or buttonWidth
-    if _type == "Combo" or _type == "Checkbox" or _type == "ButtonToggle" then
-        createSlider2(track,fxIndex, info,nil, sizeW) 
-    --else  
-    --    pluginParameterSlider(createSlider2, getAllDataFromParameter(track,fxIndex,paramIndex), info, widthArray) 
-    end
+
+    currentValue = reaper.TrackFX_GetParam(track, fxIndex, paramIndex)
+    
+    local textW = reaper.ImGui_CalcTextSize(ctx, name,0,0)
+    reaper.ImGui_SetNextItemWidth(ctx,sizeW - textW-4) 
+    if _type == "Combo" then
+        ret, val = reaper.ImGui_Combo(ctx, name.. '##slider' .. name .. fxIndex, math.floor(currentValue)+dropdownOffset, dropDownText)
+        if ret then setParameterButReturnFocus(track, fxIndex, paramIndex, val - dropdownOffset) end
+        scrollValue = 1
+    elseif _type == "Checkbox" then
+        ret, val = reaper.ImGui_Checkbox(ctx, '##slider' .. name .. fxIndex, currentValue == (checkboxFlipped and 0 or 1)) 
+        if ret then   
+            val = checkboxFlipped and (val and 0 or 1) or (val and 1 or 0)
+            setParameterButReturnFocus(track, fxIndex, paramIndex, val) 
+        end
+        scrollValue = 1
+        local _, y = reaper.ImGui_GetItemRectMin(ctx)
+        local x = reaper.ImGui_GetItemRectMax(ctx)
+        reaper.ImGui_DrawList_AddText(draw_list, x + 2,y+2, colorText, name)
+        
+    elseif _type == "ButtonToggle" then
+        if reaper.ImGui_Button(ctx, name.. '##slider' .. name .. fxIndex,sizeW,buttonSizeH) then
+            setParameterButReturnFocus(track, fxIndex, paramIndex, currentValue == 1 and 0 or 1) 
+        end 
+    end 
+    if val == true then val = 1 end
+    if val == false then val = 0 end
+    if tooltip and settings.showToolTip then reaper.ImGui_SetItemTooltip(ctx,tooltip) end 
+    return ret, val
 end
 
 
@@ -6465,7 +6438,14 @@ function appSettingsWindow()
                 settings.hidePluginTypeName = val
                 saveSettings()
             end
-            setToolTipFunc("Hide plugin type from name")  
+            setToolTipFunc("Hide plugin type from the plugin name")  
+
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Hide developer name from name",settings.hideDeveloperName) 
+            if ret then 
+                settings.hideDeveloperName = val
+                saveSettings()
+            end
+            setToolTipFunc("Hide developer name from the plugin name")  
             
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Allow horizontal scrolling",settings.allowHorizontalScroll) 
@@ -7768,6 +7748,7 @@ function updateTouchedFX()
                     projectStateOnClick = reaper.GetProjectStateChangeCount(0)
                     projectStateOnRelease = nil
                     fxWindowClickedParameterNotFound = nil
+                    parameterFound = false
                 end
                 if fxWindowClicked then 
                     focusDelta = false
@@ -7851,7 +7832,7 @@ function updateTouchedFX()
                 
                 -- we remove the variables for next click
                 parameterChanged = nil
-                parameterFound = nil
+                --parameterFound = nil
                 --fxWindowClicked = nil
                 --dragKnob = nil
                 lastValTouched = nil
@@ -7960,11 +7941,7 @@ local function loop()
     
     isEscapeKey = reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Escape(),false)
     if isMouseReleased then
-        dragKnob = nil
-        
-        if not reaper.JS_Window_IsVisible(clickedHwnd) then
-            clickedHwnd = nil
-        end
+        dragKnob = nil 
     end
     
     isMouseClick = isMouseDown and not isMouseDownStart
@@ -8711,6 +8688,9 @@ local function loop()
                                 local name = f.name
                                 if settings.hidePluginTypeName then
                                     name = name:gsub("^[^:]+: ", "")
+                                end
+                                if settings.hideDeveloperName then
+                                    name = name:gsub("%s*%b()", "")
                                 end
                                 if f.isContainer then name = name .. ":" end
                                 local indentStr = string.rep(" ", settings.indentsAmount)
@@ -10879,6 +10859,10 @@ local function loop()
     
     
     --fxWindowClicked, _, clickedHwnd
+    if lastClickedHwnd and clickedHwnd and lastClickedHwnd ~= clickedHwnd then
+        showFloatingMapper = false
+    end
+    
     if not settings.useFloatingMapper or not clickedHwnd then
         showFloatingMapper = false
     end
