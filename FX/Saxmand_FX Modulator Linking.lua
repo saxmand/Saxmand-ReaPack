@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.75
+-- @version 0.9.76
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,10 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed dragging FX window or changing a parameter to disable/enable modulator correctly
---   + fixed floating mapper to show after being hidden if clicking main area
+--   + Updated how floating mapper gets hidden/shown
+--   + Added option to keep showing floating mapper when clicking other FX window
 
-local version = "0.9.75"
+local version = "0.9.76"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -401,6 +401,7 @@ local defaultSettings = {
     -- floating mapper
       useFloatingMapper = false,
       keepWhenClickingInAppWindow = true,
+      keepWhenClickingInOtherFxWindow = false,
       onlyKeepShowingWhenClickingFloatingWindow = false,
       openFloatingMapperRelativeToWindow = false,
       openFloatingMapperRelativeToWindowPos = 15,
@@ -5869,7 +5870,15 @@ function floatingMapperSettings()
         settings.keepWhenClickingInAppWindow = val
         saveSettings()
     end
-    setToolTipFunc("Do not hide when clicking the FX Modulator Linking app") 
+    setToolTipFunc("Do not hide when clicking the " .. appName .. " app") 
+    
+    local ret, val = reaper.ImGui_Checkbox(ctx,"Keep when clicking in other FX window##",settings.keepWhenClickingInOtherFxWindow) 
+    if ret then 
+        settings.keepWhenClickingInOtherFxWindow = val
+        saveSettings()
+    end
+    setToolTipFunc("Do not hide when clicking another FX window.\nThis will be practical when rearranging FX windows, but not wanting to hide the current focused parameter.")
+    
     reaper.ImGui_Unindent(ctx)
     
     if sliderInMenu("Parameter width", "floatingMapperParameterWidth", menuSliderWidth, 140, 400, "Set the width of the parameter in the floating mapper window") then 
@@ -7686,10 +7695,9 @@ end
 function isFXWindowUnderMouse()
     local x, y = reaper.GetMousePosition()
     local hwnd = reaper.JS_Window_FromPoint(x, y)
-  
     while hwnd ~= nil and reaper.JS_Window_IsWindow(hwnd) do
         local title = reaper.JS_Window_GetTitle(hwnd)
-        if title and (title:match("FX:") ~= nil or title:match("VST") ~= nil or title:match("JS:") ~= nil or title:match("Clap:") ~= nil or title:match("AU:") ~= nil or title:match("AUi:") ~= nil) then
+        if title and (title:match("FX:") ~= nil or title:match("VST") ~= nil or title:match("JS:") ~= nil or title:match("Clap:") ~= nil or title:match("AU:") ~= nil or title:match("AU") ~= nil) then
         --if title and title:match(" - Track") ~= nil then
           clickedHwnd = hwnd
           --lastClickedHwnd = hwnd
@@ -7749,8 +7757,9 @@ function updateTouchedFX()
             hwndWindowOnTouchParam = clickedHwnd
             --hwndWindowOnTouchParam = reaper.JS_Window_GetFocus() 
             --if fxWindowClicked then 
-            lastClickedHwnd = clickedHwnd
+            
             --end
+            lastClickedHwnd = clickedHwnd
         end
     end
     
@@ -7771,17 +7780,23 @@ function updateTouchedFX()
             --track = trackTemp
         --end
         
+        if isMouseClick then 
+            fxWindowClicked = isFXWindowUnderMouse() 
+        end
         
         local deltaParam = reaper.TrackFX_GetNumParams(trackTemp, fxidx) - 1  
         
         if trackTemp and deltaParam ~= param then 
             local p = getAllDataFromParameter(trackTemp,fxidx,param) 
             
-            if isMouseDown and not mouseInsideFloatingMapper and not mouseInsideAppWindow then  
+            if isMouseDown and not reaper.ImGui_IsMousePosValid(ctx) then  
                 if isMouseClick then 
-                    fxWindowClicked = isFXWindowUnderMouse() 
+                    --fxWindowClicked = isFXWindowUnderMouse() 
                     -- trying to catch the clicked modulator when not using force, through project state change count
-                    projectStateOnClick = reaper.GetProjectStateChangeCount(0)
+                    if fxWindowClicked then
+                        projectStateOnClick = reaper.GetProjectStateChangeCount(0)
+                    end
+                    
                     projectStateOnRelease = nil
                     fxWindowClickedParameterNotFound = nil
                     parameterFound = false
@@ -10928,54 +10943,41 @@ local function loop()
         return open 
     end
     
-    if clickedHwnd and not reaper.JS_Window_IsVisible(clickedHwnd) then
-        clickedHwnd = nil
-        lastClickedHwnd = nil
-    end
-    --fxWindowClicked, _, clickedHwnd
-    if lastClickedHwnd and clickedHwnd and lastClickedHwnd ~= clickedHwnd then
-        showFloatingMapper = false
-    end
     
     if not settings.useFloatingMapper or not clickedHwnd then
         showFloatingMapper = false
+    elseif clickedHwnd and not reaper.JS_Window_IsVisible(clickedHwnd) then
+        clickedHwnd = nil
+        lastClickedHwnd = nil
+        showFloatingMapper = false
+    elseif clickedHwnd and lastClickedHwnd ~= clickedHwnd then
+        if lastClickedHwnd and not settings.keepWhenClickingInOtherFxWindow then
+            showFloatingMapper = false
+        end
+        --lastClickedHwnd = clickedHwnd
     end
-    --[[
-    if showFloatingMapper and track  and track == trackTouched and fxnumber and paramnumber then
-        showFloatingMapper = floatingMappedParameterWindow(track, fxnumber, paramnumber) 
-    end ]]
+    
+    
+    
     if showFloatingMapper and validateTrack(track) and track == trackTouched and fxIndexTouched and parameterTouched then
         showFloatingMapper = floatingMappedParameterWindow(trackTouched, fxIndexTouched, parameterTouched) 
-        if not showFloatingMapper then
-            --clickedHwnd = nil
-            --lastClickedHwnd = nil 
-        end
-    else
-        --showFloatingMapper = false
     end 
     
     
     
     
     if isAnyMouseDown then
-        local alreadyShowing = showFloatingMapper == true
+        local alreadyShowing = showFloatingMapper == true 
         
-        if (settings.keepWhenClickingInAppWindow and reaper.ImGui_IsMousePosValid(ctx) or (not settings.keepWhenClickingInAppWindow and mouseInsideFloatingMapper)) then
-            if alreadyShowing then
-                showFloatingMapper = true
-            end
-        else
-            if settings.onlyKeepShowingWhenClickingFloatingWindow and not fxWindowClicked then
+        if settings.onlyKeepShowingWhenClickingFloatingWindow and not fxWindowClicked then
+            if not reaper.ImGui_IsMousePosValid(ctx) then
                 showFloatingMapper = false
-                if not mouseInsideAppWindow and reaper.ImGui_IsMousePosValid(ctx) then
-                    showFloatingMapper = true
-                end
+            elseif not settings.keepWhenClickingInAppWindow and mouseInsideAppWindow then 
+                showFloatingMapper = false
             end
-        end
-        --if not alreadyHidden and reaper.ImGui_IsMousePosValid(ctx) and ) then
-        --    showFloatingMapper = true
-        --end
+        end 
     end
+    
     
     reaper.ImGui_PopStyleColor(ctx, colorsPush)
     reaper.ImGui_PopStyleVar(ctx, varPush)
