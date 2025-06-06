@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.74
+-- @version 0.9.75
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added option to see static value on parameters that are being modulated 
+--   + fixed dragging FX window or changing a parameter to disable/enable modulator correctly
+--   + fixed floating mapper to show after being hidden if clicking main area
 
-local version = "0.9.74"
+local version = "0.9.75"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -6349,7 +6350,7 @@ function appSettingsWindow()
                 settings.showBaselineInsteadOfModulatedValue = val
                 saveSettings()
             end
-            setToolTipFunc("Show baseline value instead of modulated value on the slider") 
+            setToolTipFunc("Show baseline value instead of modulated value on the slider.\nFYI!! This will only work FXs that support. Maybe there's a workaround that I can find later.") 
             
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Show width knob##parameters",settings.showWidthInParameters) 
@@ -7772,7 +7773,7 @@ function updateTouchedFX()
         
         
         local deltaParam = reaper.TrackFX_GetNumParams(trackTemp, fxidx) - 1  
-        --reaper.ShowConsoleMsg(val .. " - " .. tostring(dragKnob) .. "\n")
+        
         if trackTemp and deltaParam ~= param then 
             local p = getAllDataFromParameter(trackTemp,fxidx,param) 
             
@@ -7797,32 +7798,36 @@ function updateTouchedFX()
                                 
                                 
                                 if not parameterChanged then 
+                                    --if mouseDragStartX ~= mouse_pos_x or  mouseDragStartY ~= mouse_pos_y then
+                                        parameterChanged = true
+                                    --end
                                     if not dragKnob then 
                                         dragKnob = "baselineWindow"
                                         mouseDragStartX = mouse_pos_x
                                         mouseDragStartY = mouse_pos_y
-                                    end
-                                    
-                                    parameterChanged = true
+                                    end 
                                 end  
                                 
                                 local range = p.max - p.min
                                 if mapActiveFxIndex then -- (isAdjustWidth and not mapActiveFxIndex) or (not isAdjustWidth and mapActiveFxIndex) then
                                     setParameterValuesViaMouse(trackTouched, "Window", "", p, range, p.min, p.currentValue, 100)
                                 else
-                                    setParameterFromFxWindowParameterSlide(track, p)
+                                    --if parameterChanged then
+                                        setParameterFromFxWindowParameterSlide(track, p)
+                                    --end
                                 end
                                 
                             end
                         end
                     end
                 end
-            else
+            else 
+                if momentarilyDisabledParameterLink then
+                    reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.active', "1")
+                    momentarilyDisabledParameterLink = false
+                end
+                
                 if not parameterFound then
-                    if momentarilyDisabledParameterLink then
-                        reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.active', "1")
-                        momentarilyDisabledParameterLink = false
-                    end
                     -- we keep checking that delta is set, so we are ready for next click
                     -- set a timer to only look for updated project state count for less than the a sec
                     if not timeReleaseStart then 
@@ -7856,14 +7861,15 @@ function updateTouchedFX()
                         
                     end 
                     
-                    -- only used for force mapping
-                    if settings.forceMapping and param ~= deltaParam then    
-                        -- sets the Delta value to it's current value, to clear the last touched or focused fx
-                        local deltaVal = reaper.TrackFX_GetParam(trackTemp, fxidx, deltaParam)
-                        reaper.TrackFX_SetParam(trackTemp, fxidx, deltaParam, deltaVal) 
-                        -- we store that we have focused delta, so we do not find parameter twice on release above
-                        focusDelta = true
-                    end
+                end
+                
+                -- only used for force mapping
+                if settings.forceMapping and param ~= deltaParam then    
+                    -- sets the Delta value to it's current value, to clear the last touched or focused fx
+                    local deltaVal = reaper.TrackFX_GetParam(trackTemp, fxidx, deltaParam)
+                    reaper.TrackFX_SetParam(trackTemp, fxidx, deltaParam, deltaVal) 
+                    -- we store that we have focused delta, so we do not find parameter twice on release above
+                    focusDelta = true
                 end
                 
                 -- we remove the variables for next click
@@ -10940,6 +10946,10 @@ local function loop()
     end ]]
     if showFloatingMapper and validateTrack(track) and track == trackTouched and fxIndexTouched and parameterTouched then
         showFloatingMapper = floatingMappedParameterWindow(trackTouched, fxIndexTouched, parameterTouched) 
+        if not showFloatingMapper then
+            --clickedHwnd = nil
+            --lastClickedHwnd = nil 
+        end
     else
         --showFloatingMapper = false
     end 
@@ -10948,10 +10958,12 @@ local function loop()
     
     
     if isAnyMouseDown then
-        local alreadyHidden = showFloatingMapper == false
+        local alreadyShowing = showFloatingMapper == true
         
         if (settings.keepWhenClickingInAppWindow and reaper.ImGui_IsMousePosValid(ctx) or (not settings.keepWhenClickingInAppWindow and mouseInsideFloatingMapper)) then
-            showFloatingMapper = true
+            if alreadyShowing then
+                showFloatingMapper = true
+            end
         else
             if settings.onlyKeepShowingWhenClickingFloatingWindow and not fxWindowClicked then
                 showFloatingMapper = false
