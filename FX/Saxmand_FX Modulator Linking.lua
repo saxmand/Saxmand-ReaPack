@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.76
+-- @version 0.9.77
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,10 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + Updated how floating mapper gets hidden/shown
---   + Added option to keep showing floating mapper when clicking other FX window
+--   + possible fix for user modules that have dynamic parameters (defined by "(DISABLED)" in their name)
 
-local version = "0.9.76"
+local version = "0.9.77"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1903,10 +1902,11 @@ local function getAllDataFromParameter(tr,fxIndex,p)
     local retValueName, valueName = reaper.TrackFX_GetFormattedParamValue(tr,fxIndex,p)
     
     -- we filter internal and midi parameters from plugin parameter list
-    if name:lower():match("midi cc") == nil and name:lower() ~= "internal" then -- and valueName ~= "-" then 
+    if name:lower():match("midi cc") == nil and name:lower() ~= "internal"  and name:lower():match("(disabled)") == nil then -- and valueName ~= "-" then 
         local fx_name_ret, fxName = reaper.TrackFX_GetFXName(tr, fxIndex, "") 
         local parameterLinkActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.active'))) == 1        
         local guid = reaper.TrackFX_GetFXGUID( tr, fxIndex )
+        
         
         -- special setting, to rename for nicer view in parameters
         if fxName == "Track controls" then
@@ -2270,6 +2270,7 @@ function CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
         --local isModActive  = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, fxIndex, "param." .. p .. ".mod.active") )) == 1
         
         if isLinkActive and modulationContainerPos then 
+            local linkFxIndex
             local linkFx = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' ))) -- index of the fx that's linked. if outside modulation folder, it will be modulation folder index
             local linkParam = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' )))  -- parameter of the fx that's linked. 
             local fxIndexInContainer = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.fx_index')))
@@ -2277,17 +2278,21 @@ function CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
             if isModulator then 
                 linkFxIndex = tonumber(get_fx_id_from_container_path(track, modulationContainerPos+1, linkFx + 1)) -- test hierarchy
             else
-                linkFxIndex = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. fxIndexInContainer)))                
+                if fxIndexInContainer then
+                    linkFxIndex = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. fxIndexInContainer)))                
+                end
             end
             --parameterLinkName = select(2, reaper.TrackFX_GetParamName(track, isModulator and tonumber(linkFxIndex) or tonumber(modulationContainerPos), tonumber(linkParam)))
           
             --local linkedName = select(2, reaper.TrackFX_GetParamName(track, fxIndex, p))
-            if not pLinks[linkFxIndex] then pLinks[linkFxIndex] = {} end
-            --if not parameterLinks[linkFx][linkParam][fxIndex] then 
-              --  parameterLinks[linkFx][linkParam] = 0
-            --end
-            --parameterLinks[linkFx][linkParam] = parameterLinks[linkFx][linkParam] + 1 
-            table.insert(pLinks[linkFxIndex], {fxIndex = fxIndex, param = p})
+            if linkFxIndex then
+                if not pLinks[linkFxIndex] then pLinks[linkFxIndex] = {} end
+                --if not parameterLinks[linkFx][linkParam][fxIndex] then 
+                  --  parameterLinks[linkFx][linkParam] = 0
+                --end
+                --parameterLinks[linkFx][linkParam] = parameterLinks[linkFx][linkParam] + 1 
+                table.insert(pLinks[linkFxIndex], {fxIndex = fxIndex, param = p})
+            end
             
             --reaper.ShowConsoleMsg(pLinks[linkFxIndex][1].fxIndex .. " - " .. linkFxIndex .. " llo\n")
                 
@@ -5757,7 +5762,6 @@ function genericModulator(id, name, modulationContainerPos, fxIndex, fxInContain
     local numParams = reaper.TrackFX_GetNumParams(track,fxIndex) 
     local isMapped = genericModulatorInfo and genericModulatorInfo.outputParam ~= -1
     
-    
     if not isMapped then
         reaper.ImGui_TextWrapped(ctx, "Select parameters to use as output") 
     end 
@@ -5770,10 +5774,13 @@ function genericModulator(id, name, modulationContainerPos, fxIndex, fxInContain
         
         if not hide then
             if genericModulatorInfo.outputParam == p then reaper.ImGui_BeginDisabled(ctx) end
-            pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,p), nil, nil, nil, false, modulatorParameterWidth, 1, nil, genericModulatorInfo.outputParam) 
+            pInfo = getAllDataFromParameter(track,fxIndex,p)
+            if pInfo then
+                pluginParameterSlider("modulator", pInfo, nil, nil, nil, false, modulatorParameterWidth, 1, nil, genericModulatorInfo.outputParam) 
+                reaper.ImGui_Spacing(ctx)
+            end
             if genericModulatorInfo.outputParam == p then reaper.ImGui_EndDisabled(ctx) end
             
-            reaper.ImGui_Spacing(ctx)
         end
          
     end
