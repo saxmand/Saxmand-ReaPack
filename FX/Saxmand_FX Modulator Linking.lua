@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.77
+-- @version 0.9.78
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + possible fix for user modules that have dynamic parameters (defined by "(DISABLED)" in their name)
+--   + uptimized "hide all/show all" in user modulator
 
-local version = "0.9.77"
+local version = "0.9.78"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1896,13 +1896,24 @@ local function setNativeACSParamSettings(track,fxIndex, settings)
     end 
 end
 
+local function filterParametersThatAreMostLikelyNotWanted(name, tr, fxIndex)
+    if tr and fxIndex then 
+        _, name = reaper.TrackFX_GetParamName(tr,fxIndex,name)
+    end
+    if name:lower():match("midi cc") == nil and name:lower() ~= "internal"  and name:lower():match("(disabled)") == nil then -- and valueName ~= "-" then 
+        return true
+    else
+        return false
+    end
+end
+
 local function getAllDataFromParameter(tr,fxIndex,p) 
     if not tr or not validateTrack(tr) then return {} end
     local _, name = reaper.TrackFX_GetParamName(tr,fxIndex,p)
     local retValueName, valueName = reaper.TrackFX_GetFormattedParamValue(tr,fxIndex,p)
     
     -- we filter internal and midi parameters from plugin parameter list
-    if name:lower():match("midi cc") == nil and name:lower() ~= "internal"  and name:lower():match("(disabled)") == nil then -- and valueName ~= "-" then 
+    if filterParametersThatAreMostLikelyNotWanted(name) then 
         local fx_name_ret, fxName = reaper.TrackFX_GetFXName(tr, fxIndex, "") 
         local parameterLinkActive = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.active'))) == 1        
         local guid = reaper.TrackFX_GetFXGUID( tr, fxIndex )
@@ -9950,16 +9961,20 @@ local function loop()
                                   local allIsShown = true 
                                   local param_count = reaper.TrackFX_GetNumParams(track, fxIndex)
                                   for p = 0, param_count - 1 do 
-                                      if trackSettings.hideParametersFromModulator and trackSettings.hideParametersFromModulator[fx.guid] and trackSettings.hideParametersFromModulator[fx.guid][p] then
-                                          allIsShown = false
-                                          break;
+                                      if filterParametersThatAreMostLikelyNotWanted(p, track, fx.fxIndex) then
+                                          if trackSettings.hideParametersFromModulator and trackSettings.hideParametersFromModulator[fx.guid] and trackSettings.hideParametersFromModulator[fx.guid][p] then
+                                              allIsShown = false
+                                              break;
+                                          end
                                       end
                                   end
                                   if reaper.ImGui_Button(ctx, allIsShown and "Hide all" or "Show all", modulatorWidth-16) then
                                       for p = 0, param_count - 1 do 
-                                          trackSettings.hideParametersFromModulator[fx.guid][p] = allIsShown
-                                          saveTrackSettings(track)
+                                          if filterParametersThatAreMostLikelyNotWanted(p, track, fx.fxIndex) then
+                                              trackSettings.hideParametersFromModulator[fx.guid][p] = allIsShown 
+                                          end
                                       end
+                                      saveTrackSettings(track)
                                   end
                               else
                                   if (trackSettings.bigWaveform) then
