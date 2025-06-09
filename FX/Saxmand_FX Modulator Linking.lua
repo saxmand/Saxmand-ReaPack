@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.78
+-- @version 0.9.79
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + uptimized "hide all/show all" in user modulator
+--   + snjuk2LfoModulator has shape buttons instead of dropdown
 
-local version = "0.9.78"
+local version = "0.9.79"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -3316,21 +3316,23 @@ function setEnvelopePointAdvanced(track, p, amount)
 end
 
 function setParameterFromFxWindowParameterSlide(track, p)
-    if p.usesEnvelope then
-        if p.parameterLinkActive then
-            momentarilyDisabledParameterLink = true --p.parameterModulationActive
+    if track then
+        if p.usesEnvelope then
+            if p.parameterLinkActive then
+                momentarilyDisabledParameterLink = true --p.parameterModulationActive
+                reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.active', "0")
+            end
+            setEnvelopePointAdvanced(track, p, p.value)
+        elseif p.parameterLinkActive then 
+            if not momentarilyDisabledParameterLink then
+                momentarilyDisabledParameterLink = p.parameterModulationActive
+            end
             reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.active', "0")
+            reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline', p.value) 
+            --reaper.TrackFX_SetParam(track, p.fxIndex, p.param, p.value)
+        else 
+            reaper.TrackFX_SetParam(track, p.fxIndex, p.param, p.value)
         end
-        setEnvelopePointAdvanced(track, p, p.value)
-    elseif p.parameterLinkActive then 
-        if not momentarilyDisabledParameterLink then
-            momentarilyDisabledParameterLink = p.parameterModulationActive
-        end
-        reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.active', "0")
-        reaper.TrackFX_SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline', p.value) 
-        --reaper.TrackFX_SetParam(track, p.fxIndex, p.param, p.value)
-    else 
-        reaper.TrackFX_SetParam(track, p.fxIndex, p.param, p.value)
     end
 end
 
@@ -4661,9 +4663,74 @@ local noteTempos = {
 }
 
 
+function createShapesPlots()
+    plotAmount = 99
+    local shapes = {
+      function(n) return math.sin((n)*2 * math.pi) end, -- sin
+      function(n) return n < 0.5 and -1 or (n> 0.5 and 1 or 0) end, --square
+      function(n) return (n * -2 + 1) end, -- saw L
+      function(n) return (n * 2 - 1) end, -- saw R
+      function(n) return (math.abs(n - math.floor(n + 0.5)) * 4 - 1) end, -- triangle
+      function(n) return randomPoints[math.floor(n*(#randomPoints-1))+1] / 50 -1 end, -- random
+      function(n) return math.floor(n/0.33)-1 end, -- steps
+    }
+    local shapeNames = {"Sin", "Square", "Saw L", "Saw R", "Triangle", "Random", "Steps"}
+    
+    shapesPlots = {}
+    for i = 0, #shapes-1 do 
+        plots = reaper.new_array(plotAmount+1)
+        for n = 0, plotAmount do
+            plots[n+1] = shapes[i+1](n/plotAmount)
+        end
+        table.insert(shapesPlots,plots)
+    end 
+    
+    return shapesPlots, shapeNames
+end
+local shapesPlots, shapeNames = createShapesPlots() 
 
 
 function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx, genericModulatorInfo, modulatorParameterWidth)
+    function createShapes() 
+        ------------ SHAPE -----------
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorLightBlue)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorTransparent)
+        
+        
+        local focusedShape = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.lfo.' .. "shape")))
+    
+        if not hovered then hovered = {} end
+        if not hovered[fxIndex]  then hovered[fxIndex] = {} end
+        for i = 1, #shapesPlots - 1 do
+            plots = shapesPlots[i]
+            --ImGui.SetNextItemAllowOverlap(ctx)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),focusedShape == i-1 and colorButtonsActive or (hovered and hovered[fxIndex][i]) and colorButtonsHover or colorButtons )
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PlotLines(), colorText )
+            
+            
+            local posX, posY = reaper.ImGui_GetCursorPos(ctx) 
+            if reaper.ImGui_InvisibleButton(ctx, "##shapeButton" .. fxIndex ..":" .. i, buttonSizeW, buttonSizeW) then 
+                shape = i -1
+                reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.lfo.' .. "Shape", shape) 
+            end
+            local lineX, lineY = reaper.ImGui_GetItemRectMin(ctx)
+            if settings.showToolTip then setToolTipFunc("Set shape to: " .. shapeNames[i]) end
+            
+            reaper.ImGui_SetCursorPos(ctx, posX, posY) 
+            
+            reaper.ImGui_PlotLines(ctx, '', plots, 0, nil, -1.0, 1.0, buttonSizeW, buttonSizeH)
+            reaper.ImGui_PopStyleColor(ctx,2)
+            
+            if i < #shapesPlots - 1 then
+                reaper.ImGui_SameLine(ctx)--, buttonSizeW * i) 
+                local posX, posY = reaper.ImGui_GetCursorPos(ctx)
+                reaper.ImGui_SetCursorPos(ctx, posX-8, posY)
+            end
+        end  
+        
+        reaper.ImGui_PopStyleColor(ctx,3) 
+    end
     
     paramOut = "1"
     
@@ -4673,74 +4740,11 @@ function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isC
         noteTemposDropdownText = noteTemposDropdownText .. t.name .. "\0" 
     end
     
-    function createShapesPlots()
-        plotAmount = 99
-        local shapes = {
-          function(n) return math.sin((n)*2 * math.pi) end, -- sin
-          function(n) return n < width and -1 or (n> width and 1 or 0) end, --square
-          function(n) return (n * -2 + 1) end, -- saw L
-          function(n) return (n * 2 - 1) end, -- saw R
-          function(n) return (math.abs(n - math.floor(n + 0.5)) * 4 - 1) end, -- triangle
-          function(n) return randomPoints[math.floor(n*(#randomPoints-1))+1] / 50 -1 end, -- random
-        }
-        local shapeNames = {"Sin", "Square", "Saw L", "Saw R", "Triangle", "Random"}
-        
-        shapesPlots = {}
-        for i = 0, #shapes-1 do 
-            plots = reaper.new_array(plotAmount+1)
-            for n = 0, plotAmount do
-                plots[n+1] = shapes[i+1](n/plotAmount)
-            end
-            table.insert(shapesPlots,plots)
-        end 
-        
-        return shapesPlots, shapeNames
-    end
-    
-    function createShapes() 
-        ------------ SHAPE -----------
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorLightBlue)
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorTransparent)
-        
-        if not shapesPlots then shapesPlots, shapeNames = createShapesPlots() end  
-        local focusedShape = tonumber(select(2, reaper.TrackFX_GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.lfo.' .. "shape")))
-    
-        if not hovered then hovered = {} end
-        if not hovered[fxIndex]  then hovered[fxIndex] = {} end
-        for i, plots in ipairs(shapesPlots) do
-            --ImGui.SetNextItemAllowOverlap(ctx)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),focusedShape == i-1 and colorButtonsActive or (hovered and hovered[fxIndex][i]) and colorButtonsHover or colorButtons )
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PlotLines(), colorText )
-            
-            reaper.ImGui_PlotLines(ctx, '', plots, 0, nil, -1.0, 1.0, buttonSizeW, buttonSizeH)
-            reaper.ImGui_PopStyleColor(ctx,2)
-            
-            if reaper.ImGui_IsItemClicked(ctx, reaper.ImGui_MouseButton_Left()) then
-                shape = i -1
-                reaper.TrackFX_SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.lfo.' .. "Shape", shape) 
-            end
-            
-            hovered[fxIndex][i] = reaper.ImGui_IsItemHovered(ctx)
-                
-            
-            ImGui.SetItemTooltip(ctx, "Set shape to: " .. shapeNames[i]) 
-            
-            if i < #shapesPlots then
-                reaper.ImGui_SameLine(ctx)--, buttonSizeW * i) 
-                posX, posY = reaper.ImGui_GetCursorPos(ctx)
-                reaper.ImGui_SetCursorPos(ctx, posX-8, posY)
-            end
-        end  
-        
-        reaper.ImGui_PopStyleColor(ctx,3) 
-    end
     
     
     buttonSizeW = modulatorParameterWidth/6
     buttonSize = 20
     
-    reaper.ImGui_TableNextColumn(ctx) 
         
     createShapes()
     
@@ -5376,12 +5380,72 @@ end
 
 
 function snjuk2LfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx, genericModulatorInfo, modulatorParameterWidth)
+    function createShapes() 
+        ------------ SHAPE -----------
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorLightBlue)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorTransparent)
+        
+        local buttonSizeW = modulatorParameterWidth/7
+        local buttonSizeH = modulatorParameterWidth/7
+        
+        if not hovered then hovered = {} end
+        if not hovered[fxIndex]  then hovered[fxIndex] = {} end
+        for i = 1, #shapesPlots do
+            plots = shapesPlots[i]
+            --ImGui.SetNextItemAllowOverlap(ctx)
+            
+            local shape = i -1
+            local isSelected = reaper.TrackFX_GetParam(track, fxIndex, 2) == shape
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), isSelected and colorButtonsActive or (hovered and hovered[fxIndex][i]) and colorButtonsHover or colorButtons )
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PlotLines(), colorText )
+            
+            
+            local posX, posY = reaper.ImGui_GetCursorPos(ctx) 
+            if reaper.ImGui_InvisibleButton(ctx, "##shapeButton" .. fxIndex ..":" .. i, buttonSizeW, buttonSizeH) then 
+                reaper.TrackFX_SetParam(track, fxIndex, 2, shape)
+            end
+            local lineX, lineY = reaper.ImGui_GetItemRectMin(ctx)
+            if settings.showToolTip then setToolTipFunc("Set shape to: " .. shapeNames[i]) end
+            
+            reaper.ImGui_SetCursorPos(ctx, posX, posY) 
+            
+            reaper.ImGui_PlotLines(ctx, '', plots, 0, nil, -1.0, 1.0, buttonSizeW, buttonSizeH)
+            reaper.ImGui_PopStyleColor(ctx,2)
+            
+            if i < #shapesPlots then
+                reaper.ImGui_SameLine(ctx)--, buttonSizeW * i) 
+                local posX, posY = reaper.ImGui_GetCursorPos(ctx)
+                reaper.ImGui_SetCursorPos(ctx, posX-8, posY)
+            end
+        end  
+        
+        reaper.ImGui_PopStyleColor(ctx,3) 
+    end
+    
+    paramOut = "1"
+    
+    
+    
+    buttonSize = 20
+    
+        
+    createShapes(true)
+    --[[
+    
+    noteTempoNamesToValues = {}
+    noteTemposDropdownText = ""
+    for _, t in ipairs(noteTempos) do
+        noteTemposDropdownText = noteTemposDropdownText .. t.name .. "\0" 
+    end
     local list = {"Sine","Square","Saw L","Saw R","Triangle","Random","Step"}
     local listText = ""
     for _, t in ipairs(list) do
         listText = listText .. t .. "\0" 
     end
     createSlider(track,fxIndex,"Combo",2,"Shape",nil,nil,1,nil,nil,nil,listText,0,"Select shape of LFO", modulatorParameterWidth)
+    ]]
+    
     if reaper.TrackFX_GetParam(track, fxIndex, 2) == 6 then
         pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,22), nil, nil, nil, true, modulatorParameterWidth, 1) 
     end
@@ -5899,7 +5963,7 @@ function floatingMapperSettings()
     
     reaper.ImGui_Unindent(ctx)
     
-    if sliderInMenu("Parameter width", "floatingMapperParameterWidth", menuSliderWidth, 140, 400, "Set the width of the parameter in the floating mapper window") then 
+    if sliderInMenu("Floating window width", "floatingMapperParameterWidth", menuSliderWidth, 140, 400, "Set the width of the parameter in the floating mapper window") then 
         --setWindowWidth = true
     end
     --reaper.ImGui_TextColored(ctx, colorGrey, "Open floating mapper relative to mouse")
