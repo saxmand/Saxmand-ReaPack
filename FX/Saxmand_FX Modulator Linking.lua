@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.80
+-- @version 0.9.81
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,11 +15,13 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed 2829: attempt to concatenate a nil value (field 'parameterLinkName' bug
---   + added initial parameter catch support (in developer tab for now)
---   + added performance stats with fps and read parameters (in developer tab)
+--   + added extra option for container visibility in Plugins panel
+--   + added initial support for low param load mode
+--   + added full container support (needs testing)
+--   + fixed values not showing (regression from 0.9.80
+--   + fixed parameter popup native sliders not working properly
 
-local version = "0.9.80"
+local version = "0.9.81"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -203,7 +205,8 @@ local lastParameterTouchedMouse, lastFxIndexTouchedMouse, lastTrackIndexTouchedM
 
 
 local focusedTrackFXNames = {}
-local parameterLinks = {}
+local parameterLinks-- = {}
+local reloadParameterLinkCatch
 local focusedTrackFXParametersData = {}
 local modulatorNames = {}
 local modulatorFxIndexes = {}
@@ -337,6 +340,7 @@ local defaultSettings = {
     showContainers = true,
     colorContainers = true,
     indentsAmount = 3,
+    identsType = false,
     allowHorizontalScroll = false,
     hidePluginTypeName = true,
     hideDeveloperName = true,
@@ -1130,26 +1134,86 @@ function GetNamedConfigParm(track, index, str, doNotUseCatch)
         return true, catch 
     else  
         paramsReadCount = paramsReadCount + 1
-        local ret, val = reaper.TrackFX_GetNamedConfigParm(track, index, str)
-        if paramTableCatch[index] then
-            paramTableCatch[index][tableStr] = val 
-        end
-        return ret, val
+        --if index then
+            local ret, val = reaper.TrackFX_GetNamedConfigParm(track, index, str)
+            if paramTableCatch[index] then
+                paramTableCatch[index][tableStr] = val 
+            end
+            return ret, val
+        --end
     end
 end
+
+-- SHORT CUT FUNCTIONS
+
+function getPlinkActive(track,fxIndex,param)
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.active'))) == 1 
+end
+
+function getModActive(track,fxIndex,param)
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.active'))) == 1
+end
+
+function getModBassline(track,fxIndex,param)
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.mod.baseline') ))
+end
+
+function getPlinkOffset(track,fxIndex,param)
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.offset')))
+end
+
+function getPlinkScale(track,fxIndex,param)
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.scale')))
+end
+
+function getPlinkParam(track,fxIndex,param)
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.param' )))
+end
+
+function getPlinkParamInContainer(track,containerFxIndex,param)
+    return tonumber(select(2, GetNamedConfigParm( track, containerFxIndex, 'param.'..param..'.container_map.fx_parm' )))
+end
+
+function getPlinkEffect(track,fxIndex, param)
+    return select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.effect' ))
+end
+
+function getRenamedFxName(track,fxIndex)
+    return select(2, GetNamedConfigParm( track, fxIndex, 'renamed_name' ))
+end
+
+function getOriginalFxName(track,fxIndex)
+    return select(2, GetNamedConfigParm( track, fxIndex, 'fx_name' ))
+end
+
+function getContainerCount(track,fxIndex)
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, "container_count" )))
+end
+
+function getPlinkFxIndex(track,containerFxIndex, parameterLinkEffect)
+    local ret, val = GetNamedConfigParm( track, containerFxIndex, 'container_item.' .. parameterLinkEffect )
+    return ret and tonumber(val) or false
+end
+
+function getPlinkFxIndexInContainer(track,containerFxIndex, param)
+    local ret, val = GetNamedConfigParm( track, containerFxIndex, 'param.'..param..'.container_map.fx_index' )
+    return ret and tonumber(val) or false
+end
+
+
 
 function GetParamName(track, index, param, doNotUseCatch)
     local tableStr = param .. "GetParamName"
     local catch = getParameterTableCatch(index, tableStr)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
-        return true, catch 
+        return catch 
     else 
         paramsReadCount = paramsReadCount + 1
         local ret, val = reaper.TrackFX_GetParamName(track, index, param) 
         if paramTableCatch[index] then
             paramTableCatch[index][tableStr] = val 
         end
-        return ret, val
+        return val
     end   
 end
 
@@ -1157,14 +1221,14 @@ function GetFXName(track, index, doNotUseCatch)
     local tableStr = "GetFXName"
     local catch = getParameterTableCatch(index, tableStr)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
-        return true, catch 
+        return catch 
     else 
         paramsReadCount = paramsReadCount + 1
         local ret, val = reaper.TrackFX_GetFXName(track, index) 
         if paramTableCatch[index] then
             paramTableCatch[index][tableStr] = val 
         end
-        return ret, val
+        return val
     end
 end
 
@@ -1235,7 +1299,7 @@ function GetFormattedParamValue(track, index, param, doNotUseCatch)
         return catch 
     else 
         paramsReadCount = paramsReadCount + 1
-        local val = reaper.TrackFX_GetFormattedParamValue(track, index, param)  
+        local _, val = reaper.TrackFX_GetFormattedParamValue(track, index, param)  
         if paramTableCatch[index] then
             paramTableCatch[index][tableStr] = val 
         end
@@ -1319,6 +1383,23 @@ function GetFloatingWindow(track, index, doNotUseCatch)
 end
 
 
+function GetContainerPath(track, index, doNotUseCatch)
+    local tableStr = "GetContainerPath"
+    local catch = getParameterTableCatch(index, tableStr)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch 
+    else 
+        paramsReadCount = paramsReadCount + 1
+        local val = get_container_path_from_fx_id(track, index)
+        if paramTableCatch[index] then
+            paramTableCatch[index][tableStr] = val 
+        end
+        return val
+    end  
+end
+
+
+
 function GetByName(track, str, instantiate) 
     paramsReadCount = paramsReadCount + 1
     return reaper.TrackFX_GetByName(track, str, instantiate)  
@@ -1327,6 +1408,17 @@ end
 function GetCount(track, doNotUseCatch)
     paramsReadCount = paramsReadCount + 1
     return reaper.TrackFX_GetCount(track)  
+end
+
+local function filterParametersThatAreMostLikelyNotWanted(name, track, fxIndex)
+    if track and fxIndex then 
+        name = GetParamName(track,fxIndex,name)
+    end
+    if name:lower():match("midi cc") == nil and name:lower() ~= "internal"  and name:lower():match("(disabled)") == nil then -- and valueName ~= "-" then 
+        return true
+    else
+        return false
+    end
 end
 
 
@@ -1389,6 +1481,128 @@ end
 ---------------------------------------------------
 
 
+
+-------------------------------------------
+----------CONTAINER FUNCTIONS--------------
+-------------------------------------------
+
+function get_fx_id_from_container_path(tr, idx1, ...) -- returns a fx-address from a list of 1-based IDs
+  local sc,rv = GetCount(tr)+1, 0x2000000 + idx1
+  for i,v in ipairs({...}) do
+    local ccok, cc = reaper.TrackFX_GetNamedConfigParm(tr, rv, 'container_count')
+    if ccok ~= true then return nil end
+    rv = rv + sc * v
+    sc = sc * (1+tonumber(cc))
+  end
+  return rv
+end
+
+function get_container_path_from_fx_id(tr, fxidx) -- returns a list of 1-based IDs from a fx-address
+  if fxidx & 0x2000000 then
+    local ret = { }
+    local n = GetCount(tr)
+    local curidx = (fxidx - 0x2000000) % (n+1)
+    local remain = math.floor((fxidx - 0x2000000) / (n+1))
+    if curidx < 1 then return nil end -- bad address
+
+    local addr, addr_sc = curidx + 0x2000000, n + 1
+    while true do
+      local ccok, cc = reaper.TrackFX_GetNamedConfigParm(tr, addr, 'container_count')
+      if not ccok then return nil end -- not a container
+      ret[#ret+1] = curidx
+      n = tonumber(cc)
+      if remain <= n then if remain > 0 then ret[#ret+1] = remain end return ret end
+      curidx = remain % (n+1)
+      remain = math.floor(remain / (n+1))
+      if curidx < 1 then return nil end -- bad address
+      addr = addr + addr_sc * curidx
+      addr_sc = addr_sc * (n+1)
+    end
+  end
+  return { fxid+1 }
+end
+
+
+function fx_map_parameter(tr, fxidx, parmidx) -- maps a parameter to the top level parent, returns { fxidx, parmidx }
+  local path = get_container_path_from_fx_id(tr, fxidx)
+  if not path then return nil end
+  local rootContainerPos = path[1] - 1
+  while #path > 1 do
+    fxidx = path[#path]
+    table.remove(path)
+    local cidx = get_fx_id_from_container_path(tr,table.unpack(path))
+    if cidx == nil then return nil end
+    local i, found = 0, nil
+    while true do
+      local rok, r = reaper.TrackFX_GetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_index",i))
+      if not rok then break end
+      if tonumber(r) == fxidx - 1 then
+        rok, r = reaper.TrackFX_GetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_parm",i))
+        if not rok then break end
+        if tonumber(r) == parmidx then found = true parmidx = i break end
+      end
+      i = i + 1
+    end
+    if not found then
+      -- add a new mapping
+      local rok, r = reaper.TrackFX_GetNamedConfigParm(tr,cidx,"container_map.add")
+      if not rok then return nil end
+      r = tonumber(r)
+      SetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_index",r),tostring(fxidx - 1))
+      SetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_parm",r),tostring(parmidx))
+      parmidx = r
+    end
+  end
+  return rootContainerPos, parmidx
+end
+
+
+function fx_get_mapped_parameter(tr, fxidx, parmidx) -- maps a parameter to the top level parent, returns { fxidx, parmidx }
+  local path = get_container_path_from_fx_id(tr, fxidx)
+  if not path then return nil end
+  local rootContainerPos = path[1] - 1
+  while #path > 1 do
+    fxidx = path[#path]
+    table.remove(path)
+    local cidx = get_fx_id_from_container_path(tr,table.unpack(path))
+    if cidx == nil then return nil end
+    local i, found = 0, nil
+    while true do
+      local rok, r = reaper.TrackFX_GetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_index",i))
+      if not rok then break end
+      if tonumber(r) == fxidx - 1 then
+        rok, r = reaper.TrackFX_GetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_parm",i))
+        if not rok then break end
+        if tonumber(r) == parmidx then found = true; parmidx = i; break end
+      end
+      i = i + 1
+    end
+    if not found then
+      return false
+        -- add a new mapping
+        --local rok, r = reaper.TrackFX_GetNamedConfigParm(tr,cidx,"container_map.add")
+        --if not rok then return nil end
+        --r = tonumber(r)
+        --parmidx = r
+    end
+  end
+  return rootContainerPos, parmidx
+end
+
+--[[
+
+-- example use
+track = reaper.GetTrack(0,0);
+id = get_fx_id_from_container_path(track, 2, 1, 2, 1) -- test hierarchy
+fxidx,fxparm = fx_map_parameter(track,id,5)
+env = reaper.GetFXEnvelope(track,fxidx,fxparm,true)
+reaper.TrackList_AdjustWindows(true)
+
+]]
+-------------------------------------------
+-------------------------------------------
+
+
 function renameModulatorNames(track, modulationContainerPos)
     local fxAmount = tonumber(select(2, GetNamedConfigParm(track, modulationContainerPos, 'container_count', true)))
     if not fxAmount then return end
@@ -1402,7 +1616,7 @@ function renameModulatorNames(track, modulationContainerPos)
             local renamed, fxName = GetNamedConfigParm(track, fxIndex, 'renamed_name')
             local nameWithoutNumber = fxName:gsub(" %[%d+%]$", "")
             if not renamed or fxName == "" then
-                _, nameWithoutNumber = GetFXName(track,fxIndex)
+                nameWithoutNumber = GetFXName(track,fxIndex)
             end
             idCounter = "_" .. nameWithoutNumber -- enables to use modules starting with a number
             if not counterArray[idCounter] then 
@@ -1522,6 +1736,7 @@ function mapModulatorActivate(fx, mapParam, name, fromKeycommand, simple)
             mapActiveParam = mapParam
             fxContainerIndex = fx.fxInContainerIndex 
         end
+        reloadParameterLinkCatch = true
     end
 end
 
@@ -1687,7 +1902,7 @@ function getModulatorNames(track, modulationContainerPos, parameterLinks)
                 local mappingNames = {}
                  
                 for i, out in ipairs(output) do
-                    _, paramName = GetParamName(track, fxIndex, out)
+                    paramName = GetParamName(track, fxIndex, out)
                     local mappingName = fxName 
                     if #output > 1 then 
                         if outputNames then
@@ -1731,6 +1946,7 @@ function disableParameterLink(track, fxnumber, paramnumber, newValue)
     else
         SetParam(track,fxnumber,paramnumber,baseline)-- + offset)
     end
+    reloadParameterLinkCatch = true
 end
 
 function setParameterToBaselineValue(track, fxnumber, paramnumber) 
@@ -1792,13 +2008,33 @@ function deleteParameterFromContainer(track, modulationContainerPos, fxIndex, pa
     GetNamedConfigParm( track, modulationContainerPos, 'param.' .. param .. '.container_map.delete' )
 end
 
+function envelopeIsVisible(envelope)
+    _, envelopeVisible = reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "", false)
+    return tonumber(envelopeVisible) == 1
+end
+
+function envelopeIsActive(envelope)
+    _, envelopeVisible = reaper.GetSetEnvelopeInfo_String(envelope, "ACTIVE", "", false)
+    return tonumber(envelopeVisible) == 1
+end
+
+function envelopeIsArmed(envelope)
+    _, envelopeVisible = reaper.GetSetEnvelopeInfo_String(envelope, "ARM", "", false)
+    return tonumber(envelopeVisible) == 1
+end
+
+function envelopeIsInLane(envelope)
+    _, envelopeVisible = reaper.GetSetEnvelopeInfo_String(envelope, "SHOWLANE", "", false)
+    return tonumber(envelopeVisible) == 1
+end
+
 function getEnvelopeState(envelope) 
     if envelope then
         _, envelopeVisible = reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "", false)
         _, envelopeActive = reaper.GetSetEnvelopeInfo_String(envelope, "ACTIVE", "", false)
         _, envelopeArm = reaper.GetSetEnvelopeInfo_String(envelope, "ARM", "", false)
         _, envelopeLane = reaper.GetSetEnvelopeInfo_String(envelope, "SHOWLANE", "", false)
-        return {visible = envelopeVisible == "1", active = envelopeActive == "1", arm = envelopeArm == "1", showLane = envelopeLane == "1"}
+        return {visible = envelopeIsVisible(envelope), active = envelopeIsActive(envelope), arm = envelopeIsArmed(envelope), envelopeIsInLane(envelope)}
     else
         return {visible = false, active = false, arm = false, showLane = true}
     end
@@ -1818,25 +2054,35 @@ function clearEnvelopeLane(envelope)
 end
 
 function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnumber, param, value, offsetForce, scaleForce, valueForce)
+    local outputPos
+    
     if tonumber(fxnumber) < 0x2000000 then
-       outputPos = tonumber(select(2, GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam )))
+        outputPos = tonumber(select(2, GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam, true )))
     else
-       -- could this be done in a better way? -- I need to get the position of the FX inside the container
-       outputPos = mapActiveParam -- this is the paramater in the lfo plugin 
-       modulationContainerPos = fxContainerIndex
+        containerPath = get_container_path_from_fx_id(track, fxnumber)
+        if containerPath and containerPath[1] == modulationContainerPos + 1 then
+            -- could this be done in a better way? -- I need to get the position of the FX inside the container
+            outputPos = mapActiveParam -- this is the paramater in the lfo plugin 
+            modulationContainerPos = fxContainerIndex
+        else
+            new_fxnumber, new_param = fx_map_parameter(track, fxnumber, param) 
+            fxnumber = new_fxnumber
+            param = new_param
+            outputPos = tonumber(select(2, GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam, true )))
+        end
     end 
-    local retParam, currentOutputPos = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.param')
-    local retEffect, currentModulationContainerPos = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.effect')
+    local retParam, currentOutputPos = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.param', true)
+    local retEffect, currentModulationContainerPos = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.effect', true)
     --local retActive, isPlinkActive = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.active')
     
     if (retParam and outputPos ~= tonumber(currentOutputPos)) or (retEffect and modulationContainerPos ~= tonumber(currentModulationContainerPos)) then 
-        local ret, baseline = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.mod.baseline')
-        local isModActive = tonumber(select(2, GetNamedConfigParm( track, fxnumber, 'param.'..param..'.mod.active'))) == 1        
+        local ret, baseline = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.mod.baseline', true)
+        local isModActive = tonumber(select(2, GetNamedConfigParm( track, fxnumber, 'param.'..param..'.mod.active', true))) == 1        
         if isModActive then
             if settings.usePreviousMapSettingsWhenOverwrittingMapping then
                 
-                local ret, offset = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.offset')
-                local ret, scale = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.scale')
+                local ret, offset = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.offset', true)
+                local ret, scale = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.scale', true)
                 offsetForce = offset
                 scaleForce = scale
             end
@@ -1867,7 +2113,7 @@ function disableAllParameterModulationMappingsByName(name, newValue)
     for fxIndex = 0, fx_count - 1 do
         local params = {}
         
-        local fx_name_ret, fx_name = GetFXName(track, fxIndex) 
+        local fx_name = GetFXName(track, fxIndex) 
         -- Iterate through all parameters for the current FX
         local param_count = GetNumParams(track, fxIndex)
         for p = 0, param_count - 1 do 
@@ -1877,11 +2123,11 @@ function disableAllParameterModulationMappingsByName(name, newValue)
             if parameterLinkActive then
                 local _, parameterLinkEffect = GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' )
                 if parameterLinkEffect ~= "" then
-                    local _, baseline = GetNamedConfigParm( track, fxIndex, 'param.'..p..'.mod.baseline')
-                    local _, width = GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.scale')
-                    local _, parameterLinkParam = GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' )
-                    local _, containerItemFxId = GetNamedConfigParm( track, parameterLinkEffect, 'container_item.'..parameterLinkParam )
-                    local _, parameterLinkName = GetParamName(track, parameterLinkEffect, parameterLinkParam)
+                    local baseline = getModBassline(track, fxIndex, p)
+                    local width = getPlinkScale(track, fxIndex, p)
+                    local parameterLinkParam = getPlinkParam(track, fxIndex, p )
+                    local containerItemFxId = getPlinkFxIndex( track, parameterLinkEffect, parameterLinkParam )
+                    local parameterLinkName = GetParamName(track, parameterLinkEffect, parameterLinkParam)
                     
                     if parameterLinkName:match(name) then
                         --reaper.ShowConsoleMsg(newValue .. " - disabel " .. parameterLinkName .. " on " .. fx_name .. " param: " .. p .. "\n")
@@ -1897,20 +2143,20 @@ end
 function parameterWithNameIsMapped(name)
     local fx_count = GetCount(track)
     for fxIndex = 0, fx_count - 1 do
-        local fx_name_ret, fx_name = GetFXName(track, fxIndex) 
+        local fx_name = GetFXName(track, fxIndex) 
         -- Iterate through all parameters for the current FX
         local param_count = GetNumParams(track, fxIndex)
         
         for p = 0, param_count - 1 do 
             if filterParametersThatAreMostLikelyNotWanted(p, track, fxIndex) then
-                local _, parameterLinkActive = GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.active')
-                local parameterLinkActive = parameterLinkActive == "1"
+                local parameterLinkActive = getPlinkActive(track, fxIndex, p) 
                 
                 if parameterLinkActive then
-                    _, parameterLinkEffect = GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' )
+                    parameterLinkEffect = getPlinkEffect(track, fxIndex, p )
                     if parameterLinkEffect ~= "" then
-                        _, parameterLinkParam = GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' )
-                        _, parameterLinkName = GetParamName(track, parameterLinkEffect, parameterLinkParam)
+                        parameterLinkParam = getPlinkParam(track, fxIndex, p)
+                        
+                        parameterLinkName = GetParamName(track, parameterLinkEffect, parameterLinkParam)
                         if parameterLinkName:match(name) then
                             return true
                         end
@@ -1928,7 +2174,7 @@ function getTrackPluginsParameterLinkValues(name, clearType)
     local fx_count = GetCount(track)
     for fxIndex = 0, fx_count - 1 do
         
-        local fx_name_ret, fx_name = GetFXName(track, fxIndex) 
+        local fx_name = GetFXName(track, fxIndex) 
         local guid = GetFXGUID( track, fxIndex)
         if not fx_name:match("^Modulators") then 
             local params = {}
@@ -1937,14 +2183,14 @@ function getTrackPluginsParameterLinkValues(name, clearType)
             local param_count = GetNumParams(track, fxIndex)
             for param = 0, param_count - 1 do
                 if filterParametersThatAreMostLikelyNotWanted(p, track, fxIndex) then
-                    local parameterLinkActive = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.active'))) == 1
+                    local parameterLinkActive = getPlinkActive(track, fxIndex, param)
                     
                     -- we ignore values that have parameter link activated
                     if parameterLinkActive then
-                        local parameterLinkEffect = select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.effect' ))
+                        local parameterLinkEffect = getPlinkEffect(track, fxIndex, param )
                         if parameterLinkEffect ~= "" then
-                            local parameterLinkParam = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.param' )))
-                            local parameterLinkName = select(2, GetParamName(track, parameterLinkEffect, parameterLinkParam))
+                            local parameterLinkParam = getPlinkParam(track, fxIndex, param)
+                            local parameterLinkName = GetParamName(track, parameterLinkEffect, parameterLinkParam) 
                             if parameterLinkName:match(name) then
                                 local baseline, scale, offset = getParameterLinkValues(track, fxIndex, param) 
                                 
@@ -1996,7 +2242,7 @@ function getTrackPluginValues(track, fx)
     -- Iterate through all FX on the track
     local fx_count = GetCount(track)
     for fxIndex = 0, fx_count - 1 do
-        local fx_name_ret, fx_name = GetFXName(track, fxIndex) 
+        local fx_name = GetFXName(track, fxIndex) 
         local guid = GetFXGUID( track, fxIndex )
         if not fx_name:match("^Modulators") then 
             local fx_name_simple = removeBeforeColon(fx_name)
@@ -2005,7 +2251,7 @@ function getTrackPluginValues(track, fx)
             -- Iterate through all parameters for the current FX
             local param_count = GetNumParams(track, fxIndex)
             for param = 0, param_count - 1 do
-                if filterParametersThatAreMostLikelyNotWanted(p, track, fxIndex) then
+                if filterParametersThatAreMostLikelyNotWanted(param, track, fxIndex) then
                     local parameterLinkActive = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.active'))) == 1
                     
                     -- we ignore values that have parameter link activated
@@ -2138,11 +2384,11 @@ local function getAllTrackFxParamValues(track,fxIndex)
         local paramCount = GetNumParams(track, fxIndex) - 1
         for p = 0, paramCount do 
             if filterParametersThatAreMostLikelyNotWanted(p, track, fxIndex) then
-                local parameterLinkActive = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.active'))) == 1            
+                local parameterLinkActive = getPlinkActive(track, fxIndex, p )
                 if parameterLinkActive then
-                    local parameterLinkEffect = select(2, GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' ))
+                    local parameterLinkEffect = getPlinkEffect(track, fxIndex, p)
                     if parameterLinkEffect ~= "" then  
-                        baseline = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..p..'.mod.baseline')))
+                        baseline = getModBassline(track, fxIndex, p)
                         --_, offset = GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.offset')
                         --_, width = GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.scale')
                         table.insert(data, baseline)
@@ -2204,104 +2450,129 @@ local function setNativeACSParamSettings(track,fxIndex, settings)
     end 
 end
 
-local function filterParametersThatAreMostLikelyNotWanted(name, tr, fxIndex)
-    if tr and fxIndex then 
-        _, name = GetParamName(tr,fxIndex,name)
-    end
-    if name:lower():match("midi cc") == nil and name:lower() ~= "internal"  and name:lower():match("(disabled)") == nil then -- and valueName ~= "-" then 
-        return true
-    else
-        return false
-    end
-end
 
-local function getAllDataFromParameter(tr,fxIndex,p) 
-    if not tr or not validateTrack(tr) then return {} end
+local function getAllDataFromParameter(track,fxIndex,p) 
+    if not track or not validateTrack(track) then return {} end
     if not fxIndex then return {} end
-    local _, name = GetParamName(tr,fxIndex,p)
-    local retValueName, valueName = GetFormattedParamValue(tr,fxIndex,p)
+    local name = GetParamName(track,fxIndex,p)
+    local valueName = GetFormattedParamValue(track,fxIndex,p)
     -- we filter internal and midi parameters from plugin parameter list
-    if filterParametersThatAreMostLikelyNotWanted(name) then 
-        local fx_name_ret, fxName = GetFXName(tr, fxIndex) 
-        local parameterLinkActive = tonumber(select(2, GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.active'))) == 1        
-        local guid = GetFXGUID( tr, fxIndex )
+    if filterParametersThatAreMostLikelyNotWanted(name) then  
+        local fxName = GetFXName(track, fxIndex) 
         
+        local root_fxIndex, root_param = fx_get_mapped_parameter(track, fxIndex, p)
+        --local containerPath = GetContainerPath(track, fxIndex)
+        --local modulated_fxIndex = fxIndex
+        --local modulated_param = p
+        local original_param = p
         
-        -- special setting, to rename for nicer view in parameters
-        if fxName == "Track controls" then
-            name = name:gsub("^Main p%d+:%s*", "")
-        end 
+        if containerPath and #containerPath > 1 then 
+            aaa12 = containerPath
+            aaa13 = fxIndex
+        end
         
-        local parameterModulationActive = tonumber(select(2, GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.mod.active'))) == 1
+        if modulationContainerPos and root_fxIndex and root_fxIndex ~= modulationContainerPos then 
+            if root_fxIndex and root_param then 
+                if getPlinkActive(track, root_fxIndex, root_param) then
+                    --modulated_fxIndex = root_fxIndex - 1
+                    --modulated_param = root_param
+                    fxIndex = root_fxIndex
+                    p = root_param
+                end
+            end
+        end
+        
+        local parameterLinkActive = getPlinkActive(track,fxIndex,p)
+        local guid = GetFXGUID(track, fxIndex)
+        
+        local parameterModulationActive = getModActive(track,fxIndex,p)
         local mappingName
         local baseline = false
         local width = 0
         local offset = 0
         local direction = 0
         local bipolar = false
+        local parameterLinkName = "" 
+        
+        
         if parameterLinkActive and modulationContainerPos then
-            parameterLinkEffect = select(2, GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.effect' ))
+            parameterLinkEffect = getPlinkEffect(track, fxIndex, p)
             if parameterLinkEffect ~= "" then 
-                baseline = tonumber(select(2, GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.mod.baseline') ))
-                offset = tonumber(select(2, GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.offset')))
-                width = tonumber(select(2, GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.scale')))
-                parameterLinkParam = tonumber(select(2, GetNamedConfigParm( tr, fxIndex, 'param.'..p..'.plink.param' )))
-                bipolar = tonumber(offset) == -0.5
+                baseline = getModBassline(track,fxIndex,p)
+                offset = getPlinkOffset(track,fxIndex,p)
+                width = getPlinkScale(track,fxIndex,p)
+                parameterLinkParam = getPlinkParam(track,fxIndex,p)
+                bipolar = offset == -0.5
                 
-                if tonumber(width) >= 0 then
+                if width and width >= 0 then
                     direction = offset * 2 + 1
                 else
                     direction = math.abs(offset * 2) - 1
                 end
-                
-                -- TODO: we should find the actual fxindex and param within the modulation container, and then gather name etc from there
-                if tonumber(fxIndex) < 0x200000 then 
-                    _, parameterLinkName = GetParamName(tr, parameterLinkEffect, parameterLinkParam)  
-                    ret, parameterLinkFXIndexInContainer = GetNamedConfigParm( tr, modulationContainerPos, 'param.'..parameterLinkParam..'.container_map.fx_index' )
-                    if ret then
-                        parameterLinkFXIndexInContainer = tonumber(parameterLinkFXIndexInContainer) 
-                        ret, parameterLinkFXIndex = GetNamedConfigParm( tr, modulationContainerPos, 'container_item.' ..  parameterLinkFXIndexInContainer)
-                        if ret then
-                            parameterLinkFXIndex = tonumber(parameterLinkFXIndex)
+                 
+                if root_fxIndex == modulationContainerPos then
+                    parameterLinkFXIndex = getPlinkFxIndex(track, modulationContainerPos, parameterLinkEffect)
+                   
+                    if parameterLinkFXIndex then
+                         parameterLinkName =  getRenamedFxName(track, parameterLinkFXIndex)
+                         
+                         local originalName = getOriginalFxName(track, parameterLinkFXIndex)
+                         local outputsForLinkedModulator = getOutputArrayForModulator(track, originalName, parameterLinkFXIndex, modulationContainerPos)
+                        
+                         --if not parameterLinkName and parameterLinkIndex then
+                         --    parameterLinkName = GetFXName(track, parameterLinkIndex)
+                         --end
+                         
+                          --reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - " .. parameterLinkEffect .. " - " .. parameterLinkParam .. " - "..#outputsForLinkedModulator  .. " - " .. parameterLinkName .. " - ".. originalName .. "\n")
+                         if #outputsForLinkedModulator > 1 then
+                             paramName = GetParamName(track, parameterLinkFXIndex, parameterLinkParam)
+                             parameterLinkName = parameterLinkName .. ": " .. paramName
                             
-                            -- overwrite the parameter to be the parameter that's within the modulation container
-                            ret, parameterLinkParam = GetNamedConfigParm( tr, modulationContainerPos, 'param.'..parameterLinkParam..'.container_map.fx_parm' )
-                            if ret then
-                                parameterLinkParam = tonumber(parameterLinkParam)
-                                local retName, originalName = GetNamedConfigParm( tr, parameterLinkFXIndex, 'fx_name' )
+                         end
+                         --reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - " .. parameterLinkEffect .. " - " .. parameterLinkParam .. " - "..#outputsForLinkedModulator  .. " - " .. parameterLinkName .. "\n")
+                        
+                     end 
+                     --reaper.ShowConsoleMsg(fxIndex .. " - " .. p .. " - " .. parameterLinkName .. " test\n")
+                else
+                    
+                    parameterLinkName = GetParamName(track, parameterLinkEffect, parameterLinkParam)  
+                    -- 1234
+                    parameterLinkFXIndexInContainer = getPlinkFxIndexInContainer(track,modulationContainerPos, parameterLinkParam)
+                    
+                    --reaper.ShowConsoleMsg(parameterLinkName .. " - " .. fxOriginalName .. "\n")
+                    --if fxOriginalName == "Container" then
+                    
+                    --else
+                    
+                        if parameterLinkFXIndexInContainer then
+                            parameterLinkFXIndex = getPlinkFxIndex( track, modulationContainerPos, parameterLinkFXIndexInContainer)
+                            
+                            if parameterLinkFXIndex then
                                 
-                                local outputsForLinkedModulator = getOutputArrayForModulator(tr, originalName, parameterLinkFXIndex, modulationContainerPos)
-                                
-                                local colon_pos = parameterLinkName:find(":")
-                                if #outputsForLinkedModulator == 1 and colon_pos then
-                                    parameterLinkName = parameterLinkName:sub(1, colon_pos - 1) 
+                                -- overwrite the parameter to be the parameter that's within the modulation container
+                                parameterLinkParam = getPlinkParamInContainer(track,modulationContainerPos,parameterLinkParam) 
+                                if parameterLinkParam then
+                                    local retName, originalName = GetNamedConfigParm( track, parameterLinkFXIndex, 'fx_name' )
+                                    
+                                    local outputsForLinkedModulator = getOutputArrayForModulator(track, originalName, parameterLinkFXIndex, modulationContainerPos)
+                                    
+                                    local colon_pos = parameterLinkName:find(":")
+                                    if #outputsForLinkedModulator == 1 and colon_pos then
+                                        parameterLinkName = parameterLinkName:sub(1, colon_pos - 1) 
+                                    end
                                 end
                             end
-                        end
-                    end
+                            --local mappings = (parameterLinks and parameterLinks[fxIndex]) and parameterLinks[fxIndex] or {}
+                            --modulatorNames
+                        end 
+                    --end
+                end
+                -- TODO: we should find the actual fxindex and param within the modulation container, and then gather name etc from there
+                if tonumber(fxIndex) < 0x200000 then 
+                    
                     --reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - " .. parameterLinkEffect .. " - " .. parameterLinkParam .. " - "..#outputsForLinkedModulator  .. " - " .. parameterLinkName .. "\n")
-                else
-                   ret, parameterLinkFXIndex = GetNamedConfigParm( tr, modulationContainerPos, 'container_item.' .. parameterLinkEffect )
-                   parameterLinkFXIndex = tonumber(parameterLinkFXIndex)
-                   
-                   if ret then
-                      parameterLinkName = select(2, GetNamedConfigParm( tr, parameterLinkFXIndex, 'renamed_name' ))
-                      local originalName = select(2, GetNamedConfigParm( tr, parameterLinkFXIndex, 'fx_name' ))
-                      local outputsForLinkedModulator = getOutputArrayForModulator(tr,originalName, parameterLinkFXIndex, modulationContainerPos)
-                      
-                      if not parameterLinkName and parameterLinkIndex then
-                          _, parameterLinkName = GetFXName(tr, parameterLinkIndex)
-                      end
-                       
-                       --reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - " .. parameterLinkEffect .. " - " .. parameterLinkParam .. " - "..#outputsForLinkedModulator  .. " - " .. parameterLinkName .. " - ".. originalName .. "\n")
-                      if #outputsForLinkedModulator > 1 then
-                          _, paramName = GetParamName(tr, parameterLinkFXIndex, parameterLinkParam)
-                          parameterLinkName = parameterLinkName .. ": " .. paramName
-                          
-                      end
-                      --reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - " .. parameterLinkEffect .. " - " .. parameterLinkParam .. " - "..#outputsForLinkedModulator  .. " - " .. parameterLinkName .. "\n")
-                      
-                   end 
+                else 
+                    
                 end 
             end 
         else
@@ -2310,37 +2581,9 @@ local function getAllDataFromParameter(tr,fxIndex,p)
         
         local parameterModulationActive = parameterLinkActive and parameterModulationActive -- and parameterLinkEffect
         
-        local envelopePointCount, singleEnvelopePointAtStart, usesEnvelope, firstEnvelopeValue, envelopeValueAtPos
-        local trackEnvelope = reaper.GetFXEnvelope(tr,fxIndex,p,false)
-        local usesEnvelope = false
-        if trackEnvelope then
-            envelopePointCount = reaper.CountEnvelopePoints(trackEnvelope)
-            _, envelopeActive = reaper.GetSetEnvelopeInfo_String(trackEnvelope, "ACTIVE", "", false)
-            envelopeActive = envelopeActive == "1"
-            
-            usesEnvelope = envelopePointCount > 0-- and envelopeActive == "1"
-            if usesEnvelope then
-                local playState = reaper.GetPlayState()
-                local target_time
-                if playState == 0 then --not lastEnvelopeInsertPos or lastEnvelopeInsertPos ~= playPos then
-                    target_time = reaper.GetCursorPosition()
-                else
-                    target_time = playPos2 
-                end
-                --local _, block_size = reaper.GetAudioDeviceInfo("BSIZE")
-                --local _, sample_rate = reaper.GetAudioDeviceInfo("SRATE")
-                retval, envelopeValueAtPos, dVdS, ddVdS, dddVdS = reaper.Envelope_Evaluate( trackEnvelope, target_time, 0, 0 )
-                if envelopePointCount == 1 then
-                    local ret, time, firstEnvelopeValue = reaper.GetEnvelopePoint(trackEnvelope, 0)
-                    if ret and time == 0 then
-                        singleEnvelopePointAtStart = true
-                    end
-                end
-            end
-        end
         
-        local value, min, max = GetParam(tr,fxIndex,p)
-        local hasSteps, step, smallStep, largeStep, isToggle = GetParameterStepSizes(tr, fxIndex, p)
+        local value, min, max = GetParam(track,fxIndex,p)
+        local hasSteps, step, smallStep, largeStep, isToggle = GetParameterStepSizes(track, fxIndex, p)
         
         local isInverted = max < min
         if isInverted then
@@ -2355,9 +2598,9 @@ local function getAllDataFromParameter(tr,fxIndex,p)
             --reaper.ShowConsoleMsg(fxName .. " - ".. name .. " - " .. step .. " - " .. range/step .. " - "  .. tostring(isToggle) .. "\n")
         end
         
-        local valueNormalized = GetParamNormalized(tr, fxIndex, p)
+        local valueNormalized = GetParamNormalized(track, fxIndex, p)
         if min ~= 0 or max ~= 1 and parameterLinkActive then
-            --_, fxName = GetFXName(track, fxIndex)
+            --fxName = GetFXName(track, fxIndex)
             
             --reaper.ShowConsoleMsg(fxName .. " : " .. name .. " : " .. min .. " : ".. max .. " : " .. tostring(baseline) .."\n")
             
@@ -2381,7 +2624,8 @@ local function getAllDataFromParameter(tr,fxIndex,p)
         parameterModulationActive = parameterModulationActive, parameterLinkActive = parameterLinkActive, parameterLinkEffect = parameterLinkEffect,containerItemFxId = tonumber(containerItemFxId),
         envelope = trackEnvelope, usesEnvelope = usesEnvelope,envelopeActive = envelopeActive, singleEnvelopePointAtStart = singleEnvelopePointAtStart, envelopeValue = envelopeValueAtPos, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
         fxName = fxName, 
-        hasSteps = hasSteps, step = step, smallStep = smallStep, largeStep = largeStep, isToggle = isToggle
+        hasSteps = hasSteps, step = step, smallStep = smallStep, largeStep = largeStep, isToggle = isToggle,
+        containerPath = containerPath,
         }
     end
 end
@@ -2496,135 +2740,6 @@ local function getAllParametersFromTrackFx(track, fxIndex)
     return data
 end
 
-
--------------------------------------------
-----------CONTAINER FUNCTIONS--------------
--------------------------------------------
-
-function get_fx_id_from_container_path(tr, idx1, ...) -- returns a fx-address from a list of 1-based IDs
-  local sc,rv = GetCount(tr)+1, 0x2000000 + idx1
-  for i,v in ipairs({...}) do
-    local ccok, cc = GetNamedConfigParm(tr, rv, 'container_count')
-    if ccok ~= true then return nil end
-    rv = rv + sc * v
-    sc = sc * (1+tonumber(cc))
-  end
-  return rv
-end
-
-function get_container_path_from_fx_id(tr, fxidx) -- returns a list of 1-based IDs from a fx-address
-  if fxidx & 0x2000000 then
-    local ret = { }
-    local n = GetCount(tr)
-    local curidx = (fxidx - 0x2000000) % (n+1)
-    local remain = math.floor((fxidx - 0x2000000) / (n+1))
-    if curidx < 1 then return nil end -- bad address
-
-    local addr, addr_sc = curidx + 0x2000000, n + 1
-    while true do
-      local ccok, cc = GetNamedConfigParm(tr, addr, 'container_count')
-      if not ccok then return nil end -- not a container
-      ret[#ret+1] = curidx
-      n = tonumber(cc)
-      if remain <= n then if remain > 0 then ret[#ret+1] = remain end return ret end
-      curidx = remain % (n+1)
-      remain = math.floor(remain / (n+1))
-      if curidx < 1 then return nil end -- bad address
-      addr = addr + addr_sc * curidx
-      addr_sc = addr_sc * (n+1)
-    end
-  end
-  return { fxid+1 }
-end
-
-
-function fx_map_parameter(tr, fxidx, parmidx) -- maps a parameter to the top level parent, returns { fxidx, parmidx }
-  local path = get_container_path_from_fx_id(tr, fxidx)
-  if not path then return nil end
-  while #path > 1 do
-    fxidx = path[#path]
-    table.remove(path)
-    local cidx = get_fx_id_from_container_path(tr,table.unpack(path))
-    if cidx == nil then return nil end
-    local i, found = 0, nil
-    while true do
-      local rok, r = GetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_index",i))
-      if not rok then break end
-      if tonumber(r) == fxidx - 1 then
-        rok, r = GetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_parm",i))
-        if not rok then break end
-        if tonumber(r) == parmidx then found = true parmidx = i break end
-      end
-      i = i + 1
-    end
-    if not found then
-      -- add a new mapping
-      local rok, r = GetNamedConfigParm(tr,cidx,"container_map.add")
-      if not rok then return nil end
-      r = tonumber(r)
-      SetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_index",r),tostring(fxidx - 1))
-      SetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_parm",r),tostring(parmidx))
-      parmidx = r
-    end
-  end
-  return fxidx, parmidx
-end
-
---[[
-
--- example use
-track = reaper.GetTrack(0,0);
-id = get_fx_id_from_container_path(track, 2, 1, 2, 1) -- test hierarchy
-fxidx,fxparm = fx_map_parameter(track,id,5)
-env = reaper.GetFXEnvelope(track,fxidx,fxparm,true)
-reaper.TrackList_AdjustWindows(true)
-
-]]
--------------------------------------------
--------------------------------------------
-
-function CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
-    local numParams = GetNumParams(track, fxIndex)
-    --_, fxName = GetFXName(track, fxIndex)
-    for p = 0, numParams - 1 do 
-        if filterParametersThatAreMostLikelyNotWanted(p, track, fxIndex) then
-            local isLinkActive = tonumber(select(2, GetNamedConfigParm(track, fxIndex, "param." .. p .. ".plink.active"))) == 1
-            --local isModActive  = tonumber(select(2, GetNamedConfigParm(track, fxIndex, "param." .. p .. ".mod.active") )) == 1
-            
-            if isLinkActive and modulationContainerPos then 
-                local linkFxIndex
-                local linkFx = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.effect' ))) -- index of the fx that's linked. if outside modulation folder, it will be modulation folder index
-                local linkParam = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.param' )))  -- parameter of the fx that's linked. 
-                local fxIndexInContainer = tonumber(select(2, GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.fx_index')))
-                --local _, linkFxIndex = GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.hint_id')
-                if isModulator then 
-                    linkFxIndex = tonumber(get_fx_id_from_container_path(track, modulationContainerPos+1, linkFx + 1)) -- test hierarchy
-                else
-                    if fxIndexInContainer then
-                        linkFxIndex = tonumber(select(2, GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. fxIndexInContainer)))                
-                    end
-                end
-                --parameterLinkName = select(2, GetParamName(track, isModulator and tonumber(linkFxIndex) or tonumber(modulationContainerPos), tonumber(linkParam)))
-              
-                --local linkedName = select(2, GetParamName(track, fxIndex, p))
-                if linkFxIndex then
-                    if not pLinks[linkFxIndex] then pLinks[linkFxIndex] = {} end
-                    --if not parameterLinks[linkFx][linkParam][fxIndex] then 
-                      --  parameterLinks[linkFx][linkParam] = 0
-                    --end
-                    --parameterLinks[linkFx][linkParam] = parameterLinks[linkFx][linkParam] + 1 
-                    table.insert(pLinks[linkFxIndex], {fxIndex = fxIndex, param = p})
-                end
-                
-                --reaper.ShowConsoleMsg(pLinks[linkFxIndex][1].fxIndex .. " - " .. linkFxIndex .. " llo\n")
-                    
-                --reaper.ShowConsoleMsg(fxName .. " - " ..parameterLinkName .. " -> " .. linkedName .. " - " .. linkFxIndex .. " - link FX index: " .. linkFx .. " - link FX param: " .. linkParam .. " - FX index in container: " .. fxIndexInContainer .. " - from mod con: " .. tostring(isModulator) .. "\n")
-            end
-        end
-    end 
-    return pLinks
-end
-
 local function findParentContainer(fxContainerIndex)
     for i, container in ipairs(containers) do 
         if container.fxIndex == fxContainerIndex then
@@ -2642,25 +2757,29 @@ end
 -- Function to get all plugins on a track, including those within containers
 function getAllTrackFXOnTrack(track)
     
+    function getNameAndOtherInfo(track, fxIndex) 
+        local fxName = GetFXName(track, fxIndex) -- Get the FX name'
+        local fxOriginalName = getOriginalFxName(track, fxIndex)
+        local container_count = getContainerCount(track,fxIndex)
+        local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
+        local isEnabled = GetEnabled(track, fxIndex)
+        local isOpen = GetOpen(track,fxIndex)
+        local isFloating = GetFloatingWindow(track,fxIndex)
+        return fxName, fxOriginalName, container_count, isContainer, isEnabled, isOpen, isFloating
+    end
     --reaper.ShowConsoleMsg("\n\n")
     local plugins = {} -- Table to store plugin information
     local containersFetch = {} -- Table to store plugin information
-    local pLinks = {} -- table to store all link parameters
+    --local pLinks = {} -- table to store all link parameters
     -- Helper function to get plugins recursively from containers
     local function getPluginsRecursively(track, fxContainerIndex, indent, fxCount, isModulator, fxContainerName)
         if fxCount then 
             for subFxIndex = 0, fxCount - 1 do
-                local fxIndex = tonumber(select(2, GetNamedConfigParm( track, fxContainerIndex, "container_item." .. subFxIndex )))
+                local fxIndex = getPlinkFxIndex(track, fxContainerIndex, subFxIndex)
                 if fxIndex then
-                    local retval, fxName = GetFXName(track, fxIndex) -- Get the FX name'
-                    local retval, fxOriginalName = GetNamedConfigParm(track, fxIndex, "fx_name") -- Get the FX name
-                    local container_count = tonumber(select(2, GetNamedConfigParm( track, fxIndex, "container_count" )))
-                    local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
-                    local isEnabled = GetEnabled(track, fxIndex)
-                    local isOpen = GetOpen(track,fxIndex)
-                    local isFloating = GetFloatingWindow(track,fxIndex)
+                    local fxName, fxOriginalName, container_count, isContainer, isEnabled, isOpen, isFloating = getNameAndOtherInfo(track, fxIndex) 
                     
-                    pLinks = CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
+                    --pLinks = CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
                     
                     table.insert(plugins, {fxIndex = fxIndex, name = fxName, isModulator = isModulator, indent = indent, fxContainerIndex = fxContainerIndex, fxContainerName = fxContainerName, isContainer = isContainer, base1Index = subFxIndex + 1, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating})
                     if isContainer then
@@ -2668,8 +2787,7 @@ function getAllTrackFXOnTrack(track)
                     end
                     
                     if isContainer then
-                        indent = indent + 1
-                        getPluginsRecursively(track, fxIndex, indent, tonumber(container_count), isModulator, fxName)
+                        getPluginsRecursively(track, fxIndex, indent + 1, tonumber(container_count), isModulator, fxName)
                     end
                 end
             end
@@ -2682,16 +2800,10 @@ function getAllTrackFXOnTrack(track)
     
         -- Iterate through each FX
         for fxIndex = 0, totalFX - 1 do
-            local retval, fxName = GetFXName(track, fxIndex) -- Get the FX name'
-            local retval, fxOriginalName = GetNamedConfigParm(track, fxIndex, "fx_name") -- Get the FX name'
-            local retval, container_count = GetNamedConfigParm( track, fxIndex, "container_count" )
-            local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
-            local isModulator = fxName == "Modulators"
-            local isEnabled = GetEnabled(track, fxIndex)
-            local isOpen = GetOpen(track,fxIndex)
-            local isFloating = GetFloatingWindow(track,fxIndex)
+            local fxName, fxOriginalName, container_count, isContainer, isEnabled, isOpen, isFloating = getNameAndOtherInfo(track, fxIndex)  
+            local isModulator = isContainer and fxName == "Modulators"
             
-            pLinks = CheckFXParamsMapping(pLinks, track, fxIndex)
+            --pLinks = CheckFXParamsMapping(pLinks, track, fxIndex)
     
             -- Add the plugin information
             table.insert(plugins, {fxIndex = fxIndex, name = fxName, isContainer = isContainer, isModulator = isModulator, fxContainerName = "ROOT", base1Index = fxIndex + 1, indent = 0, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating})
@@ -2706,8 +2818,85 @@ function getAllTrackFXOnTrack(track)
         end
     end
     
-    return plugins, pLinks
+    return plugins--, pLinks
         
+end
+
+
+
+function CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
+    local numParams = GetNumParams(track, fxIndex)
+    for p = 0, numParams - 1 do 
+        if filterParametersThatAreMostLikelyNotWanted(p, track, fxIndex) then
+            local isLinkActive = getPlinkActive(track, fxIndex, p )
+            
+            if isLinkActive and modulationContainerPos then 
+                -- TODO: STILL MORE WORK TO DO HERE.
+                local linkFxIndex
+                local linkFx = getPlinkEffect(track, fxIndex, p) -- index of the fx that's linked. if outside modulation folder, it will be modulation folder index
+                local linkParam = getPlinkParam(track, fxIndex, p)  -- parameter of the fx that's linked. 
+                local fxIndexInContainer = getPlinkFxIndexInContainer(track, modulationContainerPos, linkParam )
+                --local _, linkFxIndex = GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.hint_id')
+                if isModulator then 
+                    linkFxIndex = tonumber(get_fx_id_from_container_path(track, modulationContainerPos+1, linkFx + 1)) -- test hierarchy
+                else
+                    if fxIndexInContainer then
+                        linkFxIndex = getPlinkFxIndex(track, modulationContainerPos, fxIndexInContainer)                
+                    end
+                end
+                
+                if linkFxIndex then
+                    if not pLinks[linkFxIndex] then pLinks[linkFxIndex] = {} end
+                    table.insert(pLinks[linkFxIndex], {fxIndex = fxIndex, param = p})
+                end
+            end
+        end
+    end 
+    return pLinks
+end
+
+function getAllParameterModulatorMappings(track)
+    local pLinks = {}
+    
+    local function getRecursively(track, fxContainerIndex, indent, fxCount, isModulator, fxContainerName)
+        if fxCount then 
+            for subFxIndex = 0, fxCount - 1 do
+                local fxIndex = getPlinkFxIndex(track, fxContainerIndex, subFxIndex)
+                if fxIndex then
+                    local fxName, fxOriginalName, container_count, isContainer, isEnabled, isOpen, isFloating = getNameAndOtherInfo(track, fxIndex) 
+                    
+                    pLinks = CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
+                    
+                    if isContainer then
+                        getPluginsRecursively(track, fxIndex, indent + 1, tonumber(container_count), isModulator, fxName)
+                    end
+                end
+            end
+        end
+    end
+    
+    if track then
+        -- Total number of FX on the track
+        local totalFX = GetCount(track)
+    
+        -- Iterate through each FX
+        for fxIndex = 0, totalFX - 1 do 
+            local fxName = GetFXName(track, fxIndex) 
+            local fxOriginalName = getOriginalFxName(track, fxIndex) 
+            local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
+            local isModulator = isContainer and fxName == "Modulators"
+            
+            pLinks = CheckFXParamsMapping(pLinks, track, fxIndex)
+    
+            -- If the FX is a container, recursively check its contents
+            if isContainer then
+                local indent = 1 
+                getRecursively(track, fxIndex, isModulator)
+            end
+        end
+    end
+
+    return pLinks
 end
 
 
@@ -2728,7 +2917,7 @@ local function getAllTrackFXOnTrackSimple(track)
     local fxCount = GetCount(track)
     local data = {}
     for f = 0, fxCount-1 do
-       _, name = GetFXName(track,f)
+       local name = GetFXName(track,f)
        table.insert(data, {fxIndex = f, name = name})
     end
     return data
@@ -3005,9 +3194,9 @@ function getPosXForLineNormalized(posXOffset, sliderWidthAvailable, value)
 end
 
 
-function nativeReaperModuleParameter(track, fxIndex, paramOut,  _type, paramName, visualName, min, max, divide, valueFormat, sliderFlags, checkboxFlipped, dropDownText, dropdownOffset,tooltip, width, resetValue, p) 
+function nativeReaperModuleParameter(id, track, fxIndex, paramOut,  _type, paramName, visualName, min, max, divide, valueFormat, sliderFlags, checkboxFlipped, dropDownText, dropdownOffset,tooltip, width, resetValue, p) 
     local buttonId = fxIndex .. paramName
-    local moduleId = "native"
+    local moduleId = "native" .. id
     local fullId = "baseline" .. buttonId .. moduleId
     local range = max - min
     local colorPos = colorSliderBaseline
@@ -3026,7 +3215,7 @@ function nativeReaperModuleParameter(track, fxIndex, paramOut,  _type, paramName
         --local currentValueNormalized = p.currentValueNormalized
         valueFormat = (ret and tonumber(currentValue * divide)) and string.format(valueFormat, tonumber(currentValue * divide)) or ""
         
-    --function nativeReaperModuleParameter(nameOnSide, buttonId, currentValue,  min, max, divide, valueFormat, sliderFlags, width, _type, colorPos, p, resetValue)
+    --function nativeReaperModuleParameter(id, nameOnSide, buttonId, currentValue,  min, max, divide, valueFormat, sliderFlags, width, _type, colorPos, p, resetValue)
         
         reaper.ImGui_InvisibleButton(ctx, "slider" .. buttonId .. moduleId, faderWidth > 0 and faderWidth or 1, sliderHeight + 16) 
         
@@ -5066,11 +5255,11 @@ function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isC
     
     --local ret, isTempoSync = GetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.lfo.temposync') 
     --isTempoSync = isTempoSync == "1"
-    --nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "lfo.temposync", "Tempo sync", 0, 1, 1, isTempoSync and "On" or "Off", nil, nil, nil, nil, nil,modulatorParameterWidth, 0)
+    --nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.temposync", "Tempo sync", 0, 1, 1, isTempoSync and "On" or "Off", nil, nil, nil, nil, nil,modulatorParameterWidth, 0)
 
     local paramName = "Speed"
     if tonumber(isTempoSync) == 0 then
-        nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "lfo.speed", "Speed", 0.0039, 16,1, "%0.4f Hz", reaper.ImGui_SliderFlags_Logarithmic(), nil, nil, nil, nil,modulatorParameterWidth, 1)
+        nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.speed", "Speed", 0.0039, 16,1, "%0.4f Hz", reaper.ImGui_SliderFlags_Logarithmic(), nil, nil, nil, nil,modulatorParameterWidth, 1)
     else  
         -- speed drop down menu
         reaper.ImGui_SetNextItemWidth(ctx,dropDownSize)
@@ -5094,7 +5283,7 @@ function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isC
             scrollHoveredDropdown(closest_index, track,fxIndex,nil, noteTempos, 'param.'..paramOut..'.lfo.' .. paramName)
         end
     end
-    nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "lfo.phase", "Phase", 0, 1, 1, "%0.2f", nil, nil, nil, nil, nil,modulatorParameterWidth, 0) 
+    nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.phase", "Phase", 0, 1, 1, "%0.2f", nil, nil, nil, nil, nil,modulatorParameterWidth, 0) 
     createModulationLFOParameter(track, fxIndex, "Checkbox", "lfo.free", "Seek/loop", nil,nil,1,nil,nil,true, nil, nil, nil, modulatorParameterWidth)  
     
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,2), nil, nil, nil, true, modulatorParameterWidth, 0) 
@@ -5137,18 +5326,18 @@ function acsModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCo
     
     --if ret then SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName, amount) end 
     
-    nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.attack", "Attack", 0, 1000, 1, "%0.0f ms", nil, nil, nil, nil, nil,modulatorParameterWidth, 300)
-    nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.release", "Release", 0, 1000, 1, "%0.0f ms", nil, nil, nil, nil, nil,modulatorParameterWidth, 300)
-    nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.dblo", "Min Volume", -60, 12,1, "%0.2f dB", nil, nil, nil, nil, nil,modulatorParameterWidth, -60)
-    nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.dbhi", "Max Volume", -60, 12,1, "%0.2f dB", nil, nil, nil, nil, nil,modulatorParameterWidth, 12)
-    nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.strength", "Strength", 0, 1,100, "%0.1f %%", nil, nil, nil, nil, nil,modulatorParameterWidth, 1)
+    nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "acs.attack", "Attack", 0, 1000, 1, "%0.0f ms", nil, nil, nil, nil, nil,modulatorParameterWidth, 300)
+    nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "acs.release", "Release", 0, 1000, 1, "%0.0f ms", nil, nil, nil, nil, nil,modulatorParameterWidth, 300)
+    nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "acs.dblo", "Min Volume", -60, 12,1, "%0.2f dB", nil, nil, nil, nil, nil,modulatorParameterWidth, -60)
+    nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "acs.dbhi", "Max Volume", -60, 12,1, "%0.2f dB", nil, nil, nil, nil, nil,modulatorParameterWidth, 12)
+    nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "acs.strength", "Strength", 0, 1,100, "%0.1f %%", nil, nil, nil, nil, nil,modulatorParameterWidth, 1)
     -- THESE ARE NOT RELEVANT TO SEE
     
     
-    --nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.x2", "X pos", 0, 1,1, "%0.2f dB", nil, nil, nil, nil, nil,modulatorParameterWidth, 0.5)
-    --nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.y2", "Y pos", 0, 1,1, "%0.2f dB", nil, nil, nil, nil, nil,modulatorParameterWidth, 0.5)
-    --nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.chan", "Channel", 0, 2, 1, "%0.1f", nil, nil, nil, nil, nil,modulatorParameterWidth, 2)
-    --nativeReaperModuleParameter(track, fxIndex, paramOut, "SliderDouble", "acs.stereo", "Stereo", 0, 1, 1, "%0.1f", nil, nil, nil, nil, nil,modulatorParameterWidth, 1)
+    --nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "acs.x2", "X pos", 0, 1,1, "%0.2f dB", nil, nil, nil, nil, nil,modulatorParameterWidth, 0.5)
+    --nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "acs.y2", "Y pos", 0, 1,1, "%0.2f dB", nil, nil, nil, nil, nil,modulatorParameterWidth, 0.5)
+    --nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "acs.chan", "Channel", 0, 2, 1, "%0.1f", nil, nil, nil, nil, nil,modulatorParameterWidth, 2)
+    --nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "acs.stereo", "Stereo", 0, 1, 1, "%0.1f", nil, nil, nil, nil, nil,modulatorParameterWidth, 1)
      
     
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,2), nil, nil, nil, true, modulatorParameterWidth, 0) 
@@ -5607,25 +5796,22 @@ end
 
 function adsrModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx, genericModulatorInfo, modulatorParameterWidth)
      local _, min, max = GetParam(track, fxIndex, 0)
-     local ret, visualValue = GetFormattedParamValue(track, fxIndex, 0) 
-     if ret and tonumber(visualValue) then 
-         pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,0), nil, nil, nil, "Attack", modulatorParameterWidth, 5.01, math.floor(tonumber(visualValue)) .. " ms") 
-     end
+     local visualValue = GetFormattedParamValue(track, fxIndex, 0) 
+      pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,0), nil, nil, nil, "Attack", modulatorParameterWidth, 5.01, math.floor(tonumber(visualValue)) .. " ms") 
+
      pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,7), nil, nil, nil, "A.Tension", modulatorParameterWidth, 0, "", nil, nil, "%0.2f") 
      
      local _, min, max = GetParam(track, fxIndex, 1)
-     local ret, visualValue = GetFormattedParamValue(track, fxIndex, 1) 
-     if ret and tonumber(visualValue) then 
-         pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,1), nil, nil, nil, "Decay", modulatorParameterWidth, 5.3, math.floor(tonumber(visualValue)) .. " ms")
-     end
+     local visualValue = GetFormattedParamValue(track, fxIndex, 1) 
+     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,1), nil, nil, nil, "Decay", modulatorParameterWidth, 5.3, math.floor(tonumber(visualValue)) .. " ms")
+     
      pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,8), nil, nil, nil, "D.Tension", modulatorParameterWidth, 0, "", nil, nil, "%0.2f") 
      pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,2), nil, nil, nil, "Sustain", modulatorParameterWidth, 80, "", nil, nil, "%0.0f") 
 
      local _, min, max = GetParam(track, fxIndex, 3)
-     local ret, visualValue = GetFormattedParamValue(track, fxIndex, 3) 
-     if ret and tonumber(visualValue) then 
-         pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,3), nil, nil, nil, "Release", modulatorParameterWidth, 6.214, math.floor(tonumber(visualValue)) .. " ms")
-     end
+     local visualValue = GetFormattedParamValue(track, fxIndex, 3) 
+     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,3), nil, nil, nil, "Release", modulatorParameterWidth, 6.214, math.floor(tonumber(visualValue)) .. " ms")
+     
      pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,9), nil, nil, nil, "R.Tension", modulatorParameterWidth, 0, "", nil, nil, "%0.2f") 
      
      pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,4), nil, nil, nil, "Min", modulatorParameterWidth, 0, "", nil, nil, "%0.0f") 
@@ -6939,9 +7125,18 @@ function appSettingsWindow()
                 end
                 setToolTipFunc("Color FX container grey in the plugin list")  
             end
-             
-            
+               
+                    
+               
             sliderInMenu("Indent size for containers", "indentsAmount", menuSliderWidth, 0, 8, "Set how large a visual indents size is shown for container content in the plugin list")
+            
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,'Indicate folder depth indents with "|"',settings.identsType) 
+            if ret then 
+                settings.identsType = val
+                saveSettings()
+            end
+            setToolTipFunc('Use "|" at root of every folder depth indent for easier visual decoding')
         end 
          
         
@@ -7894,12 +8089,19 @@ function appSettingsWindow()
         end
         
         
-        local ret, val = reaper.ImGui_Checkbox(ctx,"Use param catch",settings.useParamCatch) 
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Use parameter catch",settings.useParamCatch) 
         if ret then 
             settings.useParamCatch = val
             saveSettings()
         end
         setToolTipFunc("This will create a carch of parameters read to ensure that we don't read any parameters multiple times") 
+        
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Limit modulation parameter linking reading",settings.limitParameterLinkLoading) 
+        if ret then 
+            settings.limitParameterLinkLoading = val
+            saveSettings()
+        end
+        setToolTipFunc("This will limit how often we look for modulation parameter links, as this is a more static value") 
     end
     
     local menusOrder = {"Layout", "Mapping", "Mouse And Keyboard", "Colors", "About", "Developer"}
@@ -8192,6 +8394,8 @@ function updateTouchedFX()
     
     
     local retval, trackidx, itemidx, takeidx, fxidx, param = reaper.GetTouchedOrFocusedFX( 0 ) 
+    
+    --aa1, aa2 = get_container_path_from_fx_id(track, fxidx)
     if retval and trackidx and not modulatorFxIndexes[fxidx] then
         if trackidx == -1 then
            trackTemp  = reaper.GetMasterTrack(0)
@@ -8629,7 +8833,13 @@ local function loop()
     if track then 
         modulationContainerPos = getModulationContainerPos(track)
         
-        focusedTrackFXNames, parameterLinks = getAllTrackFXOnTrack(track)
+        
+        -- only reload mappings sometimes
+        -- could use more settings maybe, like a timer, or just on more actions. Now it's on load or mapping
+        if not settings.limitParameterLinkLoading or (reloadParameterLinkCatch or not parameterLinks or (mapActiveFxIndex and isMouseDown)) then
+            parameterLinks = getAllParameterModulatorMappings(track)
+            reloadParameterLinkCatch = false
+        end
         
         if modulationContainerPos then
             modulatorNames, modulatorFxIndexes = getModulatorNames(track, modulationContainerPos, parameterLinks)
@@ -8642,23 +8852,18 @@ local function loop()
             
             --focusedTrackFXParametersData = getAllParametersFromTrackFx(track, fxnumber) 
         else
-            for i, f in ipairs(focusedTrackFXNames) do
-                if not f.isModulator then
-                    fxnumber = f.fxIndex
-                end
-            end
+            
         end 
     else 
         fxnumber = nil
         focusedTrackFXNames = {}
-        parameterLinks = {}
+        parameterLinks = nil
         focusedTrackFXParametersData = {}
         modulatorNames = {}
         modulatorFxIndexes = {}
         modulationContainerPos = nil
         buttonHovering = {} 
     end
-    
     
     
     
@@ -9097,6 +9302,11 @@ local function loop()
                     click = true
                 end        
             else 
+                
+                -- we only load track fx names if plugins  panel is shown
+                focusedTrackFXNames = getAllTrackFXOnTrack(track)
+                
+                
                 reaper.ImGui_SetNextWindowSizeConstraints(ctx, 40, 60, tableWidth, height)
                 if reaper.ImGui_BeginChild(ctx, 'PluginsChilds', nil, nil, childFlags, reaper.ImGui_WindowFlags_MenuBar() | reaper.ImGui_WindowFlags_NoScrollbar()) then -- | scrollFlags)
                 
@@ -9200,8 +9410,21 @@ local function loop()
                                     name = name:gsub("%s*%b()", "")
                                 end
                                 if f.isContainer then name = name .. ":" end
-                                local indentStr = string.rep(" ", settings.indentsAmount)
-                                if f.indent then name = string.rep(indentStr, f.indent) .. name end
+                                if settings.indentsAmount > 0 then
+                                    
+                                    local indentType = settings.identsType and "." or " "
+                                    local indentStr = string.rep(" ", settings.indentsAmount)
+                                    indentStr = settings.identsType and "|" .. indentStr:sub(0,-2) or indentStr
+                                    --local indentStrFolder = string.rep(indentType, settings.indentsAmount)
+                                    
+                                    if f.indent and f.indent > 0 then 
+                                        --if f.isContainer then 
+                                        --    name = string.rep(indentStr, f.indent) .. name 
+                                        --else
+                                            name = string.rep(indentStr, f.indent) ..  name 
+                                        --end
+                                    end
+                                end
                                 
                                 local isFocused = tonumber(fxnumber) == tonumber(f.fxIndex)
                                 --isFocused =  settings.showPluginNumberColumn and isFocused or true
@@ -9448,6 +9671,18 @@ local function loop()
                     click = true
                 end
             else 
+                
+                -- auto loads the first fx in to parameters window
+                if focusedTrackFXNames and not fxnumber then
+                    for i, f in ipairs(focusedTrackFXNames) do
+                        if not f.isModulator then
+                            fxnumber = f.fxIndex
+                            break
+                        end
+                    end
+                end
+                
+                
                 reaper.ImGui_SetNextWindowSizeConstraints(ctx, 0, 60, tableWidth, height)
                 local visible = reaper.ImGui_BeginChild(ctx, 'Parameters', nil, nil, childFlags,reaper.ImGui_WindowFlags_MenuBar() | scrollFlags)
                 if visible then
@@ -10066,7 +10301,7 @@ local function loop()
               nameOverlay = ""
               nameForMapping = fx.name
               if #fx.output > 1 then
-                  _, paramName = GetParamName(track, fxIndex, param)
+                  paramName = GetParamName(track, fxIndex, param)
                   nameForMapping = nameForMapping .. ": " .. paramName
                   if fx.outputNames and fx.outputNames[index] then
                       nameOverlay = fx.outputNames[index]
@@ -10735,7 +10970,7 @@ local function loop()
               
               for i, map in ipairs(mappings) do  
                   local fxIndex = map.fxIndex
-                  local _, name = GetFXName(track, fxIndex)
+                  local name = GetFXName(track, fxIndex)
                   
                   if not alreadyShowing[fxIndex] and (not ignoreFxIndex or (ignoreFxIndex ~= fxIndex)) then 
                       
@@ -11699,7 +11934,7 @@ local function loop()
                                 local unmappedParams = {}
                                 local numParams = GetNumParams(track, plugin.fxIndex)
                                 for p = 0, numParams - 1 - 3 do
-                                      _, name = GetParamName(track, plugin.fxIndex, p)
+                                      name = GetParamName(track, plugin.fxIndex, p)
                                       if pluginPos[plugin.fxIndex][p] and pluginPos[plugin.fxIndex][p].x then
                                           table.insert(mappedParams, {name = name, param = p})
                                       else
