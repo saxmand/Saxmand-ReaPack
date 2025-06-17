@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.82
+-- @version 0.9.83
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,12 +15,11 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added support for Link from MIDI
---   + added support for Learn Midi
---   + added option to show learn from midi value in settings
---   + added option for parameter right click to select and change link from midi and learn Midi
+--   + fixed bug with using envelope points, hide envelope if previous touch and touching a modulator param https://forum.cockos.com/showpost.php?p=2869249&postcount=454
+--   + fixed parameter following envelope even when envelope was disabled.
+--   + fixed bug created in 0.9.80 where you could not map fx in the root, caused by container mapping system
 
-local version = "0.9.82"
+local version = "0.9.83"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1591,7 +1590,7 @@ end
 function fx_map_parameter(tr, fxidx, parmidx) -- maps a parameter to the top level parent, returns { fxidx, parmidx }
   local path = get_container_path_from_fx_id(tr, fxidx)
   if not path then return nil end
-  local rootContainerPos = path[1] - 1
+  local rootContainerPos = #path > 1 and path[1] - 1 or false
   while #path > 1 do
     fxidx = path[#path]
     table.remove(path)
@@ -1625,7 +1624,7 @@ end
 function fx_get_mapped_parameter(tr, fxidx, parmidx) -- maps a parameter to the top level parent, returns { fxidx, parmidx }
   local path = get_container_path_from_fx_id(tr, fxidx)
   if not path then return nil end
-  local rootContainerPos = path[1] - 1
+  local rootContainerPos = #path > 1 and path[1] - 1 or false
   while #path > 1 do
     fxidx = path[#path]
     table.remove(path)
@@ -2670,6 +2669,36 @@ local function getAllDataFromParameter(track,fxIndex,param)
             end
         end
         
+        local envelopePointCount, singleEnvelopePointAtStart, usesEnvelope, firstEnvelopeValue, envelopeValueAtPos, hasEnvelopePoints
+        local trackEnvelope = reaper.GetFXEnvelope(track,fxIndex,param,false)
+        
+        if trackEnvelope then
+            envelopePointCount = reaper.CountEnvelopePoints(trackEnvelope)
+            _, envelopeActive = reaper.GetSetEnvelopeInfo_String(trackEnvelope, "ACTIVE", "", false)
+            envelopeActive = envelopeActive == "1"
+            
+            hasEnvelopePoints = envelopePointCount > 0
+            usesEnvelope = envelopeActive and envelopePointCount > 0-- and envelopeActive == "1"
+            if usesEnvelope then
+                local playState = reaper.GetPlayState()
+                local target_time
+                if playState == 0 then --not lastEnvelopeInsertPos or lastEnvelopeInsertPos ~= playPos then
+                    target_time = reaper.GetCursorPosition()
+                else
+                    target_time = playPos2 
+                end
+                --local _, block_size = reaper.GetAudioDeviceInfo("BSIZE")
+                --local _, sample_rate = reaper.GetAudioDeviceInfo("SRATE")
+                retval, envelopeValueAtPos, dVdS, ddVdS, dddVdS = reaper.Envelope_Evaluate( trackEnvelope, target_time, 0, 0 )
+                if envelopePointCount == 1 then
+                    local ret, time, firstEnvelopeValue = reaper.GetEnvelopePoint(trackEnvelope, 0)
+                    if ret and time == 0 then
+                        singleEnvelopePointAtStart = true
+                    end
+                end
+            end
+        end
+        
         
         local value, min, max = GetParam(track,fxIndex,param)
         local hasSteps, step, smallStep, largeStep, isToggle = GetParameterStepSizes(track, fxIndex, param)
@@ -2711,7 +2740,7 @@ local function getAllDataFromParameter(track,fxIndex,param)
         return {param = param, name = name, currentValue = currentValue, currentValueNormalized = currentValueNormalized,  value = value, valueNormalized = valueNormalized, min = min, max = max, range = range, baseline = tonumber(baseline), width = tonumber(width), offset = tonumber(offset), bipolar = bipolar, direction = direction,
         valueName = valueName, fxIndex = fxIndex, guid = guid,
         parameterModulationActive = parameterModulationActive, parameterLinkActive = parameterLinkActive, parameterLinkEffect = parameterLinkEffect,containerItemFxId = tonumber(containerItemFxId),
-        envelope = trackEnvelope, usesEnvelope = usesEnvelope,envelopeActive = envelopeActive, singleEnvelopePointAtStart = singleEnvelopePointAtStart, envelopeValue = envelopeValueAtPos, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
+        envelope = trackEnvelope, hasEnvelopePoints = hasEnvelopePoints, usesEnvelope = usesEnvelope, envelopeActive = envelopeActive, singleEnvelopePointAtStart = singleEnvelopePointAtStart, envelopeValue = envelopeValueAtPos, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
         fxName = fxName, 
         hasSteps = hasSteps, step = step, smallStep = smallStep, largeStep = largeStep, isToggle = isToggle,
         containerPath = containerPath,
@@ -2764,7 +2793,9 @@ function hideTrackEnvelopesUsingSettings(track, ignoreEnvelope)
              
             local envelopePointsCount = reaper.CountEnvelopePoints(envelope)
                 
-            if envelopePointsCount == 1  and ((settings.hideEnvelopesIfLastTouched and lastFocusedEnvelope and lastFocusedEnvelope == envelope) or settings.hideEnvelopesWithNoPoints)then
+            if envelopePointsCount == 1 and ((settings.hideEnvelopesIfLastTouched and lastFocusedEnvelope and lastFocusedEnvelope == envelope) or settings.hideEnvelopesWithNoPoints)then
+                lastFocusedEnvelope = nil
+                reaper.ShowConsoleMsg("hej\n")
                 reaper.DeleteEnvelopePointEx(envelope,-1,0)
             else
                 if settings.hideEnvelopesWithPoints and envelopePointsCount > 1 then
@@ -3859,7 +3890,7 @@ function setEnvelopePointAdvanced(track, p, amount)
     end
     
     -- this seems not necisarry as it's handled by reaper through write types
-    if lol then
+    if lol and geezz then
         if p.singleEnvelopePointAtStart then
             reaper.SetEnvelopePoint(p.envelope,0, 0, amount, nil,nil,nil)
         else
@@ -3930,22 +3961,22 @@ function setParameterFromFxWindowParameterSlide(track, p)
     end
 end
 
-function setParam(track, p, amount)
+function setParamAdvanced(track, p, amount)
     
     ignoreFocusBecauseOfUiClick = true
     ignoreThisIndex = p.fxIndex
     ignoreThisParameter = p.param
     
-    if p.param and p.param > -1 then
+    if p.param and p.param > -1 then 
         updateVisibleEnvelopes(track, p)
         if p.usesEnvelope then 
+            
             return setEnvelopePointAdvanced(track, p, amount)
         elseif p.parameterLinkEffect and p.parameterModulationActive then
             SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline', amount ) 
             local newVal = tonumber(select(2, GetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline') ))
-            return newVal 
-            
-        else 
+            return newVal  
+        else  
             SetParam(track, p.fxIndex, p.param, amount)
             return GetParam(track, p.fxIndex, p.param)
         end
@@ -4104,7 +4135,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
                     if native then 
                         SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.paramOut..'.' .. p.paramName, newVal)
                     else
-                        newAmount = setParam(track, p, newVal)
+                        newAmount = setParamAdvanced(track, p, newVal)
                     end
                     if sliderFlags then
                         newAmount = newVal 
@@ -4155,6 +4186,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         dragKnob = nil
         if p.usesEnvelope then
             reaper.Undo_BeginBlock() 
+            
             --SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param ..'.plink.active',0 )
             undoStarted = true
         end
@@ -4203,9 +4235,10 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     end
     
     local name = p.name and p.name or "NA"
-    local hasEnvelope = p.usesEnvelope
+    local hasEnvelope = p.hasEnvelopePoints
     local singleEnvelopePointAtStart = p.singleEnvelopePointAtStart
     local envelopeActive = p.envelopeActive 
+    
     local envelopeAddName = (settings.showEnvelopeIndicationInName and hasEnvelope and not singleEnvelopePointAtStart) and (envelopeActive and "[E] " or "[e] ") or ""
      
     local showName = envelopeAddName .. (type(nameOnSide) == "string" and nameOnSide or name)
@@ -5899,8 +5932,8 @@ function xyPad(name, id, padSize, track, fxIndex, xParam, yParam,pX, pY, padSize
             if valX > 1 then valX = 1 end
             if valY < 0 then valY = 0 end
             if valY > 1 then valY = 1 end
-            setParam(track, getAllDataFromParameter(track,fxIndex,xParam), valX)
-            setParam(track, getAllDataFromParameter(track,fxIndex,yParam), valY)
+            setParamAdvanced(track, getAllDataFromParameter(track,fxIndex,xParam), valX)
+            setParamAdvanced(track, getAllDataFromParameter(track,fxIndex,yParam), valY)
             
         end
     end
@@ -8601,9 +8634,11 @@ end
 
     
 function updateVisibleEnvelopes(track, p)
-    if settings.showEnvelope and fxnumber and paramnumber then 
-        if settings.hideEnvelopesWithNoPoints or settings.hideEnvelopesWithPoints or settings.hideEnvelopesIfLastTouched then
-             hideTrackEnvelopesUsingSettings(track, p.envelope)
+    
+    if settings.showEnvelope and fxnumber and paramnumber and p.usesEnvelope then 
+    -- p.usesEnvelope is if the current touch param is not shown as envelope, don't change visibility. eg when we touch a parameter modulation
+        if settings.hideEnvelopesWithNoPoints or settings.hideEnvelopesWithPoints or settings.hideEnvelopesIfLastTouched then 
+            hideTrackEnvelopesUsingSettings(track, p.envelope)
         end
         
         if not p.envelope then 
