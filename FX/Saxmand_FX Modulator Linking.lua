@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.84
+-- @version 0.9.85
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,11 +15,11 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed bug with using envelope points, hide envelope if previous touch and touching a modulator param v2
---   + fixed deadspace in lower part of parameters panel
+--   + fixed 4851: attempt to perform bitwise operation on a nil value (local 'msg1')
+--   + added scroll inverted direction to width
 
 
-local version = "0.9.84"
+local version = "0.9.85"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -4002,7 +4002,8 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
             mouseDragStartX = mouse_pos_x
             mouseDragStartY = mouse_pos_y
         elseif isScrollValue and scrollVertical and scrollVertical ~= 0 then
-            amount = p.width - (scrollVertical * ((settings.scrollValueSpeed+50)/100)) / grains
+            local scrollVal = settings.scrollValueInverted and -scrollVertical or scrollVertical
+            amount = p.width - ((scrollVal * ((settings.scrollValueSpeed+50)/100)) / grains) --* (scrollVal > 0 and 1 or -1)
         else
             --dragKnob = nil
         end
@@ -4848,7 +4849,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                             end 
                         end
                     else
-                        local isSelected = not omniChan and (msg1 & 0x0F) == (i - 1)
+                        local isSelected = not omniChan and msg1 and (msg1 & 0x0F) == (i - 1)
                         local buttonName = i
                         if reaper.ImGui_Selectable(ctx, buttonName, isSelected, reaper.ImGui_SelectableFlags_DontClosePopups()) then
                             if midiLearn then
@@ -5374,29 +5375,6 @@ function scrollHoveredDropdown(currentValue, track,fxIndex,paramIndex, dropDownL
 end
 
         
-function scrollHoveredItem(track, fxIndex, paramIndex, currentValue, divide, nativeParameter, dropDownValue, min, max)
-    if reaper.ImGui_IsItemHovered(ctx) and isScrollValue then 
-        if scrollVertical ~= 0 then
-            local newValue = dropDownValue and (nativeParameter and currentValue or (currentValue - (scrollVertical > 0 and dropDownValue or -1*dropDownValue))) or ( currentValue - (scrollVertical * divide/100 ))
-            if newValue < min then newValue = min end
-            if newValue > max then newValue = max end
-            if nativeParameter then
-                if dropDownValue then 
-                    SetNamedConfigParm( track, fxIndex, nativeParameter, newValue)
-                else
-                    SetNamedConfigParm( track, fxIndex, nativeParameter,newValue)
-                end
-            else
-                if dropDownValue then
-                    setParameterNormalizedButReturnFocus( track, fxIndex, paramIndex, newValue)
-                else
-                    setParameterNormalizedButReturnFocus(track, fxIndex, paramIndex, newValue) 
-                end
-            end
-        end
-    end
-end
-
 
 
 
