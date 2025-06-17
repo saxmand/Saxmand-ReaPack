@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.85
+-- @version 0.9.86
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,11 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed 4851: attempt to perform bitwise operation on a nil value (local 'msg1')
---   + added scroll inverted direction to width
+--   + fixed lfo speed native being inverted when scrolling
 
 
-local version = "0.9.85"
+local version = "0.9.86"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
