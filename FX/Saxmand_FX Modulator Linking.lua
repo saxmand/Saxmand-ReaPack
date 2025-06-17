@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.81
+-- @version 0.9.82
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,13 +15,12 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added extra option for container visibility in Plugins panel
---   + added initial support for low param load mode
---   + added full container support (needs testing)
---   + fixed values not showing (regression from 0.9.80
---   + fixed parameter popup native sliders not working properly
+--   + added support for Link from MIDI
+--   + added support for Learn Midi
+--   + added option to show learn from midi value in settings
+--   + added option for parameter right click to select and change link from midi and learn Midi
 
-local version = "0.9.81"
+local version = "0.9.82"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -968,6 +967,29 @@ function openWebpage(url)
 end
 
 
+function midi_status_to_text(byte1, byte2, doNotShowChan)
+  local msg_type = byte1 & 0xF0
+  local channel = (byte1 & 0x0F) + 1
+
+  if msg_type == 0x80 then
+    return "Note Off " .. byte2 .. (doNotShowChan and "" or ", Ch " .. channel)
+  elseif msg_type == 0x90 then
+    return "Note On " .. byte2 .. (doNotShowChan and "" or", Ch " .. channel)
+  elseif msg_type == 0xA0 then
+    return "Poly Aftertouch" .. byte2 .. (doNotShowChan and "" or ", Ch " .. channel)
+  elseif msg_type == 0xB0 then
+    return "CC" .. byte2 .. (doNotShowChan and "" or", Ch " .. channel)
+  elseif msg_type == 0xC0 then
+    return "Program Change" .. (doNotShowChan and "" or ", Ch " .. channel)
+  elseif msg_type == 0xD0 then
+    return "Channel Aftertouch" .. (doNotShowChan and "" or ", Ch " .. channel)
+  elseif msg_type == 0xE0 then
+    return "Pitchbend" .. (doNotShowChan and "" or ", Ch " .. channel)
+  else
+    return "Unknown MIDI Message (" .. byte1 .. ", " .. byte2 .. ")"
+  end
+end
+
 --------------------------------------------------------------------------
 ------------------------------ VERTICAL TEXT -----------------------------
 --------------------------------------------------------------------------
@@ -1170,12 +1192,33 @@ function getPlinkParam(track,fxIndex,param)
     return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.param' )))
 end
 
+function getPlinkMidiBus(track,fxIndex,param)
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.midi_bus' )))
+end
+
+function getPlinkMidiChan(track,fxIndex,param)
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.midi_chan' )))
+end
+
+function getPlinkMidiMsg(track,fxIndex,param)
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.midi_msg' )))
+end
+
+function getPlinkMidiMsg2(track,fxIndex,param)
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.midi_msg2' )))
+end
+
 function getPlinkParamInContainer(track,containerFxIndex,param)
     return tonumber(select(2, GetNamedConfigParm( track, containerFxIndex, 'param.'..param..'.container_map.fx_parm' )))
 end
 
 function getPlinkEffect(track,fxIndex, param)
-    return select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.effect' ))
+    local val = select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.effect' ))
+    if val == "" then
+        return false 
+    else
+        return tonumber(val)
+    end
 end
 
 function getRenamedFxName(track,fxIndex)
@@ -1443,6 +1486,28 @@ end
 function SetParamNormalized(track, index, param, val)
     paramsSetCount = paramsSetCount + 1
     return reaper.TrackFX_SetParamNormalized(track, index, param, val)
+end
+
+-- SHORT CUT FUNCTIONS
+
+function setPlinkMidiBus(track,fxIndex,param, val)
+    return SetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.midi_bus', val )
+end
+
+function setPlinkMidiChan(track,fxIndex,param, val)
+    return SetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.midi_chan', val )
+end
+
+function setPlinkMidiMsg(track,fxIndex,param, val)
+    return SetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.midi_msg', val )
+end
+
+function setPlinkMidiMsg2(track,fxIndex,param, val)
+    return SetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.midi_msg2', val )
+end
+
+function setPlinkEffect(track,fxIndex, param, val)
+    SetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.effect', val) 
 end
 
 ----- Others
@@ -2153,7 +2218,7 @@ function parameterWithNameIsMapped(name)
                 
                 if parameterLinkActive then
                     parameterLinkEffect = getPlinkEffect(track, fxIndex, p )
-                    if parameterLinkEffect ~= "" then
+                    if parameterLinkEffect then
                         parameterLinkParam = getPlinkParam(track, fxIndex, p)
                         
                         parameterLinkName = GetParamName(track, parameterLinkEffect, parameterLinkParam)
@@ -2188,7 +2253,7 @@ function getTrackPluginsParameterLinkValues(name, clearType)
                     -- we ignore values that have parameter link activated
                     if parameterLinkActive then
                         local parameterLinkEffect = getPlinkEffect(track, fxIndex, param )
-                        if parameterLinkEffect ~= "" then
+                        if parameterLinkEffect then
                             local parameterLinkParam = getPlinkParam(track, fxIndex, param)
                             local parameterLinkName = GetParamName(track, parameterLinkEffect, parameterLinkParam) 
                             if parameterLinkName:match(name) then
@@ -2387,7 +2452,7 @@ local function getAllTrackFxParamValues(track,fxIndex)
                 local parameterLinkActive = getPlinkActive(track, fxIndex, p )
                 if parameterLinkActive then
                     local parameterLinkEffect = getPlinkEffect(track, fxIndex, p)
-                    if parameterLinkEffect ~= "" then  
+                    if parameterLinkEffect then  
                         baseline = getModBassline(track, fxIndex, p)
                         --_, offset = GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.offset')
                         --_, width = GetNamedConfigParm( track, fxIndex, 'param.'..p..'.plink.scale')
@@ -2451,41 +2516,36 @@ local function setNativeACSParamSettings(track,fxIndex, settings)
 end
 
 
-local function getAllDataFromParameter(track,fxIndex,p) 
+local function getAllDataFromParameter(track,fxIndex,param) 
     if not track or not validateTrack(track) then return {} end
     if not fxIndex then return {} end
-    local name = GetParamName(track,fxIndex,p)
-    local valueName = GetFormattedParamValue(track,fxIndex,p)
+    local name = GetParamName(track,fxIndex,param)
+    local valueName = GetFormattedParamValue(track,fxIndex,param)
     -- we filter internal and midi parameters from plugin parameter list
     if filterParametersThatAreMostLikelyNotWanted(name) then  
         local fxName = GetFXName(track, fxIndex) 
         
-        local root_fxIndex, root_param = fx_get_mapped_parameter(track, fxIndex, p)
+        local root_fxIndex, root_param = fx_get_mapped_parameter(track, fxIndex, param)
         --local containerPath = GetContainerPath(track, fxIndex)
         --local modulated_fxIndex = fxIndex
         --local modulated_param = p
-        local original_param = p
-        
-        if containerPath and #containerPath > 1 then 
-            aaa12 = containerPath
-            aaa13 = fxIndex
-        end
-        
+        local original_param = param
+         
         if modulationContainerPos and root_fxIndex and root_fxIndex ~= modulationContainerPos then 
             if root_fxIndex and root_param then 
                 if getPlinkActive(track, root_fxIndex, root_param) then
                     --modulated_fxIndex = root_fxIndex - 1
                     --modulated_param = root_param
                     fxIndex = root_fxIndex
-                    p = root_param
+                    param = root_param
                 end
             end
         end
         
-        local parameterLinkActive = getPlinkActive(track,fxIndex,p)
+        local parameterLinkActive = getPlinkActive(track,fxIndex,param)
         local guid = GetFXGUID(track, fxIndex)
         
-        local parameterModulationActive = getModActive(track,fxIndex,p)
+        local parameterModulationActive = getModActive(track,fxIndex,param)
         local mappingName
         local baseline = false
         local width = 0
@@ -2494,14 +2554,16 @@ local function getAllDataFromParameter(track,fxIndex,p)
         local bipolar = false
         local parameterLinkName = "" 
         
+        local midiMsg, midiMsg2, midiBus, midiChan, linkFromMidiText
+        
         
         if parameterLinkActive and modulationContainerPos then
-            parameterLinkEffect = getPlinkEffect(track, fxIndex, p)
-            if parameterLinkEffect ~= "" then 
-                baseline = getModBassline(track,fxIndex,p)
-                offset = getPlinkOffset(track,fxIndex,p)
-                width = getPlinkScale(track,fxIndex,p)
-                parameterLinkParam = getPlinkParam(track,fxIndex,p)
+            parameterLinkEffect = getPlinkEffect(track, fxIndex, param)
+            if parameterLinkEffect then
+                baseline = getModBassline(track,fxIndex,param)
+                offset = getPlinkOffset(track,fxIndex,param)
+                width = getPlinkScale(track,fxIndex,param)
+                parameterLinkParam = getPlinkParam(track,fxIndex,param)
                 bipolar = offset == -0.5
                 
                 if width and width >= 0 then
@@ -2509,7 +2571,11 @@ local function getAllDataFromParameter(track,fxIndex,p)
                 else
                     direction = math.abs(offset * 2) - 1
                 end
-                 
+            end
+            
+            if parameterLinkEffect >= 0 then  
+                
+                
                 if root_fxIndex == modulationContainerPos then
                     parameterLinkFXIndex = getPlinkFxIndex(track, modulationContainerPos, parameterLinkEffect)
                    
@@ -2567,23 +2633,46 @@ local function getAllDataFromParameter(track,fxIndex,p)
                         end 
                     --end
                 end
-                -- TODO: we should find the actual fxindex and param within the modulation container, and then gather name etc from there
-                if tonumber(fxIndex) < 0x200000 then 
-                    
-                    --reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - " .. parameterLinkEffect .. " - " .. parameterLinkParam .. " - "..#outputsForLinkedModulator  .. " - " .. parameterLinkName .. "\n")
-                else 
-                    
-                end 
+            elseif parameterLinkEffect == -100 then
+                midiMsg = getPlinkMidiMsg(track, fxIndex, param)
+                midiMsg2 = getPlinkMidiMsg2(track, fxIndex, param)
+                midiBus = getPlinkMidiBus(track, fxIndex, param)
+                midiChan = getPlinkMidiChan(track, fxIndex, param)
+                
+                if midiMsg2 < 128 then
+                    linkFromMidiText = "Link: " .. midi_status_to_text(midiMsg + (midiChan > 0 and midiChan - 1 or 0), midiMsg2, midiChan == 0)
+                    if midiBus > 0 then
+                        linkFromMidiText = linkFromMidiText .. " (Bus " .. midiBus + 1 .. ")"
+                    end
+                elseif midiMsg == 176 then
+                    linkFromMidiText = "Link MIDI: " .. (midiMsg2 - 128) .. "/" .. (midiMsg2 - 96) .. " 14-bit"
+                end
             end 
         else
-            parameterLinkEffect = false
+            
         end
-        
+         
         local parameterModulationActive = parameterLinkActive and parameterModulationActive -- and parameterLinkEffect
         
         
-        local value, min, max = GetParam(track,fxIndex,p)
-        local hasSteps, step, smallStep, largeStep, isToggle = GetParameterStepSizes(track, fxIndex, p)
+        local midiLearnText
+        if not parameterModulationActive then -- settings.showMidiLearnIfNoParameterModulation then
+            local learnMidi1 = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.midi1')))
+            local learnMidi2 = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.midi2')))
+            local learnOsc = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.osc')))
+            local somethingIsLearned = (learnMidi1 and learnMidi1 ~= 0) or learnOsc
+            if somethingIsLearned then
+                if learnMidi1 then
+                    midiLearnText = "Learn: " .. midi_status_to_text(learnMidi1, learnMidi2)
+                elseif learnOsc then
+                    midiLearnText = "Learn " .. "OSC msg: ".. learnOsc
+                end
+            end
+        end
+        
+        
+        local value, min, max = GetParam(track,fxIndex,param)
+        local hasSteps, step, smallStep, largeStep, isToggle = GetParameterStepSizes(track, fxIndex, param)
         
         local isInverted = max < min
         if isInverted then
@@ -2598,7 +2687,7 @@ local function getAllDataFromParameter(track,fxIndex,p)
             --reaper.ShowConsoleMsg(fxName .. " - ".. name .. " - " .. step .. " - " .. range/step .. " - "  .. tostring(isToggle) .. "\n")
         end
         
-        local valueNormalized = GetParamNormalized(track, fxIndex, p)
+        local valueNormalized = GetParamNormalized(track, fxIndex, param)
         if min ~= 0 or max ~= 1 and parameterLinkActive then
             --fxName = GetFXName(track, fxIndex)
             
@@ -2619,13 +2708,15 @@ local function getAllDataFromParameter(track,fxIndex,p)
         --end
         local currentValueNormalized = (currentValue - min) / range
         --local visualValueNormalized = currentValueNormalized + offset + 
-        return {param = p, name = name, currentValue = currentValue, currentValueNormalized = currentValueNormalized,  value = value, valueNormalized = valueNormalized, min = min, max = max, range = range, baseline = tonumber(baseline), width = tonumber(width), offset = tonumber(offset), bipolar = bipolar, direction = direction,
+        return {param = param, name = name, currentValue = currentValue, currentValueNormalized = currentValueNormalized,  value = value, valueNormalized = valueNormalized, min = min, max = max, range = range, baseline = tonumber(baseline), width = tonumber(width), offset = tonumber(offset), bipolar = bipolar, direction = direction,
         valueName = valueName, fxIndex = fxIndex, guid = guid,
         parameterModulationActive = parameterModulationActive, parameterLinkActive = parameterLinkActive, parameterLinkEffect = parameterLinkEffect,containerItemFxId = tonumber(containerItemFxId),
         envelope = trackEnvelope, usesEnvelope = usesEnvelope,envelopeActive = envelopeActive, singleEnvelopePointAtStart = singleEnvelopePointAtStart, envelopeValue = envelopeValueAtPos, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
         fxName = fxName, 
         hasSteps = hasSteps, step = step, smallStep = smallStep, largeStep = largeStep, isToggle = isToggle,
         containerPath = containerPath,
+        midiLearnText = midiLearnText,
+        midiMsg = midiMsg, midiMsg2 = midiMsg2, midiBus = midiBus, midiChan = midiChan, linkFromMidiText = linkFromMidiText,
         }
     end
 end
@@ -3560,9 +3651,9 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
         end
         reaper.ImGui_PushFont(ctx, font11)
         ImGui.PushClipRect(ctx, minX, minY, maxX + spaceTaken, maxY, true) 
-        local textW = reaper.ImGui_CalcTextSize(ctx, p.parameterLinkName)
+        local textW = reaper.ImGui_CalcTextSize(ctx, showMappingText)
         local buttonPosX = (not settings.alignModulatorMappingNameRight or (maxX - minX) + spaceTaken < textW) and minX + 3 or maxX + spaceTaken - textW - 3
-        reaper.ImGui_DrawList_AddText(draw_list, buttonPosX, minY + sliderHeight + 1 + 15, padColor, p.parameterLinkName) 
+        reaper.ImGui_DrawList_AddText(draw_list, buttonPosX, minY + sliderHeight + 1 + 15, padColor, showMappingText) 
         ImGui.PopClipRect(ctx)
         reaper.ImGui_PopFont(ctx)
     end
@@ -4254,7 +4345,20 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
       end
     end
     
-    local showMappingText = (settings.showMappedModulatorNameBelow and not showingMappings and parameterLinkActive) or false
+    local showMappingText
+    if settings.showMappedModulatorNameBelow and not showingMappings then
+        if parameterLinkActive then
+            if p.midiMsg then
+                showMappingText = p.linkFromMidiText 
+            else 
+                showMappingText = p.parameterLinkName
+            end
+        elseif p.midiLearnText and settings.showMidiLearnIfNoParameterModulation then
+            showMappingText = p.midiLearnText
+            -- we make sure the pad color is brigt
+            padColor = mappedColorOnMappingParam
+        end
+    end
     
     local totalSliderHeight = showMappingText and sliderHeight + 16 + 12 or sliderHeight + 16
     local spaceTaken = spaceForExtraButtons(canBeMapped)
@@ -4535,19 +4639,6 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
         end 
         
         
-        if reaper.ImGui_Button(ctx, "Set MIDI learn for parameter") then  
-            reaper.ImGui_CloseCurrentPopup(ctx)
-            openSetMidiLearnForLastTouchedFXParameter = true
-            
-            --if fxIndex ~= fxnumber and param ~= paramnumber then  
-                SetParam(track,fxIndex,param, GetParam(track,fxIndex,param))
-            --end
-            
-            reaper.Main_OnCommand(41144, 0) --FX: Set MIDI learn for last touched FX parameter
-            
-        end 
-        setToolTipFunc("Map a MIDI input to the parameter")
-        
             
         fxIsShowing = GetOpen(track,fxIndex)
         fxIsFloating = GetFloatingWindow(track,fxIndex)
@@ -4636,6 +4727,242 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
              
             reaper.ImGui_EndMenu(ctx)
         end
+        
+        function drawLineAroundSelected(selected) 
+            if selected then
+                local minX, minY = reaper.ImGui_GetItemRectMin(ctx)
+                local maxX, maxY = reaper.ImGui_GetItemRectMax(ctx)
+                reaper.ImGui_DrawList_AddRect(draw_list, minX, minY, maxX, maxY, colorButtonsActive, nil, nil, 2)
+            end
+        end
+        
+        
+        function midiSelectMenu(msg1, msg2, midiLearn, midiBus, channel, omniChan)
+            local midi_menu = {
+              "Note On",
+              "Note Off",
+              "Poly Aftertouch",
+              "Control Change (CC)",
+              "Program Change",
+              "Channel Aftertouch",
+              "Pitchbend"
+            }
+            for m, menu in ipairs(midi_menu) do
+                typeSelectedMsg = 0x70 + (msg1 and (msg1 & 0x0F) or (channel and channel or 0)) + m * 16 or false
+                local typeIsSelected = typeSelectedMsg and typeSelectedMsg == tonumber(msg1)
+                local menuName = menu
+                if menu ~= "Pitchbend" and menu ~= "Program Change" and menu ~= "Channel Aftertouch" then
+                    
+                    if reaper.ImGui_BeginMenu(ctx, menuName .. "##midi learn select menu", true) then  
+                        
+                        for i = 0, 12 do
+                            local amount = i < 12 and 9 or 7
+                            local valSubIsSelected = (typeIsSelected and msg2) and (i * 10 <= msg2 and i * 10 + 9 >= msg2) or false
+                            local subMenuName = (i * 10) .. " - " .. (i * 10 + amount) --(typeIsSelected and valSubIsSelected and ">> " or "") .. (i * 10) .. " - " .. (i * 10 + amount)
+                            --if valSubIsSelected then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PopupBg(), colorButtonsActive) end
+                            
+                            if reaper.ImGui_BeginMenu(ctx, subMenuName, reaper.ImGui_ComboFlags_HeightSmall()) then  
+                                for v = 0, amount do
+                                    val = i * 10 + v
+                                    local valIsSelected = typeIsSelected and msg2 == val
+                                    if reaper.ImGui_Selectable(ctx, val,valIsSelected, reaper.ImGui_SelectableFlags_DontClosePopups() ) then
+                                        if midiLearn then
+                                           SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi1', typeSelectedMsg)
+                                           SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi2', val)
+                                        else
+                                            setPlinkEffect(track,fxIndex, param, -100)
+                                            setPlinkMidiMsg(track, fxIndex, param, typeSelectedMsg & 0xF0)
+                                            setPlinkMidiMsg2(track, fxIndex, param, val)
+                                        end
+                                    end 
+                                end 
+                                reaper.ImGui_EndMenu(ctx)
+                            end
+                            
+                            drawLineAroundSelected(valSubIsSelected) 
+                        end
+                        
+                        reaper.ImGui_EndMenu(ctx)
+                    end
+                    drawLineAroundSelected(typeIsSelected) 
+                else
+                    if reaper.ImGui_Selectable(ctx, menuName, typeIsSelected, reaper.ImGui_SelectableFlags_DontClosePopups()) then
+                        if midiLearn then
+                           SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi1', typeSelectedMsg)
+                           SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi2', "0")
+                        else
+                            setPlinkEffect(track,fxIndex, param, -100)
+                            setPlinkMidiMsg(track, fxIndex, param, typeSelectedMsg & 0xF0)
+                            setPlinkMidiMsg2(track, fxIndex, param, 0)
+                        end
+                    end
+                end
+            end
+            
+            if reaper.ImGui_BeginMenu(ctx, "Channel" .. "##midi learn select menu") then  
+                for i = 0, 16 do
+                    if i == 0 then 
+                        if not midiLearn then
+                            if reaper.ImGui_Selectable(ctx,"Omni", omniChan, reaper.ImGui_SelectableFlags_DontClosePopups()) then 
+                                --setPlinkEffect(track,fxIndex, param, -100)
+                                setPlinkMidiChan(track, fxIndex, param, i)
+                            end 
+                        end
+                    else
+                        local isSelected = not omniChan and (msg1 & 0x0F) == (i - 1)
+                        local buttonName = i
+                        if reaper.ImGui_Selectable(ctx, buttonName, isSelected, reaper.ImGui_SelectableFlags_DontClosePopups()) then
+                            if midiLearn then
+                                SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi1', (msg1 & 0xF0) + i - 1)
+                            else
+                                setPlinkMidiChan(track, fxIndex, param, i)
+                            end
+                        end
+                    end
+                end 
+                reaper.ImGui_EndMenu(ctx)
+            end
+            
+            if midiBus then
+                if reaper.ImGui_BeginMenu(ctx, "Bus" .. "##midi learn select menu") then  
+                    for i = 0, 15 do 
+                        local isSelected = midiBus == i 
+                        if reaper.ImGui_Selectable(ctx, i + 1, isSelected, reaper.ImGui_SelectableFlags_DontClosePopups()) then
+                            setPlinkMidiBus(track, fxIndex, param, i) 
+                        end
+                    end 
+                    reaper.ImGui_EndMenu(ctx)
+                end
+            end
+        end 
+        
+        local midiMsg = getPlinkMidiMsg(track, fxIndex, param)
+        local midiMsg2 = getPlinkMidiMsg2(track, fxIndex, param)
+        local midiBus = getPlinkMidiBus(track, fxIndex, param)
+        local midiChan = getPlinkMidiChan(track, fxIndex, param)
+        local omniChan = midiChan == 0
+        midiChan = midiChan and midiChan > 0 and midiChan - 1 or 0
+        local midiMsgWithChan = midiMsg and midiMsg + midiChan
+        local linkFromMidiText 
+        local hasMidiLink = getPlinkEffect(track, fxIndex, param) == -100 
+        if hasMidiLink then
+            if midiMsg2 < 128 then
+                linkFromMidiText = "Link to MIDI: " .. midi_status_to_text(midiMsgWithChan, midiMsg2, omniChan) 
+            elseif midiMsg == 176 then
+                linkFromMidiText = "Link to MIDI: " .. (midiMsg2 - 128) .. "/" .. (midiMsg2 - 96) .. " 14-bit"
+            end
+            if midiBus > 0 then
+                linkFromMidiText = linkFromMidiText .. " (Bus " .. midiBus + 1 .. ")"
+            end
+        else
+            
+        end
+        linkFromMidiText = "Link to MIDI"
+        
+        if reaper.ImGui_BeginMenu(ctx, linkFromMidiText) then
+            midiSelectMenu(midiMsgWithChan, midiMsg2, false, midiBus, midiChan, omniChan)
+             
+            reaper.ImGui_EndMenu(ctx)
+        end
+        drawLineAroundSelected(hasMidiLink) 
+        
+        
+        local function openMidiOSCWindowButton()
+            if reaper.ImGui_Button(ctx, "Open MIDI/OSC learn window") then  
+                --reaper.ImGui_CloseCurrentPopup(ctx)
+                openSetMidiLearnForLastTouchedFXParameter = true
+                
+                --if fxIndex ~= fxnumber and param ~= paramnumber then  
+                    SetParam(track,fxIndex,param, GetParam(track,fxIndex,param))
+                --end
+                
+                reaper.Main_OnCommand(41144, 0) --FX: Set MIDI learn for last touched FX parameter
+                
+            end 
+            setToolTipFunc("Learn a MIDI message or OSC string to control the parameter") 
+        end
+        
+         
+        local learnMidi1 = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.midi1')))
+        local learnMidi2 = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.midi2')))
+        local learnOsc = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.osc')))
+        local learnMode = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.mode')))
+        local learnFlag = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.flags')))
+        
+        local somethingIsLearned = learnFlag and ((learnMidi1 and learnMidi1 ~= 0) or learnOsc)
+        if not somethingIsLearned then
+            openMidiOSCWindowButton()
+        else
+            local midiLearnText
+            if learnMidi1 then
+                midiLearnText = midi_status_to_text(learnMidi1, learnMidi2)
+            elseif learnOsc then
+                midiLearnText = "OSC msg: ".. learnOsc
+            end
+            
+            if reaper.ImGui_BeginMenu(ctx, "MIDI learn: ".. midiLearnText) then 
+                openMidiOSCWindowButton() 
+                
+                if reaper.ImGui_BeginMenu(ctx, midiLearnText) then 
+                    midiSelectMenu(learnMidi1, learnMidi2, true)
+                    
+                    reaper.ImGui_EndMenu(ctx)
+                end
+                
+                if somethingIsLearned then
+                    local learnModes = {"Absolute","127=-1,1=+1", "63=-1, 65=+1", "65=-1, 1=+1", "toggle if nonzero"}
+                    local learnFlags = {"Selected track only", "Focused FX only", "Visible FX only", "Soft takeover"}
+                    local learnFlagsVal = {1, 4, 16, 2}
+                    
+                    
+                    
+                    local learnModeSelected = learnModes[learnMode+1]
+                    if reaper.ImGui_BeginCombo(ctx, "Mode##LearnMode", learnModeSelected) then
+                        for i,v in ipairs(learnModes) do
+                            local is_selected = learnMode+1 == i
+                            if reaper.ImGui_Selectable(ctx, learnModes[i], is_selected) then
+                               SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.mode', i - 1)
+                            end 
+                        end
+                        reaper.ImGui_EndCombo(ctx)
+                    end
+                    for i, lf in ipairs(learnFlags) do
+                        local val = learnFlagsVal[i]
+                        local isActive
+                        local isSoftTakeover = (learnFlag & 2) ~= 0  -- true/false
+                        if i < 4 then
+                            isActive = (learnFlag & val) ~= 0  -- true/false
+                        else
+                            isActive = isSoftTakeover
+                        end
+                        
+                        local changed, newValue = reaper.ImGui_Checkbox(ctx, lf, isActive)
+                        if changed then 
+                            if newValue then
+                                learnFlag = (i < 4 and (isSoftTakeover and 2 or 0) + val or  learnFlag | val) -- Set bit
+                            else
+                                learnFlag = learnFlag & (~val) -- Clear bit
+                            end
+                            SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.flags', learnFlag)
+                        end
+                    end
+                    
+                    
+                    if reaper.ImGui_Button(ctx, "Remove MIDI learn") then  
+                        SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi1', "")
+                        SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi2', "") 
+                        SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.osc', "") 
+                        SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.mode', "") 
+                        SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.flags', "") 
+                    end 
+                end
+                
+                reaper.ImGui_EndMenu(ctx)
+            end
+            
+            
+        end
+        
         
         reaper.ImGui_EndGroup(ctx)
         
@@ -6979,6 +7306,13 @@ function appSettingsWindow()
             setToolTipFunc("Show mapped modulator below the parameter that is mapped.\nThis will not be shown in the mappings windows.") 
             
             reaper.ImGui_Indent(ctx)
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Show MIDI learn value##parameters",settings.showMidiLearnIfNoParameterModulation) 
+            if ret then 
+                settings.showMidiLearnIfNoParameterModulation = val
+                saveSettings()
+            end
+            setToolTipFunc("Show MIDI learn value if available and no parameter is mapped") 
+            
             if settings.useKnobs then 
                 local ret, val = reaper.ImGui_Checkbox(ctx,"Show seperation line before modulator name##parameters",settings.showSeperationLineBeforeMappingName) 
                 if ret then 
@@ -9587,7 +9921,7 @@ local function loop()
                             if showingLastClicked then  
                                 p = paramnumber and focusedTrackFXParametersData[paramnumber + 1] or {}
                                 pluginParameterSlider("parameterLastClicked",p ,nil,nil,nil,nil,moduleWidth,nil,nil,nil,true) 
-                                if not p.parameterLinkActive and settings.showMappedModulatorNameBelow then
+                                if (not p.parameterLinkActive) and settings.showMappedModulatorNameBelow and (not settings.showMidiLearnIfNoParameterModulation or not p.midiLearnText) then
                                     reaper.ImGui_InvisibleButton(ctx, "dummy", moduleWidth, 8)
                                 end
                             else
