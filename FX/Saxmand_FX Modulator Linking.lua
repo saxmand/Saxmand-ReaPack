@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.83
+-- @version 0.9.84
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,11 +15,11 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed bug with using envelope points, hide envelope if previous touch and touching a modulator param https://forum.cockos.com/showpost.php?p=2869249&postcount=454
---   + fixed parameter following envelope even when envelope was disabled.
---   + fixed bug created in 0.9.80 where you could not map fx in the root, caused by container mapping system
+--   + fixed bug with using envelope points, hide envelope if previous touch and touching a modulator param v2
+--   + fixed deadspace in lower part of parameters panel
 
-local version = "0.9.83"
+
+local version = "0.9.84"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -2782,21 +2782,26 @@ end
 
 
 
-function hideTrackEnvelopesUsingSettings(track, ignoreEnvelope)
+function hideTrackEnvelopesUsingSettings(track, p)
+    local ignoreEnvelope = p.envelope
     if not track then return end
+    
+    if lastFocusedEnvelope and ignoreEnvelope == nil then
+        --lastFocusedEnvelope = nil
+    end
+  
   
     local envCount = reaper.CountTrackEnvelopes(track)
     for i = 0, envCount - 1 do
         local envelope = reaper.GetTrackEnvelope(track, i)
         if envelope and envelope ~= ignoreEnvelope then   
-            --hideEnvelopesIfLastTouched
              
             local envelopePointsCount = reaper.CountEnvelopePoints(envelope)
                 
-            if envelopePointsCount == 1 and ((settings.hideEnvelopesIfLastTouched and lastFocusedEnvelope and lastFocusedEnvelope == envelope) or settings.hideEnvelopesWithNoPoints)then
-                lastFocusedEnvelope = nil
-                reaper.ShowConsoleMsg("hej\n")
-                reaper.DeleteEnvelopePointEx(envelope,-1,0)
+            if envelopePointsCount == 1 and ((settings.hideEnvelopesIfLastTouched and lastFocusedEnvelope and lastFocusedEnvelope == envelope) or settings.hideEnvelopesWithNoPoints) then 
+                if ignoreEnvelope ~= nil then
+                    reaper.DeleteEnvelopePointEx(envelope,-1,0)
+                end
             else
                 if settings.hideEnvelopesWithPoints and envelopePointsCount > 1 then
                     reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "0", true)
@@ -4488,8 +4493,9 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     
     -- Check if the mouse is within the button area
     if parStartPosX and mouse_pos_x_imgui >= parStartPosX and mouse_pos_x_imgui <= parStartPosX + areaWidth and
-       mouse_pos_y_imgui >= parStartPosY and mouse_pos_y_imgui <= parEndPosY and (not modulatorAreaHeight or modulatorAreaHeight >= mouse_pos_y_imgui - modulatorAreaY) then
-      
+       mouse_pos_y_imgui >= parStartPosY and mouse_pos_y_imgui <= parEndPosY and 
+       -- TODO: -36 is a hot fix as I do not get the height of the parameter panel correctly or something so the lower part did not react
+       (not modulatorAreaHeight or modulatorAreaHeight >= mouse_pos_y_imgui - modulatorAreaY - 36) then
       if not popupAlreadyOpen and reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then  --parameterLinkActive and 
           reaper.ImGui_OpenPopup(ctx, 'popup##' .. buttonId)  
           --popupAlreadyOpen = true
@@ -4498,7 +4504,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
       if reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Left(),false) then 
           if moduleId:match("Floating") == nil and moduleId:match("modulator") == nil and moduleId:match("mappings") == nil then
               if not doNotSetFocus then
-                  
+                  reaper.ShowConsoleMsg(param .. "\n")
                   paramnumber = param
                   
                   -- THIS DOESN*T WORK YET I THINK
@@ -8634,12 +8640,8 @@ end
 
     
 function updateVisibleEnvelopes(track, p)
-    
-    if settings.showEnvelope and fxnumber and paramnumber and p.usesEnvelope then 
-    -- p.usesEnvelope is if the current touch param is not shown as envelope, don't change visibility. eg when we touch a parameter modulation
-        if settings.hideEnvelopesWithNoPoints or settings.hideEnvelopesWithPoints or settings.hideEnvelopesIfLastTouched then 
-            hideTrackEnvelopesUsingSettings(track, p.envelope)
-        end
+    if settings.showEnvelope and fxnumber and paramnumber then 
+        
         
         if not p.envelope then 
             p.envelope = reaper.GetFXEnvelope(track, fxnumber, paramnumber, true) 
@@ -8656,7 +8658,12 @@ function updateVisibleEnvelopes(track, p)
             end
         end
         
-        lastFocusedEnvelope = p.envelope--p.envelope
+        if settings.hideEnvelopesWithNoPoints or settings.hideEnvelopesWithPoints or settings.hideEnvelopesIfLastTouched then 
+            hideTrackEnvelopesUsingSettings(track, p)
+        end
+        if p.envelope then
+            lastFocusedEnvelope = p.envelope--p.envelope
+        end
         
         reaper.TrackList_AdjustWindows(false)
         reaper.UpdateArrange()
@@ -10084,6 +10091,8 @@ local function loop()
                     
                     
                     local _, startPosY = reaper.ImGui_GetCursorScreenPos(ctx)
+                    local doNotSetFocus = startPosY > mouse_pos_y_imgui
+                    
                     --reaper.ImGui_SetNextWindowSizeConstraints(ctx, tableWidth-16, 40, tableWidth-16, height-curPosY)
                     if reaper.ImGui_BeginChild(ctx, "parametersForFocused", tableWidth-16, height - searchAreaH - lastClickedAreaH - 38, nil,scrollFlags) then
                         for i, p in ipairs(focusedTrackFXParametersData) do 
@@ -10102,7 +10111,7 @@ local function loop()
                             if pMappedShown and pSearchShown and pTrackControlShown then
                                 --reaper.ImGui_Text(ctx, "")
                                 reaper.ImGui_Spacing(ctx) 
-                                local doNotSetFocus = startPosY > mouse_pos_y_imgui
+                                
                                 
                                 
                                 local maxScrollBar = math.floor(reaper.ImGui_GetScrollMaxY(ctx))
