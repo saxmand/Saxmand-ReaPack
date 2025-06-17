@@ -4110,6 +4110,11 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
                 
             elseif isScrollValue and scrollVertical and scrollVertical ~= 0 then
                 local scrollVal = settings.scrollValueInverted and -scrollVertical or scrollVertical
+                
+                -- fix for lfo speed being inverted. Could be done some where else maybe
+                if native and p.paramName == "lfo.speed" then
+                    scrollVal = -scrollVal
+                end
                 if p.hasSteps and (range / p.step < 100 or isFineAdjust) then 
                     local scrollAmount = (math.floor(math.abs(scrollVertical) + 0.5) * (scrollVal > 0 and 1 or -1))
                     amount = ((currentValueNormalized - (p.step / range) * scrollAmount))-- * range) % p.step--
