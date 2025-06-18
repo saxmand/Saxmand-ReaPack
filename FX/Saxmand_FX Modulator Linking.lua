@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.86
+-- @version 0.9.87
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,10 +15,12 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed lfo speed native being inverted when scrolling
+--   + fixed allowing to scroll value with no modifiers
+--   + added modifier option to "force" scrolling
+--   + removed leftover log message
 
 
-local version = "0.9.86"
+local version = "0.9.87"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -516,6 +518,8 @@ local defaultSettings = {
     onlyScrollVerticalHorizontalScrollWithModifier = false,
     onlyScrollVerticalHorizontalOnTopOrBottom = false,
     modifierEnablingScrollVerticalHorizontal = {["Super"] = true},
+    
+    modifierEnablingScrollVerticalVertical = {["Super"] = true},
     scrollingSpeedOfVerticalHorizontalScroll = 15,  
     
     scrollModulatorsHorizontalAnywhere = false,
@@ -4172,11 +4176,11 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         end
     end 
     
-    if isMouseWasReleased and dragKnob then
+    if isMouseWasReleased and dragKnob and lastDragKnob then
         -- tried putting them here
         missingOffset = nil
         lastAmount = nil
-        dragKnob = nil
+        --dragKnob = nil
         lastDragKnob = nil
         
         if p.usesEnvelope and undoStarted then
@@ -4509,7 +4513,6 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
       if reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Left(),false) then 
           if moduleId:match("Floating") == nil and moduleId:match("modulator") == nil and moduleId:match("mappings") == nil then
               if not doNotSetFocus then
-                  reaper.ShowConsoleMsg(param .. "\n")
                   paramnumber = param
                   
                   -- THIS DOESN*T WORK YET I THINK
@@ -8031,40 +8034,45 @@ function appSettingsWindow()
             setToolTipFunc("With this enabled you can scroll the modulators area horizontally anywhere on the app.\nWith this on you should disable Allow scrolling in the plugins area")   
             
             reaper.ImGui_NewLine(ctx)
-            reaper.ImGui_TextColored(ctx, colorGrey, "Vertical scroll in modulators area")
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Use vertical scroll to scroll horizontal",settings.useVerticalScrollToScrollModulatorsHorizontally) 
-            if ret then 
-                settings.useVerticalScrollToScrollModulatorsHorizontally = val
-                saveSettings()
+            if not settings.vertical then
+                reaper.ImGui_TextColored(ctx, colorGrey, "Vertical scroll in modulators area")
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Use vertical scroll to scroll horizontal",settings.useVerticalScrollToScrollModulatorsHorizontally) 
+                if ret then 
+                    settings.useVerticalScrollToScrollModulatorsHorizontally = val
+                    saveSettings()
+                end
+                setToolTipFunc("With this enabled you can scroll the modulators area horizontally with vertical mouse scroll")   
+                
+                if settings.useVerticalScrollToScrollModulatorsHorizontally then
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Only scroll on top or bottom (making a deadzone in the middle)",settings.onlyScrollVerticalHorizontalOnTopOrBottom) 
+                    if ret then 
+                        settings.onlyScrollVerticalHorizontalOnTopOrBottom = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("This will only allow scrolling when on top or bottom of the modulators area")   
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Only scroll horizontal with modifier",settings.onlyScrollVerticalHorizontalScrollWithModifier) 
+                    if ret then 
+                        settings.onlyScrollVerticalHorizontalScrollWithModifier = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Will only scroll when holding down the selected modifier")   
+                    
+                    if settings.onlyScrollVerticalHorizontalScrollWithModifier then
+                        reaper.ImGui_AlignTextToFramePadding(ctx)
+                        reaper.ImGui_TextColored(ctx, colorText, "Modifiers to use:")
+                        reaper.ImGui_SameLine(ctx)
+                        modifiersSettingsModule("modifierEnablingScrollVerticalHorizontal")
+                    end
+                    
+                    
+                    sliderInMenu("Scrolling speed of vertical horizontal scroll", "scrollingSpeedOfVerticalHorizontalScroll", menuSliderWidth, -100, 100, "Set how fast to scroll the horizontal vertical scroll") 
+                end 
+            else 
+                reaper.ImGui_TextColored(ctx, colorGrey, "Force vertical scroll in modulators area with modifiers:") 
+                modifiersSettingsModule("modifierEnablingScrollVerticalVertical")
             end
-            setToolTipFunc("With this enabled you can scroll the modulators area horizontally with vertical mouse scroll")   
-            
-            if settings.useVerticalScrollToScrollModulatorsHorizontally then
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Only scroll on top or bottom (making a deadzone in the middle)",settings.onlyScrollVerticalHorizontalOnTopOrBottom) 
-                if ret then 
-                    settings.onlyScrollVerticalHorizontalOnTopOrBottom = val
-                    saveSettings()
-                end
-                setToolTipFunc("This will only allow scrolling when on top or bottom of the modulators area")   
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Only scroll horizontal with modifier",settings.onlyScrollVerticalHorizontalScrollWithModifier) 
-                if ret then 
-                    settings.onlyScrollVerticalHorizontalScrollWithModifier = val
-                    saveSettings()
-                end
-                setToolTipFunc("Will only scroll when holding down the selected modifier")   
-                
-                if settings.onlyScrollVerticalHorizontalScrollWithModifier then
-                    reaper.ImGui_AlignTextToFramePadding(ctx)
-                    reaper.ImGui_TextColored(ctx, colorText, "Modifiers to use:")
-                    reaper.ImGui_SameLine(ctx)
-                    modifiersSettingsModule("modifierEnablingScrollVerticalHorizontal")
-                end
-                
-                
-                sliderInMenu("Scrolling speed of vertical horizontal scroll", "scrollingSpeedOfVerticalHorizontalScroll", menuSliderWidth, -100, 100, "Set how fast to scroll the horizontal vertical scroll") 
-            end 
         end
         
         function set.ModifierSettings()
@@ -8992,9 +9000,7 @@ local function loop()
     isMouseRightDown         = (state & 0x02) ~= 0
     
     isEscapeKey = reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Escape(),false)
-    if isMouseReleased then
-        dragKnob = nil 
-    end
+    
     
     isMouseClick = isMouseDown and not isMouseDownStart
     if isMouseDown then isMouseDownStart = true end
@@ -9017,6 +9023,7 @@ local function loop()
     modifierStr = modifierStr:sub(0,-2)
     
     modifierTable = {Super = isSuperPressed, Ctrl = isCtrlPressed, Shift = isShiftPressed, Alt =  isAltPressed }
+    noModifiersTable = {Super = false, Ctrl = false, Shift = false, Alt =  false }
     
     function isMatch(optionMods, currentMods)
         for mod, required in pairs(optionMods) do
@@ -9104,7 +9111,19 @@ local function loop()
     
     scrollVertical, scrollHorizontal = reaper.ImGui_GetMouseWheel(ctx)
     
+    -- Add a scroll modifier to bypass isScrollValue and allow scrolling windows 
+    local isScrollValueNoModifiers = isMatchExact(settings.modifierOptionsParameter.scrollValue, noModifiersTable)
+    if isScrollValueNoModifiers and not dragKnob then
+        isScrollValue = false
+    end
+    if isMatchExact(settings.modifierEnablingScrollVerticalVertical, modifierTable) and not isMatchExact(settings.modifierEnablingScrollVerticalVertical, noModifiersTable) then
+        isScrollValue = false
+    end
+    
     local scrollFlags = isScrollValue and reaper.ImGui_WindowFlags_NoScrollWithMouse() or reaper.ImGui_WindowFlags_None()
+    if isMouseReleased then
+        dragKnob = nil 
+    end
     
     
     
