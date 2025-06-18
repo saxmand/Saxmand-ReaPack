@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.87
+-- @version 0.9.88
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,12 +15,12 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed allowing to scroll value with no modifiers
---   + added modifier option to "force" scrolling
---   + removed leftover log message
+--   + made catching params default (no settings for it)
+--   + removed "max" shown values for now as we have filtered params and param catching
+--   + added a few more uptimizations
 
 
-local version = "0.9.87"
+local version = "0.9.88"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -411,6 +411,8 @@ local defaultSettings = {
     movementNeededToChangeStep = 3,
     
     useParamCatch = false,
+    filterParamterThatAreMostLikelyNotWanted = true,
+    buildParamterFilterDataBase = true,
     
     -- floating mapper
       useFloatingMapper = false,
@@ -574,6 +576,13 @@ else
     settings = deepcopy(defaultSettings)
     saveSettings()
 end
+
+-- overwrite
+settings.useParamCatch = true
+settings.filterParamterThatAreMostLikelyNotWanted = true
+settings.buildParamterFilterDataBase = true
+settings.limitParameterLinkLoading = true
+settings.maxParametersShown = 0
 
 --settings = {}
 
@@ -1455,20 +1464,169 @@ function GetCount(track, doNotUseCatch)
     return reaper.TrackFX_GetCount(track)  
 end
 
-local function filterParametersThatAreMostLikelyNotWanted(name, track, fxIndex)
-    if track and fxIndex then 
-        name = GetParamName(track,fxIndex,name)
-    end
-    if name:lower():match("midi cc") == nil and name:lower() ~= "internal"  and name:lower():match("(disabled)") == nil then -- and valueName ~= "-" then 
+local paramterFilterDataBase = {}
+local function filterParametersThatAreMostLikelyNotWanted(param, track, fxIndex, name)
+    if not settings.filterParamterThatAreMostLikelyNotWanted then return true end
+    
+    local originalName = track and getOriginalFxName(track,fxIndex)
+    originalName = originalName and originalName:gsub("^[^:]+: ", "")
+    if settings.buildParamterFilterDataBase and originalName then
+        -- hide plugin type
+        -- hide developer
+        --originalName = originalName:gsub("%s*%b()", "")
+        
+        if not paramterFilterDataBase[originalName] then 
+            paramterFilterDataBase[originalName] = {}
+        else
+            a = paramterFilterDataBase
+            if paramterFilterDataBase[originalName][param] ~= nil then
+                return paramterFilterDataBase[originalName][param]
+            end
+        end
+    end 
+    
+    local paramName = GetParamName(track,fxIndex,param)
+    
+    -- MAYBE THERE COULD BE ANOTHER METHOD.
+    if paramName:lower():match("midi cc") == nil and paramName:lower() ~= "internal"  and paramName:lower():match("(disabled)") == nil then -- and valueName ~= "-" then 
+        if originalName and paramterFilterDataBase[originalName] then paramterFilterDataBase[originalName][param] = true end
         return true
     else
+        if originalName and paramterFilterDataBase[originalName] then paramterFilterDataBase[originalName][param] = false end
         return false
     end
 end
 
 
----- SET
 
+--- ENVELOPES
+
+
+function GetFXEnvelope(track,fxIndex,param)
+    local tableStr = param .. "GetFXEnvelope"
+    local catch = getParameterTableCatch(fxIndex, tableStr)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch 
+    else 
+        paramsReadCount = paramsReadCount + 1
+        local val = reaper.GetFXEnvelope(track,fxIndex,param,false) 
+        if paramTableCatch[fxIndex] then
+            paramTableCatch[fxIndex][tableStr] = val 
+        end
+        return val
+    end 
+end
+
+function GetEnvelopeInfo_String(track,fxIndex, param, str)
+    local tableStr = param .. ":" .. str .. "GetEnvelopeInfo_String"
+    local catch = getParameterTableCatch(fxIndex, tableStr)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch 
+    else  
+        paramsReadCount = paramsReadCount + 1
+        local envelope = GetFXEnvelope(track,fxIndex,param)
+        local ret, val = reaper.GetSetEnvelopeInfo_String(envelope, str, "", false)
+        if paramTableCatch[fxIndex] then
+            paramTableCatch[fxIndex][tableStr] = val 
+        end
+        return val
+    end
+end
+
+function CountEnvelopePoints(track,fxIndex,param) 
+    local tableStr = param .. "CountEnvelopePoints"
+    local catch = getParameterTableCatch(fxIndex, tableStr)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch 
+    else 
+        paramsReadCount = paramsReadCount + 1 
+        local envelope = GetFXEnvelope(track,fxIndex,param)
+        local val = reaper.CountEnvelopePoints(envelope) 
+        if paramTableCatch[fxIndex] then
+            paramTableCatch[fxIndex][tableStr] = val 
+        end
+        return val
+    end 
+end
+
+function Envelope_Evaluate( envelope, time, sampleRate,samplesRequest)
+    local retval, envelopeValueAtPos, dVdS, ddVdS, dddVdS = reaper.Envelope_Evaluate(envelope, time,sampleRate,samplesRequest)
+    if retval then
+        return envelopeValueAtPos, dVdS, ddVdS, dddVdS 
+    end
+end
+
+function getEnvelopeValueAndPos(track,fxIndex,param, time)
+    local tableStr = param .. "EnvelopeValueAndPos"
+    local catch = getParameterTableCatch(fxIndex, tableStr)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch 
+    else 
+        paramsReadCount = paramsReadCount + 1 
+        local envelope = GetFXEnvelope(track,fxIndex,param)
+        local val = Envelope_Evaluate(envelope, time, 0,0)
+        if paramTableCatch[fxIndex] then
+            paramTableCatch[fxIndex][tableStr] = val 
+        end
+        return val
+    end 
+end
+
+
+function GetEnvelopePoint(track,fxIndex,param, ptidx)
+    local tableStr = param .. ":" .. ptidx .. "EnvelopeValueAndPos"
+    local catch = getParameterTableCatch(fxIndex, tableStr)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch.time, catch.value 
+    else 
+        paramsReadCount = paramsReadCount + 1 
+        local envelope = GetFXEnvelope(track,fxIndex,param)
+        local ret, time, value = reaper.GetEnvelopePoint(envelope, ptidx)
+        if paramTableCatch[fxIndex] then
+            paramTableCatch[fxIndex][tableStr] = {time, value}
+        end
+        return time, value
+    end 
+end
+
+function envelopeIsVisible(track,fxIndex,param)
+    return tonumber(GetEnvelopeInfo_String(track,fxIndex,param, "VISIBLE")) == 1
+end
+
+function envelopeIsActive(track,fxIndex,param) 
+    return tonumber(GetEnvelopeInfo_String(track,fxIndex,param, "ACTIVE")) == 1
+end
+
+function envelopeIsArmed(track,fxIndex,param)
+    return tonumber(GetEnvelopeInfo_String(track,fxIndex,param, "ARM")) == 1
+end
+
+function envelopeIsInLane(track,fxIndex,param)
+    return tonumber(GetEnvelopeInfo_String(track,fxIndex,param, "SHOWLANE")) == 1
+end
+
+function getEnvelopeState(track,fxIndex,param) 
+    if track and fxIndex and param then
+        return {visible = envelopeIsVisible(track,fxIndex,param), active = envelopeIsActive(track,fxIndex,param), arm = envelopeIsArmed(track,fxIndex,param), envelopeIsInLane(track,fxIndex,param)}
+    else
+        return {visible = false, active = false, arm = false, showLane = true}
+    end
+end
+
+function clearEnvelopeLane(envelope)
+    if envelope then 
+        -- Remove all points
+        local pointCount = reaper.CountEnvelopePoints(envelope) 
+        for i = pointCount-1, 0, -1 do
+            reaper.DeleteEnvelopePointEx(envelope,-1,i)
+        end
+        reaper.TrackList_AdjustWindows(false)
+        reaper.UpdateArrange()
+        --reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "0", true)
+    end 
+end
+
+---- SET
 
 function SetNamedConfigParm(track, index, str, val)
     paramsSetCount = paramsSetCount + 1
@@ -1530,6 +1688,7 @@ function CopyToTrackFX(src_track, src_fx, dest_track, dest_fx, move)
 end
 
 
+-- Avarage update for params read count
 local time = reaper.time_precise()
 local last_time = time
 local elapsed = 0
@@ -1772,6 +1931,7 @@ function stopMapping()
 end
 
 function mapModulatorActivate(fx, mapParam, name, fromKeycommand, simple)
+    reloadParameterLinkCatch = true
     if fx and (not fromKeycommand and isSuperPressed) and trackSettings then
         local newStart = false
         local newVal
@@ -1803,7 +1963,6 @@ function mapModulatorActivate(fx, mapParam, name, fromKeycommand, simple)
             mapActiveParam = mapParam
             fxContainerIndex = fx.fxInContainerIndex 
         end
-        reloadParameterLinkCatch = true
     end
 end
 
@@ -1944,20 +2103,20 @@ function movePluginToContainer(track, originalIndex)
 end
 
 
-function getModulatorNames(track, modulationContainerPos, parameterLinks)
+function getModulatorNames(track, modulationContainerPos, parameterLinks, doNotUseCatch)
     if modulationContainerPos then
-        local fxAmount = tonumber(select(2, GetNamedConfigParm(track, modulationContainerPos, 'container_count')))
+        local fxAmount = tonumber(select(2, GetNamedConfigParm(track, modulationContainerPos, 'container_count', doNotUseCatch)))
         local containerData = {}
         local fxIndexs = {}
         allIsCollabsed = true
         allIsNotCollabsed = true
         
         for c = 0, fxAmount -1 do  
-            local fxIndex = tonumber(select(2, GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. c) ))
+            local fxIndex = tonumber(select(2, GetNamedConfigParm(track, modulationContainerPos, 'container_item.' .. c, doNotUseCatch) ))
             if fxIndex then
-                local _, fxOriginalName = GetNamedConfigParm(track, fxIndex, 'original_name')
-                local renamed, fxName = GetNamedConfigParm(track, fxIndex, 'renamed_name')
-                local guid = GetFXGUID( track, fxIndex )
+                local _, fxOriginalName = GetNamedConfigParm(track, fxIndex, 'original_name', doNotUseCatch)
+                local renamed, fxName = GetNamedConfigParm(track, fxIndex, 'renamed_name', doNotUseCatch)
+                local guid = GetFXGUID( track, fxIndex,doNotUseCatch)
                 if not renamed or fxName == "" or fxName == nil then 
                     fxName = fxOriginalName
                 end
@@ -1969,7 +2128,7 @@ function getModulatorNames(track, modulationContainerPos, parameterLinks)
                 local mappingNames = {}
                  
                 for i, out in ipairs(output) do
-                    paramName = GetParamName(track, fxIndex, out)
+                    paramName = GetParamName(track, fxIndex, out, doNotUseCatch)
                     local mappingName = fxName 
                     if #output > 1 then 
                         if outputNames then
@@ -2071,56 +2230,13 @@ function mapParameterToContainer(track, modulationContainerPos, fxIndex, param)
     GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. param )
 end
 
-function deleteParameterFromContainer(track, modulationContainerPos, fxIndex, param)
+function deleteParameterFromContainer(track, modulationContainerPos, param)
     GetNamedConfigParm( track, modulationContainerPos, 'param.' .. param .. '.container_map.delete' )
 end
 
-function envelopeIsVisible(envelope)
-    _, envelopeVisible = reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "", false)
-    return tonumber(envelopeVisible) == 1
-end
-
-function envelopeIsActive(envelope)
-    _, envelopeVisible = reaper.GetSetEnvelopeInfo_String(envelope, "ACTIVE", "", false)
-    return tonumber(envelopeVisible) == 1
-end
-
-function envelopeIsArmed(envelope)
-    _, envelopeVisible = reaper.GetSetEnvelopeInfo_String(envelope, "ARM", "", false)
-    return tonumber(envelopeVisible) == 1
-end
-
-function envelopeIsInLane(envelope)
-    _, envelopeVisible = reaper.GetSetEnvelopeInfo_String(envelope, "SHOWLANE", "", false)
-    return tonumber(envelopeVisible) == 1
-end
-
-function getEnvelopeState(envelope) 
-    if envelope then
-        _, envelopeVisible = reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "", false)
-        _, envelopeActive = reaper.GetSetEnvelopeInfo_String(envelope, "ACTIVE", "", false)
-        _, envelopeArm = reaper.GetSetEnvelopeInfo_String(envelope, "ARM", "", false)
-        _, envelopeLane = reaper.GetSetEnvelopeInfo_String(envelope, "SHOWLANE", "", false)
-        return {visible = envelopeIsVisible(envelope), active = envelopeIsActive(envelope), arm = envelopeIsArmed(envelope), envelopeIsInLane(envelope)}
-    else
-        return {visible = false, active = false, arm = false, showLane = true}
-    end
-end
-
-function clearEnvelopeLane(envelope)
-    if envelope then 
-        -- Remove all points
-        local pointCount = reaper.CountEnvelopePoints(envelope) 
-        for i = pointCount-1, 0, -1 do
-            reaper.DeleteEnvelopePointEx(envelope,-1,i)
-        end
-        reaper.TrackList_AdjustWindows(false)
-        reaper.UpdateArrange()
-        --reaper.GetSetEnvelopeInfo_String(envelope, "VISIBLE", "0", true)
-    end 
-end
 
 function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnumber, param, value, offsetForce, scaleForce, valueForce)
+    if not track or not modulationContainerPos or not fxIndex or not fxnumber or not param then return end
     local outputPos
     
     if tonumber(fxnumber) < 0x2000000 then
@@ -2167,7 +2283,7 @@ function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnum
     SetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.scale',useScale and useScale or 1 )
     SetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.effect',modulationContainerPos )
     SetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.param', outputPos )
-    
+    reloadParameterLinkCatch = true
 end
 
 
@@ -2520,11 +2636,12 @@ end
 
 local function getAllDataFromParameter(track,fxIndex,param) 
     if not track or not validateTrack(track) then return {} end
-    if not fxIndex then return {} end
+    if not fxIndex or not param then return {} end
+    
     local name = GetParamName(track,fxIndex,param)
     local valueName = GetFormattedParamValue(track,fxIndex,param)
     -- we filter internal and midi parameters from plugin parameter list
-    if filterParametersThatAreMostLikelyNotWanted(name) then  
+    if filterParametersThatAreMostLikelyNotWanted(param, track,fxIndex) then  
         local fxName = GetFXName(track, fxIndex) 
         
         local root_fxIndex, root_param = fx_get_mapped_parameter(track, fxIndex, param)
@@ -2672,13 +2789,15 @@ local function getAllDataFromParameter(track,fxIndex,param)
             end
         end
         
+        
+        
+        
         local envelopePointCount, singleEnvelopePointAtStart, usesEnvelope, firstEnvelopeValue, envelopeValueAtPos, hasEnvelopePoints
-        local trackEnvelope = reaper.GetFXEnvelope(track,fxIndex,param,false)
+        local trackEnvelope = GetFXEnvelope(track,fxIndex,param,false)
         
         if trackEnvelope then
-            envelopePointCount = reaper.CountEnvelopePoints(trackEnvelope)
-            _, envelopeActive = reaper.GetSetEnvelopeInfo_String(trackEnvelope, "ACTIVE", "", false)
-            envelopeActive = envelopeActive == "1"
+            envelopePointCount = CountEnvelopePoints(track,fxIndex,param)
+            envelopeActive = envelopeIsActive(track,fxIndex,param) 
             
             hasEnvelopePoints = envelopePointCount > 0
             usesEnvelope = envelopeActive and envelopePointCount > 0-- and envelopeActive == "1"
@@ -2692,10 +2811,10 @@ local function getAllDataFromParameter(track,fxIndex,param)
                 end
                 --local _, block_size = reaper.GetAudioDeviceInfo("BSIZE")
                 --local _, sample_rate = reaper.GetAudioDeviceInfo("SRATE")
-                retval, envelopeValueAtPos, dVdS, ddVdS, dddVdS = reaper.Envelope_Evaluate( trackEnvelope, target_time, 0, 0 )
+                envelopeValueAtPos = getEnvelopeValueAndPos(track,fxIndex,param, time)
                 if envelopePointCount == 1 then
-                    local ret, time, firstEnvelopeValue = reaper.GetEnvelopePoint(trackEnvelope, 0)
-                    if ret and time == 0 then
+                    local time, firstEnvelopeValue = GetEnvelopePoint(track,fxIndex,param, 0)
+                    if time and time == 0 then
                         singleEnvelopePointAtStart = true
                     end
                 end
@@ -2743,7 +2862,8 @@ local function getAllDataFromParameter(track,fxIndex,param)
         return {param = param, name = name, currentValue = currentValue, currentValueNormalized = currentValueNormalized,  value = value, valueNormalized = valueNormalized, min = min, max = max, range = range, baseline = tonumber(baseline), width = tonumber(width), offset = tonumber(offset), bipolar = bipolar, direction = direction,
         valueName = valueName, fxIndex = fxIndex, guid = guid,
         parameterModulationActive = parameterModulationActive, parameterLinkActive = parameterLinkActive, parameterLinkEffect = parameterLinkEffect,containerItemFxId = tonumber(containerItemFxId),
-        envelope = trackEnvelope, hasEnvelopePoints = hasEnvelopePoints, usesEnvelope = usesEnvelope, envelopeActive = envelopeActive, singleEnvelopePointAtStart = singleEnvelopePointAtStart, envelopeValue = envelopeValueAtPos, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
+        envelope = trackEnvelope, hasEnvelopePoints = hasEnvelopePoints, usesEnvelope = usesEnvelope, envelopeActive = envelopeActive, singleEnvelopePointAtStart = singleEnvelopePointAtStart, envelopeValue = envelopeValueAtPos, 
+        parameterLinkFXIndex = parameterLinkFXIndex, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
         fxName = fxName, 
         hasSteps = hasSteps, step = step, smallStep = smallStep, largeStep = largeStep, isToggle = isToggle,
         containerPath = containerPath,
@@ -3878,6 +3998,7 @@ function changeDirection(track, p)
     end 
 end
     
+    --[[
 function envelopeHasPointAtTime(envelope, target_time, time_tolerance)
   local point_count = reaper.CountEnvelopePoints(envelope)
   for i = 0, point_count - 1 do
@@ -3887,7 +4008,7 @@ function envelopeHasPointAtTime(envelope, target_time, time_tolerance)
     end
   end
   return false
-end
+end]]
 
 function setEnvelopePointAdvanced(track, p, amount)
     if p.singleEnvelopePointAtStart and isAutomationRead then
@@ -3897,7 +4018,9 @@ function setEnvelopePointAdvanced(track, p, amount)
         return GetParam(track, p.fxIndex, p.param)
     end
     
+    
     -- this seems not necisarry as it's handled by reaper through write types
+    --[[
     if lol and geezz then
         if p.singleEnvelopePointAtStart then
             reaper.SetEnvelopePoint(p.envelope,0, 0, amount, nil,nil,nil)
@@ -3946,6 +4069,7 @@ function setEnvelopePointAdvanced(track, p, amount)
             
         end
     end
+    ]]
 end
 
 function setParameterFromFxWindowParameterSlide(track, p)
@@ -4307,7 +4431,12 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     local baseline = currentValueNormalized--(p.baseline and p.baseline or currentValue ) / range
     
     local paramIsMappingParam = mapActiveFxIndex == p.fxIndex and mapActiveParam == p.param
+    
+    -- this did not work
+    --local paramIsModulationParam = mapActiveFxIndex == p.parameterLinkFxIndex and mapActiveParam == p.parameterLinkParam 
+    
     local canBeMapped = mapActiveFxIndex and not paramIsMappingParam and (not parameterLinkActive or (parameterLinkActive and mapActiveName ~= parameterLinkName )) 
+    --local canBeMapped = mapActiveFxIndex and not paramIsMappingParam and (not parameterLinkActive or (parameterLinkActive and mapActiveFxIndex ~= p.parameterLinkFxIndex and mapActiveParam ~= p.parameterLinkParam )) 
     
     -- if we map from a generic modulator
     local isGenericOutput = param == genericModulatorOutput
@@ -4704,7 +4833,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                 reaper.GetFXEnvelope(track, fxIndex, param, true) 
             end
         else
-            local envelopeStates = getEnvelopeState(p.envelope) 
+            local envelopeStates = getEnvelopeState(track, fxIndex, p.param) 
             local types = {"visible","active","arm", "showLane"}
             --local types = {"Show","Activate","Arm"}
             for i, t in ipairs(types) do 
@@ -4737,11 +4866,10 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
         
         if reaper.ImGui_BeginMenu(ctx, (parameterLinkActive and "Replace modulation with new" or "Map with new modulator")) then
             click, containerPos, insert_position = modulesPanel(true) 
-            if click then
-                
-                modulatorNames, modulatorFxIndexes = getModulatorNames(track, modulationContainerPos, parameterLinks)
+            if click then 
+                modulatorNames, modulatorFxIndexes = getModulatorNames(track, modulationContainerPos, parameterLinks, true)
                 for pos, m in ipairs(modulatorNames) do 
-                    if insert_position == m.fxIndex then
+                    if insert_position == m.fxIndex then 
                         mapModulatorActivate(m, m.output[1], m.name, nil, #m.output == 1)
                         local isLFO = mapActiveName:match("LFO") ~= nil
                         setParamaterToLastTouched(track, containerPos, insert_position, fxIndex, param, GetParam(track,fxIndex, param), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
@@ -4883,35 +5011,37 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
             end
         end 
         
-        local midiMsg = getPlinkMidiMsg(track, fxIndex, param)
-        local midiMsg2 = getPlinkMidiMsg2(track, fxIndex, param)
-        local midiBus = getPlinkMidiBus(track, fxIndex, param)
-        local midiChan = getPlinkMidiChan(track, fxIndex, param)
-        local omniChan = midiChan == 0
-        midiChan = midiChan and midiChan > 0 and midiChan - 1 or 0
-        local midiMsgWithChan = midiMsg and midiMsg + midiChan
-        local linkFromMidiText 
-        local hasMidiLink = getPlinkEffect(track, fxIndex, param) == -100 
-        if hasMidiLink then
-            if midiMsg2 < 128 then
-                linkFromMidiText = "Link to MIDI: " .. midi_status_to_text(midiMsgWithChan, midiMsg2, omniChan) 
-            elseif midiMsg == 176 then
-                linkFromMidiText = "Link to MIDI: " .. (midiMsg2 - 128) .. "/" .. (midiMsg2 - 96) .. " 14-bit"
+        if track and fxIndex and param then
+            local midiMsg = getPlinkMidiMsg(track, fxIndex, param)
+            local midiMsg2 = getPlinkMidiMsg2(track, fxIndex, param)
+            local midiBus = getPlinkMidiBus(track, fxIndex, param)
+            local midiChan = getPlinkMidiChan(track, fxIndex, param)
+            local omniChan = midiChan == 0
+            midiChan = midiChan and midiChan > 0 and midiChan - 1 or 0
+            local midiMsgWithChan = midiMsg and midiMsg + midiChan
+            local linkFromMidiText 
+            local hasMidiLink = getPlinkEffect(track, fxIndex, param) == -100 
+            if hasMidiLink then
+                if midiMsg2 < 128 then
+                    linkFromMidiText = "Link to MIDI: " .. midi_status_to_text(midiMsgWithChan, midiMsg2, omniChan) 
+                elseif midiMsg == 176 then
+                    linkFromMidiText = "Link to MIDI: " .. (midiMsg2 - 128) .. "/" .. (midiMsg2 - 96) .. " 14-bit"
+                end
+                if midiBus > 0 then
+                    linkFromMidiText = linkFromMidiText .. " (Bus " .. midiBus + 1 .. ")"
+                end
+            else
+                
             end
-            if midiBus > 0 then
-                linkFromMidiText = linkFromMidiText .. " (Bus " .. midiBus + 1 .. ")"
-            end
-        else
+            linkFromMidiText = "Link to MIDI"
             
+            if reaper.ImGui_BeginMenu(ctx, linkFromMidiText) then
+                midiSelectMenu(midiMsgWithChan, midiMsg2, false, midiBus, midiChan, omniChan)
+                 
+                reaper.ImGui_EndMenu(ctx)
+            end
+            drawLineAroundSelected(hasMidiLink) 
         end
-        linkFromMidiText = "Link to MIDI"
-        
-        if reaper.ImGui_BeginMenu(ctx, linkFromMidiText) then
-            midiSelectMenu(midiMsgWithChan, midiMsg2, false, midiBus, midiChan, omniChan)
-             
-            reaper.ImGui_EndMenu(ctx)
-        end
-        drawLineAroundSelected(hasMidiLink) 
         
         
         local function openMidiOSCWindowButton()
@@ -4929,82 +5059,84 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
             setToolTipFunc("Learn a MIDI message or OSC string to control the parameter") 
         end
         
-         
-        local learnMidi1 = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.midi1')))
-        local learnMidi2 = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.midi2')))
-        local learnOsc = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.osc')))
-        local learnMode = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.mode')))
-        local learnFlag = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.flags')))
         
-        local somethingIsLearned = learnFlag and ((learnMidi1 and learnMidi1 ~= 0) or learnOsc)
-        if not somethingIsLearned then
-            openMidiOSCWindowButton()
-        else
-            local midiLearnText
-            if learnMidi1 then
-                midiLearnText = midi_status_to_text(learnMidi1, learnMidi2)
-            elseif learnOsc then
-                midiLearnText = "OSC msg: ".. learnOsc
-            end
+        if track and fxIndex and param then
+            local learnMidi1 = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.midi1')))
+            local learnMidi2 = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.midi2')))
+            local learnOsc = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.osc')))
+            local learnMode = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.mode')))
+            local learnFlag = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.learn.flags')))
             
-            if reaper.ImGui_BeginMenu(ctx, "MIDI learn: ".. midiLearnText) then 
-                openMidiOSCWindowButton() 
+            local somethingIsLearned = learnFlag and ((learnMidi1 and learnMidi1 ~= 0) or learnOsc)
+            if not somethingIsLearned then
+                openMidiOSCWindowButton()
+            else
+                local midiLearnText
+                if learnMidi1 then
+                    midiLearnText = midi_status_to_text(learnMidi1, learnMidi2)
+                elseif learnOsc then
+                    midiLearnText = "OSC msg: ".. learnOsc
+                end
                 
-                if reaper.ImGui_BeginMenu(ctx, midiLearnText) then 
-                    midiSelectMenu(learnMidi1, learnMidi2, true)
+                if reaper.ImGui_BeginMenu(ctx, "MIDI learn: ".. midiLearnText) then 
+                    openMidiOSCWindowButton() 
+                    
+                    if reaper.ImGui_BeginMenu(ctx, midiLearnText) then 
+                        midiSelectMenu(learnMidi1, learnMidi2, true)
+                        
+                        reaper.ImGui_EndMenu(ctx)
+                    end
+                    
+                    if somethingIsLearned then
+                        local learnModes = {"Absolute","127=-1,1=+1", "63=-1, 65=+1", "65=-1, 1=+1", "toggle if nonzero"}
+                        local learnFlags = {"Selected track only", "Focused FX only", "Visible FX only", "Soft takeover"}
+                        local learnFlagsVal = {1, 4, 16, 2}
+                        
+                        
+                        
+                        local learnModeSelected = learnModes[learnMode+1]
+                        if reaper.ImGui_BeginCombo(ctx, "Mode##LearnMode", learnModeSelected) then
+                            for i,v in ipairs(learnModes) do
+                                local is_selected = learnMode+1 == i
+                                if reaper.ImGui_Selectable(ctx, learnModes[i], is_selected) then
+                                   SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.mode', i - 1)
+                                end 
+                            end
+                            reaper.ImGui_EndCombo(ctx)
+                        end
+                        for i, lf in ipairs(learnFlags) do
+                            local val = learnFlagsVal[i]
+                            local isActive
+                            local isSoftTakeover = (learnFlag & 2) ~= 0  -- true/false
+                            if i < 4 then
+                                isActive = (learnFlag & val) ~= 0  -- true/false
+                            else
+                                isActive = isSoftTakeover
+                            end
+                            
+                            local changed, newValue = reaper.ImGui_Checkbox(ctx, lf, isActive)
+                            if changed then 
+                                if newValue then
+                                    learnFlag = (i < 4 and (isSoftTakeover and 2 or 0) + val or  learnFlag | val) -- Set bit
+                                else
+                                    learnFlag = learnFlag & (~val) -- Clear bit
+                                end
+                                SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.flags', learnFlag)
+                            end
+                        end
+                        
+                        
+                        if reaper.ImGui_Button(ctx, "Remove MIDI learn") then  
+                            SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi1', "")
+                            SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi2', "") 
+                            SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.osc', "") 
+                            SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.mode', "") 
+                            SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.flags', "") 
+                        end 
+                    end
                     
                     reaper.ImGui_EndMenu(ctx)
                 end
-                
-                if somethingIsLearned then
-                    local learnModes = {"Absolute","127=-1,1=+1", "63=-1, 65=+1", "65=-1, 1=+1", "toggle if nonzero"}
-                    local learnFlags = {"Selected track only", "Focused FX only", "Visible FX only", "Soft takeover"}
-                    local learnFlagsVal = {1, 4, 16, 2}
-                    
-                    
-                    
-                    local learnModeSelected = learnModes[learnMode+1]
-                    if reaper.ImGui_BeginCombo(ctx, "Mode##LearnMode", learnModeSelected) then
-                        for i,v in ipairs(learnModes) do
-                            local is_selected = learnMode+1 == i
-                            if reaper.ImGui_Selectable(ctx, learnModes[i], is_selected) then
-                               SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.mode', i - 1)
-                            end 
-                        end
-                        reaper.ImGui_EndCombo(ctx)
-                    end
-                    for i, lf in ipairs(learnFlags) do
-                        local val = learnFlagsVal[i]
-                        local isActive
-                        local isSoftTakeover = (learnFlag & 2) ~= 0  -- true/false
-                        if i < 4 then
-                            isActive = (learnFlag & val) ~= 0  -- true/false
-                        else
-                            isActive = isSoftTakeover
-                        end
-                        
-                        local changed, newValue = reaper.ImGui_Checkbox(ctx, lf, isActive)
-                        if changed then 
-                            if newValue then
-                                learnFlag = (i < 4 and (isSoftTakeover and 2 or 0) + val or  learnFlag | val) -- Set bit
-                            else
-                                learnFlag = learnFlag & (~val) -- Clear bit
-                            end
-                            SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.flags', learnFlag)
-                        end
-                    end
-                    
-                    
-                    if reaper.ImGui_Button(ctx, "Remove MIDI learn") then  
-                        SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi1', "")
-                        SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi2', "") 
-                        SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.osc', "") 
-                        SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.mode', "") 
-                        SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.flags', "") 
-                    end 
-                end
-                
-                reaper.ImGui_EndMenu(ctx)
             end
             
             
@@ -7509,7 +7641,7 @@ function appSettingsWindow()
             
             
             
-            inputInMenu("Max parameters shown", "maxParametersShown", 100, "Will only fetch X amount of parameters from focused FX. 0 will show all.\nIf you have problems with performance reduce the amount might help", true, 0, nil) 
+            --inputInMenu("Max parameters shown", "maxParametersShown", 100, "Will only fetch X amount of parameters from focused FX. 0 will show all.\nIf you have problems with performance reduce the amount might help", true, 0, nil) 
             
             
             
@@ -8457,7 +8589,23 @@ function appSettingsWindow()
             settings.useParamCatch = val
             saveSettings()
         end
-        setToolTipFunc("This will create a carch of parameters read to ensure that we don't read any parameters multiple times") 
+        setToolTipFunc("This will create a catch of parameters read to ensure that we don't read any parameters multiple times") 
+        
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Filter parameters taht are most likely unwanted",settings.filterParamterThatAreMostLikelyNotWanted) 
+        if ret then 
+            settings.filterParamterThatAreMostLikelyNotWanted = val
+            saveSettings()
+        end
+        setToolTipFunc("Filter paramters matching tags...")
+        
+        reaper.ImGui_Indent(ctx)
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Build a database of paramters that should be filtered",settings.buildParamterFilterDataBase) 
+            if ret then 
+                settings.buildParamterFilterDataBase = val
+                saveSettings()
+            end
+            setToolTipFunc("This will create a database over plugins that have paramters we would like to filter out, in order to not read unnessesary parameters") 
+        reaper.ImGui_Unindent(ctx)
         
         local ret, val = reaper.ImGui_Checkbox(ctx,"Limit modulation parameter linking reading",settings.limitParameterLinkLoading) 
         if ret then 
@@ -9213,7 +9361,7 @@ local function loop()
         
         -- only reload mappings sometimes
         -- could use more settings maybe, like a timer, or just on more actions. Now it's on load or mapping
-        if not settings.limitParameterLinkLoading or (reloadParameterLinkCatch or not parameterLinks or (mapActiveFxIndex and isMouseDown)) then
+        if not settings.limitParameterLinkLoading or (reloadParameterLinkCatch or not parameterLinks or (mapActiveFxIndex and isMouseWasReleased)) then
             parameterLinks = getAllParameterModulatorMappings(track)
             reloadParameterLinkCatch = false
         end
@@ -11217,7 +11365,7 @@ local function loop()
                       reaper.ImGui_NewLine(ctx)
                       reaper.ImGui_TextColored(ctx, colorGrey, "User modulator:")
                       if reaper.ImGui_Button(ctx,"Change modulator output##" .. fxIndex) then
-                          deleteParameterFromContainer(track, modulationContainerPos, fxIndex, valuesFromModulator.indexInContainerMapping)
+                          deleteParameterFromContainer(track, modulationContainerPos, valuesFromModulator.indexInContainerMapping)
                           ImGui.CloseCurrentPopup(ctx)
                       end
                       reaper.ImGui_TextColored(ctx, colorRedHidden, "This will break any mappings!!")
@@ -11493,7 +11641,6 @@ local function loop()
             
             
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.modulesBackground)
-            
             local found
             
             for _, mod in ipairs(factoryModules) do
@@ -11519,7 +11666,12 @@ local function loop()
                         --retval, buf = GetNamedConfigParm( track, fxIndex, "param." .. p .. ".container_map.hint_id" )
                         -- we would have to enable multiple outputs here later
                         retval, buf = GetNamedConfigParm( track, modulationContainerPos, "container_map.get." .. fxIndex .. "." .. p )
-                        if retval then
+                        --if tonumber(buf) == nil then
+                           -- reaper.ShowConsoleMsg(p .. " - " .. fxName .. "\n")
+                           -- retval, buf = GetNamedConfigParm( track, modulationContainerPos, "container_map.get." .. fxIndex .. "." .. p, true )
+                        --end
+                        
+                        if retval and tonumber(buf) ~= nil then
                             table.insert(output, p)
                             genericModulatorInfo = {outputParam = p, indexInContainerMapping = tonumber(buf)}
                             break
@@ -11842,9 +11994,9 @@ local function loop()
     function floatingMappedParameterWindow(trackTouched, fxIndexTouched, parameterTouched)
         
         
-        
+        local x, y
         if hwndWindowOnTouchParam and reaper.JS_Window_IsVisible(hwndWindowOnTouchParam) and floatingMapperWin and mousePosOnTouchedParam and settings.openFloatingMapperRelativeToMouse and settings.openFloatingMapperRelativeToMousePos then 
-            local x, y
+            
             if settings.openFloatingMapperRelativeToMousePos.x == 0 then x = mousePosOnTouchedParam.x + settings.openFloatingMapperRelativeToMousePos.x - floatingMapperWin.w/2 end
             if settings.openFloatingMapperRelativeToMousePos.x < 0 then x = mousePosOnTouchedParam.x + settings.openFloatingMapperRelativeToMousePos.x - floatingMapperWin.w end
             if settings.openFloatingMapperRelativeToMousePos.x > 0 then x = mousePosOnTouchedParam.x + settings.openFloatingMapperRelativeToMousePos.x end
@@ -11862,7 +12014,7 @@ local function loop()
             local height = bottom - top
             
             local pos = settings.openFloatingMapperRelativeToWindowPos
-            local x, y
+            --local x, y
             
             if pos % 5 == 0 then x = right end
             if pos % 5 == 1 then x = left - floatingMapperWin.w end
@@ -11874,7 +12026,10 @@ local function loop()
             if math.floor(pos / 5.1) == 3 then y = bottom - floatingMapperWin.h  end
             if pos < 5 then y = top - floatingMapperWin.h end
             if pos > 20 then y = bottom end
-                
+            
+            --if floatingMapperWin then
+            --    reaper.JS_Window_SetPosition(reaper.JS_Window_Find( "Floating mapper", true), x, y,floatingMapperWin.w,floatingMapperWin.h)
+            --end
             reaper.ImGui_SetNextWindowPos(ctx, x,y,reaper.ImGui_Cond_Always())
         end
         
@@ -11882,6 +12037,9 @@ local function loop()
         if not rv then return open end
         if not trackTouched or not fxIndexTouched or not parameterTouched then return false end
         
+        if x and y then
+           -- reaper.ImGui_SetWindowPos(ctx, x, y)
+        end
         --[[
         -- THIS MADE THE FLOATING MAPPER DISAPEAR WHEN IN NOT FORCE MODE
         if not reaper.JS_Window_IsVisible(hwndWindowOnTouchParam) then  
