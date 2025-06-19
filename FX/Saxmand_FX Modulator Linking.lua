@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.88
+-- @version 0.9.89
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,12 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + made catching params default (no settings for it)
---   + removed "max" shown values for now as we have filtered params and param catching
---   + added a few more uptimizations
+--   + fixed Tempo sync not working correctly in LFO Native
 
 
-local version = "0.9.88"
+local version = "0.9.89"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1478,7 +1476,6 @@ local function filterParametersThatAreMostLikelyNotWanted(param, track, fxIndex,
         if not paramterFilterDataBase[originalName] then 
             paramterFilterDataBase[originalName] = {}
         else
-            a = paramterFilterDataBase
             if paramterFilterDataBase[originalName][param] ~= nil then
                 return paramterFilterDataBase[originalName][param]
             end
@@ -5585,8 +5582,8 @@ function createModulationLFOParameter(track, fxIndex,  _type, paramName, visualN
         --visualName = ""
         reaper.ImGui_SetNextItemWidth(ctx,modulatorParameterWidth)
         if _type == "Checkbox" then
-            ret, newValue = reaper.ImGui_Checkbox(ctx, visualName .. "##" .. paramName .. fxIndex, currentValue == (checkboxFlipped and "0" or "1"))
-            if ret then SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName, newValue and (checkboxFlipped and "0" or "1") or (not checkboxFlipped and "0" or "1")) end
+            ret, newValue = reaper.ImGui_Checkbox(ctx, visualName .. "##" .. paramName .. fxIndex, currentValue == (checkboxFlipped and 0 or 1))
+            if ret then SetNamedConfigParm( track, fxIndex, 'param.'..paramOut..'.' .. paramName, newValue and (checkboxFlipped and 0 or 1) or (not checkboxFlipped and "0" or "1")) end
             scrollValue = 1 
         elseif _type == "Combo" then 
             ret, newValue = reaper.ImGui_Combo(ctx, visualName .. '##' .. paramName .. fxIndex, tonumber(currentValue)+dropdownOffset, dropDownText )
@@ -7115,7 +7112,7 @@ function envelopeSettings(popup)
         end
         setToolTipFunc("Hide the previous last touched envelope if it has no envelope points.\nThis mode is a bit experimental")  
          
-        local ret, val = reaper.ImGui_Checkbox(ctx,"Hide envelopes without no points##",settings.hideEnvelopesWithNoPoints) 
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Hide envelopes with no points##",settings.hideEnvelopesWithNoPoints) 
         if ret then 
             settings.hideEnvelopesWithNoPoints = val
             saveSettings()
