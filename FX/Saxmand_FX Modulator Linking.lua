@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.89
+-- @version 0.9.90
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,10 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed Tempo sync not working correctly in LFO Native
+--   + (maybe) fixed 1640 crash, bad argument #4 to 'TrackFX_SetParam' (number expected, got nil) 
 
 
-local version = "0.9.89"
+local version = "0.9.90"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1627,22 +1627,30 @@ end
 
 function SetNamedConfigParm(track, index, str, val)
     paramsSetCount = paramsSetCount + 1
-    return reaper.TrackFX_SetNamedConfigParm(track, index, str, val)
+    if track and index and str and val then
+        return reaper.TrackFX_SetNamedConfigParm(track, index, str, val)
+    end
 end
 
 function SetOpen(track, index, open)
     paramsSetCount = paramsSetCount + 1
-    return reaper.TrackFX_SetOpen(track, index, open)
+    if track and index and open then
+        return reaper.TrackFX_SetOpen(track, index, open)
+    end
 end
 
 function SetParam(track, index, param, val)
     paramsSetCount = paramsSetCount + 1
-    return reaper.TrackFX_SetParam(track, index, param, val)
+    if track and index and param and val then
+        return reaper.TrackFX_SetParam(track, index, param, val)
+    end
 end
 
 function SetParamNormalized(track, index, param, val)
     paramsSetCount = paramsSetCount + 1
-    return reaper.TrackFX_SetParamNormalized(track, index, param, val)
+    if track and index and param and val then
+        return reaper.TrackFX_SetParamNormalized(track, index, param, val)
+    end
 end
 
 -- SHORT CUT FUNCTIONS
