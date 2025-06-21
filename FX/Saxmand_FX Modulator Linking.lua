@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.91
+-- @version 0.9.92+dev1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,15 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + Updated plugins panel to allow for dragging, renaming, collapsing, bypass, offline and removing with modifiers
---   + added option to show midi note names on CC note messages in popup menus
---   + added option to not allow changing baseline value of mapped parameters from plugin UI
---   + fixed parameter to changing when envelopes showing envelope, even if not in write mode
---   + fixed mapping MIDI parameter via menu, to enable mapping
---   + fixed mapping MIDI parameter to show even without any modulator folder
+--   + build to try and find parameter bug in "setParamaterToLastTouched". Added a log message
 
 
-local version = "0.9.91"
+local version = "0.9.92+dev1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -2353,6 +2348,11 @@ function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnum
     if not track or not modulationContainerPos or not fxIndex or not fxnumber or not param then return end
     local outputPos
     
+    if not param then
+        reaper.ShowConsoleMsg(appName .. ":\nThere was an issue with a missing parameter. Report this full text to developer:\nMod container pos: " .. tostring(modulationContainerPos) .. "fxIndex: " .. tostring(fxIndex) .. ", , fxnumber: " .. tostring(fxnumber) .. ", param: " .. tostring(param))
+        return
+    end
+    
     if tonumber(fxnumber) < 0x2000000 then
         outputPos = tonumber(select(2, GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam, true )))
     else
@@ -2363,11 +2363,15 @@ function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnum
             modulationContainerPos = fxContainerIndex
         else
             new_fxnumber, new_param = fx_map_parameter(track, fxnumber, param) 
+            if not new_param then
+                reaper.ShowConsoleMsg(appName .. ":\nThere was an issue finding the pos of the parameter. Report this to developer:\nMod container pos: " .. tostring(modulationContainerPos) .. "fxIndex: " .. tostring(fxIndex) .. ", , fxnumber: " .. tostring(fxnumber) .. ", param: " .. tostring(param))
+            end
             fxnumber = new_fxnumber
             param = new_param
             outputPos = tonumber(select(2, GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam, true )))
         end
     end 
+    
     local retParam, currentOutputPos = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.param', true)
     local retEffect, currentModulationContainerPos = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.effect', true)
     --local retActive, isPlinkActive = GetNamedConfigParm( track, fxnumber, 'param.'..param..'.plink.active')
@@ -8772,6 +8776,8 @@ function appSettingsWindow()
         end
         
         
+        reaper.ImGui_NewLine(ctx)
+        
         local ret, val = reaper.ImGui_Checkbox(ctx,"Use parameter catch",settings.useParamCatch) 
         if ret then 
             settings.useParamCatch = val
@@ -8779,7 +8785,7 @@ function appSettingsWindow()
         end
         setToolTipFunc("This will create a catch of parameters read to ensure that we don't read any parameters multiple times") 
         
-        local ret, val = reaper.ImGui_Checkbox(ctx,"Filter parameters taht are most likely unwanted",settings.filterParamterThatAreMostLikelyNotWanted) 
+        local ret, val = reaper.ImGui_Checkbox(ctx,"Filter parameters that are most likely unwanted",settings.filterParamterThatAreMostLikelyNotWanted) 
         if ret then 
             settings.filterParamterThatAreMostLikelyNotWanted = val
             saveSettings()
