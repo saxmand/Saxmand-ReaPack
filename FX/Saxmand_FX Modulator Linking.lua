@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.92+dev1
+-- @version 0.9.92
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,10 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + build to try and find parameter bug in "setParamaterToLastTouched". Added a log message
+--   + fixed bug when adding modulation with context menu, but no modulator folder was existing
+--   + fixed bug where sub mappings did not show up (thanks bobobo for reporting)
 
-
-local version = "0.9.92+dev1"
+local version = "0.9.92"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -204,7 +204,7 @@ local beginFxDragAndDropIndexRelease, beginFxDragAndDropName, beginFxDragAndDrop
 
 local focusedTrackFXNames = {}
 local parameterLinks-- = {}
-local reloadParameterLinkCatch
+local reloadParameterLinkCatch = true
 local focusedTrackFXParametersData = {}
 local modulatorNames = {}
 local modulatorFxIndexes = {}
@@ -1769,6 +1769,7 @@ function showFX(track, fxIndex, show)
 end
 
 function DeleteFX(track, fxIndex)
+    reloadParameterLinkCatch = true
     return reaper.TrackFX_Delete(track, fxIndex)
 end
 
@@ -2354,17 +2355,21 @@ function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnum
     end
     
     if tonumber(fxnumber) < 0x2000000 then
+        -- map from fx in the root
         outputPos = tonumber(select(2, GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam, true )))
     else
         containerPath = get_container_path_from_fx_id(track, fxnumber)
-        if containerPath and containerPath[1] == modulationContainerPos + 1 then
+        if containerPath and containerPath[1] == modulationContainerPos + 1 then 
+            -- map a modulator from within the modulator folder
             -- could this be done in a better way? -- I need to get the position of the FX inside the container
             outputPos = mapActiveParam -- this is the paramater in the lfo plugin 
             modulationContainerPos = fxContainerIndex
         else
+            -- map a fx in a container
             new_fxnumber, new_param = fx_map_parameter(track, fxnumber, param) 
             if not new_param then
-                reaper.ShowConsoleMsg(appName .. ":\nThere was an issue finding the pos of the parameter. Report this to developer:\nMod container pos: " .. tostring(modulationContainerPos) .. "fxIndex: " .. tostring(fxIndex) .. ", , fxnumber: " .. tostring(fxnumber) .. ", param: " .. tostring(param))
+                reaper.ShowConsoleMsg(appName .. ":\nThere was an issue finding the pos of the parameter. Report this to developer:\nMod container pos: " .. tostring(modulationContainerPos) .. ", fxIndex: " .. tostring(fxIndex) .. ", fxnumber: " .. tostring(fxnumber) .. ", param: " .. tostring(param))
+                return
             end
             fxnumber = new_fxnumber
             param = new_param
@@ -3120,21 +3125,21 @@ local function findParentContainer(fxContainerIndex)
     end 
 end
 
+function getNameAndOtherInfo(track, fxIndex, doNotGetStatus) 
+    local fxName = GetFXName(track, fxIndex) -- Get the FX name'
+    local fxOriginalName = getOriginalFxName(track, fxIndex)
+    local containerCount = getContainerCount(track,fxIndex)
+    local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
+    local isEnabled = not doNotGetStatus and GetEnabled(track, fxIndex)
+    local isOpen = not doNotGetStatus and GetOpen(track,fxIndex)
+    local isFloating = not doNotGetStatus and GetFloatingWindow(track,fxIndex)
+    return fxName, fxOriginalName, containerCount, isContainer, isEnabled, isOpen, isFloating
+end
 
 
 -- Function to get all plugins on a track, including those within containers
 function getAllTrackFXOnTrack(track)
     
-    function getNameAndOtherInfo(track, fxIndex) 
-        local fxName = GetFXName(track, fxIndex) -- Get the FX name'
-        local fxOriginalName = getOriginalFxName(track, fxIndex)
-        local containerCount = getContainerCount(track,fxIndex)
-        local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
-        local isEnabled = GetEnabled(track, fxIndex)
-        local isOpen = GetOpen(track,fxIndex)
-        local isFloating = GetFloatingWindow(track,fxIndex)
-        return fxName, fxOriginalName, containerCount, isContainer, isEnabled, isOpen, isFloating
-    end
     --reaper.ShowConsoleMsg("\n\n")
     local plugins = {} -- Table to store plugin information
     local containersFetch = {} -- Table to store plugin information
@@ -3231,7 +3236,7 @@ function getAllParameterModulatorMappings(track)
             for subFxIndex = 0, fxCount - 1 do
                 local fxIndex = getPlinkFxIndex(track, fxContainerIndex, subFxIndex)
                 if fxIndex then
-                    local fxName, fxOriginalName, container_count, isContainer, isEnabled, isOpen, isFloating = getNameAndOtherInfo(track, fxIndex) 
+                    local fxName, fxOriginalName, container_count, isContainer = getNameAndOtherInfo(track, fxIndex, true) 
                     
                     pLinks = CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
                     
@@ -3249,17 +3254,16 @@ function getAllParameterModulatorMappings(track)
     
         -- Iterate through each FX
         for fxIndex = 0, totalFX - 1 do 
-            local fxName = GetFXName(track, fxIndex) 
-            local fxOriginalName = getOriginalFxName(track, fxIndex) 
+            local fxName, fxOriginalName, container_count, isContainer = getNameAndOtherInfo(track, fxIndex, true) 
             local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
-            local isModulator = isContainer and fxName == "Modulators"
+            local isModulator = modulationContainerPos and isContainer and fxName == "Modulators"
             
             pLinks = CheckFXParamsMapping(pLinks, track, fxIndex)
     
             -- If the FX is a container, recursively check its contents
             if isContainer then
                 local indent = 1 
-                getRecursively(track, fxIndex, isModulator)
+                getRecursively(track, fxIndex, indent, container_count, isModulator, fxName)
             end
         end
     end
@@ -4983,14 +4987,17 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
         
         
         if reaper.ImGui_BeginMenu(ctx, (parameterLinkActive and "Replace modulation with new" or "Map with new modulator")) then
-            click, containerPos, insert_position = modulesPanel(true) 
+            local hadModulationContainerPosAlready = modulationContainerPos
+            local click, modulationContainerPosTemp, insert_position = modulesPanel(true) 
             if click then 
+                modulationContainerPos = modulationContainerPosTemp
+                if not hadModulationContainerPosAlready then fxIndex = fxIndex + 1 end
                 modulatorNames, modulatorFxIndexes = getModulatorNames(track, modulationContainerPos, parameterLinks, true)
                 for pos, m in ipairs(modulatorNames) do 
                     if insert_position == m.fxIndex then 
                         mapModulatorActivate(m, m.output[1], m.name, nil, #m.output == 1)
                         local isLFO = mapActiveName:match("LFO") ~= nil
-                        setParamaterToLastTouched(track, containerPos, insert_position, fxIndex, param, GetParam(track,fxIndex, param), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
+                        setParamaterToLastTouched(track, modulationContainerPos, insert_position, fxIndex, param, GetParam(track,fxIndex, param), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
                         if parameterLinkActive or settings.mapOnce then mapModulatorActivate(nil) end
                         break;
                     end
@@ -5002,23 +5009,24 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
             reaper.ImGui_EndMenu(ctx)
         end
         
-        
-        if reaper.ImGui_BeginMenu(ctx, (parameterLinkActive and "Replace modulation with existing" or "Map with existing modulator")) then
-            for pos, m in ipairs(modulatorNames) do 
-                for _, out in ipairs(m.output) do 
-                    if moduleButton(m.mappingNames[out]) then
-                        --reaper.ShowConsoleMsg(m.name)
-                        --reaper.ImGui_CloseCurrentPopup(ctx)
-                        mapModulatorActivate(m, out, m.name, nil, #m.output == 1)
-                        local isLFO = mapActiveName:match("LFO") ~= nil
-                        setParamaterToLastTouched(track, modulationContainerPos, m.fxIndex, fxIndex, param, GetParam(track,fxIndex, param), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
-                        mapModulatorActivate(nil) 
-                        break;
+        if modulationContainerPos then
+            if reaper.ImGui_BeginMenu(ctx, (parameterLinkActive and "Replace modulation with existing" or "Map with existing modulator")) then
+                for pos, m in ipairs(modulatorNames) do 
+                    for _, out in ipairs(m.output) do 
+                        if moduleButton(m.mappingNames[out]) then
+                            --reaper.ShowConsoleMsg(m.name)
+                            --reaper.ImGui_CloseCurrentPopup(ctx)
+                            mapModulatorActivate(m, out, m.name, nil, #m.output == 1)
+                            local isLFO = mapActiveName:match("LFO") ~= nil
+                            setParamaterToLastTouched(track, modulationContainerPos, m.fxIndex, fxIndex, param, GetParam(track,fxIndex, param), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
+                            mapModulatorActivate(nil) 
+                            break;
+                        end
                     end
                 end
+                 
+                reaper.ImGui_EndMenu(ctx)
             end
-             
-            reaper.ImGui_EndMenu(ctx)
         end
         
         function drawLineAroundSelected(selected) 
@@ -9566,8 +9574,11 @@ local function loop()
             reloadParameterLinkCatch = false
         end
         
-        if modulationContainerPos then
+        if modulationContainerPos then 
             modulatorNames, modulatorFxIndexes = getModulatorNames(track, modulationContainerPos, parameterLinks)
+        else
+            modulatorNames = {} 
+            modulatorFxIndexes = {}
         end
         
         automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
@@ -10966,14 +10977,10 @@ local function loop()
                 
           function modulesPanel(addToParameter)
               
-                  
-              
-              
-              
               
               
               local click = false
-              local containerPos, insert_position
+              local modulationContainerPos, insert_position
               local curPosY = reaper.ImGui_GetCursorPosY(ctx)
               if reaper.ImGui_BeginChild(ctx, "modules list", tableWidth-16, height-curPosY-16, nil,scrollFlags) then
                   local currentFocus 
@@ -10997,12 +11004,12 @@ local function loop()
                                   if notInstalled then
                                       openWebpage(val.website)
                                   else
-                                      containerPos, insert_position = insertFXAndAddContainerMapping(track, val.insertName, val.rename and val.rename or val.name) 
+                                      modulationContainerPos, insert_position = insertFXAndAddContainerMapping(track, val.insertName, val.rename and val.rename or val.name) 
                                   end
                               elseif val.func == "ACS" then 
-                                  containerPos, insert_position = insertACSAndAddContainerMapping(track)
+                                  modulationContainerPos, insert_position = insertACSAndAddContainerMapping(track)
                               elseif val.func == "LFO" then 
-                                  containerPos, insert_position = insertLocalLfoFxAndAddContainerMapping(track)
+                                  modulationContainerPos, insert_position = insertLocalLfoFxAndAddContainerMapping(track)
                               elseif val.func == "Any" then 
                                   browserHwnd, browserSearchFieldHwnd = openFxBrowserOnSpecificTrack() 
                                   fx_before = getAllTrackFXOnTrackSimple(track)  
@@ -11025,8 +11032,8 @@ local function loop()
                           if moduleButton("+ " .. visualName .. "##" .. i, module.description) then
                               currentFocus = reaper.JS_Window_GetFocus()
                               nameOpened = visualName
-                              containerPos, insert_position = insertFXAndAddContainerMapping(track, module.fxName, visualName)
-                              mapParameterToContainer(track, containerPos, insert_position, module.outputParam)
+                              modulationContainerPos, insert_position = insertFXAndAddContainerMapping(track, module.fxName, visualName)
+                              mapParameterToContainer(track, modulationContainerPos, insert_position, module.outputParam)
                           end 
                           if reaper.ImGui_IsItemClicked(ctx, 1) then 
                               removeCustomModule = i 
@@ -11056,10 +11063,10 @@ local function loop()
                           if moduleButton("+ " .. visualName .. "##" .. i, module.description) then
                               currentFocus = reaper.JS_Window_GetFocus()
                               nameOpened = visualName
-                              containerPos, insert_position = insertFXAndAddContainerMapping(track, module.fxName, visualName)
+                              modulationContainerPos, insert_position = insertFXAndAddContainerMapping(track, module.fxName, visualName)
                               
                               if module.outputParam then
-                                  mapParameterToContainer(track, containerPos, insert_position, module.outputParam)
+                                  mapParameterToContainer(track, modulationContainerPos, insert_position, module.outputParam)
                               end
                               
                               if module.params then
@@ -11117,7 +11124,7 @@ local function loop()
                       if not isReaLearnInstalled then reaper.ImGui_PopStyleColor(ctx) end
                       
                       if moduleButton("+ MIDI Out", "Output a midi message") then
-                          containerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: MIDI Out Modulator", "Midi Out")  
+                          modulationContainerPos, insert_position = insertFXAndAddContainerMapping(track, "JS: MIDI Out Modulator", "Midi Out")  
                           currentFocus = reaper.JS_Window_GetFocus()
                           click = true
                       end
@@ -11136,11 +11143,11 @@ local function loop()
                           showFX(track, insert_position, fxIsFloating and 2 or 0) 
                       end
                       
-                      if containerPos then
-                          containerIsShowin = GetOpen(track,containerPos)
-                          containerIsFloating = GetFloatingWindow(track,containerPos)
+                      if modulationContainerPos then
+                          containerIsShowin = GetOpen(track,modulationContainerPos)
+                          containerIsFloating = GetFloatingWindow(track,modulationContainerPos)
                           if containerIsShowin then
-                              showFX(track, containerPos, containerIsFloating and 2 or 0) 
+                              showFX(track, modulationContainerPos, containerIsFloating and 2 or 0) 
                           end
                       end
                       
@@ -11152,7 +11159,7 @@ local function loop()
           
                   ImGui.EndChild(ctx)
               end 
-              return click, containerPos, insert_position
+              return click, modulationContainerPos, insert_position
           end
           
           
