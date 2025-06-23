@@ -14,6 +14,7 @@ local colorAlmostBlack = reaper.ImGui_ColorConvertDouble4ToU32(0.1, 0.1, 0.1, 1)
 function buttons.close(ctx, x, y, size, onlyXOnHover, id, textColor, textColorHover, backgroundColor,backgroundColorHover)
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), size)
     if x and y then reaper.ImGui_SetCursorPos(ctx, x, y) end
+    
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), backgroundColor and backgroundColor or colorTransparent)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), backgroundColorHover and backgroundColorHover or colorRedHidden)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), backgroundColorHover and backgroundColorHover or colorRedHidden)
@@ -21,13 +22,23 @@ function buttons.close(ctx, x, y, size, onlyXOnHover, id, textColor, textColorHo
     reaper.ImGui_PushFont(ctx, closeTitle)
 
     local click = false
+    --[[
     if reaper.ImGui_Button(ctx, "##X" .. (id and id or ""), size + 1, size + 1) then
         click = true
     end
     local posX, posY = reaper.ImGui_GetItemRectMin(ctx)
+    
     --posX, posY = posX - 1, posY -1
-    crop = size/4
     local isHovered = reaper.ImGui_IsItemHovered(ctx)
+    ]]
+    local minX
+    local posX, posY = reaper.ImGui_GetCursorScreenPos(ctx)
+    local isHovered = mouse_pos_x_imgui >= posX and mouse_pos_x_imgui <= posX + size and mouse_pos_y_imgui >= posY and mouse_pos_y_imgui <= posY + size
+    if isHovered and isMouseClick then 
+        click = true
+    end
+    crop = size/4
+
     if not onlyXOnHover or isHovered then 
         local crossColor = isHovered and (textColorHover and textColorHover or colorWhite) or (textColor and textColor or colorWhite)
         reaper.ImGui_DrawList_AddLine(draw_list, posX + crop, posY + crop, posX + size - crop, posY + size - crop, crossColor, 2)
