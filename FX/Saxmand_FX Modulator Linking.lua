@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.95
+-- @version 0.9.96
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -19,7 +19,7 @@
 --   + fixed mapped parameters will show correctly when adding or removing FX when using limitParameterLinkLoading
 --   + fixed various envelope issues, with reading and writing envelope in the different modes
 
-local version = "0.9.95"
+local version = "0.9.96"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
