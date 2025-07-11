@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.98
+-- @version 0.9.99
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,7 +17,7 @@
 -- @changelog
 --   + added option to selected touched parameter in floating mapper via right click context popup
 
-local version = "0.9.98"
+local version = "0.9.99"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -2304,14 +2304,16 @@ end
 -- add container and move it to the first slot and rename to modulators
 function addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
     local modulatorsPos = GetByName( track, "Modulators", false, true )
+    local modulatorContainerExist = true
     if modulatorsPos == -1 then
         --modulatorsPos = GetByName( track, "Container", true )
         modulatorsPos = reaper.TrackFX_AddByName( track, "Container", false, -1 )
         
         --modulatorsPos = TrackFX_AddByName( track, "Container", modulatorsPos, -1 ) 
         rename = SetNamedConfigParm( track, modulatorsPos, 'renamed_name', "Modulators" )
+        modulatorContainerExist = false
     end
-    return modulatorsPos
+    return modulatorsPos, modulatorContainerExist
 end
 
 function deleteModule(track, fxIndex, modulationContainerPos, fx)
@@ -2414,16 +2416,17 @@ end
 ]]
 
 function insertContainerAddPluginAndRename(track, name, newName)
-    reaper.Undo_BeginBlock()
-    local modulationContainerPos = addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
+    reaper.Undo_BeginBlock() 
+    local modulationContainerPos,modulationContainerExist = addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
     local position_of_FX_in_container = tonumber(select(2, GetNamedConfigParm(track, modulationContainerPos, 'container_count', true)))
     --if position_of_FX_in_container == 0 then position_of_FX_in_container = 1 end
     local parent_FX_count = GetCount(track) + 1
     local position_of_container = modulationContainerPos + 1
     
     local insert_position = get_fx_id_from_container_path(track, modulationContainerPos + 1, position_of_FX_in_container + 1)--
+    
     -- not sure why this fix is needed but it seems to work when there were no container
-    if position_of_FX_in_container == 0 then insert_position = insert_position + 1 end
+    if position_of_FX_in_container == 0 and not modulationContainerExist then insert_position = insert_position + 1 end
     
     local fxPosition = AddByNameFX( track, name, false, insert_position )
     SetNamedConfigParm( track, insert_position, 'renamed_name', newName)--getModulatorModulesNameCount(track, modulationContainerPos, newName, true) )
