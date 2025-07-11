@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.97
+-- @version 0.9.98
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,10 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added dummy to avoid imgui error
---   + updated settings a bit to better reflect new structure
+--   + added option to selected touched parameter in floating mapper via right click context popup
 
-local version = "0.9.97"
+local version = "0.9.98"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -9480,6 +9479,20 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                 end
             end
             
+            if moduleId:match("Floating") ~= nil then
+                if reaper.ImGui_BeginMenu(ctx, "Manually select touched parameter") then 
+                    
+                    local numParams = GetNumParams(track, fxIndex)
+                    for p = 0, numParams - 1 - 3 do
+                          name = GetParamName(track, fxIndex, p)
+                          if reaper.ImGui_Selectable(ctx, name, p == param) then
+                              parameterTouched = p
+                          end
+                    end
+                    
+                    reaper.ImGui_EndMenu(ctx)
+                end
+            end
             
         end
         
