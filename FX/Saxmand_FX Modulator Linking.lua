@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.96
+-- @version 0.9.97
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,11 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + complete redesign of "modules" and how they are rendered, making expanding of new modules easier
---   + fixed mapped parameters will show correctly when adding or removing FX when using limitParameterLinkLoading
---   + fixed various envelope issues, with reading and writing envelope in the different modes
+--   + added dummy to avoid imgui error
+--   + updated settings a bit to better reflect new structure
 
-local version = "0.9.96"
+local version = "0.9.97"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -362,6 +361,8 @@ local defaultSettings = {
     pluginsPanelHeight = 600,
     allow = 200,
     alwaysUsePluginsHeight = true,
+    showPluginsListGlobal = false,
+    showPluginsList = true,
     
     showContainers = true,
     colorContainers = true,
@@ -381,10 +382,11 @@ local defaultSettings = {
     
       -- Parameters
     searchClearsOnlyMapped = false,
+    showParametersPanelGlobal = false,
     showParametersPanel = true,
+    showOnlyFocusedPluginGlobal = true,
     showOnlyFocusedPlugin = true,
     showAddPluginsList = false,
-    showOnlyFocusedPluginGlobal = true,
     parametersHeight = 250,
     parametersWidth = 200,
     alwaysUseParametersHeight = true,
@@ -10246,42 +10248,48 @@ function appSettingsWindow()
             reaper.ImGui_TextColored(ctx, colorGrey, "Track coloring")
             
             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Track color around lock",settings.trackColorAroundLock) 
-            if ret then 
-                settings.trackColorAroundLock = val
-                saveSettings()
-            end
-            setToolTipFunc("Have track color shown as a border around the lock")  
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Track color as line",settings.showTrackColorLine) 
-            if ret then 
-                settings.showTrackColorLine = val
-                saveSettings()
-            end
-            setToolTipFunc("Have track color as a line on the left in horizontal mode or on top in vertical mode") 
-            
-            sliderInMenu("Track color line size", "trackColorLineSize", menuSliderWidth, 1, 6, "Set the size of the color line") 
+            reaper.ImGui_Indent(ctx)
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Track color around lock",settings.trackColorAroundLock) 
+                if ret then 
+                    settings.trackColorAroundLock = val
+                    saveSettings()
+                end
+                setToolTipFunc("Have track color shown as a border around the lock")  
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Track color as line",settings.showTrackColorLine) 
+                if ret then 
+                    settings.showTrackColorLine = val
+                    saveSettings()
+                end
+                setToolTipFunc("Have track color as a line on the left in horizontal mode or on top in vertical mode") 
+                
+                sliderInMenu("Track color line size", "trackColorLineSize", menuSliderWidth, 1, 6, "Set the size of the color line")  
+            reaper.ImGui_Unindent(ctx)
             
             reaper.ImGui_NewLine(ctx)
             reaper.ImGui_TextColored(ctx, colorGrey, "Others")
             
+            reaper.ImGui_Indent(ctx)
             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Automation color on envelope button",settings.useAutomationColorOnEnvelopeButton) 
-            if ret then 
-                settings.useAutomationColorOnEnvelopeButton = val
-                saveSettings()
-            end
-            setToolTipFunc("Show the automation color on the envelope button drawing. Set the background in color settings for better visibility") 
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Automation color on envelope button",settings.useAutomationColorOnEnvelopeButton) 
+                if ret then 
+                    settings.useAutomationColorOnEnvelopeButton = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show the automation color on the envelope button drawing. Set the background in color settings for better visibility") 
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Prefer horizontal headers",settings.preferHorizontalHeaders) 
+                if ret then 
+                    settings.preferHorizontalHeaders = val
+                    saveSettings()
+                end
+                setToolTipFunc("For modulators and plugins use horizontal header when not collabsed even when panel is in horizontal mode") 
+                 
+                sliderInMenu("Width between widgets", "widthBetweenWidgets", menuSliderWidth, 1, 20, "Set the width between widgets") 
+                
+            reaper.ImGui_Unindent(ctx)
             
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Prefer horizontal headers",settings.preferHorizontalHeaders) 
-            if ret then 
-                settings.preferHorizontalHeaders = val
-                saveSettings()
-            end
-            setToolTipFunc("For modulators and plugins use horizontal header when not collabsed even when panel is in horizontal mode") 
-             
-            sliderInMenu("Width between widgets", "widthBetweenWidgets", menuSliderWidth, 1, 20, "Set the width between widgets") 
             
             reaper.ImGui_EndGroup(ctx)
             
@@ -10291,152 +10299,187 @@ function appSettingsWindow()
             
             reaper.ImGui_TextColored(ctx, colorTextDimmed, "Parameter Layout")
             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Use knobs##parameters",settings.useKnobs) 
-            if ret then 
-                settings.useKnobs = val
-                saveSettings()
-            end
-            setToolTipFunc("Use knobs for parameters") 
             
             reaper.ImGui_Indent(ctx)
-                if not settings.useKnobs then 
-                    sliderInMenu("Height of slider background", "heightOfSliderBackground", menuSliderWidth, 2, 14, "Set how thick the slider background should be") 
-                    
-                    local ret, val = reaper.ImGui_Checkbox(ctx,"Allow slider vertical drag##parameters",settings.allowSliderVerticalDrag) 
-                    if ret then 
-                        settings.allowSliderVerticalDrag = val
-                        saveSettings()
-                    end
-                    setToolTipFunc("When enabled the value change when dragging will be a combination of vertical and horizontal mouse movement, like it is with knobs")  
-                else 
-                    local ret, val = reaper.ImGui_Checkbox(ctx,"Have parameter knob to the right of parameter name and value##parameters",settings.alignParameterKnobToTheRight) 
-                    if ret then 
-                        settings.alignParameterKnobToTheRight = val
-                        saveSettings()
-                    end
-                    setToolTipFunc("Show the parameter knob to the left or right of of the parameter name and value") 
-                end
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show modulated value on big slider##parameters",settings.bigSliderMoving) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Use knobs##parameters",settings.useKnobs) 
                 if ret then 
-                    settings.bigSliderMoving = val
+                    settings.useKnobs = val
                     saveSettings()
                 end
                 setToolTipFunc("Use knobs for parameters") 
-                if not settings.useKnobs then 
-                    sliderInMenu("Size of big slider line", "thicknessOfBigValueSlider", menuSliderWidth, 1, 5, "Set how thick the big slider line should be") 
-                    sliderInMenu("Size of small slider line", "thicknessOfSmallValueSlider", menuSliderWidth, 1, 5, "Set how thick the small slider line should be") 
-                else
-                    sliderInMenu("Size of big knob line", "thicknessOfBigValueKnob", menuSliderWidth, 1, 5, "Set how thick the big knob line should be") 
-                    sliderInMenu("Size of small knob line", "thicknessOfSmallValueKnob", menuSliderWidth, 1, 5, "Set how thick the small knob line should be")  
-                end
+                
+                reaper.ImGui_Indent(ctx)
+                    if not settings.useKnobs then 
+                        sliderInMenu("Height of slider background", "heightOfSliderBackground", menuSliderWidth, 2, 14, "Set how thick the slider background should be") 
+                        
+                        local ret, val = reaper.ImGui_Checkbox(ctx,"Allow slider vertical drag##parameters",settings.allowSliderVerticalDrag) 
+                        if ret then 
+                            settings.allowSliderVerticalDrag = val
+                            saveSettings()
+                        end
+                        setToolTipFunc("When enabled the value change when dragging will be a combination of vertical and horizontal mouse movement, like it is with knobs")  
+                    else 
+                        local ret, val = reaper.ImGui_Checkbox(ctx,"Have parameter knob to the right of parameter name and value##parameters",settings.alignParameterKnobToTheRight) 
+                        if ret then 
+                            settings.alignParameterKnobToTheRight = val
+                            saveSettings()
+                        end
+                        setToolTipFunc("Show the parameter knob to the left or right of of the parameter name and value") 
+                    end
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show modulated value on big slider##parameters",settings.bigSliderMoving) 
+                    if ret then 
+                        settings.bigSliderMoving = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Use knobs for parameters") 
+                    if not settings.useKnobs then 
+                        sliderInMenu("Size of big slider line", "thicknessOfBigValueSlider", menuSliderWidth, 1, 5, "Set how thick the big slider line should be") 
+                        sliderInMenu("Size of small slider line", "thicknessOfSmallValueSlider", menuSliderWidth, 1, 5, "Set how thick the small slider line should be") 
+                    else
+                        sliderInMenu("Size of big knob line", "thicknessOfBigValueKnob", menuSliderWidth, 1, 5, "Set how thick the big knob line should be") 
+                        sliderInMenu("Size of small knob line", "thicknessOfSmallValueKnob", menuSliderWidth, 1, 5, "Set how thick the small knob line should be")  
+                    end
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show baseline value instead of modulated value##parameters",settings.showBaselineInsteadOfModulatedValue) 
+                    if ret then 
+                        settings.showBaselineInsteadOfModulatedValue = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show baseline value instead of modulated value on the slider.\nFYI!! This will only work FXs that support. Maybe there's a workaround that I can find later.") 
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show value instead of name when changed##parameters",settings.showValueOnNamePos) 
+                    if ret then 
+                        settings.showValueOnNamePos = val
+                        saveSettings()
+                    end 
+                    setToolTipFunc("If you have a very narrow parameter layout showing the value on the name position when changing the value, might be better") 
+                    
+                     
+                     local ret, val = reaper.ImGui_Checkbox(ctx,"Show envelope indication in name##parameters",settings.showEnvelopeIndicationInName) 
+                     if ret then 
+                         settings.showEnvelopeIndicationInName = val
+                         saveSettings()
+                     end
+                     setToolTipFunc("Show [E] in parameter name if the parameter is controlled by an envelope. If the envelope is not active [e] will be shown")  
+                     
+                     
+                reaper.ImGui_Unindent(ctx)
+                
+                reaper.ImGui_TextColored(ctx, colorTextDimmed, "Extra controls when mapped:")
+                
+                
                  
-            reaper.ImGui_Unindent(ctx)
-            
-            reaper.ImGui_TextColored(ctx, colorTextDimmed, "Show extra controls when mapped:")
-            
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show baseline value instead of modulated value##parameters",settings.showBaselineInsteadOfModulatedValue) 
-            if ret then 
-                settings.showBaselineInsteadOfModulatedValue = val
-                saveSettings()
-            end
-            setToolTipFunc("Show baseline value instead of modulated value on the slider.\nFYI!! This will only work FXs that support. Maybe there's a workaround that I can find later.") 
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show value instead of name when changed##parameters",settings.showValueOnNamePos) 
-            if ret then 
-                settings.showValueOnNamePos = val
-                saveSettings()
-            end 
-            setToolTipFunc("If you have a very narrow parameter layout showing the value on the name position when changing the value, might be better") 
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show width knob##parameters",settings.showWidthInParameters) 
-            if ret then 
-                settings.showWidthInParameters = val
-                saveSettings()
-            end
-            setToolTipFunc("Show width knob on mapped parameters") 
-            
-            reaper.ImGui_Indent(ctx)
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show width value when being modified##parameters",settings.showWidthValueWhenChanging) 
-                if ret then 
-                    settings.showWidthValueWhenChanging = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show width value instead of parameter value when changing the width value") 
-            reaper.ImGui_Unindent(ctx)
+                reaper.ImGui_Indent(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show width knob##parameters",settings.showWidthInParameters) 
+                    if ret then 
+                        settings.showWidthInParameters = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show width knob on mapped parameters") 
+                    
+                    reaper.ImGui_Indent(ctx)
+                        local ret, val = reaper.ImGui_Checkbox(ctx,"Show width value when being modified##parameters",settings.showWidthValueWhenChanging) 
+                        if ret then 
+                            settings.showWidthValueWhenChanging = val
+                            saveSettings()
+                        end
+                        setToolTipFunc("Show width value instead of parameter value when changing the width value") 
+                    reaper.ImGui_Unindent(ctx)
+                        
+                    
+                        
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show enable/disable and bipolar buttons##parameters",settings.showEnableAndBipolar) 
+                    if ret then 
+                        settings.showEnableAndBipolar = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show enable/disable and bipolar buttons on mapped parameters") 
+                    
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show mapped modulator name below parameter##parameters",settings.showMappedModulatorNameBelow) 
+                    if ret then 
+                        settings.showMappedModulatorNameBelow = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show mapped modulator below the parameter that is mapped.\nThis will not be shown in the mappings windows.") 
+                    
+                    reaper.ImGui_Indent(ctx)
+                        local ret, val = reaper.ImGui_Checkbox(ctx,"Show MIDI learn value##parameters",settings.showMidiLearnIfNoParameterModulation) 
+                        if ret then 
+                            settings.showMidiLearnIfNoParameterModulation = val
+                            saveSettings()
+                        end
+                        setToolTipFunc("Show MIDI learn value if available and no parameter is mapped") 
+                        
+                        if settings.useKnobs then 
+                            local ret, val = reaper.ImGui_Checkbox(ctx,"Show seperation line before modulator name##parameters",settings.showSeperationLineBeforeMappingName) 
+                            if ret then 
+                                settings.showSeperationLineBeforeMappingName = val
+                                saveSettings()
+                            end
+                            setToolTipFunc("Show a small line before the modulator name text, to break up the ui a bit") 
+                        end
+                        
+                        local ret, val = reaper.ImGui_Checkbox(ctx,"Align mapped modulator name to the right##parameters",settings.alignModulatorMappingNameRight) 
+                        if ret then 
+                            settings.alignModulatorMappingNameRight = val
+                            saveSettings()
+                        end
+                        setToolTipFunc("Align mapped modulator name to the left or right") 
                 
-            
+                    reaper.ImGui_Unindent(ctx)
                 
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show enable/disable and bipolar buttons##parameters",settings.showEnableAndBipolar) 
-            if ret then 
-                settings.showEnableAndBipolar = val
-                saveSettings()
-            end
-            setToolTipFunc("Show enable/disable and bipolar buttons on mapped parameters") 
-            
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show mapped modulator name below parameter##parameters",settings.showMappedModulatorNameBelow) 
-            if ret then 
-                settings.showMappedModulatorNameBelow = val
-                saveSettings()
-            end
-            setToolTipFunc("Show mapped modulator below the parameter that is mapped.\nThis will not be shown in the mappings windows.") 
-            
-            reaper.ImGui_Indent(ctx)
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show MIDI learn value##parameters",settings.showMidiLearnIfNoParameterModulation) 
-            if ret then 
-                settings.showMidiLearnIfNoParameterModulation = val
-                saveSettings()
-            end
-            setToolTipFunc("Show MIDI learn value if available and no parameter is mapped") 
-            
-            if settings.useKnobs then 
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show seperation line before modulator name##parameters",settings.showSeperationLineBeforeMappingName) 
-                if ret then 
-                    settings.showSeperationLineBeforeMappingName = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show a small line before the modulator name text, to break up the ui a bit") 
-            end
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Align mapped modulator name to the right##parameters",settings.alignModulatorMappingNameRight) 
-            if ret then 
-                settings.alignModulatorMappingNameRight = val
-                saveSettings()
-            end
-            setToolTipFunc("Align mapped modulator name to the left or right") 
-            
-            
-            reaper.ImGui_Unindent(ctx)
-             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show envelope indication in name##parameters",settings.showEnvelopeIndicationInName) 
-            if ret then 
-                settings.showEnvelopeIndicationInName = val
-                saveSettings()
-            end
-            setToolTipFunc("Show [E] in parameter name if the parameter is controlled by an envelope. If the envelope is not active [e] will be shown")  
-            
-            
-            reaper.ImGui_NewLine(ctx)
-            reaper.ImGui_TextColored(ctx, colorTextDimmed, "Open mappings context popup options")
-            
-            local pos = {"Left", "Below", "Right", "Fixed"}
-            for i, p in ipairs(pos) do
-                if reaper.ImGui_RadioButton(ctx, p, settings.openMappingsPanelPos == p) then
-                    settings.openMappingsPanelPos = p
-                    saveSettings()
-                end
-                --if i < #pos then
+                reaper.ImGui_Unindent(ctx)
+                 
+                --reaper.ImGui_NewLine(ctx)
+                reaper.ImGui_TextColored(ctx, colorTextDimmed, "Context popup options")
+                
+                reaper.ImGui_Indent(ctx)
+                    reaper.ImGui_AlignTextToFramePadding(ctx)
+                    reaper.ImGui_TextColored(ctx, colorTextDimmed, "Open")
+                    
                     reaper.ImGui_SameLine(ctx)
-                --end
-            end 
-            reaper.ImGui_TextColored(ctx, colorTextDimmed, "clicked mapping")
+                    local pos = {"Left", "Below", "Right", "Fixed"}
+                    for i, p in ipairs(pos) do
+                        if reaper.ImGui_RadioButton(ctx, p, settings.openMappingsPanelPos == p) then
+                            settings.openMappingsPanelPos = p
+                            saveSettings()
+                        end
+                        --if i < #pos then
+                            reaper.ImGui_SameLine(ctx)
+                        --end
+                    end 
+                    reaper.ImGui_TextColored(ctx, colorTextDimmed, "of clicked mapping")
+                    
+                    
+                    
+                    --reaper.ImGui_NewLine(ctx)
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show midi notes in menus##",settings.showMidiNoteNames) 
+                    if ret then 
+                        settings.showMidiNoteNames = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show MIDI notes in the right click parameter menu")  
+                    
+                    
+                    reaper.ImGui_Indent(ctx)
+                        reaper.ImGui_SetNextItemWidth(ctx, 100)
+                        local ret, val = reaper.ImGui_Combo(ctx,"Middle C##", settings.midiNoteNamesMiddleC, table.concat(middle_c_offsetsStr, "\0") .. "\0")  
+                        if ret then 
+                            settings.midiNoteNamesMiddleC = val
+                            saveSettings()
+                        end
+                        setToolTipFunc("Select which C should be the middle C, eg. value 60")  
+                    reaper.ImGui_Unindent(ctx)
+                    
+                reaper.ImGui_Unindent(ctx)
+            reaper.ImGui_Unindent(ctx)
             
             reaper.ImGui_EndGroup(ctx)
         end
@@ -10445,13 +10488,14 @@ function appSettingsWindow()
         --reaper.ImGui_TableNextRow(ctx)
         --reaper.ImGui_TableNextColumn(ctx)
         function set.Plugins()
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel##plugins",settings.showPluginsPanel) 
+             
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Show plugins panel##plugins",settings.showPluginsPanel) 
             if ret then 
                 settings.showPluginsPanel = val
                 saveSettings()
             end
-            setToolTipFunc("Show or hide the plugins panel")  
-            
+            setToolTipFunc("Show or hide the plugins panel") 
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Make panel a fixed size##plugins",settings.pluginsPanelWidthFixedSize) 
             if ret then 
@@ -10467,276 +10511,279 @@ function appSettingsWindow()
                 sliderInMenu("Plugins panels height", "pluginsPanelHeight", menuSliderWidth, settings.pluginsHeight+settings.parametersHeight+16, 1600, "Set the fixed height of the plugins panel. ONLY used for vertical and floating")  
                 reaper.ImGui_Unindent(ctx)
             end
-             
             
-            sliderInMenu("Plugins list width", "pluginsWidth", menuSliderWidth, 100, 400, "Set the max width of the parameters panel. ONLY used for horizontal and floating") 
             
-            sliderInMenu("Plugins list height", "pluginsHeight", menuSliderWidth, 100, 800, "Set the max height of the parameters panel. ONLY used for vertical and floating")  
+            reaper.ImGui_BeginGroup(ctx)
             
+            reaper.ImGui_TextColored(ctx, colorGrey, "List view") 
+            
+                
             
             reaper.ImGui_Indent(ctx)
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Use fixed height for plugins panel",settings.alwaysUsePluginsHeight) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel setting is global##pluginList",settings.showPluginsListGlobal) 
                 if ret then 
-                    settings.alwaysUsePluginsHeight = val
+                    settings.showPluginsListGlobal = val
                     saveSettings()
                 end
-                setToolTipFunc("Enable this to keep the same size of the plugins panel all the time (Only in vertical mode).")  
+                setToolTipFunc("Enable this to make the last panel show setting global and not track based")  
+                
+                sliderInMenu("Plugins list width", "pluginsWidth", menuSliderWidth, 100, 400, "Set the max width of the parameters panel. ONLY used for horizontal and floating") 
+                
+                sliderInMenu("Plugins list height", "pluginsHeight", menuSliderWidth, 100, 800, "Set the max height of the parameters panel. ONLY used for vertical and floating")  
+                
+                
+                reaper.ImGui_Indent(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Use fixed height for plugins panel",settings.alwaysUsePluginsHeight) 
+                    if ret then 
+                        settings.alwaysUsePluginsHeight = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Enable this to keep the same size of the plugins panel all the time (Only in vertical mode).")  
+                reaper.ImGui_Unindent(ctx)
+                
+                --reaper.ImGui_NewLine(ctx)
+            
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show column with plugin open status",settings.showPluginNumberColumn) 
+                if ret then 
+                    settings.showPluginNumberColumn = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show a column to the right of plugin names with the plugin number and if a color if it's open.\nIf the parameter area is hidden this will be hidden automatically.")  
+                reaper.ImGui_Indent(ctx)
+                
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show plugin number in overview",settings.showPluginNumberInPluginOverview) 
+                    if ret then 
+                        settings.showPluginNumberInPluginOverview = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show the plugin number in the plugins overview")  
+                reaper.ImGui_Unindent(ctx)
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Hide plugin type from name",settings.hidePluginTypeName) 
+                if ret then 
+                    settings.hidePluginTypeName = val
+                    saveSettings()
+                end
+                setToolTipFunc("Hide plugin type from the plugin name")  
+    
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Hide developer name from name",settings.hideDeveloperName) 
+                if ret then 
+                    settings.hideDeveloperName = val
+                    saveSettings()
+                end
+                setToolTipFunc("Hide developer name from the plugin name")  
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show parallel process indication in name##parameters",settings.showParallelIndicationInName) 
+                if ret then 
+                    settings.showParallelIndicationInName = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show [P] when FX is processed in parallel. Show [PM] when FX is processed in parallel and mergin MIDI") 
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Allow horizontal scrolling",settings.allowHorizontalScroll) 
+                if ret then 
+                    settings.allowHorizontalScroll = val
+                    saveSettings()
+                end
+                setToolTipFunc("Allow to scroll horizontal in the plugin list, when namas are too big for module") 
+                
+                
+                reaper.ImGui_TextColored(ctx, colorGrey, "Panel Controls")
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Open plugin when clicking name##",settings.openPluginWhenClickingName) 
+                if ret then 
+                    settings.openPluginWhenClickingName = val
+                    saveSettings()
+                end
+                setToolTipFunc("Open plugin when clicking name, instead of focusing the plugin and needing doubleclick to open.\nIf enabled, clicking the plugin number will focus the plugin.\nIf the parameters area is not shown the plugins will always be open on single click")  
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show at top of panel##plugins",settings.showPluginOptionsOnTop) 
+                if ret then 
+                    settings.showPluginOptionsOnTop = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show Open All and Add Track FX at the top of the plugins panel")  
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Open all" button',settings.showOpenAll) 
+                if ret then 
+                    settings.showOpenAll = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show Open all button in plugins area")  
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add FX" button',settings.showAddTrackFX) 
+                if ret then 
+                    settings.showAddTrackFX = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show a button that will allow to add track fx (not a modulator) in the plugins panel")  
+                
+                
+                reaper.ImGui_TextColored(ctx, colorGrey, "Containers")
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show containers",settings.showContainers) 
+                if ret then 
+                    settings.showContainers = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show FX container in the plugin list")  
+                
+                if settings.showContainers then
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Color containers",settings.colorContainers) 
+                    if ret then 
+                        settings.colorContainers = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Color FX container grey in the plugin list")  
+                end
+                   
+                        
+                   
+                sliderInMenu("Indent size for containers", "indentsAmount", menuSliderWidth, 0, 8, "Set how large a visual indents size is shown for container content in the plugin list")
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Indicate folder depth indents with "|"',settings.identsType) 
+                if ret then 
+                    settings.identsType = val
+                    saveSettings()
+                end
+                setToolTipFunc('Use "|" at root of every folder depth indent for easier visual decoding')
+                
+                
+                local ret, includeModulators = reaper.ImGui_Checkbox(ctx,"Include Modulators",settings.includeModulators) 
+                if ret then 
+                    settings.includeModulators = includeModulators
+                    saveSettings()
+                end
+                setToolTipFunc("Show Modulators container in the plugin list") 
             reaper.ImGui_Unindent(ctx)
+            reaper.ImGui_EndGroup(ctx)
             
-            --reaper.ImGui_NewLine(ctx)
             
-            reaper.ImGui_TextColored(ctx, colorGrey, "Panel") 
-             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show column with plugin open status",settings.showPluginNumberColumn) 
-            if ret then 
-                settings.showPluginNumberColumn = val
-                saveSettings()
-            end
-            setToolTipFunc("Show a column to the right of plugin names with the plugin number and if a color if it's open.\nIf the parameter area is hidden this will be hidden automatically.")  
+            -- PARAMETERS PANELS
+            
+            reaper.ImGui_SameLine(ctx)
+            
+            reaper.ImGui_BeginGroup(ctx)
+            
+            reaper.ImGui_TextColored(ctx, colorGrey, "Parameter panels") 
+            
             reaper.ImGui_Indent(ctx)
-            
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show plugin number in overview",settings.showPluginNumberInPluginOverview) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel setting is global##parameters",settings.showParametersPanelGlobal) 
                 if ret then 
-                    settings.showPluginNumberInPluginOverview = val
+                    settings.showParametersPanelGlobal = val
                     saveSettings()
                 end
-                setToolTipFunc("Show the plugin number in the plugins overview")  
-            reaper.ImGui_Unindent(ctx)
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Hide plugin type from name",settings.hidePluginTypeName) 
-            if ret then 
-                settings.hidePluginTypeName = val
-                saveSettings()
-            end
-            setToolTipFunc("Hide plugin type from the plugin name")  
-
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Hide developer name from name",settings.hideDeveloperName) 
-            if ret then 
-                settings.hideDeveloperName = val
-                saveSettings()
-            end
-            setToolTipFunc("Hide developer name from the plugin name")  
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show parallel process indication in name##parameters",settings.showParallelIndicationInName) 
-            if ret then 
-                settings.showParallelIndicationInName = val
-                saveSettings()
-            end
-            setToolTipFunc("Show [P] when FX is processed in parallel. Show [PM] when FX is processed in parallel and mergin MIDI") 
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Allow horizontal scrolling",settings.allowHorizontalScroll) 
-            if ret then 
-                settings.allowHorizontalScroll = val
-                saveSettings()
-            end
-            setToolTipFunc("Allow to scroll horizontal in the plugin list, when namas are too big for module") 
-            
-            
-            reaper.ImGui_TextColored(ctx, colorGrey, "Panel Controls")
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Open plugin when clicking name##",settings.openPluginWhenClickingName) 
-            if ret then 
-                settings.openPluginWhenClickingName = val
-                saveSettings()
-            end
-            setToolTipFunc("Open plugin when clicking name, instead of focusing the plugin and needing doubleclick to open.\nIf enabled, clicking the plugin number will focus the plugin.\nIf the parameters area is not shown the plugins will always be open on single click")  
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show at top of panel##plugins",settings.showPluginOptionsOnTop) 
-            if ret then 
-                settings.showPluginOptionsOnTop = val
-                saveSettings()
-            end
-            setToolTipFunc("Show Open All and Add Track FX at the top of the plugins panel")  
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Open all" button',settings.showOpenAll) 
-            if ret then 
-                settings.showOpenAll = val
-                saveSettings()
-            end
-            setToolTipFunc("Show Open all button in plugins area")  
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add FX" button',settings.showAddTrackFX) 
-            if ret then 
-                settings.showAddTrackFX = val
-                saveSettings()
-            end
-            setToolTipFunc("Show a button that will allow to add track fx (not a modulator) in the plugins panel")  
-            
-            
-            reaper.ImGui_TextColored(ctx, colorGrey, "Containers")
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show containers",settings.showContainers) 
-            if ret then 
-                settings.showContainers = val
-                saveSettings()
-            end
-            setToolTipFunc("Show FX container in the plugin list")  
-            
-            if settings.showContainers then
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Color containers",settings.colorContainers) 
-                if ret then 
-                    settings.colorContainers = val
-                    saveSettings()
-                end
-                setToolTipFunc("Color FX container grey in the plugin list")  
-            end
-               
+                setToolTipFunc("Enable this to make the last panel show setting (focused or all plugins) global and not track based") 
+                
+                if settings.showParametersPanelGlobal then
+                    reaper.ImGui_Indent(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show panels##parameters",settings.showParametersPanel) 
+                    if ret then 
+                        settings.showParametersPanel = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show plugin panels") 
                     
-               
-            sliderInMenu("Indent size for containers", "indentsAmount", menuSliderWidth, 0, 8, "Set how large a visual indents size is shown for container content in the plugin list")
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show only focused plugin##parameters",settings.showOnlyFocusedPlugin) 
+                    if ret then 
+                        settings.showOnlyFocusedPlugin = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Only one plugin panel will be shown")  
+                    reaper.ImGui_Unindent(ctx)
+                end
+                
+                 
+                
+                sliderInMenu("Panels width", "parametersWidth", menuSliderWidth, 100, 400, "Set the max width of the parameters panel. ONLY used for horizontal and floating") 
+                
+                sliderInMenu("Panels height", "parametersHeight", menuSliderWidth, 100, 800, "Set the max height of the parameters panel. ONLY used for vertical and floating")  
+                
+                reaper.ImGui_Indent(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Use fixed height for parameter panels",settings.alwaysUseParametersHeight) 
+                    if ret then 
+                        settings.alwaysUseParametersHeight = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Enable this to keep the same size of the parameter panels all the time (Only in vertical mode).")  
+                reaper.ImGui_Unindent(ctx)
+                
+                
+                
+                --inputInMenu("Max parameters shown", "maxParametersShown", 100, "Will only fetch X amount of parameters from focused FX. 0 will show all.\nIf you have problems with performance reduce the amount might help", true, 0, nil) 
+                
+                
+                
+                reaper.ImGui_TextColored(ctx, colorGrey, "Panel Controls")
+                
+                
+                 
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Only mapped" and search field on focused plugin panel',settings.showOnlyMappedAndSearchOnFocusedPlugin) 
+                if ret then 
+                    settings.showOnlyMappedAndSearchOnFocusedPlugin = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show only mapped toggle and search field in parameters panel")  
+                
+                 
+                
+                reaper.ImGui_Indent(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Searching disables only mapped##",settings.searchClearsOnlyMapped) 
+                    if ret then 
+                        settings.searchClearsOnlyMapped = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('When enabled this will disable to "Only mapped" toggle, when searching') 
+                
+                
+                reaper.ImGui_Unindent(ctx)
+                    
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show last clicked parameter##",settings.showLastClicked) 
+                if ret then 
+                    settings.showLastClicked = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show the last clicked parameter below the search field")  
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show at top of panel##parameters",settings.showParameterOptionsOnTop) 
+                if ret then 
+                    settings.showParameterOptionsOnTop = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show search field, only mapped and last clicked parameter on top of the mappings panel")  
+                
+                --[[
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Show on all plugin panels',settings.showParametersOptionOnAllPlugins) 
+                if ret then 
+                    settings.showParametersOptionOnAllPlugins = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show only mapped toggle and search field in parameters panel") 
+                ]]
+                
+            reaper.ImGui_Unindent(ctx)
             
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,'Indicate folder depth indents with "|"',settings.identsType) 
-            if ret then 
-                settings.identsType = val
-                saveSettings()
-            end
-            setToolTipFunc('Use "|" at root of every folder depth indent for easier visual decoding')
-            
-            
-            local ret, includeModulators = reaper.ImGui_Checkbox(ctx,"Include Modulators",settings.includeModulators) 
-            if ret then 
-                settings.includeModulators = includeModulators
-                saveSettings()
-            end
-            setToolTipFunc("Show Modulators container in the plugin list") 
-            
+            reaper.ImGui_EndGroup(ctx)
         end 
          
         
-        
-        function set.Parameters()
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel##parameters",settings.showParametersPanel) 
+        function set.Modulators()
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Show modulators panel##modulators",settings.showModulatorsPanel) 
             if ret then 
-                settings.showParametersPanel = val
+                settings.showModulatorsPanel = val
                 saveSettings()
             end
-            setToolTipFunc("Show or hide the parameters panel")  
+            setToolTipFunc("Show or hide the modulators panel")  
             
             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show only focused plugin##parameters",settings.showOnlyFocusedPlugin) 
-            if ret then 
-                settings.showOnlyFocusedPlugin = val
-                saveSettings()
-            end
-            setToolTipFunc("Only one plugin panel will be shown")  
-            
-            
-            reaper.ImGui_Indent(ctx)
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Use this setting on all tracks##parameters",settings.showOnlyFocusedPluginGlobal) 
-                if ret then 
-                    settings.showOnlyFocusedPluginGlobal = val
-                    saveSettings()
-                end
-                setToolTipFunc("Use the setting above gloabally on all tracks")  
-            reaper.ImGui_Unindent(ctx)
-            
-            
-            sliderInMenu("Panels width", "parametersWidth", menuSliderWidth, 100, 400, "Set the max width of the parameters panel. ONLY used for horizontal and floating") 
-            
-            sliderInMenu("Panels height", "parametersHeight", menuSliderWidth, 100, 800, "Set the max height of the parameters panel. ONLY used for vertical and floating")  
-            
-            reaper.ImGui_Indent(ctx)
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Use fixed height for parameter panels",settings.alwaysUseParametersHeight) 
-                if ret then 
-                    settings.alwaysUseParametersHeight = val
-                    saveSettings()
-                end
-                setToolTipFunc("Enable this to keep the same size of the parameter panels all the time (Only in vertical mode).")  
-            reaper.ImGui_Unindent(ctx)
-            
-            
-            
-            --inputInMenu("Max parameters shown", "maxParametersShown", 100, "Will only fetch X amount of parameters from focused FX. 0 will show all.\nIf you have problems with performance reduce the amount might help", true, 0, nil) 
-            
-            
-            
-            reaper.ImGui_TextColored(ctx, colorGrey, "Panel Controls")
-            
-            
-             
-            local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Only mapped" and search field on focused plugin panel',settings.showOnlyMappedAndSearchOnFocusedPlugin) 
-            if ret then 
-                settings.showOnlyMappedAndSearchOnFocusedPlugin = val
-                saveSettings()
-            end
-            setToolTipFunc("Show only mapped toggle and search field in parameters panel")  
-            
-             
-            
-            reaper.ImGui_Indent(ctx)
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Searching disables only mapped##",settings.searchClearsOnlyMapped) 
-                if ret then 
-                    settings.searchClearsOnlyMapped = val
-                    saveSettings()
-                end
-                setToolTipFunc('When enabled this will disable to "Only mapped" toggle, when searching') 
-        
-            
-            reaper.ImGui_Unindent(ctx)
-                
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show last clicked parameter##",settings.showLastClicked) 
-            if ret then 
-                settings.showLastClicked = val
-                saveSettings()
-            end
-            setToolTipFunc("Show the last clicked parameter below the search field")  
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show at top of panel##parameters",settings.showParameterOptionsOnTop) 
-            if ret then 
-                settings.showParameterOptionsOnTop = val
-                saveSettings()
-            end
-            setToolTipFunc("Show search field, only mapped and last clicked parameter on top of the mappings panel")  
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,'Show on all plugin panels',settings.showParametersOptionOnAllPlugins) 
-            if ret then 
-                settings.showParametersOptionOnAllPlugins = val
-                saveSettings()
-            end
-            setToolTipFunc("Show only mapped toggle and search field in parameters panel") 
-            
-            
-            
-            
-            
-            reaper.ImGui_NewLine(ctx)
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show midi notes in menus##",settings.showMidiNoteNames) 
-            if ret then 
-                settings.showMidiNoteNames = val
-                saveSettings()
-            end
-            setToolTipFunc("Show MIDI notes in the right click parameter menu")  
-            
-            
-            reaper.ImGui_Indent(ctx)
-            reaper.ImGui_SetNextItemWidth(ctx, 100)
-            local ret, val = reaper.ImGui_Combo(ctx,"Middle C##", settings.midiNoteNamesMiddleC, table.concat(middle_c_offsetsStr, "\0") .. "\0")  
-            if ret then 
-                settings.midiNoteNamesMiddleC = val
-                saveSettings()
-            end
-            setToolTipFunc("Select which C should be the middle C, eg. value 60")  
-            reaper.ImGui_Unindent(ctx)
-        end    
-        
-        
-        function set.Modules()
-        
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel##modules",settings.showModulatorsList) 
-            if ret then 
-                settings.showModulatorsList = val
-                saveSettings()
-            end
-            setToolTipFunc("Show or hide the modulators list")  
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Make panel a fixed size##plugins",settings.modulatorsPanelWidthFixedSize) 
             if ret then 
@@ -10752,133 +10799,146 @@ function appSettingsWindow()
                 sliderInMenu("Modulators panels height", "modulatorsPanelHeight", menuSliderWidth, settings.modulesHeight+settings.modulatorsHeight+16, 1600, "Set the fixed height of the modulators panel. ONLY used for vertical and floating")  
                 reaper.ImGui_Unindent(ctx)
             end
+            
+            
+            reaper.ImGui_BeginGroup(ctx)
+            
+            
+            reaper.ImGui_TextColored(ctx, colorGrey, "Header")
+            
+            reaper.ImGui_Indent(ctx)
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Sort by name" on panel',settings.showSortByNameModulator) 
+                if ret then 
+                    settings.showSortByNameModulator = val
+                    saveSettings()
+                end
+                setToolTipFunc('Show "Sort by name" switch on modulators panel') 
+                
+                reaper.ImGui_Indent(ctx) 
+                    local ret, sortAsType = reaper.ImGui_Checkbox(ctx,"Sort by name",settings.sortAsType)
+                    if ret then
+                        settings.sortAsType = sortAsType
+                        saveSettings()
+                    end  
+                reaper.ImGui_Unindent(ctx) 
+                
+                 
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Map once" on panel',settings.showMapOnceModulator) 
+                if ret then 
+                    settings.showMapOnceModulator = val
+                    saveSettings()
+                end
+                setToolTipFunc('Show "Map once" switch on modulators panel')  
+                
+                
+                reaper.ImGui_Indent(ctx)
+                    local ret, mapOnce = reaper.ImGui_Checkbox(ctx,"Map once",settings.mapOnce)
+                    if ret then
+                        settings.mapOnce = mapOnce
+                        saveSettings()
+                    end 
+                reaper.ImGui_Unindent(ctx) 
+            reaper.ImGui_Unindent(ctx)
+            
+            reaper.ImGui_NewLine(ctx)
              
-             
             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show add modulator list##modules",settings.showAddModulatorsList) 
-            if ret then 
-                settings.showAddModulatorsList = val
-                saveSettings()
-            end
-            setToolTipFunc("Show or hide the add modules list")  
+            reaper.ImGui_TextColored(ctx, colorGrey, "Add list")
             
-            if sliderInMenu("Panels width", "modulesWidth", menuSliderWidth, 100, 400, "Set the max width of the modules panel. ONLY used for horizontal and floating") then 
-                --setWindowWidth = true
-            end
+            reaper.ImGui_Indent(ctx)
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show add modulator list##modules",settings.showAddModulatorsList) 
+                if ret then 
+                    settings.showAddModulatorsList = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show or hide the add modulator list")  
+                
+                if sliderInMenu("Panels width", "modulesWidth", menuSliderWidth, 100, 400, "Set the max width of the modules panel. ONLY used for horizontal and floating") then 
+                    --setWindowWidth = true
+                end
+                
+                sliderInMenu("Panels height", "modulesHeight", menuSliderWidth, 100, 800, "Set the max height of the modules panel. ONLY used for vertical and floating")  
+                
+                sliderInMenu("Popup height", "modulesPopupHeight", menuSliderWidth, 100, 800, "Set the height of the popup modules panel")   
+            reaper.ImGui_Unindent(ctx)
             
-            sliderInMenu("Panels height", "modulesHeight", menuSliderWidth, 100, 800, "Set the max height of the modules panel. ONLY used for vertical and floating")  
             
-            sliderInMenu("Popup height", "modulesPopupHeight", menuSliderWidth, 100, 800, "Set the height of the popup modules panel")  
-        end
+            reaper.ImGui_EndGroup(ctx)
+            
+            reaper.ImGui_SameLine(ctx)
+            reaper.ImGui_BeginGroup(ctx)
         
-        function set.Modulators()
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show modulators panel##modulators",settings.showModulatorsPanel) 
-            if ret then 
-                settings.showModulatorsPanel = val
-                saveSettings()
-            end
-            setToolTipFunc("Show or hide the modulators panel")  
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show modulators##modulators",settings.showModulators) 
-            if ret then 
-                settings.showModulators = val
-                saveSettings()
-            end
-            setToolTipFunc("Show or hide modulators from the modulators panel")  
-            
-            if sliderInMenu("Panels width", "modulatorsWidth", menuSliderWidth, 100, 400, "Set the max width of the modulators panel. ONLY used for horizontal and floating") then 
-                --setWindowWidth = true
-            end
-            
-            sliderInMenu("Panels height", "modulatorsHeight", menuSliderWidth, 100, 800, "Set the max height of the modulators panel. ONLY used for vertical and floating")  
             
             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Limit module height in vertical mode",settings.limitModulatorHeightToModulesHeight) 
-            if ret then 
-                settings.limitModulatorHeightToModulesHeight = val
-                saveSettings()
-            end
-            setToolTipFunc("Limit modulators height to panels height set above in vertical mode")  
-            
-            
-            reaper.ImGui_TextColored(ctx, colorGrey, "Panel") 
-            
-             
-            local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Sort by name" on panel',settings.showSortByNameModulator) 
-            if ret then 
-                settings.showSortByNameModulator = val
-                saveSettings()
-            end
-            setToolTipFunc('Show "Sort by name" switch on modulators panel') 
+            reaper.ImGui_TextColored(ctx, colorGrey, "Modulators")
             
             reaper.ImGui_Indent(ctx)
-            
-            local ret, sortAsType = reaper.ImGui_Checkbox(ctx,"Sort by name",settings.sortAsType)
-            if ret then
-                settings.sortAsType = sortAsType
-                saveSettings()
-            end 
-            
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show modulators##modulators",settings.showModulators) 
+                if ret then 
+                    settings.showModulators = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show or hide modulators from the modulators panel")  
+                
+                if sliderInMenu("Panels width", "modulatorsWidth", menuSliderWidth, 100, 400, "Set the max width of the modulators panel. ONLY used for horizontal and floating") then 
+                    --setWindowWidth = true
+                end
+                
+                sliderInMenu("Panels height", "modulatorsHeight", menuSliderWidth, 100, 800, "Set the max height of the modulators panel. ONLY used for vertical and floating")  
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Limit module height in vertical mode",settings.limitModulatorHeightToModulesHeight) 
+                if ret then 
+                    settings.limitModulatorHeightToModulesHeight = val
+                    saveSettings()
+                end
+                setToolTipFunc("Limit modulators height to panels height set above in vertical mode")  
+                
+                
+                reaper.ImGui_TextColored(ctx, colorGrey, "Panel buttons")  
+                reaper.ImGui_Indent(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show add button (+) at start##mappings",settings.showAddModulatorButtonBefore) 
+                    if ret then 
+                        settings.showAddModulatorButtonBefore = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('Show a small "+" before the first modulator, that you can click to add a new modulator') 
+                     
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show add button (+) between each modulator##mappings",settings.showAddModulatorButton) 
+                    if ret then 
+                        settings.showAddModulatorButton = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('Show a small "+" after each modulator, that you can click to add a new modulator') 
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show add button (+) at end##mappings",settings.showAddModulatorButtonAfter) 
+                    if ret then 
+                        settings.showAddModulatorButton = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('Show a small "+" after the last modulator, that you can click to add a new modulator') 
+                reaper.ImGui_Unindent(ctx)
+                
+                reaper.ImGui_NewLine(ctx) 
+                reaper.ImGui_TextColored(ctx, colorGrey, "Header")
+                
+                reaper.ImGui_Indent(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show remove button (x)##modulator",settings.showRemoveCrossModulator) 
+                    if ret then 
+                        settings.showRemoveCrossModulator = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('Show "X" when hovering modulator to remove modulator') 
+                    
+                     
+                    sliderInMenu("Default visualizer size", "visualizerSize", menuSliderWidth, 0, 3, "Set the size of the visualizer (output) for modulators.\nIf 0 it will be contained in the header.\nClicking a visulizer while holding Super will change the size for that modulator")  
+                reaper.ImGui_Unindent(ctx)
+                
             reaper.ImGui_Unindent(ctx)
-            
              
-            
-             
-            local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Map once" on panel',settings.showMapOnceModulator) 
-            if ret then 
-                settings.showMapOnceModulator = val
-                saveSettings()
-            end
-            setToolTipFunc('Show "Map once" switch on modulators panel')  
-            
-            
-            reaper.ImGui_Indent(ctx)
-            local ret, mapOnce = reaper.ImGui_Checkbox(ctx,"Map once",settings.mapOnce)
-            if ret then
-                settings.mapOnce = mapOnce
-                saveSettings()
-            end
-            
-            reaper.ImGui_Unindent(ctx)
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show add button (+) at start##mappings",settings.showAddModulatorButtonBefore) 
-            if ret then 
-                settings.showAddModulatorButtonBefore = val
-                saveSettings()
-            end
-            setToolTipFunc('Show a small "+" before the first modulator, that you can click to add a new modulator') 
-             
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show add button (+) between each modulator##mappings",settings.showAddModulatorButton) 
-            if ret then 
-                settings.showAddModulatorButton = val
-                saveSettings()
-            end
-            setToolTipFunc('Show a small "+" after each modulator, that you can click to add a new modulator') 
-            
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show add button (+) at end##mappings",settings.showAddModulatorButtonAfter) 
-            if ret then 
-                settings.showAddModulatorButton = val
-                saveSettings()
-            end
-            setToolTipFunc('Show a small "+" after the last modulator, that you can click to add a new modulator') 
-             
-            reaper.ImGui_NewLine(ctx) 
-            reaper.ImGui_TextColored(ctx, colorGrey, "Modules")
-            
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Show remove button (x)##modulator",settings.showRemoveCrossModulator) 
-            if ret then 
-                settings.showRemoveCrossModulator = val
-                saveSettings()
-            end
-            setToolTipFunc('Show "X" when hovering modulator to remove modulator') 
-            
-             
-            sliderInMenu("Default visualizer size", "visualizerSize", menuSliderWidth, 0, 3, "Set the size of the visualizer (output) for modulators")  
-             
+            reaper.ImGui_EndGroup(ctx)
             
         end
         
@@ -10886,7 +10946,7 @@ function appSettingsWindow()
             floatingMapperSettings()
         end
                 
-        local groups = {"General", "Plugins", "Parameters", "Modules", "Modulators", "Floating Mapper" }
+        local groups = {"General", "Plugins", "Modulators", "Floating Mapper" }
         
         
         if reaper.ImGui_BeginTabBar(ctx, '##layouttab') then
@@ -13599,8 +13659,8 @@ local function loop()
                             width = width - 14 - (vertical and 0 or 20)
                             height = height - (vertical and 20 or 0)
                              
-                            local showOnlyMappedAndSearchOnFocusedPlugin = settings.showOnlyMappedAndSearchOnFocusedPlugin and (settings.showOnlyFocusedPlugin or settings.showParametersOptionOnAllPlugins)
-                            local showLastClicked = settings.showLastClicked and (settings.showOnlyFocusedPlugin or settings.showParametersOptionOnAllPlugins)
+                            local showOnlyMappedAndSearchOnFocusedPlugin = settings.showOnlyMappedAndSearchOnFocusedPlugin --and (showOnlyFocusedPlugin or settings.showParametersOptionOnAllPlugins)
+                            local showLastClicked = settings.showLastClicked --and (settings.showOnlyFocusedPlugin or settings.showParametersOptionOnAllPlugins)
                             
                             -- the two splitter lines
                             local searchAreaH = ((showOnlyMappedAndSearchOnFocusedPlugin or showLastClicked) and (settings.showParameterOptionsOnTop and 10 or 8) or 0)
@@ -13893,8 +13953,26 @@ local function loop()
                         
                         local vertical = settings.vertical
                         
-                        local showPluginsList = trackSettings.showPluginsList
-                        local showParametersPanel = settings.showParametersPanel
+                        local showPluginsList 
+                        if settings.showPluginsListGlobal then
+                            showPluginsList  = settings.showPluginsList 
+                        else
+                            showPluginsList  = trackSettings.showPluginsList 
+                        end
+                        
+                        local showParametersPanel
+                        if settings.showParametersPanelGlobal then
+                            showParametersPanel = settings.showParametersPanel 
+                        else
+                            showParametersPanel = trackSettings.showParametersPanel 
+                        end
+                        local showOnlyFocusedPlugin
+                        if settings.showParametersPanelGlobal then
+                            showOnlyFocusedPlugin = settings.showOnlyFocusedPlugin 
+                        else
+                            showOnlyFocusedPlugin = trackSettings.showOnlyFocusedPlugin
+                        end
+                        
                         local showAddPluginsList = settings.showAddPluginsList
                         local isCollabsed = trackSettings.hidePlugins or (not showPluginsList and not showParametersPanel and not showAddPluginsList)
                         
@@ -13949,26 +14027,36 @@ local function loop()
                             
                             -- Most left
                             local posX, posY = getIconPosToTheLeft(vertical, 20, screenPosX, screenPosY, height)
-                            if drawListIcon(posX, posY, 20, trackSettings.showPluginsList, "Show list view of plugins") then
-                                trackSettings.showPluginsList = not trackSettings.showPluginsList  
-                                saveTrackSettings(track) 
+                            if drawListIcon(posX, posY, 20, showPluginsList, "Show list view of plugins") then
+                                if settings.showPluginsListGlobal then 
+                                    settings.showPluginsList = not settings.showPluginsList  
+                                    saveSettings() 
+                                else
+                                    trackSettings.showPluginsList = not trackSettings.showPluginsList  
+                                    saveTrackSettings(track) 
+                                end
                             end
                             
-                            local showOnlyFocusedPlugin = settings.showOnlyFocusedPluginGlobal and settings.showOnlyFocusedPluginGlobal or (not settings.showOnlyFocusedPluginGlobal and trackSettings.showOnlyFocusedPlugin)
                             local hideAllFXPanelsOnNextClick = not showOnlyFocusedPlugin and showParametersPanel
                             local posX, posY = getIconPosToTheLeft(vertical, 40, screenPosX, screenPosY, height)
                             local tip = hideAllFXPanelsOnNextClick and "Hide all plugin panels" or (showOnlyFocusedPlugin and "Show all plugins as seperate panels" or "Show focused plugin panel")
                             if drawListHorizontalIcon(posX, posY, 20, not showOnlyFocusedPlugin, tip, showParametersPanel) then
                                 
                                 if hideAllFXPanelsOnNextClick then
-                                    settings.showParametersPanel = not settings.showParametersPanel
-                                    saveSettings()
+                                    if settings.showParametersPanelGlobal then
+                                        settings.showParametersPanel = not settings.showParametersPanel
+                                        saveSettings()
+                                    else
+                                        settings.showOnlyFocusedPlugin = not settings.showOnlyFocusedPlugin
+                                        saveSettings()  
+                                    end
                                 else 
-                                    settings.showParametersPanel = true
                                     if settings.showOnlyFocusedPluginGlobal then
+                                        settings.showParametersPanel = true
                                         settings.showOnlyFocusedPlugin = not settings.showOnlyFocusedPlugin
                                         saveSettings()
                                     else
+                                        trackSettings.showParametersPanel = true
                                         trackSettings.showOnlyFocusedPlugin = not trackSettings.showOnlyFocusedPlugin
                                         saveTrackSettings(track) 
                                     end 
@@ -14030,7 +14118,7 @@ local function loop()
                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarBg(), settings.colors.backgroundWidgets)
                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), settings.colors.backgroundWidgetsBorder)
                             
-                            if trackSettings.showPluginsList then
+                            if showPluginsList then
                                 
                                  pluginsList(title, pluginsListWidth, pluginsListHeight, childPosSize, vertical, heightAutoAdjust) 
                                  
@@ -14039,8 +14127,8 @@ local function loop()
                                  
                             end
                             
-                            reaper.ImGui_PopStyleColor(ctx, 3)
-                            if settings.showParametersPanel then
+                            reaper.ImGui_PopStyleColor(ctx, 3) 
+                            if showParametersPanel then
                                 if bodyChildOfPanel(title .. "bodyParameters", childPosSize, 6, vertical, nil, fixedSize, vertical and width_child + 4 or nil, not vertical and height_child + 4 or nil) then
                                     -- fix for now
                                     if fixedSize then 
@@ -14251,14 +14339,35 @@ local function loop()
                         
                         local headerW = vertical and width or headerSizeW
                         local headerH = vertical and headerSizeW or height  
-                        local headerAreaRemoveTop = 40
+                        local headerAreaRemoveTop = 0
                         local headerAreaRemoveBottom = 40
                         
+                        drawHeaderBackground(screenPosX, screenPosY, screenPosX + headerW, screenPosY + headerH, isCollabsed, vertical, settings.colors.backgroundModulesHeader, settings.colors.backgroundModulesBorder)
+                        
+                        
+                        if settings.showSortByNameModulator then
+                            headerAreaRemoveTop = headerAreaRemoveTop + 20
+                            -- Most left
+                            local posX, posY = getIconPosToTheRight(vertical, headerAreaRemoveTop, screenPosX, screenPosY, width)
+                            if drawSortingIcon(posX, posY, 20, settings.sortAsType, "Sort modulators by name") then
+                                settings.sortAsType = not settings.sortAsType
+                                saveSettings()
+                            end
+                        end
+                        
+                        if settings.showMapOnceModulator then
+                            headerAreaRemoveTop = headerAreaRemoveTop + 20
+                            -- Most left
+                            local posX, posY = getIconPosToTheRight(vertical, headerAreaRemoveTop, screenPosX, screenPosY, width)
+                            if drawMapOnceIcon(posX, posY, 20, settings.mapOnce, "Map only 1 parameter") then
+                                settings.mapOnce = not settings.mapOnce
+                                saveSettings()
+                            end
+                        end
                         
                         
                         headerTextX, headerTextY, headerTextW, headerTextH, align, bgX, bgW = getAlignAndHeaderPlacementAndSize(title, vertical, screenPosX, screenPosY, headerAreaRemoveTop, headerAreaRemoveBottom, headerW, headerH)
                         
-                        drawHeaderBackground(screenPosX, screenPosY, screenPosX + headerW, screenPosY + headerH, isCollabsed, vertical, settings.colors.backgroundModulesHeader, settings.colors.backgroundModulesBorder)
                         
                         local toolTip = "Click to minimize modulators panel" -- "Right click for more options"
                         if drawHeaderTextAndGetHover(title, headerTextX, headerTextY, headerTextW, headerTextH, isCollabsed, vertical, 0, toolTip, colorText & 0xFFFFFF88, align, bgX, bgW) then
@@ -14277,7 +14386,13 @@ local function loop()
                         end]]
                         
                         local posX, posY = getIconPosToTheLeft(vertical, 20, screenPosX, screenPosY, height)
-                        local showOnlyFocusedModulator = settings.showOnlyFocusedModulatorGlobal and settings.showOnlyFocusedModulatorGlobal or trackSettings.showOnlyFocusedModulator  
+                        local showOnlyFocusedModulator
+                        if settings.showOnlyFocusedModulatorGlobal then
+                            showOnlyFocusedModulator = settings.showOnlyFocusedModulatorGlobal 
+                        else
+                            showOnlyFocusedModulator = trackSettings.showOnlyFocusedModulator  
+                        end
+                        
                         local hideAllModulatorPanelsOnNextClick = not showOnlyFocusedModulator and settings.showModulatorsPanels
                         local tip = hideAllModulatorPanelsOnNextClick and "Hide all modulator panels" or (showOnlyFocusedModulator and "Show all modulator as seperate panels" or "Show focused modulator panel")
                         if drawListHorizontalIcon(posX, posY, 20, not showOnlyFocusedModulator, tip, settings.showModulatorsPanels) then
@@ -14304,19 +14419,6 @@ local function loop()
                             saveSettings() 
                         end
                         
-                        -- Most left
-                        local posX, posY = getIconPosToTheRight(vertical, 20, screenPosX, screenPosY, width)
-                        if drawSortingIcon(posX, posY, 20, settings.sortAsType, "Sort modulators by name") then
-                            settings.sortAsType = not settings.sortAsType
-                            saveSettings()
-                        end
-                        
-                        -- Most left
-                        local posX, posY = getIconPosToTheRight(vertical, 40, screenPosX, screenPosY, width)
-                        if drawMapOnceIcon(posX, posY, 20, settings.mapOnce, "Map only 1 parameter") then
-                            settings.mapOnce = not settings.mapOnce
-                            saveSettings()
-                        end
                         
                         --[[
                         -- set position and size of sub child, eg the search
@@ -14376,7 +14478,7 @@ local function loop()
                                 
                                 
                                 if math.floor(reaper.ImGui_GetScrollMaxX(ctx)) > 0 then 
-                                    height_child = height_child - 8
+                                    height_child = height_child - 10
                                 end
                                 
                                 if math.floor(reaper.ImGui_GetScrollMaxY(ctx)) > 0 then 
@@ -14476,6 +14578,7 @@ local function loop()
         local mainAreaH = winH - reaper.ImGui_GetCursorPosY(ctx) - 8
         
         if reaper.ImGui_BeginChild(ctx, "mainArea", mainAreaW, mainAreaH , nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()) then
+            
             elementsHeightInHorizontal = elementsHeightInHorizontal - 8
             elementsWidthInVertical = elementsWidthInVertical -- 8
             
@@ -14517,7 +14620,7 @@ local function loop()
             end
             
             --reaper.ImGui_PopStyleColor(ctx)
-            
+            reaper.ImGui_Dummy(ctx, 1,1)
             reaper.ImGui_EndChild(ctx)
         end
         
