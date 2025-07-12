@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 0.9.99
+-- @version 1.0.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added option to selected touched parameter in floating mapper via right click context popup
+--   + fixed crash when changing native parameters that can't be automated
 
-local version = "0.9.99"
+local version = "1.0.0"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -8626,15 +8626,19 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         missingOffset = nil
         lastAmount = nil
         --dragKnob = nil
-        lastDragKnob = nil
         
         if p.usesEnvelope and undoStarted then
             --SetNamedConfigParm( track, p.fxIndex, 'param.'.. p.param ..'.plink.active',1 )
             reaper.Undo_EndBlock("Inserting envelope points", 0)
             undoStarted = false
         end
-        reaper.TrackFX_EndParamEdit(track,  lastDragFxIndex, lastDragParam)
         
+        if lastDragFxIndex and lastDragParam then
+            reaper.TrackFX_EndParamEdit(track,  lastDragFxIndex, lastDragParam)
+        end 
+        lastDragFxIndex = nil
+        lastDragParam = nil
+        lastDragKnob = nil
     end
     
     if isMouseDown and dragKnob and dragKnob ~= lastDragKnob and dragKnob:match("Window") == nil then 
