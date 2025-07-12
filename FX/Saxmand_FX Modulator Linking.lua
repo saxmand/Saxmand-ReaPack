@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.0.0
+-- @version 1.0.1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed crash when changing native parameters that can't be automated
+--   + added option to freely select if knob or slider should change on vertical or horizontal drags
 
-local version = "1.0.0"
+local version = "1.0.1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -407,6 +407,10 @@ local defaultSettings = {
     -- mapping general layout
     useKnobs = false,
     allowSliderVerticalDrag = false,
+    changeKnobValueOnVerticalDrag = true,
+    changeKnobValueOnHorizontalDrag = true,
+    changeSliderValueOnVerticalDrag = false,
+    changeSliderValueOnHorizontalDrag = true,
     heightOfSliderBackground = 5,
     showWidthInParameters = true,
     showWidthValueWhenChanging = true,
@@ -8530,9 +8534,10 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
             local useStepsChange = settings.makeItEasierToChangeParametersThatHasSteps and p.hasSteps and range / p.step < settings.maxAmountOfStepsForStepSlider
             if isMouseDown then 
                 if settings.useKnobs then 
-                    mouseDragWidth = ((mouse_pos_x - mouseDragStartX) - (mouse_pos_y - mouseDragStartY) * (isApple and -1 or 1))
+                    mouseDragWidth = ((settings.changeKnobValueOnHorizontalDrag and (mouse_pos_x - mouseDragStartX) or 0) - (settings.changeKnobValueOnVerticalDrag and mouse_pos_y - mouseDragStartY or 0) * (isApple and -1 or 1))
                 else
-                    mouseDragWidth = (mouse_pos_x - mouseDragStartX) - ((dragKnob:match("Window") ~= nil or settings.allowSliderVerticalDrag) and (mouse_pos_y - mouseDragStartY) * (isApple and -1 or 1) or 0)
+                    mouseDragWidth = (settings.changeSliderValueOnHorizontalDrag and mouse_pos_x - mouseDragStartX or 0) - ((dragKnob:match("Window") ~= nil or settings.changeSliderValueOnVerticalDrag) and (mouse_pos_y - mouseDragStartY) * (isApple and -1 or 1) or 0)
+                    --mouseDragWidth = (mouse_pos_x - mouseDragStartX) - ((dragKnob:match("Window") ~= nil or settings.allowSliderVerticalDrag) and (mouse_pos_y - mouseDragStartY) * (isApple and -1 or 1) or 0)
                 end
                 
                 if useStepsChange then
@@ -10329,16 +10334,45 @@ function appSettingsWindow()
                 setToolTipFunc("Use knobs for parameters") 
                 
                 reaper.ImGui_Indent(ctx)
+                    
+                    reaper.ImGui_AlignTextToFramePadding(ctx)
+                    reaper.ImGui_TextColored(ctx, colorTextDimmed, "Change on")
+                    reaper.ImGui_SameLine(ctx)
+                    local textSel = settings.useKnobs and "changeKnob" or "changeSlider"
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Vertical drag##parameters",settings[textSel .. "ValueOnVerticalDrag"]) 
+                    if ret then 
+                        if not val and not settings[textSel .. "ValueOnHorizontalDrag"] then 
+                            settings[textSel .. "ValueOnHorizontalDrag"] = true
+                        end
+                        settings[textSel .. "ValueOnVerticalDrag"] = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Change parameter value on vertical drags")   
+                    reaper.ImGui_SameLine(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Horizontal drag##parameters",settings[textSel .. "ValueOnHorizontalDrag"]) 
+                    if ret then 
+                        if not val and not settings[textSel .. "ValueOnVerticalDrag"] then 
+                            settings[textSel .. "ValueOnVerticalDrag"] = true
+                        end
+                        settings[textSel .. "ValueOnHorizontalDrag"] = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Change parameter value on horizontal drags")  
+                    
                     if not settings.useKnobs then 
-                        sliderInMenu("Height of slider background", "heightOfSliderBackground", menuSliderWidth, 2, 14, "Set how thick the slider background should be") 
-                        
+                        --[[
                         local ret, val = reaper.ImGui_Checkbox(ctx,"Allow slider vertical drag##parameters",settings.allowSliderVerticalDrag) 
                         if ret then 
                             settings.allowSliderVerticalDrag = val
                             saveSettings()
                         end
                         setToolTipFunc("When enabled the value change when dragging will be a combination of vertical and horizontal mouse movement, like it is with knobs")  
-                    else 
+                        ]]
+                        sliderInMenu("Height of slider background", "heightOfSliderBackground", menuSliderWidth, 2, 14, "Set how thick the slider background should be") 
+                        
+                    else  
+                        
+                        
                         local ret, val = reaper.ImGui_Checkbox(ctx,"Have parameter knob to the right of parameter name and value##parameters",settings.alignParameterKnobToTheRight) 
                         if ret then 
                             settings.alignParameterKnobToTheRight = val
