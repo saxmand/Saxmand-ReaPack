@@ -14,29 +14,29 @@ provides: snjuk2_LFO/gfxlib.jsfx-inc
  */
  // SAXMAND ADDED A FEW CORRECTION 24 MAY 2025
 
-slider1:out=0<-1,1,0.01>-Output            
+slider1:out=0<-1,1,0.01>-Output   
 
-slider2:str=100<0,100,1>Amount 
-slider3:shape=0<0,6,1{sine,square,saw L,saw R,triangle,random,step}>Shape 
+slider2:str=100<0,100,1>Amount
+slider3:shape=0<0,6,1{sine,square,saw L,saw R,triangle,random,step}>Shape
 slider4:math=0<0,2,1{Add  +,Sub  -,Mul  *}> Math   
-slider5:shape2=5<0,6,1{sine,square2,saw L,saw R,triangle,phase,step}>Shape 
-slider6:str2=0<0,100,1>Amount 
+slider5:shape2=5<0,6,1{sine,square2,saw L,saw R,triangle,phase,step}>Shape
+slider6:str2=0<0,100,1>Amount
 
-slider8:0<0,1,1{Off (Hz),On (Beats)}>Tempo sync:  
-slider9:1<0.001,8,0.001>Speed: Hz    
-slider10:2<0.125, 8,0.125>Speed: QN  
+slider8:0<0,1,1{Off (Hz),On (Beats)}>Tempo sync:
+slider9:1<0.001,8,0.001>Speed: Hz
+slider10:2<0.125, 8,0.125>Speed: QN
 
 slider12:inv=1<-1,1,0.01> Invert
-slider15:phase=0<-1,1,0.01>Phase     
+slider15:phase=0<-1,1,0.01>Phase
 
-slider18:dir=1<0,2,1{Negative,Centered,Positive}>Direction:       
-slider19:Trg=0<0,2,1{On Play,Free-running,Midi Note Trig}>-Phase reset: 
+slider18:dir=1<0,2,1{Negative,Centered,Positive}>Direction
+slider19:Trg=0<0,2,1{On Play,Free-running,Midi Note Trig}>-Phase reset
 
-slider22:0<0,200,10> -S&H time 
-slider23:0<0,500,1>-Rnd Smooth  
+slider22:0<0,200,10> -S&H time
+slider23:0<0,500,1>-Rnd Smooth
 slider24:<0,12000>- total S&H time
 
-slider25:jitr=0<0,0.5,0.01> -Jitter              
+slider25:jitr=0<0,0.5,0.01> -Jitter
 
 slider20:0<-1,1,0.01> -Output
 slider26:0<-1,1,0.01> -Rnd_Output
