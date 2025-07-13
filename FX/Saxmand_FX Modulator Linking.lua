@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.0.3
+-- @version 1.0.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,12 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added fine adjust modifier when adjusting steps
---   + preliminary support for smaller knobs/sliders
---   + fix 2 for dragging parameter with envelopes not behaving correctly
---   + added support for scrolling values in to envelopes
+--   + fix 3 for dragging parameter with envelopes not behaving correctly
 
-local version = "1.0.3"
+local version = "1.0.4"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -3320,10 +3317,11 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
             currentValue = tonumber(baseline)
         elseif singleEnvelopePointAtStart and firstEnvelopeValue then
             currentValue = firstEnvelopeValue
-        elseif usesEnvelope and envelopeValueAtPos and not isMouseDragging and not scrollTime then 
-            local automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE') 
+        elseif usesEnvelope and envelopeValueAtPos and not scrollTime then 
+            local automation = math.floor(reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE'))
             -- not write, latch, latch preview
-            if automation < 3 then --not automationTypes[automation+1] ~= "Write" then
+            if (not isMouseDragging and automation < 3) or (isMouseDragging and automation < 2) then-- or automation < 3 then --not automationTypes[automation+1] ~= "Write" then
+            
             -- we do not need to use the envelope value here it seems, as it will not make it change properly
                 currentValue = envelopeValueAtPos
             end
@@ -4554,7 +4552,7 @@ function searchAndOnlyMapped(track, fxIndex, searchAreaH, drawingWidth)
                 
                 if showingLastClicked then  
                     p = param and getAllDataFromParameter(track,fxIndex,param) or {}
-                    pluginParameterSlider("parameterLastClicked",p ,nil,nil,nil,nil,drawingWidth,nil,nil,nil,true, nil, useKnobs, useNarrow) 
+                    pluginParameterSlider("parameterLastClicked",p ,nil,nil,nil,nil,drawingWidth,nil,nil,nil,true, nil, useKnobs, false) 
                     if (not p.parameterLinkActive) and settings.showMappedModulatorNameBelow and (not settings.showMidiLearnIfNoParameterModulation or not p.midiLearnText) then
                         reaper.ImGui_InvisibleButton(ctx, "dummy", drawingWidth, 8)
                     end
@@ -5019,9 +5017,6 @@ function modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, f
     if settings.showRemoveCrossModulator then
         headerAreaRemoveBottom = headerAreaRemoveBottom + 16 
     end
-    if hideParametersFromModulator ~= fx.guid and (showOpenGui or genericModulatorInfo ) then
-        headerAreaRemoveBottom = headerAreaRemoveBottom + 20
-    end
     
     local outputOnItsOwnLine = false
      
@@ -5217,7 +5212,7 @@ function modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, f
         
         
         
-        dropDownSize = modulatorWidth + (vertical and -30 or -14)
+        dropDownSize = modulatorWidth + (vertical and -30 or -14 - 8)
         buttonWidth = dropDownSize / 2
         
         if not isCollabsed then 
@@ -11372,10 +11367,10 @@ function appSettingsWindow()
             setToolTipFunc("This will make a smaller mouse movement or scroll change the parameter if it has steps.\nThis might be confusing when not using knobs, as knobs are already relative but sliders aren't") 
             
             reaper.ImGui_Indent(ctx)
-            sliderInMenu("Max amount of steps for a parameter to use this mode", "maxAmountOfStepsForStepSlider", menuSliderWidth, 1, 100, "Set the max amount of steps that a paramter can have to use this mode")
-            sliderInMenu("Movement needed to change step", "movementNeededToChangeStep", menuSliderWidth, 1, 10, "Set how large a moment is needed to change the parameter")
-            sliderInMenu("Scroll envelope release time", "scrollTimeRelease", menuSliderWidth, 100, 5000, "Set how quickly writing a parameter to an envelope will be released (in touch mode) when scrolled")
+                sliderInMenu("Max amount of steps for a parameter to use this mode", "maxAmountOfStepsForStepSlider", menuSliderWidth, 1, 100, "Set the max amount of steps that a paramter can have to use this mode")
+                sliderInMenu("Movement needed to change step", "movementNeededToChangeStep", menuSliderWidth, 1, 10, "Set how large a moment is needed to change the parameter") 
             reaper.ImGui_Unindent(ctx)
+            sliderInMenu("Scroll envelope release time", "scrollTimeRelease", menuSliderWidth, 100, 5000, "Set how quickly writing a parameter to an envelope will be released (in touch mode) when scrolled")
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Force mapping##",settings.forceMapping) 
             if ret then 
@@ -12074,122 +12069,132 @@ function appSettingsWindow()
     
     
     
-    function menus.Developer()
-        if reaper.ImGui_Button(ctx, "Reset track settings") then
-            trackSettings = defaultTrackSettings
-            saveTrackSettings(tracK)
-        end
-         
-        if reaper.ImGui_Button(ctx, "Reset track settings on all tracks") then
-            for i = 0, reaper.CountTracks(0) - 1 do
-                local tr = reaper.GetTrack(0, i) 
-                local trackSettingsStr = json.encodeToJson(defaultTrackSettings)
-                reaper.GetSetMediaTrackInfo_String(tr, "P_EXT" .. ":" .. stateName, trackSettingsStr, true)
-            end 
-            trackSettings = defaultTrackSettings
-            saveTrackSettings(tracK)
-        end 
+    function menus.Performance()
         
-        if reaper.ImGui_Button(ctx, "Reset app settings") then
-            settings = defaultSettings
-            saveSettings()
-        end
+        reaper.ImGui_TextColored(ctx, colorTextDimmed, "Performance settings")
+        
+        reaper.ImGui_Indent(ctx)
         
         
-        local ret, val = reaper.ImGui_Checkbox(ctx,"Extended floating mapper",settings.extendedFloatingMapper) 
-        if ret then 
-            settings.extendedFloatingMapper = val
-            saveSettings()
-        end
-        setToolTipFunc("Do not activate this mode as it's in development")  
-        
-        
-        local ret, val = reaper.ImGui_Checkbox(ctx,"Show script performance: ",settings.showScriptPerformance) 
-        if ret then 
-            settings.showScriptPerformance = val
-            saveSettings()
-        end
-        setToolTipFunc("Show script performance")  
-         
-        
-        if settings.showScriptPerformance then
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Show script performance: ",settings.showScriptPerformance) 
+            if ret then 
+                settings.showScriptPerformance = val
+                saveSettings()
+            end
+            setToolTipFunc("Show script performance")  
+             
+            
+            if settings.showScriptPerformance then
+                reaper.ImGui_Indent(ctx)
+                  reaper.ImGui_TextColored(ctx, colorText, scriptPerformanceText)
+                  reaper.ImGui_TextColored(ctx, colorText, "(FPS should be around when it's not staling 33.3)")
+                reaper.ImGui_Unindent(ctx)
+            end
+            
+            
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Limit amount of drawn parameters in plugins",settings.limitAmountOfDrawnParametersInPlugin) 
+            if ret then 
+                settings.limitAmountOfDrawnParametersInPlugin = val
+                saveSettings()
+            end
+            setToolTipFunc("Enable this if you have poor performance with heavy plugins") 
+            
+            if settings.limitAmountOfDrawnParametersInPlugin then 
+                reaper.ImGui_Indent(ctx) 
+                sliderInMenu("Limit amount", "limitAmountOfDrawnParametersInPluginAmount", menuSliderWidth, 10, 1000, "Set how many parameters gets drawn in the plugin panel")
+                reaper.ImGui_Unindent(ctx) 
+            end
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Use parameter catch",settings.useParamCatch) 
+            if ret then 
+                settings.useParamCatch = val
+                saveSettings()
+            end
+            setToolTipFunc("This will create a catch of parameters read to ensure that we don't read any parameters multiple times") 
+            
             reaper.ImGui_Indent(ctx)
-              reaper.ImGui_TextColored(ctx, colorText, scriptPerformanceText)
-              reaper.ImGui_TextColored(ctx, colorText, "(FPS should be around 33.3)")
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Use static parameter catch",settings.useStaticParamCatch) 
+                if ret then 
+                    settings.useStaticParamCatch = val
+                    saveSettings()
+                end
+                setToolTipFunc("This will catch 'static' parameters once and then on certain changes") 
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Use semi static parameter catch",settings.useSemiStaticParamCatch) 
+                if ret then 
+                    settings.useSemiStaticParamCatch = val
+                    saveSettings()
+                end
+                setToolTipFunc("This will keep catch of semi static parameters, and only read them again every X ms") 
+                
+                reaper.ImGui_Indent(ctx) 
+                    sliderInMenu("Read every X ms", "checkSemiStaticParamsEvery", menuSliderWidth, 100, 2000, "Set how often to read semi static parameters") 
+                reaper.ImGui_Unindent(ctx)
             reaper.ImGui_Unindent(ctx)
-        end
-        
+            
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Filter parameters that are most likely unwanted",settings.filterParamterThatAreMostLikelyNotWanted) 
+            if ret then 
+                settings.filterParamterThatAreMostLikelyNotWanted = val
+                saveSettings()
+            end
+            setToolTipFunc("Filter paramters matching tags...")
+            
+            reaper.ImGui_Indent(ctx)
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Build a database of paramters that should be filtered",settings.buildParamterFilterDataBase) 
+                if ret then 
+                    settings.buildParamterFilterDataBase = val
+                    saveSettings()
+                end
+                setToolTipFunc("This will create a database over plugins that have paramters we would like to filter out, in order to not read unnessesary parameters") 
+            reaper.ImGui_Unindent(ctx)
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Limit modulation parameter linking reading",settings.limitParameterLinkLoading) 
+            if ret then 
+                settings.limitParameterLinkLoading = val
+                saveSettings()
+            end
+            setToolTipFunc("This will limit how often we look for modulation parameter links, as this is a more static value") 
+        reaper.ImGui_Unindent(ctx)
         
         reaper.ImGui_NewLine(ctx)
-        
-        
-        local ret, val = reaper.ImGui_Checkbox(ctx,"Limit amount of drawn parameters in plugins",settings.limitAmountOfDrawnParametersInPlugin) 
-        if ret then 
-            settings.limitAmountOfDrawnParametersInPlugin = val
-            saveSettings()
-        end
-        setToolTipFunc("Enable this if you have poor performance with heavy plugins") 
-        
-        if settings.limitAmountOfDrawnParametersInPlugin then 
-            reaper.ImGui_Indent(ctx) 
-            sliderInMenu("Limit amount", "limitAmountOfDrawnParametersInPluginAmount", menuSliderWidth, 10, 1000, "Set how many parameters gets drawn in the plugin panel")
-            reaper.ImGui_Unindent(ctx) 
-        end
-        
-        local ret, val = reaper.ImGui_Checkbox(ctx,"Use parameter catch",settings.useParamCatch) 
-        if ret then 
-            settings.useParamCatch = val
-            saveSettings()
-        end
-        setToolTipFunc("This will create a catch of parameters read to ensure that we don't read any parameters multiple times") 
+        reaper.ImGui_TextColored(ctx, colorTextDimmed, "Developer settings (Use with causion)")
         
         reaper.ImGui_Indent(ctx)
+            if reaper.ImGui_Button(ctx, "Reset track settings") then
+                trackSettings = defaultTrackSettings
+                saveTrackSettings(tracK)
+            end
+             
+            if reaper.ImGui_Button(ctx, "Reset track settings on all tracks") then
+                for i = 0, reaper.CountTracks(0) - 1 do
+                    local tr = reaper.GetTrack(0, i) 
+                    local trackSettingsStr = json.encodeToJson(defaultTrackSettings)
+                    reaper.GetSetMediaTrackInfo_String(tr, "P_EXT" .. ":" .. stateName, trackSettingsStr, true)
+                end 
+                trackSettings = defaultTrackSettings
+                saveTrackSettings(tracK)
+            end 
             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Use static parameter catch",settings.useStaticParamCatch) 
-            if ret then 
-                settings.useStaticParamCatch = val
+            if reaper.ImGui_Button(ctx, "Reset app settings") then
+                settings = defaultSettings
                 saveSettings()
             end
-            setToolTipFunc("This will catch 'static' parameters once and then on certain changes") 
             
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Use semi static parameter catch",settings.useSemiStaticParamCatch) 
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Extended floating mapper",settings.extendedFloatingMapper) 
             if ret then 
-                settings.useSemiStaticParamCatch = val
+                settings.extendedFloatingMapper = val
                 saveSettings()
             end
-            setToolTipFunc("This will keep catch of semi static parameters, and only read them again every X ms") 
-            
-            reaper.ImGui_Indent(ctx) 
-                sliderInMenu("Read every X ms", "checkSemiStaticParamsEvery", menuSliderWidth, 100, 2000, "Set how often to read semi static parameters") 
-            reaper.ImGui_Unindent(ctx)
+            setToolTipFunc("Do not activate this mode as it's in development")   
+            reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Not ready yet)")
         reaper.ImGui_Unindent(ctx)
-        
-        
-        local ret, val = reaper.ImGui_Checkbox(ctx,"Filter parameters that are most likely unwanted",settings.filterParamterThatAreMostLikelyNotWanted) 
-        if ret then 
-            settings.filterParamterThatAreMostLikelyNotWanted = val
-            saveSettings()
-        end
-        setToolTipFunc("Filter paramters matching tags...")
-        
-        reaper.ImGui_Indent(ctx)
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Build a database of paramters that should be filtered",settings.buildParamterFilterDataBase) 
-            if ret then 
-                settings.buildParamterFilterDataBase = val
-                saveSettings()
-            end
-            setToolTipFunc("This will create a database over plugins that have paramters we would like to filter out, in order to not read unnessesary parameters") 
-        reaper.ImGui_Unindent(ctx)
-        
-        local ret, val = reaper.ImGui_Checkbox(ctx,"Limit modulation parameter linking reading",settings.limitParameterLinkLoading) 
-        if ret then 
-            settings.limitParameterLinkLoading = val
-            saveSettings()
-        end
-        setToolTipFunc("This will limit how often we look for modulation parameter links, as this is a more static value") 
     end
     
-    local menusOrder = {"Layout", "Mapping", "Mouse And Keyboard", "Colors", "About", "Developer"}
+    local menusOrder = {"Layout", "Mapping", "Mouse And Keyboard", "Colors", "About", "Performance"}
     if reaper.ImGui_BeginTabBar(ctx, '##SettingsTabs') then
         for i, g in ipairs(menusOrder) do 
             local name = g
@@ -14011,10 +14016,16 @@ local function loop()
                     -- set position and size of sub child, eg the search
                     
                     
-                    function dummySlider(hasParameterMapping)
-                        local h = sliderHeight + 16
-                        h = h + ((settings.showMappedModulatorNameBelow and hasParameterMapping) and 12 or 0)
-                        reaper.ImGui_Dummy(ctx, 20, h)
+                    function dummySlider(hasParameterMapping, useKnobs, useNarrow)
+                        --local h = sliderHeight + 16
+                        
+                        local totalSliderHeight = showMappingText and sliderHeight + 16 + ((settings.showMappedModulatorNameBelow and hasParameterMapping) and 12 or 0) or sliderHeight + 16
+                        if useNarrow and useKnobs then
+                            totalSliderHeight = totalSliderHeight + 16
+                        end
+                        --h = h + ((settings.showMappedModulatorNameBelow and hasParameterMapping) and 12 or 0)
+                        --reaper.ImGui_InvisibleButton(ctx,"dummy", 20, h)
+                        reaper.ImGui_Dummy(ctx, 20, totalSliderHeight)
                     end
                     
                     if not isCollabsed then
@@ -14062,11 +14073,12 @@ local function loop()
                             -- show the scroll area with found parameters
                             --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), 4, 6)
                             
+                            local parameterColumnAmount = settings.PluginParameterColumnAmount
                             if scrollChildOfPanel(panelName .. "Scroll", width, scrollAreaHeight, heightAutoAdjust) then
                                 local shownCount = 0
                                 for i, p in ipairs(paramsListThatAreNotFiltered) do
                                     
-                                    if not settings.limitAmountOfDrawnParametersInPlugin or shownCount <= settings.limitAmountOfDrawnParametersInPluginAmount then
+                                    if not settings.limitAmountOfDrawnParametersInPlugin or shownCount <= settings.limitAmountOfDrawnParametersInPluginAmount + (settings.limitAmountOfDrawnParametersInPluginAmount%parameterColumnAmount) then
                                         local name = GetParamName(track, fxIndex, p)
                                         local parameterLinkActive = getPlinkActive(track, fxIndex, p)
                                         
@@ -14088,7 +14100,6 @@ local function loop()
                                             local scrollPos = reaper.ImGui_GetScrollY(ctx)
                                             local startPosY = reaper.ImGui_GetCursorPosY(ctx)
                                             
-                                            local parameterColumnAmount = settings.PluginParameterColumnAmount
                                             
                                             modulatorParameterWidth = findModulationParameterWidth(parameterColumnAmount, modulatorParameterWidth)
                                             -- 456
@@ -14097,9 +14108,9 @@ local function loop()
                                             local useNarrow = (settings.useKnobsPlugin == nil and not settings.useNarrowPlugin) and settings.useNarrow or settings.useNarrowPlugin
                                             
                                             if startPosY - scrollPos < scrollAreaHeight and (startPosY + sliderHeight + 16) - scrollPos > 0 then
-                                                pluginParameterSlider("parameter",getAllDataFromParameter(track,fxIndex,p),doNotSetFocus,nil,nil,nil,modulatorParameterWidth,nil,nil,nil,true, nil, useKnobs, useNarrow)
+                                                pluginParameterSlider("parameter",getAllDataFromParameter(track,fxIndex,p),doNotSetFocus,nil,nil,nil,modulatorParameterWidth,nil,nil,nil,true, nil, useKnobs, useNarrow)--, shownCount - 1, parameterColumnAmount)
                                             else
-                                                dummySlider(parameterLinkActive)
+                                                dummySlider(parameterLinkActive, useKnobs, useNarrow)
                                             end
                                             
                                             samelineIfWithinColumnAmount(shownCount, parameterColumnAmount, modulatorParameterWidth)
@@ -15904,7 +15915,7 @@ local function loop()
         if isMouseDown then 
              averageParamsCountPerFrame = paramsReadCount + math.ceil(paramsReadCountSemiStatic / 1)
         else
-            averageParamsCountPerFrame =  paramsReadCount + math.ceil(paramsReadCountSemiStatic / (1 / updateTime * (settings.checkSemiStaticParamsEvery/1000)))-- / ())
+            averageParamsCountPerFrame =  paramsReadCount + math.ceil(paramsReadCountSemiStatic * ((1 / updateTime) / settings.checkSemiStaticParamsEvery))-- / ())
         end
         scriptPerformanceText = string.format("Script FPS: %.1f", 1 / updateTime) .. " | " .. "Param reading per frame: " .. paramsReadCount .. ", Semistatic params read : " .. paramsReadCountSemiStatic .. ", avarage in total per frame to: " .. averageParamsCountPerFrame
         scriptPerformanceText2 = string.format("%.1f", 1 / updateTime) .. "\n" .. averageParamsCountPerFrame
