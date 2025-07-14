@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.0.7
+-- @version 1.0.8
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,10 +15,12 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed isMuted error
---   + added fx chain preset support properly and on + sign
+--   + fixed so that we can't click slider/knobs through popup
+--   + fixed slider/knobs not reacting on full area
+--   + fixed modulatotion mappings not being correctly displayed on modulators
+--   + fixed parameter context popup being weird size
 
-local version = "1.0.7"
+local version = "1.0.8"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -2575,7 +2577,7 @@ function get_container_path_from_fx_id(tr, fxidx, doNotUseCatch) -- returns a li
 
     local addr, addr_sc = curidx + 0x2000000, n + 1
     while true do
-      local ccok, cc = reaper.TrackFX_GetNamedConfigParm(tr, addr, 'container_count')
+      local ccok, cc = reaper.TrackFX_GetNamedConfigParm(tr, addr, 'container_count') -- getContainerCount(tr, addr)--
       if not ccok then return nil end -- not a container
       ret[#ret+1] = curidx
       n = tonumber(cc)
@@ -2647,7 +2649,7 @@ function fx_get_mapped_parameter(tr, fxidx, parmidx) -- gets a parameter at the 
       i = i + 1
     end
     if not found then
-      return false
+      return false, false
         -- add a new mapping
         --local rok, r = reaper.TrackFX_GetNamedConfigParm(tr,cidx,"container_map.add")
         --if not rok then return nil end
@@ -3115,7 +3117,6 @@ function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnum
         reaper.ShowConsoleMsg(appName .. ":\nThere was an issue with a missing parameter. Report this full text to developer:\nMod container pos: " .. tostring(modulationContainerPos) .. "fxIndex: " .. tostring(fxIndex) .. ", , fxnumber: " .. tostring(fxnumber) .. ", param: " .. tostring(param))
         return
     end
-    
     if tonumber(fxnumber) < 0x2000000 then
         -- map from fx in the root
         outputPos = tonumber(select(2, GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam, true )))
@@ -3125,7 +3126,9 @@ function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnum
             -- map a modulator from within the modulator folder
             -- could this be done in a better way? -- I need to get the position of the FX inside the container
             outputPos = mapActiveParam -- this is the paramater in the lfo plugin 
-            modulationContainerPos = fxContainerIndex
+            
+            local mappingFxContainerPath = get_container_path_from_fx_id(track, mapActiveFxIndex)
+            modulationContainerPos = fxContainerIndex -- mappingFxContainerPath[#mappingFxContainerPath] - 1 -- mapActiveFxIndex--
         else
             -- map a fx in a container
             new_fxnumber, new_param = fx_map_parameter(track, fxnumber, param) 
@@ -3534,6 +3537,8 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
         --local modulated_param = p
         local original_param = param
         
+        
+        local parameterLinkActive
         if modulationContainerPos and root_fxIndex and root_fxIndex ~= modulationContainerPos then 
             if root_fxIndex and root_param then 
                 --reaper.ShowConsoleMsg(name .. " - fxIndex: " .. fxIndex .. " - param: " .. param .. " - Root index: " .. root_fxIndex .. " - Root param: " .. root_param .. "\n")
@@ -3542,11 +3547,21 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                     --modulated_param = root_param
                     fxIndex = root_fxIndex
                     param = root_param
+                    parameterLinkActive = true
+                end
+            end
+        else 
+            parameterLinkActive = getPlinkActive(track,fxIndex,param)
+            if parameterLinkActive then
+                local path = get_container_path_from_fx_id(track, fxIndex)
+                if path and path[1] -1 == modulationContainerPos then
+                    root_fxIndex = modulationContainerPos
                 end
             end
         end
         
-        local parameterLinkActive = getPlinkActive(track,fxIndex,param)
+        
+        --local parameterLinkActive = getPlinkActive(track,fxIndex,param)
         local guid = GetFXGUID(track, fxIndex)
         
         local parameterModulationActive = getModActive(track,fxIndex,param)
@@ -3563,6 +3578,8 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
         
         if parameterLinkActive then
             parameterLinkEffect = getPlinkEffect(track, fxIndex, param)
+            
+            
             if parameterLinkEffect then
                 baseline = getModBassline(track,fxIndex,param)
                 offset = getPlinkOffset(track,fxIndex,param)
@@ -3576,11 +3593,10 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                     direction = math.abs(offset * 2) - 1
                 end
             end
-            
             if parameterLinkEffect and parameterLinkEffect >= 0 then  
                 
-                
                 if modulationContainerPos and root_fxIndex == modulationContainerPos then
+                    
                     parameterLinkFXIndex = getPlinkFxIndex(track, modulationContainerPos, parameterLinkEffect)
                    
                     if parameterLinkFXIndex then
@@ -9590,14 +9606,17 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     
     sliderStartPosX, sliderStartPosY = reaper.ImGui_GetCursorPos(ctx)
     -- we reduce the button size to make sure we do not get a horizontal scroll 
-    sliderW = faderWidth - spaceTaken - 8
+    sliderW = faderWidth - spaceTaken -- 8
     if sliderW <= 10 then sliderW = 10 end
-    reaper.ImGui_InvisibleButton(ctx, "slider" .. buttonId .. moduleId, sliderW, totalSliderHeight)
+    local click = false
+    if reaper.ImGui_InvisibleButton(ctx, "slider" .. buttonId .. moduleId, sliderW, totalSliderHeight) then
+        click = true
+    end
     
     local minX, minY = reaper.ImGui_GetItemRectMin(ctx) 
     local maxX, maxY = reaper.ImGui_GetItemRectMax(ctx)
     -- we add the missing size from above
-    maxX = maxX + 8 --
+    maxX = maxX --+ 8 --
     
     parStartPosX, parStartPosY = minX, minY
     
@@ -9606,14 +9625,15 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     --if not nameOnSide and dontShowName then 
     reaper.ImGui_SameLine(ctx)
     sliderEndPosX, sliderEndPosY = reaper.ImGui_GetCursorPos(ctx)
-    sliderEndPosX = sliderEndPosX + 8
+    sliderEndPosX = sliderEndPosX --+ 8
     reaper.ImGui_NewLine(ctx)
     
     
     
     
-    
+    local hover = false
     if reaper.ImGui_IsItemHovered(ctx) then
+        hover = true
         if not dragKnob then 
             dragKnob = "baseline" .. buttonId .. moduleId
             mouseDragStartX = mouse_pos_x
@@ -9682,10 +9702,11 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     
     
     -- Check if the mouse is within the button area
-    if parStartPosX and mouse_pos_x_imgui >= parStartPosX and mouse_pos_x_imgui <= parStartPosX + areaWidth and
-       mouse_pos_y_imgui >= parStartPosY and mouse_pos_y_imgui <= parEndPosY and 
+    --if parStartPosX and mouse_pos_x_imgui >= parStartPosX and mouse_pos_x_imgui <= parStartPosX + areaWidth and
+    --   mouse_pos_y_imgui >= parStartPosY and mouse_pos_y_imgui <= parEndPosY and 
        -- TODO: -36 is a hot fix as I do not get the height of the parameter panel correctly or something so the lower part did not react
-       (not modulatorAreaHeight or modulatorAreaHeight >= mouse_pos_y_imgui - modulatorAreaY - 36) then
+    --   (not modulatorAreaHeight or modulatorAreaHeight >= mouse_pos_y_imgui - modulatorAreaY - 36) then
+    if hover then
       if not popupAlreadyOpen and reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then  --parameterLinkActive and 
           reaper.ImGui_OpenPopup(ctx, 'popup##' .. buttonId)  
           --popupAlreadyOpen = true
@@ -9748,7 +9769,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
         local movePopupToX, movePopupToY
         if settings.openMappingsPanelPos == "Right" then
             movePopupToX = parStartPosX + areaWidth + 2
-            movePopupToY = parStartPosY - 1
+            movePopupToY = parStartPosY - 100
         elseif settings.openMappingsPanelPos == "Left" then
             local largestText = "Show "..'"' .. name ..'"' .. " parameter modulation/link window"
             local largestSizeW = reaper.ImGui_CalcTextSize(ctx, largestText, 0,0)
@@ -9775,6 +9796,8 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
             popupStartPos[buttonId] = nil
         end 
     else
+        --popupWidth = nil
+        --popupHeight = nil
         --popupStartPos[buttonId] = nil
     end
     
@@ -9826,6 +9849,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
             
             if not showingMappings then
                 settings.parameterContextShowModulator = true
+                local width = settings.modulesWidth
                 showModulatorForParameter(p, width, 22, "parameterContext")
             end
             
@@ -10232,6 +10256,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
         
         
         ImGui.EndPopup(ctx)
+        --popupWidth, popupHeight = reaper.ImGui_GetItemRectSize(ctx)
     end
     
     reaper.ImGui_PopStyleColor(ctx)
@@ -15172,7 +15197,6 @@ local function loop()
                                                     if startContainerColorX and currentIndent > 0 then 
                                                         local curPosY = yAfter + height_child + 3
                                                         local width = xAfter - (f.indent == 0 and settings.widthBetweenWidgets or 0)
-                                                        aa = f
                                                         local containerColor = (trackSettings.containerColors and currentParentGuid and trackSettings.containerColors[currentParentGuid]) and trackSettings.containerColors[currentParentGuid] or indentColors[(currentIndent - 1)%3 + 1]
                                                         reaper.ImGui_DrawList_AddLine(draw_list, xBefore, curPosY, width, curPosY, containerColor, 3)
                                                     end
