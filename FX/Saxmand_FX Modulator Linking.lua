@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.0.5
+-- @version 1.0.6
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,23 +15,18 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fix crash when only showing focused plugin, and there's no plugin
---   + fix native lfo looking weird in tempo sync with small knobs
---   + added option in settings window to set colors container indents
---   + added right click to set custom color in container
---   + added Steps slider to native lfo
---   + fix "only show mapped" issue
---   + updated getting container mappings to use catch
---   + added plus icon on plugins header for adding FX and containers
---   + added option to add FX popup button to plugins list
-
-local version = "1.0.5"
+--   + fixed issue with show all plugins when not global
+--   + inital support for front page when no track is selected
+--   + added mute overlay when track is muted (as it becomes disabled)
+ 
+local version = "1.0.6"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
 package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
 local json = require("json")
 local specialButtons = require("special_buttons")
+local getFXList = require("get_fx_list").getFXList
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local ImGui = require 'imgui' '0.9.3.3'
 local stateName = "ModulationLinking"
@@ -239,6 +234,7 @@ local showLargeXyPad = {}
 local directions = {"Downwards", "Bipolar", "Upwards"}
 
 local margin = 8
+local padding = margin
 local minWidth
 local trackSettings
 local automation, isAutomationRead
@@ -359,6 +355,7 @@ local defaultSettings = {
     
       -- others
     useAutomationColorOnEnvelopeButton = false,
+    showInsertOptionsWhenNoTrackIsSelected = false,
     
     preferHorizontalHeaders = false,
     
@@ -1178,11 +1175,360 @@ function getListOfFilesInResourceFolderIncludingSubFolders(folder, fileNameExten
     return all_files
 end
 
+----- PRESETS AND TEMPLATES
+------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------
+------------- SEARCH -----------------
+-- Helper function to split a string by a separator (comma or space)
+function splitString(inputstr)
+    local t = {}
+    for str in string.gmatch(inputstr, "([^, ]+)") do
+        table.insert(t, str)
+    end
+    return t
+end
 
+-- Helper function to check if all parts of the search string are found in the track name
+function allPartsMatch(name, search_parts)
+    name = name:lower()
+
+    for _, part in ipairs(search_parts) do
+        if not string.find(name, part:lower()) then
+            return false
+        end
+    end
+    return true
+end
+
+-- Helper function to match part of the string character by character
+function partialMatch(name, search_parts)
+    name = name:lower()
+    local parts = splitString(name)
+    local match = true
+    
+    for _, part in ipairs(search_parts) do  
+        partMatch = false
+        for _, p in ipairs(parts) do 
+            local copy = p
+            for i = 1, #part do
+                local char = part:sub(i, i)
+                local found = string.find(copy, char, 1, true)
+                if found then
+                    copy = copy:sub(found + 1)
+                    if i == #part then 
+                        partMatch = true
+                        break
+                    end
+                else 
+                  break
+                end
+            end
+        end
+        if not partMatch then 
+            return false
+        end
+    end
+
+    return true
+end
+
+------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------
 
 fxChainPresetsFiles = getListOfFilesInResourceFolderIncludingSubFolders("FXChains", "RfxChain")
 
---trackTemplateFiles = getListOfFilesInResourceFolderIncludingSubFolders("TrackTemplates", "RTrackTemplate")
+trackTemplateFiles = getListOfFilesInResourceFolderIncludingSubFolders("TrackTemplates", "RTrackTemplate")
+
+        
+fxListFiles = getFXList()
+
+function centerText(text, color, posX, width, offsetX, posY) 
+    textSizeW = reaper.ImGui_CalcTextSize(ctx, text, 0,0) 
+    reaper.ImGui_SetCursorPos(ctx, posX + width / 2 - textSizeW / 2, posY ) 
+    reaper.ImGui_TextColored(ctx,color, text)
+end
+
+
+function sort_file_list(tbl, sort_key, ascending)
+  table.sort(tbl, function(a, b)
+    local valA = a[sort_key]
+    local valB = b[sort_key]
+
+    -- Handle nil values safely
+    if valA == nil then return false end
+    if valB == nil then return true end
+
+    if ascending then
+      return valA < valB
+    else
+      return valA > valB
+    end
+  end)
+end
+
+
+function insertFXOnSelectedTracks(file)
+    reaper.Undo_BeginBlock()
+    aa = file
+    if newTrack then  
+        reaper.Main_OnCommand(40001, 0) --Track: Insert new track 
+        local track = reaper.GetSelectedTrack(0,0)
+        reaper.TrackFX_AddByName(track, file.name,false,-1000)
+        reaper.GetSetMediaTrackInfo_String(track,"P_NAME",file.id,true)
+    else
+        for trackIndex, track in ipairs(selectedTracks) do
+            reaper.TrackFX_AddByName(track, file.id,false,-1000)
+        end 
+    end
+    
+    reaper.Undo_EndBlock("Insert FX", -1)
+end
+
+
+function replace_fx_in_track(rpp_text, new_fx_block)
+  local modified_rpp = {}
+  local in_track = false
+  local in_fxchain = false
+  local buffer = {}
+  local fxchain_start = false
+  local bypass_found = false
+
+  for line in rpp_text:gmatch("[^\r\n]+") do
+    --if line:match("^<TRACK") then
+    --  in_track = true
+    --elseif in_track and line:match("^>") then
+    --  in_track = false
+    --end
+      local fxChainAdded = false
+    --if in_track then
+      if line:match("^<FXCHAIN") then
+          in_fxchain = true
+          fxchain_start = true
+          table.insert(buffer, line)
+      elseif in_fxchain then
+          if fxchain_start and line:match("^BYPASS") then
+              -- Found BYPASS, start replacing until the closing >
+              bypass_found = true
+              table.insert(buffer, new_fx_block)
+              fxchain_start = false
+          elseif bypass_found then
+              if line:match("^>") then
+                  -- End of FXCHAIN
+                  table.insert(buffer, line)
+                  in_fxchain = false
+                  bypass_found = false
+                  fxchain_start = false
+              end
+              -- skip lines until we hit >
+          else 
+              if line:match("^>") then
+                  -- No BYPASS found, insert new FX just before this line
+                  table.insert(buffer, new_fx_block)
+                  table.insert(buffer, line)
+                  in_fxchain = false
+                  fxchain_start = false
+              else 
+                  table.insert(buffer, line)
+              end
+          end
+      else
+          if line:match("^>") and not fxChainAdded then
+              -- insert missing fx chain info and fx block
+              table.insert(buffer, "<FXCHAIN")
+              table.insert(buffer, "WNDRECT 32 654 724 393")
+              table.insert(buffer, "SHOW 0")
+              table.insert(buffer, "LASTSEL 0")
+              table.insert(buffer, "DOCKED 0new_fx_block")
+              table.insert(buffer, new_fx_block) 
+              table.insert(buffer, ">")
+          end 
+          table.insert(buffer, line)
+      end
+    --else
+    --  table.insert(buffer, line)
+    --end
+  end
+
+  return table.concat(buffer, "\n")
+end
+
+
+function insertFXChainPreset(file) 
+    local openFile = io.open(file.path, "r")
+    local fx_chunk = openFile:read("*a")
+    openFile:close() 
+    
+    reaper.Undo_BeginBlock()
+    
+    if newTrack then
+        reaper.Main_OnCommand(40001, 0) --Track: Insert new track 
+        local track = reaper.GetSelectedTrack(0,0)
+        local _, chunk = reaper.GetTrackStateChunk(track, "", false) 
+        local new_chunk = replace_fx_in_track(chunk, fx_chunk)
+        reaper.SetTrackStateChunk(track, new_chunk, false) 
+        reaper.GetSetMediaTrackInfo_String(track,"P_NAME",file.name,true)
+    else
+        for trackIndex, track in ipairs(selectedTracks) do
+              local _, chunk = reaper.GetTrackStateChunk(track, "", false)
+              local new_chunk = replace_fx_in_track(chunk, fx_chunk)
+              reaper.SetTrackStateChunk(track, new_chunk, false) 
+        end 
+    end
+    
+    reaper.Undo_EndBlock("Load FX Chain", -1)
+end
+
+function insertTrackTemplate(file)
+    reaper.Undo_BeginBlock()
+    
+    -- Insert a new track at the bottom
+    local track = reaper.GetTrack(0, reaper.CountTracks(0) - 1)
+    -- Select the new track
+    reaper.SetOnlyTrackSelected(track)
+    
+    -- Insert the template on the selected track
+    reaper.Main_openProject(file.path) -- this inserts the track template
+    
+    
+    reaper.Undo_EndBlock("Load Track Template", -1)
+end
+
+function tableWithFilterAndText(text, table, filterVariable, width, height, functionToDo, tableKeys) 
+    local startX, startY = reaper.ImGui_GetCursorPos(ctx)
+    reaper.ImGui_BeginGroup(ctx)
+    centerText(text, colorWhite, startX, width, 0, startY)
+    local click = false
+    --if reaper.ImGui_Button(ctx, text, width) then
+    --    click = true
+    --end
+    reaper.ImGui_Spacing(ctx)
+    
+    
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorTransparent)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), settings.colors.buttonsHover)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), settings.colors.buttonsActive)
+    
+    local offsetX, offsetY = reaper.ImGui_GetItemRectMax(ctx) 
+    
+    local flags = reaper.ImGui_TableFlags_Borders() | reaper.ImGui_TableFlags_RowBg() | reaper.ImGui_TableFlags_ScrollY() | 
+    reaper.ImGui_TableFlags_Sortable() | reaper.ImGui_TableFlags_ScrollX() | reaper.ImGui_TableFlags_Resizable() -- | reaper.ImGui_TableFlags_SizingFixedFit()
+    
+    local filterTable = {}
+    local count = 1
+    for i, file in ipairs(table) do
+        local include = true
+        local allFields = ""
+        for key, value in pairs(file) do 
+            for _, tblKey in ipairs(tableKeys) do 
+                if key == tblKey:lower() then
+                    local fullFilter = filterVariable .. key
+                    local filterParts = settings[fullFilter] and splitString(settings[fullFilter]:lower())
+                    if filterParts and #filterParts > 0 and value then 
+                        if not partialMatch(value, filterParts) then
+                            include = false 
+                        end
+                    end
+                    allFields = allFields .. value .. " "
+                end 
+            end
+        end  
+        
+        local filterParts = settings[filterVariable] and splitString(settings[filterVariable]:lower())
+        if filterParts and #filterParts > 0 and allFields then 
+            if not partialMatch(allFields, filterParts) then
+                include = false 
+            end
+        end
+        
+        if include then filterTable[#filterTable + 1] = file end 
+    end
+    
+    local hasFilter =  settings[filterVariable] and #settings[filterVariable] > 0
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), 0, 0)
+    reaper.ImGui_TextColored(ctx, colorGrey, "Filter all")
+    reaper.ImGui_SameLine(ctx)
+    reaper.ImGui_SetNextItemWidth(ctx,-52+ width + (hasFilter and -20 or 0) )
+    local ret, filter = reaper.ImGui_InputText(ctx, "##" .. filterVariable, settings[filterVariable])
+    if reaper.ImGui_IsItemFocused(ctx) then 
+        ignoreKeypress = true
+    end
+    if settings[filterVariable] ~= filter then settings[filterVariable] = filter; saveSettings() end 
+    if hasFilter then
+        --reaper.ImGui_SameLine(ctx)
+        --local closeX, closeY = reaper.ImGui_GetCursorPos(ctx)
+        --if closeButton(closeX - 4, closeY, 13) then settings[filterVariable] = nil end 
+    end
+    reaper.ImGui_PopStyleVar(ctx)
+    
+    -- FX CHAINS
+    if reaper.ImGui_BeginTable(ctx, text, #tableKeys, flags, width, height) then
+        for i, name in ipairs(tableKeys) do
+            reaper.ImGui_TableSetupColumn(ctx, name, i == 1 and reaper.ImGui_TableColumnFlags_DefaultSort() or  reaper.ImGui_TableColumnFlags_None(), 0) 
+        end
+        reaper.ImGui_TableSetupScrollFreeze(ctx, 1, 1) -- Make row always visible
+        
+        reaper.ImGui_TableNextRow(ctx, reaper.ImGui_TableRowFlags_Headers())
+        for column = 0, #tableKeys-1 do
+          reaper.ImGui_TableSetColumnIndex(ctx, column)
+          local column_name = reaper.ImGui_TableGetColumnName(ctx, column) -- Retrieve name passed to TableSetupColumn()
+          reaper.ImGui_PushID(ctx, column)
+          reaper.ImGui_TableHeader(ctx, column_name)
+          
+          local offX = reaper.ImGui_CalcTextSize(ctx, column_name)
+          if not settings.vertical then
+              reaper.ImGui_SameLine(ctx, offX + padding, (reaper.ImGui_GetStyleVar(ctx, reaper.ImGui_StyleVar_ItemInnerSpacing())))
+          end
+          
+          reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), 0, 0)
+          local fullFilter = filterVariable .. string.lower(column_name)
+          
+          if settings[fullFilter] and #settings[fullFilter] > 0 then
+              
+              --local closeX, closeY = reaper.ImGui_GetCursorPos(ctx)
+              --if closeButton(closeX - 4, closeY, 13) then settings[fullFilter] = nil end 
+              --reaper.ImGui_SameLine(ctx)
+          end 
+          
+          local ret, filter = reaper.ImGui_InputText(ctx, "##" .. fullFilter, settings[fullFilter])
+          if settings[fullFilter] ~= filter then settings[fullFilter] = filter; saveSettings() end 
+          if reaper.ImGui_IsItemFocused(ctx) then 
+              ignoreKeypress = true
+          end
+          
+          reaper.ImGui_PopStyleVar(ctx)
+          
+          reaper.ImGui_PopID(ctx)
+        end
+        
+        
+        -- Sort our data if sort specs have been changed!
+        if reaper.ImGui_TableNeedSort(ctx) then 
+            local ok, col_idx, col_user_id, sort_direction = reaper.ImGui_TableGetColumnSortSpecs(ctx, 0) 
+            --table.sort(table, CompareTableItems)
+            local sortKey = tableKeys[col_user_id+1]:lower()
+            sort_file_list(table, sortKey, sort_direction == 1)
+        end
+    
+        for row, file in ipairs(filterTable) do
+            reaper.ImGui_TableNextRow(ctx)
+            for column = 0, #tableKeys-1 do
+                reaper.ImGui_TableSetColumnIndex(ctx, column) 
+                if reaper.ImGui_Button(ctx, file[tableKeys[column+1]:lower()]) then 
+                    functionToDo(file) 
+                end
+            end
+        end
+        reaper.ImGui_EndTable(ctx)
+    end
+    
+    reaper.ImGui_PopStyleColor(ctx, 4)
+    
+    reaper.ImGui_EndGroup(ctx)
+    return click
+end
+
+
 --------------------------------------------------------------------------
 ------------------------------ VERTICAL TEXT -----------------------------
 --------------------------------------------------------------------------
@@ -3595,9 +3941,9 @@ function getAllTrackFXOnTrack(track)
             --pLinks = CheckFXParamsMapping(pLinks, track, fxIndex)
     
             -- Add the plugin information
-            table.insert(plugins, {fxIndex = fxIndex, name = fxName, guid = guid, isContainer = isContainer, containerCount = containerCount, isModulator = isModulator, fxContainerName = "ROOT", base1Index = fxIndex + 1, indent = 0, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
+            table.insert(plugins, {fxIndex = fxIndex, name = fxName, guid = guid, isContainer = isContainer, containerCount = containerCount, isModulator = isModulator, indent = 0, fxContainerName = "ROOT", base1Index = fxIndex + 1, indent = 0, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
             if isContainer then
-                table.insert(containersFetch, {fxIndex = fxIndex, fxName = fxName, guid = guid, isContainer = isContainer, containerCount = containerCount, fxContainerIndex = fxContainerIndex, fxContainerName = fxContainerName, base1Index = fxIndex + 1, indent = indent, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
+                table.insert(containersFetch, {fxIndex = fxIndex, fxName = fxName, guid = guid, isContainer = isContainer, containerCount = containerCount, fxContainerIndex = fxContainerIndex, fxContainerName = fxContainerName, base1Index = fxIndex + 1, indent = 0, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
             end
             -- If the FX is a container, recursively check its contents
             if isContainer then
@@ -10703,9 +11049,17 @@ function appSettingsWindow()
                     settings.preferHorizontalHeaders = val
                     saveSettings()
                 end
-                setToolTipFunc("For modulators and plugins use horizontal header when not collabsed even when panel is in horizontal mode") 
-                 
+                setToolTipFunc("For modulators and plugins use horizontal header when not collabsed even when panel is in horizontal mode")  
+                  
                 sliderInMenu("Width between widgets", "widthBetweenWidgets", menuSliderWidth, 1, 20, "Set the width between widgets") 
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show insert options when no track is selected",settings.showInsertOptionsWhenNoTrackIsSelected) 
+                if ret then 
+                    settings.showInsertOptionsWhenNoTrackIsSelected = val
+                    saveSettings()
+                end
+                setToolTipFunc("When no track is selected show add fx, preset or template tables") 
                 
             reaper.ImGui_Unindent(ctx)
             
@@ -10983,7 +11337,7 @@ function appSettingsWindow()
                 
             
             reaper.ImGui_Indent(ctx)
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel setting is global##pluginList",settings.showPluginsListGlobal) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,'"Show list" setting is global##pluginList',settings.showPluginsListGlobal) 
                 if ret then 
                     settings.showPluginsListGlobal = val
                     saveSettings()
@@ -11153,7 +11507,7 @@ function appSettingsWindow()
             reaper.ImGui_Indent(ctx)
                 
                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel setting is global##parameters",settings.showParametersPanelGlobal) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,'"Show plugins" setting is global##parameters',settings.showParametersPanelGlobal) 
                 if ret then 
                     settings.showParametersPanelGlobal = val
                     saveSettings()
@@ -12620,8 +12974,11 @@ function updateTouchedFX()
             fxnumber = fxIndexTouched
             paramnumber = parameterTouched 
             
-            trackSettings.focusedParam[GetFXGUID(trackTemp, fxnumber)] = paramnumber
-            saveTrackSettings(track)
+            if trackSettings.focusedParam then
+                trackSettings.focusedParam[GetFXGUID(trackTemp, fxnumber)] = paramnumber
+                saveTrackSettings(track)
+            end
+            
             
             updateMapping()
             --scrollToParameter = true
@@ -13926,9 +14283,9 @@ local function loop()
                                                     dragDropInArea(minX,minY,maxX,maxY,f, indentW)  
                                                 end
                                             else 
-                                                if f.indent > 0 then reaper.ImGui_Indent(ctx, indentW) end
+                                                --if f.indent > 0 then reaper.ImGui_Indent(ctx, indentW) end
                                                 --reaper.ImGui_Separator(ctx)
-                                                if f.indent > 0 then reaper.ImGui_Unindent(ctx, indentW) end 
+                                                --if f.indent > 0 then reaper.ImGui_Unindent(ctx, indentW) end 
                                             end
                                         end
                                         
@@ -14259,7 +14616,7 @@ local function loop()
                             local someAreActive = false
                             if onlyMapped then
                                 for i, p in ipairs(paramsListThatAreNotFiltered) do
-                                    if f.indent > 0 then 
+                                    if f.indent and f.indent > 0 then 
                                         local root_fxIndex, root_param = fx_get_mapped_parameter_with_catch(track, fxIndex, p)
                                         if root_fxIndex and root_param then
                                             someAreActive = true; break
@@ -14579,7 +14936,7 @@ local function loop()
                         if settings.showParametersPanelGlobal then
                             showParametersPanel = settings.showParametersPanel 
                         else
-                            showParametersPanel = trackSettings.showParametersPanel 
+                            showParametersPanel = trackSettings.showParametersPanel
                         end
                         local showOnlyFocusedPlugin
                         if settings.showParametersPanelGlobal then
@@ -14661,12 +15018,13 @@ local function loop()
                                     if settings.showParametersPanelGlobal then
                                         settings.showParametersPanel = not settings.showParametersPanel
                                         saveSettings()
-                                    else
-                                        settings.showOnlyFocusedPlugin = not settings.showOnlyFocusedPlugin
-                                        saveSettings()  
+                                    else 
+                                        trackSettings.showParametersPanel = not trackSettings.showParametersPanel
+                                        --settings.showOnlyFocusedPlugin = not settings.showOnlyFocusedPlugin
+                                        saveTrackSettings()  
                                     end
                                 else 
-                                    if settings.showOnlyFocusedPluginGlobal then
+                                    if settings.showParametersPanelGlobal then
                                         settings.showParametersPanel = true
                                         settings.showOnlyFocusedPlugin = not settings.showOnlyFocusedPlugin
                                         saveSettings()
@@ -15212,60 +15570,112 @@ local function loop()
         elementsWidthInVertical = winW - x - 8-- margin * 4
             
         trackHeaderIconsAndName()
-            
+        
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.backgroundWindow)
         
         local mainAreaW = winW - reaper.ImGui_GetCursorPosX(ctx) - 8
         local mainAreaH = winH - reaper.ImGui_GetCursorPosY(ctx) - 8
         
-        if reaper.ImGui_BeginChild(ctx, "mainArea", mainAreaW, mainAreaH , nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()) then
+        if track or not settings.showInsertOptionsWhenNoTrackIsSelected then
+            if reaper.ImGui_BeginChild(ctx, "mainArea", mainAreaW, mainAreaH , nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()) then
+                
+                elementsHeightInHorizontal = elementsHeightInHorizontal - 8
+                elementsWidthInVertical = elementsWidthInVertical -- 8
+                
+                if not settings.vertical and math.floor(reaper.ImGui_GetScrollMaxX(ctx)) > 0 then 
+                    elementsHeightInHorizontal = elementsHeightInHorizontal - 12
+                end
+                
+                if settings.vertical and math.floor(reaper.ImGui_GetScrollMaxY(ctx)) > 0 then 
+                    elementsWidthInVertical = elementsWidthInVertical - 12
+                end
+                
+                --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.backgroundModules)
+                
+                --modulatorsPanelX, modulatorsPanelY = reaper.ImGui_GetCursorScreenPos(ctx)
+                
+                --reaper.ImGui_SetCursorPos(ctx, 1,1)
+                
+                if disable then
+                    reaper.ImGui_BeginDisabled(ctx)
+                end
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.backgroundModules)
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarBg(), settings.colors.backgroundModules)
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), settings.colors.backgroundModulesBorder)
+                
+                pluginsPanel() 
+                
+                placingOfNextElement()
+                
+                
+                modulatorsPanel()
+                -- 321
+                
+                reaper.ImGui_PopStyleColor(ctx, 3)
+                
+                --
+                
+                if disable then
+                    reaper.ImGui_EndDisabled(ctx)
+                end
+                
+                --reaper.ImGui_PopStyleColor(ctx)
+                --reaper.ImGui_Dummy(ctx, 1,1)
+                reaper.ImGui_EndChild(ctx)
+            end
+        else 
+            newTrack = true --reaper.CountSelectedTracks(0) == 0
+            local topSpace = 10
+            local tableCount = 3
             
-            elementsHeightInHorizontal = elementsHeightInHorizontal - 8
-            elementsWidthInVertical = elementsWidthInVertical -- 8
+            tableWidthSize = settings.vertical and mainAreaW or (mainAreaW/tableCount - padding)
+            local windowHMax = settings.vertical and mainAreaH / tableCount - padding * 3 - 24 or (mainAreaH - topSpace - margin*2 - 24) -- 24 is the missing button when a track has fx on it
             
-            if not settings.vertical and math.floor(reaper.ImGui_GetScrollMaxX(ctx)) > 0 then 
-                elementsHeightInHorizontal = elementsHeightInHorizontal - 12
+            reaper.ImGui_BeginGroup(ctx)
+            --if reaper.ImGui_Button(ctx, "Insert empty track") then
+            --    reaper.Main_OnCommand(40001, 0) --Track: Insert new track
+            --end
+            
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorTransparent)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
+            
+            --tablePosY = padding
+            --reaper.ImGui_SetCursorPos(ctx, startX, padding)
+            favoriteList =  {{name = "Container"}}--{{name = "Empty Track", category = "none"}}
+            --local text = "Favorite list" 
+            --tableWithFilterAndText(text,favoriteList, "fxFavoriteListFilter", tableWidthSize, windowHMax - 40, insertFXOnSelectedTracks, {"Name"}) 
+            
+            reaper.ImGui_EndGroup(ctx)
+            
+            if not settings.vertical then
+                reaper.ImGui_SameLine(ctx)
             end
             
-            if settings.vertical and math.floor(reaper.ImGui_GetScrollMaxY(ctx)) > 0 then 
-                elementsWidthInVertical = elementsWidthInVertical - 12
+            local text = "Insert track template at bottom of session"
+            tableWithFilterAndText(text, trackTemplateFiles, "trackTemplatesFilter", tableWidthSize, windowHMax, insertTrackTemplate, {"Name", "Folder"})
+            
+            if not settings.vertical then
+                reaper.ImGui_SameLine(ctx) 
             end
             
-            --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.backgroundModules)
+            local text = "Load FX chain presets on " .. (not newTrack and "selected tracks" or "a new track")
+            tableWithFilterAndText(text, fxChainPresetsFiles, "chainPresetFilter", tableWidthSize, windowHMax, insertFXChainPreset, {"Name", "Folder"})
             
-            --modulatorsPanelX, modulatorsPanelY = reaper.ImGui_GetCursorScreenPos(ctx)
-            
-            --reaper.ImGui_SetCursorPos(ctx, 1,1)
-            
-            if disable then
-                reaper.ImGui_BeginDisabled(ctx)
-            end
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.backgroundModules)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarBg(), settings.colors.backgroundModules)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), settings.colors.backgroundModulesBorder)
-            
-            pluginsPanel() 
-            
-            placingOfNextElement()
-            
-            
-            modulatorsPanel()
-            -- 321
-            
-            reaper.ImGui_PopStyleColor(ctx, 3)
-            
-            --
-            
-            if disable then
-                reaper.ImGui_EndDisabled(ctx)
+            if not settings.vertical then
+                reaper.ImGui_SameLine(ctx) 
             end
             
-            --reaper.ImGui_PopStyleColor(ctx)
-            --reaper.ImGui_Dummy(ctx, 1,1)
-            reaper.ImGui_EndChild(ctx)
+            
+            local text = "Insert FX on " .. (not newTrack and "selected tracks" or "a new track") 
+            tableWithFilterAndText(text, fxListFiles, "fxListFilter", tableWidthSize, windowHMax, insertFXOnSelectedTracks, {"Name", "Developer","Category","Type"})
+                
+                
+            
+            
+            reaper.ImGui_PopStyleColor(ctx, 2)
         end
         
-        if isMuted then
+        if isMuted or not settings.showInsertOptionsWhenNoTrackIsSelected then -- or not track then
             local minX, minY = reaper.ImGui_GetItemRectMin(ctx)
             reaper.ImGui_SetCursorScreenPos(ctx, minX, minY)
             if reaper.ImGui_BeginChild(ctx, "mainAreaMuted", mainAreaW, mainAreaH , nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()|reaper.ImGui_WindowFlags_NoBackground()) then
@@ -15273,11 +15683,17 @@ local function loop()
                 local bgColorTransparent = bgColor & 0xFFFFFF99
                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), bgColor & 0xFFFFFFAA)
                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), bgColor & 0xFFFFFFAA)
-                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), bgColor & 0xFFFFFF33)
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), bgColor & 0xFFFFFFAA)
                 if reaper.ImGui_Button(ctx, "##Muted", mainAreaW, mainAreaH) then
-                    setMuted(track, false)
+                    if not track then
+                        reaper.Main_OnCommand(40001, 0) --Track: Insert new track
+                    else
+                        setMuted(track, false)
+                    end
                 end
-                local name = reaper.ImGui_IsItemHovered(ctx) and "UNMUTE TRACK" or "TRACK MUTED"
+                local nameHover = not track and "ADD TRACK" or "UNMUTE TRACK"
+                local nameStatic = not track and "NO TRACK SELECTED" or "TRACK MUTED"
+                local name = reaper.ImGui_IsItemHovered(ctx) and nameHover or nameStatic
                 reaper.ImGui_PopStyleColor(ctx,3)
                 
                 reaper.ImGui_PushFont(ctx, font60)
@@ -15285,7 +15701,6 @@ local function loop()
                 local textX = minX + mainAreaW / 2 - textW / 2
                 local textY = minY + mainAreaH / 2 - textH / 2
                 reaper.ImGui_DrawList_AddRectFilled(draw_list, textX, textY, textX + textW, textY + textH, bgColor)
-                --reaper.ImGui_DrawList_AddTextEx(draw_list, font2, 100, centerX, centerY, colorRedHidden, "MUTED")
                 reaper.ImGui_DrawList_AddText(draw_list, textX, textY, settings.colors.text, name)
                 
                 reaper.ImGui_PopFont(ctx)
