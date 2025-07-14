@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.0.4
+-- @version 1.0.5
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,17 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fix 3 for dragging parameter with envelopes not behaving correctly
+--   + fix crash when only showing focused plugin, and there's no plugin
+--   + fix native lfo looking weird in tempo sync with small knobs
+--   + added option in settings window to set colors container indents
+--   + added right click to set custom color in container
+--   + added Steps slider to native lfo
+--   + fix "only show mapped" issue
+--   + updated getting container mappings to use catch
+--   + added plus icon on plugins header for adding FX and containers
+--   + added option to add FX popup button to plugins list
 
-local version = "1.0.4"
+local version = "1.0.5"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -45,6 +53,7 @@ font13 = reaper.ImGui_CreateFont('Arial', 13)
 font14 = reaper.ImGui_CreateFont('Arial', 14)
 font15 = reaper.ImGui_CreateFont('Arial', 15)
 font16 = reaper.ImGui_CreateFont('Arial', 16)
+font60 = reaper.ImGui_CreateFont('Arial', 60)
 
 function initializeContext()
     ctx = ImGui.CreateContext(appName)
@@ -61,6 +70,7 @@ function initializeContext()
     reaper.ImGui_Attach(ctx, font14)
     reaper.ImGui_Attach(ctx, font15)
     reaper.ImGui_Attach(ctx, font16)
+    reaper.ImGui_Attach(ctx, font60)
 end
 initializeContext()
 
@@ -210,7 +220,7 @@ local fxWindowClicked, clickedHwnd, parameterFound, parameterChanged, focusDelta
 local lastParameterTouchedMouse, lastFxIndexTouchedMouse, lastTrackIndexTouchedMouse 
 local renameFxIndex = ""
 local beginFxDragAndDropIndexRelease, beginFxDragAndDropName, beginFxDragAndDrop, HideToolTipTemp, beginFxDragAndDropFX 
-local factoryModules
+local factoryModules, indentColors
 
 
 local focusedTrackFXNames = {}
@@ -379,6 +389,8 @@ local defaultSettings = {
     
     showOpenAll = true, 
     showAddTrackFX = true,
+    showAddContainer = false,
+    showAddTrackFXDirectly = false,
     showPluginOptionsOnTop = true,
     
       -- Parameters
@@ -589,6 +601,10 @@ local defaultSettings = {
       envelopeButtonBackground = colorDarkGrey,
       modulators = colorBlue,
       plugins = colorGreen,
+      
+      containerLayer1 = colorRead, 
+      containerLayer2 = colorTouch, 
+      containerLayer3 = colorWrite,
     },
     selectedColorSet = "Dark",
     
@@ -620,6 +636,7 @@ local defaultSettings = {
         bypassMapping = {Alt = true}, 
         --setParameterValue = {Ctrl = true}, 
         resetValue = {Ctrl = true, Shift = true}, 
+        closeColorSelectionOnClick = {Super = true},
     },
     modifierOptionFx = {
         copyFX = { Super = true},
@@ -642,6 +659,8 @@ local defaultTrackSettings = {
     showOnlyFocusedPlugin = true,
     showOnlyFocusedModulator = false,
     hidePluginSearchParameters = {},
+    searchParameters = {},
+    onlyMappedParameters = {},
     focusedParam = {},
     hidePlugins = false,
     collabsModules = {},
@@ -649,7 +668,8 @@ local defaultTrackSettings = {
     renamed = {},
     bigWaveform = {},
     hideParametersFromModulator = {},
-    showAbSliderMappings = {}
+    showAbSliderMappings = {},
+    containerColors = {},
 }
 
 local function saveSettings()
@@ -1569,8 +1589,8 @@ local function getPlinkMidiMsg2(track,fxIndex,param)
     return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.midi_msg2' )))
 end
 
-function getPlinkParamInContainer(track,containerFxIndex,param)
-    return tonumber(select(2, GetNamedConfigParm( track, containerFxIndex, 'param.'..param..'.container_map.fx_parm' )))
+function getPlinkParamInContainer(track,containerFxIndex,param, doNotUseCatch)
+    return tonumber(select(2, GetNamedConfigParm( track, containerFxIndex, 'param.'..param..'.container_map.fx_parm', doNotUseCatch )))
 end
 
 function getFXParallelProcess(track,fxIndex,param) -- 0=non, 1=process plug-in in parallel with previous, 2=process plug-in parallel and merge MIDI
@@ -1605,8 +1625,8 @@ function getPlinkFxIndex(track,containerFxIndex, parameterLinkEffect)
     return ret and tonumber(val) or false
 end
 
-function getPlinkFxIndexInContainer(track,containerFxIndex, param)
-    local ret, val = GetNamedConfigParm( track, containerFxIndex, 'param.'..param..'.container_map.fx_index' )
+function getPlinkFxIndexInContainer(track,containerFxIndex, param, doNotUseCatch)
+    local ret, val = GetNamedConfigParm( track, containerFxIndex, 'param.'..param..'.container_map.fx_index', doNotUseCatch )
     return ret and tonumber(val) or false
 end
 
@@ -1788,31 +1808,6 @@ function GetByName(track, str, instantiate, doNotUseCatch)
     end 
 end
 
-function GetCount(track, doNotUseCatch)
-    local tableStr = "::GetCount"
-    local catch = getParameterTableCatch(track, "track", tableStr)
-    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
-        return catch 
-    else 
-        local val = reaper.TrackFX_GetCount(track) 
-        setParameterTableCatch(track, "track", tableStr, val)
-        return val
-    end 
-end
-
-
-function GetTrackGuid(track, doNotUseCatch)
-    local tableStr = "::GetTrackGuid"
-    local catch = getParameterTableCatch(track, "track", tableStr, 1)
-    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
-        return catch 
-    else 
-        local val = reaper.GetTrackGUID(track) 
-        setParameterTableCatch(track, "track", tableStr, val)
-        return val
-    end 
-end
-
 
 local paramterFilterDataBase = {}
 local function filterParametersThatAreMostLikelyNotWanted(param, track, fxIndex, name)
@@ -1851,7 +1846,7 @@ end
 
 function getFxParamsThatAreNotFiltered(track, fxIndex, doNotUseCatch) 
     local tbl = {}
-    local param_count = GetNumParams(track, fxIndex)
+    local param_count = GetNumParams(track, fxIndex, doNotUseCatch)
     for param = 0, param_count - 1 do 
         if param == param_count - 3 then
             -- we don't want the bypass knob as part of the parameters
@@ -2009,7 +2004,50 @@ function GetFXOffline(track, fxIndex)
         return val
     end
 end
+-------- track
 
+
+function GetCount(track, doNotUseCatch)
+    local tableStr = "::GetCount"
+    local catch = getParameterTableCatch(track, "track", tableStr)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch 
+    else 
+        local val = reaper.TrackFX_GetCount(track) 
+        setParameterTableCatch(track, "track", tableStr, val)
+        return val
+    end 
+end
+
+
+function GetTrackGuid(track, doNotUseCatch)
+    local tableStr = "::GetTrackGuid"
+    local catch = getParameterTableCatch(track, "track", tableStr, 1)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch 
+    else 
+        local val = reaper.GetTrackGUID(track) 
+        setParameterTableCatch(track, "track", tableStr, val)
+        return val
+    end 
+end
+ 
+function GetMuted(track)
+    local tableStr = "::GetMuted"
+    local catch = getParameterTableCatch(track, "track", tableStr, 2)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch 
+    else 
+        local val = math.floor(reaper.GetMediaTrackInfo_Value( track, "B_MUTE" )) == 1
+        setParameterTableCatch(track, "track", tableStr, val)
+        return val
+    end
+end
+
+function setMuted(track, val)
+    val = val == nil and not GetMuted(track) or val
+    reaper.SetMediaTrackInfo_Value( track, "B_MUTE", val and 1 or 0)
+end
 -------------------------
 -------------------------
 ---- SET ----------------
@@ -2225,7 +2263,7 @@ function fx_map_parameter(tr, fxidx, parmidx) -- maps a parameter to the top lev
 end
 
 
-function fx_get_mapped_parameter(tr, fxidx, parmidx) -- maps a parameter to the top level parent, returns { fxidx, parmidx }
+function fx_get_mapped_parameter(tr, fxidx, parmidx) -- gets a parameter at the top level parent, returns { fxidx, parmidx }
   local path = get_container_path_from_fx_id(tr, fxidx)
   if not path then return nil end
   local rootContainerPos = #path > 1 and path[1] - 1 or false
@@ -2236,17 +2274,18 @@ function fx_get_mapped_parameter(tr, fxidx, parmidx) -- maps a parameter to the 
     if cidx == nil then return nil end
     local i, found = 0, nil
     while true do
-      local rok, r = reaper.TrackFX_GetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_index",i))
-      if not rok then break end
+      
+      local r = getPlinkFxIndexInContainer(tr, cidx, i)--reaper.TrackFX_GetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_index",i))
+      if not r then break end
       if tonumber(r) == fxidx - 1 then
-        rok, r = reaper.TrackFX_GetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_parm",i))
-        if not rok then break end
+        r = getPlinkParamInContainer(tr, cidx, i) -- reaper.TrackFX_GetNamedConfigParm(tr,cidx,string.format("param.%d.container_map.fx_parm",i))
+        if not r then break end
         if tonumber(r) == parmidx then found = true; parmidx = i; break end
       end
       i = i + 1
     end
     if not found then
-      --return false
+      return false
         -- add a new mapping
         --local rok, r = reaper.TrackFX_GetNamedConfigParm(tr,cidx,"container_map.add")
         --if not rok then return nil end
@@ -2255,6 +2294,18 @@ function fx_get_mapped_parameter(tr, fxidx, parmidx) -- maps a parameter to the 
     end
   end
   return rootContainerPos, parmidx
+end
+
+function fx_get_mapped_parameter_with_catch(track, fxIndex, param, doNotUseCatch)
+    local tableStr = param .. "::fx_get_mapped_parameter"
+    local catch = getParameterTableCatch(track, fxIndex, tableStr, 2)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch.rootContainerPos, catch.parmidx
+    else 
+        local rootContainerPos, parmidx = fx_get_mapped_parameter(track, fxIndex, param)
+        setParameterTableCatch(track, fxIndex, tableStr, {rootContainerPos = rootContainerPos, parmidx = parmidx})
+        return rootContainerPos, parmidx
+    end
 end
 
 --[[
@@ -2328,13 +2379,17 @@ function getModulationContainerPos(track)
     return false
 end
 
+function addContainer(fxIndex)
+    return reaper.TrackFX_AddByName( track, "Container", false, fxIndex and fxIndex or -1 )
+end
+
 -- add container and move it to the first slot and rename to modulators
 function addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
     local modulatorsPos = GetByName( track, "Modulators", false, true )
     local modulatorContainerExist = true
     if modulatorsPos == -1 then
         --modulatorsPos = GetByName( track, "Container", true )
-        modulatorsPos = reaper.TrackFX_AddByName( track, "Container", false, -1 )
+        modulatorsPos = addContainer()
         
         --modulatorsPos = TrackFX_AddByName( track, "Container", modulatorsPos, -1 ) 
         rename = SetNamedConfigParm( track, modulatorsPos, 'renamed_name', "Modulators" )
@@ -3108,9 +3163,9 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
     local name = GetParamName(track,fxIndex,param)
     local valueName = GetFormattedParamValue(track,fxIndex,param)
     -- we filter internal and midi parameters from plugin parameter list
-    if ignoreFilter or filterParametersThatAreMostLikelyNotWanted(param, track,fxIndex) then  
+    if ignoreFilter or filterParametersThatAreMostLikelyNotWanted(param, track, fxIndex) then  
         local fxName = GetFXName(track, fxIndex)
-        local root_fxIndex, root_param = fx_get_mapped_parameter(track, fxIndex, param)
+        local root_fxIndex, root_param = fx_get_mapped_parameter_with_catch(track, fxIndex, param)
         --local containerPath = GetContainerPath(track, fxIndex)
         --local modulated_fxIndex = fxIndex
         --local modulated_param = p
@@ -3118,6 +3173,7 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
         
         if modulationContainerPos and root_fxIndex and root_fxIndex ~= modulationContainerPos then 
             if root_fxIndex and root_param then 
+                --reaper.ShowConsoleMsg(name .. " - fxIndex: " .. fxIndex .. " - param: " .. param .. " - Root index: " .. root_fxIndex .. " - Root param: " .. root_param .. "\n")
                 if getPlinkActive(track, root_fxIndex, root_param) then
                     --modulated_fxIndex = root_fxIndex - 1
                     --modulated_param = root_param
@@ -3484,12 +3540,17 @@ function getNameAndOtherInfo(track, fxIndex, doNotGetStatus)
     local isOpen = not doNotGetStatus and GetOpen(track,fxIndex)
     local isFloating = not doNotGetStatus and GetFloatingWindow(track,fxIndex) 
     local parallel = not doNotGetStatus and (settings.showParralelIndicationInName and getFXParallelProcess(track, fxIndex) or 0)
-    return fxName, fxOriginalName, containerCount, isContainer, isEnabled, isOpen, isFloating
+    local guid = GetFXGUID(track,fxIndex)
+    return fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating
 end
 
 function getFxInfoAsObject(track, fxIndex)
-    local fxName, fxOriginalName, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex) 
-    return {fxIndex = fxIndex, fxName = fxName, isContainer = isContainer, containerCount = containerCount, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel}
+    if track and fxIndex then
+        local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex) 
+        return {fxIndex = fxIndex, fxName = fxName, guid = guid,isContainer = isContainer, containerCount = containerCount, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel}
+    else
+        return {fxName = "No FX on track", fxIndex = -1}
+    end
 end
 
 
@@ -3501,22 +3562,22 @@ function getAllTrackFXOnTrack(track)
     local containersFetch = {} -- Table to store plugin information
     --local pLinks = {} -- table to store all link parameters
     -- Helper function to get plugins recursively from containers
-    local function getPluginsRecursively(track, fxContainerIndex, indent, fxCount, isModulator, fxContainerName)
+    local function getPluginsRecursively(track, fxContainerIndex, containerGuid, indent, fxCount, isModulator, fxContainerName)
         if fxCount then 
             for subFxIndex = 0, fxCount - 1 do
                 local fxIndex = getPlinkFxIndex(track, fxContainerIndex, subFxIndex)
                 if fxIndex then
-                    local fxName, fxOriginalName, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex) 
+                    local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex) 
                     
                     --pLinks = CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
                     
-                    table.insert(plugins, {fxIndex = fxIndex, name = fxName, isModulator = isModulator, indent = indent, fxContainerIndex = fxContainerIndex, fxContainerName = fxContainerName, containerCount = containerCount, isContainer = isContainer, base1Index = subFxIndex + 1, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
+                    table.insert(plugins, {fxIndex = fxIndex, name = fxName, guid = guid, isModulator = isModulator, indent = indent, fxContainerIndex = fxContainerIndex, containerGuid = containerGuid, fxContainerName = fxContainerName, containerCount = containerCount, isContainer = isContainer, base1Index = subFxIndex + 1, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
                     if isContainer then
-                        table.insert(containersFetch, {fxIndex = fxIndex, fxName = fxName, isContainer = isContainer, containerCount = containerCount, fxContainerIndex = fxContainerIndex, fxContainerName = fxContainerName, base1Index = subFxIndex + 1, indent = indent, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
+                        table.insert(containersFetch, {fxIndex = fxIndex, fxName = fxName, guid = guid, isContainer = isContainer, containerCount = containerCount, fxContainerIndex = fxContainerIndex, fxContainerName = fxContainerName, base1Index = subFxIndex + 1, indent = indent, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
                     end
                     
                     if isContainer then
-                        getPluginsRecursively(track, fxIndex, indent + 1, containerCount, isModulator, fxName)
+                        getPluginsRecursively(track, fxIndex, guid, indent + 1, containerCount, isModulator, fxName)
                     end
                 end
             end
@@ -3529,19 +3590,19 @@ function getAllTrackFXOnTrack(track)
         
         -- Iterate through each FX
         for fxIndex = 0, totalFX - 1 do
-            local fxName, fxOriginalName, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex)  
+            local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex)  
             local isModulator = isContainer and fxName == "Modulators"
             --pLinks = CheckFXParamsMapping(pLinks, track, fxIndex)
     
             -- Add the plugin information
-            table.insert(plugins, {fxIndex = fxIndex, name = fxName, isContainer = isContainer, containerCount = containerCount, isModulator = isModulator, fxContainerName = "ROOT", base1Index = fxIndex + 1, indent = 0, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
+            table.insert(plugins, {fxIndex = fxIndex, name = fxName, guid = guid, isContainer = isContainer, containerCount = containerCount, isModulator = isModulator, fxContainerName = "ROOT", base1Index = fxIndex + 1, indent = 0, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
             if isContainer then
-                table.insert(containersFetch, {fxIndex = fxIndex, fxName = fxName, isContainer = isContainer, containerCount = containerCount, fxContainerIndex = fxContainerIndex, fxContainerName = fxContainerName, base1Index = fxIndex + 1, indent = indent, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
+                table.insert(containersFetch, {fxIndex = fxIndex, fxName = fxName, guid = guid, isContainer = isContainer, containerCount = containerCount, fxContainerIndex = fxContainerIndex, fxContainerName = fxContainerName, base1Index = fxIndex + 1, indent = indent, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
             end
             -- If the FX is a container, recursively check its contents
             if isContainer then
                 local indent = 1 
-                getPluginsRecursively(track, fxIndex, indent, containerCount, isModulator, fxName)
+                getPluginsRecursively(track, fxIndex, guid, indent, containerCount, isModulator, fxName)
             end
         end
     end
@@ -3591,7 +3652,7 @@ function getAllParameterModulatorMappings(track)
             for subFxIndex = 0, fxCount - 1 do
                 local fxIndex = getPlinkFxIndex(track, fxContainerIndex, subFxIndex)
                 if fxIndex then 
-                    local fxName, fxOriginalName, container_count, isContainer = getNameAndOtherInfo(track, fxIndex, true) 
+                    local fxName, fxOriginalName, guid, container_count, isContainer = getNameAndOtherInfo(track, fxIndex, true) 
                     
                     pLinks = CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
                     
@@ -3609,7 +3670,7 @@ function getAllParameterModulatorMappings(track)
     
         -- Iterate through each FX
         for fxIndex = 0, totalFX - 1 do 
-            local fxName, fxOriginalName, container_count, isContainer = getNameAndOtherInfo(track, fxIndex, true) 
+            local fxName, fxOriginalName, guid, container_count, isContainer = getNameAndOtherInfo(track, fxIndex, true) 
             local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
             
             local isModulator = modulationContainerPos and isContainer and fxName == "Modulators"
@@ -4119,7 +4180,7 @@ end
 
 
 function openAllAddTrackFX(width) 
-    if settings.showOpenAll == true or settings.showAddTrackFX then
+    if settings.showOpenAll == true or settings.showAddTrackFX or settings.showAddTrackFXDirectly or settings.showAddContainer then
         local allIsClosed = true
         for _, f in ipairs(focusedTrackFXNames) do 
             if not f.isModulator and f.isOpen then
@@ -4133,11 +4194,19 @@ function openAllAddTrackFX(width)
             reaper.ImGui_Separator(ctx)
         end
         
-        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorDarkGrey)
+        local elementsAmount = 0
         
+        if settings.showOpenAll then elementsAmount = elementsAmount + 1 end
+        if settings.showAddTrackFX then elementsAmount = elementsAmount + 1 end
+        if settings.showAddTrackFXDirectly then elementsAmount = elementsAmount + 1 end
+        if settings.showAddContainer then elementsAmount = elementsAmount + 1 end
+        
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorDarkGrey)
+        local elementsWidth = (width - ( 8 * (elementsAmount-1))) / elementsAmount
+        local sameLine = false
         if settings.showOpenAll then
             local textState = (not allIsClosed and "Close " or "Open ")
-            if reaper.ImGui_Button(ctx, textState .. ' all##FXOpenall', (width - 8) / 2) then 
+            if reaper.ImGui_Button(ctx, textState .. ' all##FXOpenall', elementsWidth) then 
                 for _, f in ipairs(focusedTrackFXNames) do 
                     if not f.isModulator then
                         openCloseFx(track, tonumber(f.fxIndex), allIsClosed)
@@ -4145,20 +4214,45 @@ function openAllAddTrackFX(width)
                 end
             end  
             setToolTipFunc(textState .. "all FX windows")
+            sameLine = true
         end
         
         if settings.showAddTrackFX then
-            if settings.showOpenAll then
+            if sameLine then
                 reaper.ImGui_SameLine(ctx)
             end
             
-            if reaper.ImGui_Button(ctx, "Add FX##add", width / 2 - 16) then  
-                openFxBrowserOnSpecificTrack() 
+            if reaper.ImGui_Button(ctx, "+##add", elementsWidth) then  
+                openAddFXPopupWindow = true
             end
-            setToolTipFunc("Add new FX to track")
+            setToolTipFunc("Add new FX, container or preset to track")
+            sameLine = true
+            
         end
         
         
+        if settings.showAddTrackFXDirectly then
+            if sameLine then
+                reaper.ImGui_SameLine(ctx)
+            end
+            
+            if reaper.ImGui_Button(ctx, "Add##addTrackFX", elementsWidth) then  
+                openFxBrowserOnSpecificTrack() 
+            end
+            setToolTipFunc("Add new FX to track")
+            sameLine = true 
+        end
+        
+        if settings.showAddContainer then
+            if sameLine then
+                reaper.ImGui_SameLine(ctx)
+            end
+            
+            if reaper.ImGui_Button(ctx, "Container##add", elementsWidth) then  
+                addContainer()
+            end
+            setToolTipFunc("Add new Container to track")
+        end
         --reaper.ImGui_PopStyleColor(ctx)
         
         if settings.showPluginOptionsOnTop then  
@@ -4194,9 +4288,9 @@ function clickPlugin(f, openTag, forceFolderToggle)
 end 
 
 
-function getTextColorForFx(track, fxIndex, isContainer, name)
-    local isEnabled = GetFXEnabled(track, fxIndex)
-    local isOffline = GetFXOffline(track, fxIndex)
+function getTextColorForFx(track, f, useContainerColor)
+    local isEnabled = GetFXEnabled(track, f.fxIndex)
+    local isOffline = GetFXOffline(track, f.fxIndex)
     local textColor = settings.colors.text
     if partOfContainer then
         textColor = settings.colors.mapping
@@ -4204,8 +4298,8 @@ function getTextColorForFx(track, fxIndex, isContainer, name)
         textColor = colorRedHidden
     elseif not isEnabled then
         textColor = colorYellowMinimzed 
-    elseif settings.colorContainers and (isContainer or name == "<") then
-        textColor = settings.colors.textDimmed
+    elseif (f.isContainer or f.name == "<") then
+        textColor = settings.colorContainers and ((useContainerColor and trackSettings.containerColors[f.guid]) and trackSettings.containerColors[f.guid] or (f.indent and indentColors[(f.indent)%3 + 1])) or settings.colors.text
     end
     return textColor
 end
@@ -4509,6 +4603,33 @@ function drawOpenFXWindow(x, y, size, isActive, toolTipText)
 end
 
 
+function drawPlusIcon(x, y, size, isActive, toolTipText) 
+    drawInvisibleDummyButtonAtScreenPos(x,y,size,size)
+    local rounding = 1
+    local pad = 5
+    local pad_x = x + pad
+    local pad_y = y + pad
+    local pad_w = size - pad * 2
+    local pad_h = size - pad * 2
+    
+    local pad_size = size - pad * 2
+    local angle = 4
+    local isHovered = mouseInsideArea(x,y,size,size) 
+    local color = getColorForIcon(isActive, isHovered) 
+    
+    reaper.ImGui_DrawList_AddLine(draw_list, pad_x, pad_y + pad_size/2, pad_x + pad_size, pad_y+pad_size/2, color, 2)
+    reaper.ImGui_DrawList_AddLine(draw_list, pad_x + pad_size/2, pad_y, pad_x + pad_size/2, pad_y+pad_size, color, 2)
+    
+    
+    if isHovered then
+        if isMouseClick then
+            return true
+        end
+        setToolTipFunc2((isActive and "Close " or "Open ") .. toolTipText)
+    end
+end
+
+
 -- SPECIFIC FOR FX PARAMETER WINDOW
 function drawSearchIcon(size, buttonId, offsetX, offsetY, color, toolTip) 
     local pad = 4
@@ -4569,12 +4690,19 @@ function searchAndOnlyMapped(track, fxIndex, searchAreaH, drawingWidth)
             lastClickDraw(searchAreaH)  
         end
         
-        if settings.showOnlyMappedAndSearchOnFocusedPlugin then
-            ret, onlyMapped = reaper.ImGui_Checkbox(ctx, "##Only mapped" .. guid,settings.onlyMappedParameters[guid])
-            if ret then
-                settings.searchParameters[guid] = ""
-                settings.onlyMappedParameters[guid] = onlyMapped
-                saveSettings()
+        if settings.showOnlyMappedAndSearchOnFocusedPlugin and guid then
+            local isShowing = showOnlyFocusedPlugin and settings.onlyMapped or trackSettings.onlyMappedParameters[guid]
+            ret, onlyMapped = reaper.ImGui_Checkbox(ctx, "##Only mapped" .. guid,isShowing)
+            if ret then 
+                if onlyMapped then
+                    --trackSettings.searchParameters[guid] = ""
+                end
+                if showOnlyFocusedPlugin then
+                    trackSettings.onlyMappedParameters[guid] = onlyMapped 
+                else
+                    settings.onlyMapped = onlyMapped
+                end
+                saveTrackSettings(track) 
             end 
             setToolTipFunc("Show only mapped parameters")
             
@@ -4592,13 +4720,15 @@ function searchAndOnlyMapped(track, fxIndex, searchAreaH, drawingWidth)
             
             if not settings.searchParameters[guid] then settings.searchParameters[guid] = "" end
             ret, search = reaper.ImGui_InputText(ctx,"##SearchParameter" .. guid, settings.searchParameters[guid]) 
-            if ret then
-                settings.searchParameters[guid] = search
+            if search ~= trackSettings.searchParameters[guid] then
+                trackSettings.searchParameters[guid] = search
                 if settings.searchClearsOnlyMapped then
-                    settings.onlyMappedParameters[guid] = false
+                    trackSettings.onlyMappedParameters[guid] = false
+                    settings.onlyMapped = false
                 end
-                saveSettings()
+                saveTrackSettings(track)
             end
+            
             if reaper.ImGui_IsItemFocused(ctx) then 
                 ignoreKeypress = true
             end
@@ -4606,8 +4736,8 @@ function searchAndOnlyMapped(track, fxIndex, searchAreaH, drawingWidth)
             local hasSearch = settings.searchParameters[guid] and settings.searchParameters[guid] ~= ""
             if drawSearchIcon(20, "clearSearchParameter" .. guid, 0, 0, colorWhite, hasSearch and "Clear search" or "Search for parameters") then
                 if hasSearch then
-                    settings.searchParameters[guid] = ""
-                    saveSettings()
+                    trackSettings.searchParameters[guid] = ""
+                    saveTrackSettings(track)
                 end
                 focusSearchParameters = true
             end
@@ -5865,7 +5995,9 @@ function createSlider(track,fxIndex, _type,paramIndex,name,min,max,divide, value
     currentValue = GetParam(track, fxIndex, paramIndex)
     
     local textW = reaper.ImGui_CalcTextSize(ctx, name,0,0)
-    reaper.ImGui_SetNextItemWidth(ctx,width - (narrowIsUsed and 0 or textW + 4)) 
+    if width then
+        reaper.ImGui_SetNextItemWidth(ctx,width - (narrowIsUsed and 0 or textW + 4)) 
+    end
     
     if _type == "Combo" then
         ret, val = reaper.ImGui_Combo(ctx, (narrowIsUsed and "" or name) .. '##slider' .. name .. fxIndex, math.floor(currentValue)+dropdownOffset, dropDownText)
@@ -6100,8 +6232,10 @@ function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isC
     --nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.temposync", "Tempo sync", 0, 1, 1, isTempoSync and "On" or "Off", nil, nil, nil, nil, nil,modulatorParameterWidth, 0)
 
     local paramName = "Speed"
+    local visualIndexOffset = 0
     if tonumber(isTempoSync) == 0 then
-        nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.speed", "Speed", 0.0039, 16,1, "%0.4f Hz", reaper.ImGui_SliderFlags_Logarithmic(), nil, nil, nil, nil,modulatorParameterWidth, 1, nil, useKnobs, useNarrow, 0)
+        nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.speed", "Speed", 0.0039, 16,1, "%0.4f Hz", reaper.ImGui_SliderFlags_Logarithmic(), nil, nil, nil, nil,modulatorParameterWidth, 1, nil, false, false)
+        --visualIndexOffset = visualIndexOffset + 1
     else  
         -- speed drop down menu
         reaper.ImGui_SetNextItemWidth(ctx,modulatorParameterWidth)
@@ -6127,12 +6261,13 @@ function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isC
     end
     
     
-    nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.phase", "Phase", 0, 1, 1, "%0.2f", nil, nil, nil, nil, nil,modulatorParameterWidth, 0, nil, useKnobs, useNarrow, 1) 
+    nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.phase", "Phase", 0, 1, 1, "%0.2f", nil, nil, nil, nil, nil,modulatorParameterWidth, 0, nil, useKnobs, useNarrow, 0+visualIndexOffset) 
     
     
-    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,2), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow, 2) 
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,2), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow, 1+visualIndexOffset) 
     
-    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,3), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow, 3) 
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,3), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow, 2+visualIndexOffset) 
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,4), nil, nil, nil, true, modulatorParameterWidth, 1000, nil,nil,nil,nil, useKnobs, useNarrow, 3+visualIndexOffset) 
 end
 
 local acsTrackAudioChannel = {"1","2","3","4","1+2","3+4"}
@@ -6528,7 +6663,7 @@ function midiOutModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, 
     end
     local p = getAllDataFromParameter(track,fxIndex,0)
     local midiType = list[p.value + 1]
-    createSlider(track,fxIndex,"Combo",0,"Timer",nil,nil,1,nil,nil,nil,listText,0,"Select MIDI output type", modulatorParameterWidth)
+    createSlider(track,fxIndex,"Combo",0,"Type",nil,nil,1,nil,nil,nil,listText,0,"Select MIDI output type", modulatorParameterWidth)
     -- msg2
     if p.value ~= 5 then
         pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,1), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow,0) 
@@ -6900,12 +7035,12 @@ function snjuk2Pitch12Modulator(id, name, modulatorsPos, fxIndex, fxInContainerI
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,25), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow, useColumns and 1, 2)
 end
  
-function snjuk2ToggleSelect4Modulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx, genericModulatorInfo, modulatorParameterWidth) 
-    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,7), nil, nil, nil, false, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow,0)
+function snjuk2ToggleSelect4Modulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx, genericModulatorInfo, modulatorParameterWidth, useKnobs, useNarrow) 
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,7), nil, nil, nil, false, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow)
     
     
-    createSlider(track,fxIndex,"Checkbox",4,"Toggle",nil,nil,1,nil,nil,nil,nil,nil, modulatorParameterWidth) 
-    createSlider(track,fxIndex,"Checkbox",6,"Fill",nil,nil,1,nil,nil,nil,nil,nil, modulatorParameterWidth) 
+    createSlider(track,fxIndex,"Checkbox",4,"Toggle",nil,nil,1,nil,nil,nil,nil,nil,nil, modulatorParameterWidth) 
+    createSlider(track,fxIndex,"Checkbox",6,"Fill",nil,nil,1,nil,nil,nil,nil,nil,nil, modulatorParameterWidth) 
     
 end
 
@@ -8880,6 +9015,7 @@ end
 
 function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingMappings, nameOnSide, width, resetValue, valueAsString, genericModulatorOutput, parametersWindow, formatString, useKnobs, useNarrow, visualIndex,parameterColumnAmount)
     local parameterLinkActive = p.parameterLinkActive
+    --reaper.ShowConsoleMsg(p.fxName .. " - " .. p.name .. " - " .. tostring(parameterLinkActive) .. "\n")
     local parameterModulationActive = p.parameterModulationActive
     local hasLink = parameterLinkActive and parameterModulationActive
     
@@ -10950,6 +11086,20 @@ function appSettingsWindow()
                 end
                 setToolTipFunc("Show a button that will allow to add track fx (not a modulator) in the plugins panel")  
                 
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add FX Directly" button',settings.showAddTrackFXDirectly) 
+                if ret then 
+                    settings.showAddTrackFXDirectly = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show a button that will allow to add track fx (not a modulator) in the plugins panel")  
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add Continaer" button',settings.showAddContainer) 
+                if ret then 
+                    settings.showAddContainer = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show a button that will add a contininer to the FX list")  
+                
                 
                 reaper.ImGui_TextColored(ctx, colorGrey, "Containers")
                 
@@ -10961,7 +11111,7 @@ function appSettingsWindow()
                 setToolTipFunc("Show FX container in the plugin list")  
                 
                 if settings.showContainers then
-                    local ret, val = reaper.ImGui_Checkbox(ctx,"Color containers",settings.colorContainers) 
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Color container names",settings.colorContainers) 
                     if ret then 
                         settings.colorContainers = val
                         saveSettings()
@@ -12184,6 +12334,13 @@ function appSettingsWindow()
             end
             
             
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Log loop start",settings.createDevLogStartOfLoop) 
+            if ret then 
+                settings.createDevLogStartOfLoop = val
+                saveSettings()
+            end
+            setToolTipFunc("Do not activate this as it's just for development")   
+            
             local ret, val = reaper.ImGui_Checkbox(ctx,"Extended floating mapper",settings.extendedFloatingMapper) 
             if ret then 
                 settings.extendedFloatingMapper = val
@@ -12715,6 +12872,9 @@ local function loop()
     popupAlreadyOpen = false
     ignoreKeypress = false
     
+    if settings.createDevLogStartOfLoop then
+        reaper.ShowConsoleMsg("---- Loop start ----\n")
+    end
     
     minWidth = settings.mappingWidthOnlyPositive and 0 or -1
     
@@ -12729,7 +12889,7 @@ local function loop()
     
     isEscapeKey = reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Escape(),false)
     
-    
+
     isMouseClick = isMouseDown and not isMouseDownStart
     if isMouseDown then isMouseDownStart = true end
     if isMouseReleased then  
@@ -12807,6 +12967,8 @@ local function loop()
     --isSuperPressed = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Super())
     isMouseDownImgui = reaper.ImGui_IsMouseDown(ctx,reaper.ImGui_MouseButton_Left())
     isMouseDownRightImgui = reaper.ImGui_IsMouseDown(ctx,reaper.ImGui_MouseButton_Right())
+    isMouseClickRightImgui = reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right())
+    
     isMouseReleasedImgui = reaper.ImGui_IsMouseReleased(ctx,reaper.ImGui_MouseButton_Left())
     --isMouseReleased = reaper.JS_Mouse_GetState(1)
     isMouseDragging = reaper.ImGui_IsMouseDragging(ctx,reaper.ImGui_MouseButton_Left()) 
@@ -13087,6 +13249,8 @@ local function loop()
     colorSliderWidth = settings.colors.sliderWidth
     colorSliderWidthNegative = settings.colors.sliderWidthNegative
     colorMenuBar = settings.colors.menuBar
+    
+    indentColors = {settings.colors.containerLayer1, settings.colors.containerLayer2, settings.colors.containerLayer3}
     
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), settings.colors.backgroundWindow)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBg(), settings.colors.menuBar)
@@ -13597,7 +13761,7 @@ local function loop()
                     local openPluginOnSingleClick = settings.openPluginWhenClickingName
                     --local openPluginOnSingleClick = settings.openPluginWhenClickingName or not settings.showParametersPanel
                     
-                    local offset = settings.showOpenAll or settings.showAddTrackFX
+                    local offset = settings.showOpenAll or settings.showAddTrackFX or settings.showAddTrackFXDirectly or settings.showAddContainer
                     local dragAndDropInside = false
                     local lastIndent = 0
                     local alreadyDragAndDrop = false 
@@ -13825,7 +13989,7 @@ local function loop()
                                         
                                         
                                         
-                                        local textColor = getTextColorForFx(track, f.fxIndex, f.isContainer, f.name)
+                                        local textColor = getTextColorForFx(track, f, true)
                                         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), textColor)
                                         
                                         
@@ -13914,13 +14078,13 @@ local function loop()
             
             
             function pluginParametersPanel(track, fxIndex, isCollabsed, vertical, widthFromParent, heightFromParent, collabsedOverwrite, f, showOnlyFocusedPlugin)
-                if not fxIndex or not track then return end
+                --
                 local vertical = vertical ~= nil and vertical or settings.vertical
                 local guid = GetFXGUID(track, fxIndex)
-                local isCollabsed = not collabsedOverwrite and trackSettings.hidePluginSearchParameters[guid] or false
+                local isCollabsed = (guid ~= "" and not collabsedOverwrite) and trackSettings.hidePluginSearchParameters[guid] or false
                 
                 local isContainer = f and f.isContainer
-                if isContainer then 
+                if isContainer and not showOnlyFocusedPlugin then 
                     isCollabsed = true
                 end
                 local width = vertical and widthFromParent or (isCollabsed and headerSizeW or settings.parametersWidth)
@@ -13955,10 +14119,22 @@ local function loop()
                 --reaper.ImGui_SetNextWindowSizeConstraints(ctx, headerSizeW, headerSizeW, width, height)
                 
                 
-                local panelName = 'Parameters' .. fxIndex
+                local panelName = 'Parameters' .. (showOnlyFocusedPlugin and "" or fxIndex)
                 
+                if not fxIndex then
+                    if topChildOfPanel(panelName, width, height, heightAutoAdjust) then
+                        reaper.ImGui_Text(ctx, "No fx on track")      
+                        
+                        reaper.ImGui_EndChild(ctx)
+                    end
+                    return
+                end
                 
                 if topChildOfPanel(panelName, width, height, heightAutoAdjust) then
+                
+                    
+                
+                
                     --reaper.ImGui_InvisibleButton(ctx, "dummy", 20 ,20) 
                     
                     local headerW = vertical and width or headerSizeW
@@ -13976,24 +14152,47 @@ local function loop()
                     local isEnabled = GetFXEnabled(track, fxIndex)
                     local isOffline = GetFXOffline(track, fxIndex)
                     
-                    local textColor = getTextColorForFx(track, fxIndex)
+                    local textColor = getTextColorForFx(track, f, true)
                     
                     if drawHeaderTextAndGetHover(title, headerTextX, headerTextY, headerTextW, headerTextH, isCollabsed, vertical, 0, "Right click for more options", textColor, align, bgX, bgW) then
                         if isMouseClick then 
-                            if isContainer then
+                            if isContainer then 
                                 openCloseFolder(track, fxIndex)
                             else
                                 if clickPlugin(getFxInfoAsObject(track, fxIndex), true) then
-                                    
+                                    trackSettings.hidePluginSearchParameters[guid] = not trackSettings.hidePluginSearchParameters[guid]
+                                    saveTrackSettings(track) 
                                 end
-                                trackSettings.hidePluginSearchParameters[guid] = not trackSettings.hidePluginSearchParameters[guid]
-                                saveTrackSettings(track) 
+                            end
+                        elseif isMouseClickRightImgui then
+                            if isContainer then
+                                --popupAlreadyOpen = true
+                                reaper.ImGui_OpenPopup(ctx, 'container##' .. fxIndex)  
                             end
                         end
                         if reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
                             trackSettings.hidePluginSearchParameters[guid] = not trackSettings.hidePluginSearchParameters[guid]
                             saveTrackSettings(track) 
                         end
+                    end
+                    
+                    
+                    --popupOpen["container" .. fxIndex] = reaper.ImGui_IsPopupOpen(ctx, 'container##' .. fxIndex)
+                    --if popupOpen[buttonId] then 
+                    if reaper.ImGui_BeginPopup(ctx, 'container##' .. fxIndex) then 
+                        reaper.ImGui_Text(ctx, "Set container color")
+                        local indent = f.indent and f.indent + (f.isContainer and 1 or 0) or 0
+                        local containerColor = (trackSettings.containerColors and trackSettings.containerColors[guid]) and trackSettings.containerColors[guid] or indentColors[(indent)%3 + 1] 
+                        local ret, col = reaper.ImGui_ColorPicker4(ctx, "##ContainerColor", containerColor)
+                        if ret and col then
+                            --popupAlreadyOpen = false
+                            trackSettings.containerColors[guid] = col
+                            saveTrackSettings(track)
+                            if isCloseColorSelectionOnClick then
+                                reaper.ImGui_CloseCurrentPopup(ctx)
+                            end
+                        end
+                        reaper.ImGui_EndPopup(ctx)
                     end
                     
                     
@@ -14050,12 +14249,25 @@ local function loop()
                             
                             
                             local paramsListThatAreNotFiltered = (track and fxIndex) and getFxParamsThatAreNotFiltered(track, fxIndex) or {}
-                            
+                            local onlyMapped 
+                            if showOnlyFocusedPlugin then
+                                onlyMapped = settings.onlyMapped
+                            else
+                                onlyMapped = trackSettings.onlyMappedParameters[guid]
+                            end 
                             -- check if any parameters links a active, if not we show all of them
                             local someAreActive = false
-                            if settings.onlyMappedParameters[guid] then
+                            if onlyMapped then
                                 for i, p in ipairs(paramsListThatAreNotFiltered) do
-                                    if getPlinkActive(track, fxIndex, p) then someAreActive = true; break end
+                                    if f.indent > 0 then 
+                                        local root_fxIndex, root_param = fx_get_mapped_parameter_with_catch(track, fxIndex, p)
+                                        if root_fxIndex and root_param then
+                                            someAreActive = true; break
+                                        end
+                                    else
+                                        someAreActive = true; break
+                                    end
+                                    --if getPlinkActive(track, fxIndex, p) then someAreActive = true; break end
                                 end
                             end 
                             
@@ -14080,12 +14292,22 @@ local function loop()
                                     
                                     if not settings.limitAmountOfDrawnParametersInPlugin or shownCount <= settings.limitAmountOfDrawnParametersInPluginAmount + (settings.limitAmountOfDrawnParametersInPluginAmount%parameterColumnAmount) then
                                         local name = GetParamName(track, fxIndex, p)
-                                        local parameterLinkActive = getPlinkActive(track, fxIndex, p)
+                                         
+                                        local parameterLinkActive
+                                        -- check if fx is inside a folder
+                                        if f.indent and f.indent > 0 then 
+                                            local root_fxIndex, root_param = fx_get_mapped_parameter_with_catch(track, fxIndex, p)
+                                            if root_fxIndex and root_param then
+                                                parameterLinkActive = getPlinkActive(track, root_fxIndex, root_param) 
+                                            end
+                                        else
+                                            parameterLinkActive = getPlinkActive(track, fxIndex, p) 
+                                        end
                                         
-                                        local onlyMapped = showOnlyFocusedPlugin and settings.onlyMapped or settings.onlyMappedParameters[guid]
+                                        
                                         local pMappedShown = not settings.showOnlyMappedAndSearchOnFocusedPlugin or not someAreActive or not onlyMapped or (onlyMapped and parameterLinkActive)
                                         
-                                        local pSearchShown = not settings.showOnlyMappedAndSearchOnFocusedPlugin or not settings.searchParameters[guid] or settings.searchParameters[guid] == "" or searchName(name, settings.searchParameters[guid])
+                                        local pSearchShown = not settings.showOnlyMappedAndSearchOnFocusedPlugin or not trackSettings.searchParameters[guid] or trackSettings.searchParameters[guid] == "" or searchName(name, trackSettings.searchParameters[guid])
                                         
                                         local pTrackControlShown = true
                                         if fxName == "Track controls" and i > 35 then
@@ -14401,7 +14623,7 @@ local function loop()
                             
                             local headerW = vertical and width or headerSizeW
                             local headerH = vertical and headerSizeW or height  
-                            local headerAreaRemoveTop = 20
+                            local headerAreaRemoveTop = 40
                             local headerAreaRemoveBottom = 40 
                             
                             
@@ -14470,6 +14692,12 @@ local function loop()
                             local isFxOpen = track and getFXWindowOpen(track)
                             if drawOpenFXWindow(posX, posY, 20, isFxOpen, "FX window") then
                                 SetOpen(track, fxnumber or 0, not isFxOpen, true)
+                            end
+                            
+                            -- most right 
+                            local posX, posY = getIconPosToTheRight(vertical, 40, screenPosX, screenPosY, width)
+                            if drawPlusIcon(posX, posY, 20, false, "add FX popup") then
+                                openAddFXPopupWindow = true
                             end
                             
                             -- set position and size of sub child, eg the search
@@ -14547,12 +14775,11 @@ local function loop()
                                     if showOnlyFocusedPlugin then
                                         singlePluginParameterPanelFocusFirstIfNeeded() 
                                         --trackSettings.hidePluginSearchParameters[GetFXGUID(track, fxnumber)] = settings.showParametersPanel
-                                        pluginParametersPanel(track, fxnumber, nil, vertical, width_child, height_child, true,nil, showOnlyFocusedPlugin)
+                                        pluginParametersPanel(track, fxnumber, nil, vertical, width_child, height_child, true,getFxInfoAsObject(track, fxnumber), showOnlyFocusedPlugin)
                                     else
-                                        local currentIndent
+                                        local currentIndent, currentParent
                                         local startContainerColorX
                                         local xBefore, yBefore, xAfter, xAfter
-                                        local indentColors = {colorRead, colorTouch, colorWrite}
                                         
                                         for i, f in ipairs(trackFxTableWithIndentIndicators) do 
                                             if not f.isModulator and not f.seperator  then
@@ -14566,7 +14793,9 @@ local function loop()
                                                     if startContainerColorX and currentIndent > 0 then 
                                                         local curPosY = yAfter + height_child + 3
                                                         local width = xAfter - (f.indent == 0 and settings.widthBetweenWidgets or 0)
-                                                        reaper.ImGui_DrawList_AddLine(draw_list, xBefore, curPosY, width, curPosY, indentColors[currentIndent], 3)
+                                                        aa = f
+                                                        local containerColor = (trackSettings.containerColors and currentParentGuid and trackSettings.containerColors[currentParentGuid]) and trackSettings.containerColors[currentParentGuid] or indentColors[(currentIndent - 1)%3 + 1]
+                                                        reaper.ImGui_DrawList_AddLine(draw_list, xBefore, curPosY, width, curPosY, containerColor, 3)
                                                     end
                                                     
                                                     xBefore, yBefore = reaper.ImGui_GetCursorScreenPos(ctx)
@@ -14600,14 +14829,17 @@ local function loop()
                                                         startContainerColorX = xBefore
                                                     end
                                                     currentIndent = f.indent + (f.isContainer and 1 or 0)
-                                                end 
-                                                
-                                                
-                                                
+                                                    currentParentGuid = f.isContainer and f.guid or f.containerGuid
+                                                end  
                                             end
                                         end
                                         
-                                        
+                                        if startContainerColorX and currentIndent > 0 and currentParentGuid then 
+                                            local curPosY = yAfter + height_child + 3
+                                            local width = xAfter - settings.widthBetweenWidgets
+                                            local containerColor = (trackSettings.containerColors and currentParentGuid and trackSettings.containerColors[currentParentGuid]) and trackSettings.containerColors[currentParentGuid] or indentColors[(currentIndent - 1)%3 + 1]
+                                            reaper.ImGui_DrawList_AddLine(draw_list, xBefore, curPosY, width, curPosY, containerColor, 3)
+                                        end
                                     end
                                     reaper.ImGui_PopStyleColor(ctx, 3)
                                     
@@ -14657,9 +14889,24 @@ local function loop()
                     -- PARAMETERS ----------
                     ------------------------
                     
+                    if openAddFXPopupWindow then 
+                        reaper.ImGui_OpenPopup(ctx, "add popup")  
+                        openAddFXPopupWindow = false
+                    end
                     
-                    
-                    
+                    if reaper.ImGui_BeginPopup(ctx, "add popup") then
+                        if reaper.ImGui_Button(ctx, "Add FX via browser") then 
+                            openFxBrowserOnSpecificTrack() 
+                        end
+                        setToolTipFunc("Add new FX via the native Reaper FX Browser")
+                        
+                        if reaper.ImGui_Button(ctx, "Add container##add") then  
+                            addContainer()
+                            reaper.ImGui_CloseCurrentPopup(ctx)
+                        end
+                        setToolTipFunc("Add new Container to track")
+                        reaper.ImGui_EndPopup(ctx)
+                    end
                     
                     
                     
@@ -14959,8 +15206,8 @@ local function loop()
             
             --placingOfNextElement()
             --drawSeperator()
-            
-        
+        local isMuted = track and GetMuted(track)
+        local disable = not track or isMuted 
         elementsHeightInHorizontal = winH - y --28 
         elementsWidthInVertical = winW - x - 8-- margin * 4
             
@@ -14990,7 +15237,7 @@ local function loop()
             
             --reaper.ImGui_SetCursorPos(ctx, 1,1)
             
-            if not track then
+            if disable then
                 reaper.ImGui_BeginDisabled(ctx)
             end
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.backgroundModules)
@@ -15009,13 +15256,41 @@ local function loop()
             
             --
             
-            if not track then
+            if disable then
                 reaper.ImGui_EndDisabled(ctx)
             end
             
             --reaper.ImGui_PopStyleColor(ctx)
             --reaper.ImGui_Dummy(ctx, 1,1)
             reaper.ImGui_EndChild(ctx)
+        end
+        
+        if isMuted then
+            local minX, minY = reaper.ImGui_GetItemRectMin(ctx)
+            reaper.ImGui_SetCursorScreenPos(ctx, minX, minY)
+            if reaper.ImGui_BeginChild(ctx, "mainAreaMuted", mainAreaW, mainAreaH , nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()|reaper.ImGui_WindowFlags_NoBackground()) then
+                local bgColor = settings.colors.backgroundWidgets
+                local bgColorTransparent = bgColor & 0xFFFFFF99
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), bgColor & 0xFFFFFFAA)
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), bgColor & 0xFFFFFFAA)
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), bgColor & 0xFFFFFF33)
+                if reaper.ImGui_Button(ctx, "##Muted", mainAreaW, mainAreaH) then
+                    setMuted(track, false)
+                end
+                local name = reaper.ImGui_IsItemHovered(ctx) and "UNMUTE TRACK" or "TRACK MUTED"
+                reaper.ImGui_PopStyleColor(ctx,3)
+                
+                reaper.ImGui_PushFont(ctx, font60)
+                local textW, textH = reaper.ImGui_CalcTextSize(ctx, name, 0,0)
+                local textX = minX + mainAreaW / 2 - textW / 2
+                local textY = minY + mainAreaH / 2 - textH / 2
+                reaper.ImGui_DrawList_AddRectFilled(draw_list, textX, textY, textX + textW, textY + textH, bgColor)
+                --reaper.ImGui_DrawList_AddTextEx(draw_list, font2, 100, centerX, centerY, colorRedHidden, "MUTED")
+                reaper.ImGui_DrawList_AddText(draw_list, textX, textY, settings.colors.text, name)
+                
+                reaper.ImGui_PopFont(ctx)
+                reaper.ImGui_EndChild(ctx)
+            end
         end
         
         reaper.ImGui_PopStyleColor(ctx)

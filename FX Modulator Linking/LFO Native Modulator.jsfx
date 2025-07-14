@@ -1,8 +1,8 @@
 desc:LFO Native Modulator
 author: saxmand
-version: 1.0
+version: 1.1
 noindex: true
-changelog: Initial release
+changelog: added steps
 
 /**
  * JSFX : LFO Native Modulator
@@ -17,6 +17,7 @@ slider1:0<0,1,0.001>Output
 slider2:input=0<0,1,0.001>Input
 slider3:offset=0<0,1,0.01>Offset
 slider4:width=1<-1,1,0.01>Width
+slider5:steps=0<0,32,1>Steps
 
 options:no_meter
 
@@ -33,7 +34,9 @@ ext_noinit = 1;
 //slider5 == -1 ? (out = slider2 * (slider4/100) + (1 - (slider4/100)) + (slider3-0.5) + (slider5 / 2));
 //slider5 == 1 ? (out = slider2 * (slider4/100) + (slider3-0.5) + (slider5 / 2));
 //slider1 = out;
-out = offset + (input*width);
+;
+step = 1 / (steps == 0 ? 1000 : steps);
+out = offset + ((floor(input / step + 0.5) * step)*width);
 out < 0 ? out = 0;
 out > 1 ? out = 1;
 slider1 = out;
