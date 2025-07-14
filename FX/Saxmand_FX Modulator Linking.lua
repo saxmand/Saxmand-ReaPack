@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.0.6
+-- @version 1.0.7
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,11 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed issue with show all plugins when not global
---   + inital support for front page when no track is selected
---   + added mute overlay when track is muted (as it becomes disabled)
- 
-local version = "1.0.6"
+--   + fixed isMuted error
+--   + added fx chain preset support properly and on + sign
+
+local version = "1.0.7"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -1149,7 +1148,7 @@ function getListOfFilesInResourceFolderIncludingSubFolders(folder, fileNameExten
               name = fileName,
               path = folder_path .. "/" .. file,
               folder = subfolder,
-              id = #file_list
+              id = file,
             })
         end
     
@@ -1267,22 +1266,21 @@ function sort_file_list(tbl, sort_key, ascending)
 end
 
 
-function insertFXOnSelectedTracks(file)
+function insertFXOnSelectedTracks(file, track, index, rename)
     reaper.Undo_BeginBlock()
-    aa = file
-    if newTrack then  
+    if not track then  
         reaper.Main_OnCommand(40001, 0) --Track: Insert new track 
-        local track = reaper.GetSelectedTrack(0,0)
-        reaper.TrackFX_AddByName(track, file.name,false,-1000)
-        reaper.GetSetMediaTrackInfo_String(track,"P_NAME",file.id,true)
-    else
-        for trackIndex, track in ipairs(selectedTracks) do
-            reaper.TrackFX_AddByName(track, file.id,false,-1000)
-        end 
+        track = reaper.GetSelectedTrack(0,0)
+    end
+    index = index and index +1 or 999
+    reaper.TrackFX_AddByName(track, file.name,false,-1000 - index)
+    if rename then
+        reaper.GetSetMediaTrackInfo_String(track,"P_NAME",file.name,true)
     end
     
     reaper.Undo_EndBlock("Insert FX", -1)
 end
+
 
 
 function replace_fx_in_track(rpp_text, new_fx_block)
@@ -1353,7 +1351,7 @@ function replace_fx_in_track(rpp_text, new_fx_block)
 end
 
 
-function insertFXChainPreset(file) 
+function insertFXChainPresetOld(file) 
     local openFile = io.open(file.path, "r")
     local fx_chunk = openFile:read("*a")
     openFile:close() 
@@ -1369,20 +1367,38 @@ function insertFXChainPreset(file)
         reaper.GetSetMediaTrackInfo_String(track,"P_NAME",file.name,true)
     else
         for trackIndex, track in ipairs(selectedTracks) do
-              local _, chunk = reaper.GetTrackStateChunk(track, "", false)
-              local new_chunk = replace_fx_in_track(chunk, fx_chunk)
-              reaper.SetTrackStateChunk(track, new_chunk, false) 
+            local _, chunk = reaper.GetTrackStateChunk(track, "", false)
+            local new_chunk = replace_fx_in_track(chunk, fx_chunk)
+            reaper.SetTrackStateChunk(track, new_chunk, false) 
         end 
     end
     
     reaper.Undo_EndBlock("Load FX Chain", -1)
 end
 
-function insertTrackTemplate(file)
+
+function insertFXChainPreset(file, track, index, rename)
+    reaper.Undo_BeginBlock()
+    if not track then  
+        reaper.Main_OnCommand(40001, 0) --Track: Insert new track 
+        track = reaper.GetSelectedTrack(0,0)
+    end
+    index = index and index+1 or 999
+    reaper.TrackFX_AddByName(track, file.id,false,-1000 - index)
+    if rename then
+        reaper.GetSetMediaTrackInfo_String(track,"P_NAME",file.name,true)
+    end
+    
+    reaper.Undo_EndBlock("Load FX Chain", -1)
+end
+
+function insertTrackTemplate(file, track)
     reaper.Undo_BeginBlock()
     
     -- Insert a new track at the bottom
-    local track = reaper.GetTrack(0, reaper.CountTracks(0) - 1)
+    if not track then
+        track = reaper.GetTrack(0, reaper.CountTracks(0) - 1)
+    end
     -- Select the new track
     reaper.SetOnlyTrackSelected(track)
     
@@ -1393,7 +1409,7 @@ function insertTrackTemplate(file)
     reaper.Undo_EndBlock("Load Track Template", -1)
 end
 
-function tableWithFilterAndText(text, table, filterVariable, width, height, functionToDo, tableKeys) 
+function tableWithFilterAndText(text, table, filterVariable, width, height, functionToDo, tableKeys, newTrack) 
     local startX, startY = reaper.ImGui_GetCursorPos(ctx)
     reaper.ImGui_BeginGroup(ctx)
     centerText(text, colorWhite, startX, width, 0, startY)
@@ -1515,7 +1531,7 @@ function tableWithFilterAndText(text, table, filterVariable, width, height, func
             for column = 0, #tableKeys-1 do
                 reaper.ImGui_TableSetColumnIndex(ctx, column) 
                 if reaper.ImGui_Button(ctx, file[tableKeys[column+1]:lower()]) then 
-                    functionToDo(file) 
+                    functionToDo(file, newTrack, nil, true) 
                 end
             end
         end
@@ -2725,8 +2741,9 @@ function getModulationContainerPos(track)
     return false
 end
 
-function addContainer(fxIndex)
-    return reaper.TrackFX_AddByName( track, "Container", false, fxIndex and fxIndex or -1 )
+function addContainer(index) 
+    index = index and index + 1 or 999
+    return reaper.TrackFX_AddByName( track, "Container", false, -1000 - index)
 end
 
 -- add container and move it to the first slot and rename to modulators
@@ -2735,7 +2752,7 @@ function addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
     local modulatorContainerExist = true
     if modulatorsPos == -1 then
         --modulatorsPos = GetByName( track, "Container", true )
-        modulatorsPos = addContainer()
+        modulatorsPos = addContainer(0)
         
         --modulatorsPos = TrackFX_AddByName( track, "Container", modulatorsPos, -1 ) 
         rename = SetNamedConfigParm( track, modulatorsPos, 'renamed_name', "Modulators" )
@@ -4582,8 +4599,8 @@ function openAllAddTrackFX(width)
                 reaper.ImGui_SameLine(ctx)
             end
             
-            if reaper.ImGui_Button(ctx, "Add##addTrackFX", elementsWidth) then  
-                openFxBrowserOnSpecificTrack() 
+            if reaper.ImGui_Button(ctx, "Add FX##addTrackFX", elementsWidth) then  
+                openFxBrowserOnSpecificTrack(fxnumber) 
             end
             setToolTipFunc("Add new FX to track")
             sameLine = true 
@@ -4595,7 +4612,7 @@ function openAllAddTrackFX(width)
             end
             
             if reaper.ImGui_Button(ctx, "Container##add", elementsWidth) then  
-                addContainer()
+                addContainer(fxnumber)
             end
             setToolTipFunc("Add new Container to track")
         end
@@ -13481,7 +13498,7 @@ local function loop()
         --if not lastCollabsModules then lastCollabsModules = {} end 
     else
         --trackName = "Select a track or touch a plugin parameter"
-        trackName = "- select track -"
+        trackName = "ADD TRACK"
         trackSettings = {}
         lastTrack = nil
     end
@@ -13906,9 +13923,13 @@ local function loop()
             
             local headerTextX, headerTextY, headerTextW, headerTextH, align, bgX, bgW = getAlignAndHeaderPlacementAndSize(title, vertical, screenPosX, screenPosY, headerAreaRemoveTop, headerAreaRemoveBottom, headerW, headerH)
             
-            if drawHeaderTextAndGetHover(title, headerTextX, headerTextY, headerTextW, headerTextH, isCollabsed, vertical, 0, "Right click for more options", colorText, align, bgX, bgW) then
+            if drawHeaderTextAndGetHover(title, headerTextX, headerTextY, headerTextW, headerTextH, isCollabsed, vertical, 0, track and (everythingsIsNotMinimized and "Minimize everything" or "Maximize everything") or "Add an empty track", colorText, align, bgX, bgW) then
                 if isMouseClick then 
-                    hideShowEverything(track, everythingsIsNotMinimized)
+                    if not track then  
+                        reaper.Main_OnCommand(40001, 0) --Track: Insert new track
+                    else
+                        hideShowEverything(track, everythingsIsNotMinimized)
+                    end
                 end 
             end
             
@@ -15253,15 +15274,26 @@ local function loop()
                     end
                     
                     if reaper.ImGui_BeginPopup(ctx, "add popup") then
-                        if reaper.ImGui_Button(ctx, "Add FX via browser") then 
-                            openFxBrowserOnSpecificTrack() 
+                        if reaper.ImGui_Selectable(ctx, "Add FX via browser", false) then 
+                            openFxBrowserOnSpecificTrack(fxnumber) 
                         end
                         setToolTipFunc("Add new FX via the native Reaper FX Browser")
                         
-                        if reaper.ImGui_Button(ctx, "Add container##add") then  
-                            addContainer()
+                        if reaper.ImGui_Selectable(ctx, "Add container##add", false) then  
+                            addContainer(fxnumber)
                             reaper.ImGui_CloseCurrentPopup(ctx)
                         end
+                        
+                        if reaper.ImGui_BeginMenu(ctx, "fx chains") then
+                            for _, fxChain in ipairs(fxChainPresetsFiles) do
+                                if reaper.ImGui_Selectable(ctx, fxChain.name, false) then
+                                    insertFXChainPreset(fxChain,track, fxnumber and fxnumber + 2 or 1000, false)
+                                end
+                            end
+                              
+                            reaper.ImGui_EndMenu(ctx)
+                        end
+                        
                         setToolTipFunc("Add new Container to track")
                         reaper.ImGui_EndPopup(ctx)
                     end
@@ -15623,7 +15655,7 @@ local function loop()
                 --reaper.ImGui_Dummy(ctx, 1,1)
                 reaper.ImGui_EndChild(ctx)
             end
-        else 
+        elseif settings.showInsertOptionsWhenNoTrackIsSelected then 
             newTrack = true --reaper.CountSelectedTracks(0) == 0
             local topSpace = 10
             local tableCount = 3
@@ -15643,7 +15675,7 @@ local function loop()
             --reaper.ImGui_SetCursorPos(ctx, startX, padding)
             favoriteList =  {{name = "Container"}}--{{name = "Empty Track", category = "none"}}
             --local text = "Favorite list" 
-            --tableWithFilterAndText(text,favoriteList, "fxFavoriteListFilter", tableWidthSize, windowHMax - 40, insertFXOnSelectedTracks, {"Name"}) 
+            --tableWithFilterAndText(text,favoriteList, "fxFavoriteListFilter", tableWidthSize, windowHMax - 40, insertFXOnSelectedTracks, {"Name"}, newTrack) 
             
             reaper.ImGui_EndGroup(ctx)
             
@@ -15652,14 +15684,14 @@ local function loop()
             end
             
             local text = "Insert track template at bottom of session"
-            tableWithFilterAndText(text, trackTemplateFiles, "trackTemplatesFilter", tableWidthSize, windowHMax, insertTrackTemplate, {"Name", "Folder"})
+            tableWithFilterAndText(text, trackTemplateFiles, "trackTemplatesFilter", tableWidthSize, windowHMax, insertTrackTemplate, {"Name", "Folder"}, track)
             
             if not settings.vertical then
                 reaper.ImGui_SameLine(ctx) 
             end
             
             local text = "Load FX chain presets on " .. (not newTrack and "selected tracks" or "a new track")
-            tableWithFilterAndText(text, fxChainPresetsFiles, "chainPresetFilter", tableWidthSize, windowHMax, insertFXChainPreset, {"Name", "Folder"})
+            tableWithFilterAndText(text, fxChainPresetsFiles, "chainPresetFilter", tableWidthSize, windowHMax, insertFXChainPreset, {"Name", "Folder"}, track)
             
             if not settings.vertical then
                 reaper.ImGui_SameLine(ctx) 
@@ -15667,15 +15699,12 @@ local function loop()
             
             
             local text = "Insert FX on " .. (not newTrack and "selected tracks" or "a new track") 
-            tableWithFilterAndText(text, fxListFiles, "fxListFilter", tableWidthSize, windowHMax, insertFXOnSelectedTracks, {"Name", "Developer","Category","Type"})
-                
-                
-            
+            tableWithFilterAndText(text, fxListFiles, "fxListFilter", tableWidthSize, windowHMax, insertFXOnSelectedTracks, {"Name", "Developer","Category","Type"}, track) 
             
             reaper.ImGui_PopStyleColor(ctx, 2)
         end
         
-        if isMuted or not settings.showInsertOptionsWhenNoTrackIsSelected then -- or not track then
+        if (track and isMuted) or (not track and not settings.showInsertOptionsWhenNoTrackIsSelected) then -- or not track then
             local minX, minY = reaper.ImGui_GetItemRectMin(ctx)
             reaper.ImGui_SetCursorScreenPos(ctx, minX, minY)
             if reaper.ImGui_BeginChild(ctx, "mainAreaMuted", mainAreaW, mainAreaH , nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()|reaper.ImGui_WindowFlags_NoBackground()) then
@@ -15826,13 +15855,6 @@ local function loop()
                 open = false
             --end
         end]]
-        
-        
-        if reaper.ImGui_BeginMenuBar(ctx) then
-            
-            
-            reaper.ImGui_EndMenuBar(ctx)
-        end
         
         
         
