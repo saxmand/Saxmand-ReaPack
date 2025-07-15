@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.0.8
+-- @version 1.0.9
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,12 +15,11 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed so that we can't click slider/knobs through popup
---   + fixed slider/knobs not reacting on full area
---   + fixed modulatotion mappings not being correctly displayed on modulators
---   + fixed parameter context popup being weird size
+--   + added support to insert FX/chains on selected position or end
+--   + fixed latch preview text
 
-local version = "1.0.8"
+
+local version = "1.0.9"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -218,6 +217,7 @@ local renameFxIndex = ""
 local beginFxDragAndDropIndexRelease, beginFxDragAndDropName, beginFxDragAndDrop, HideToolTipTemp, beginFxDragAndDropFX 
 local factoryModules, indentColors
 
+local fx_before, fx_after, firstBrowserHwnd
 
 local focusedTrackFXNames = {}
 local parameterLinks-- = {}
@@ -644,6 +644,7 @@ local defaultSettings = {
         renameFX = { Ctrl = true},
         openFolder = { Super = true},
         changeParallel = { Super = true, Alt = true},
+        addFXAsLast = { Super = true},
     },
     modifierOptionsModulatorHeaderClick = {
         --removeMapping = {Alt = true, Super = true, Ctrl = true}, 
@@ -2152,7 +2153,7 @@ function GetContainerPath(track, index, doNotUseCatch)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
         return catch 
     else 
-        local val = get_container_path_from_fx_id(track, index)
+        local val = get_container_path_from_fx_id(track, index, doNotUseCatch)
         setParameterTableCatch(track, index, tableStr, val)
         return val
     end  
@@ -2557,7 +2558,7 @@ end
 -------------------------------------------
 
 function get_fx_id_from_container_path(tr, idx1, ...) -- returns a fx-address from a list of 1-based IDs
-  local sc,rv = GetCount(tr)+1, 0x2000000 + idx1
+  local sc,rv = GetCount(tr, true)+1, 0x2000000 + idx1
   for i,v in ipairs({...}) do
     local ccok, cc = reaper.TrackFX_GetNamedConfigParm(tr, rv, 'container_count')
     if ccok ~= true then return nil end
@@ -2594,7 +2595,7 @@ end
 
 
 function fx_map_parameter(tr, fxidx, parmidx) -- maps a parameter to the top level parent, returns { fxidx, parmidx }
-  local path = get_container_path_from_fx_id(tr, fxidx)
+  local path = get_container_path_from_fx_id(tr, fxidx, true)
   if not path then return nil end
   local rootContainerPos = #path > 1 and path[1] - 1 or false
   while #path > 1 do
@@ -2743,10 +2744,81 @@ function getModulationContainerPos(track)
     return false
 end
 
-function addContainer(index) 
-    index = index and index + 1 or 999
-    return reaper.TrackFX_AddByName( track, "Container", false, -1000 - index)
+function moveFx(track, oldIndex, newIndex)
+    if track and oldIndex and newIndex then
+        reaper.TrackFX_CopyToTrack(track, oldIndex, track, newIndex, true)
+    end
 end
+
+function getPositionAfterFxIndex(track, fxIndex) 
+    local isContainer = GetNamedConfigParm( track, fxIndex, "container_count", true)
+    if fxIndex > 0x2000000 then 
+        local path = get_container_path_from_fx_id(track, fxIndex, true)
+        
+        ab = fxIndex
+        aa = path
+        for i, p in ipairs(path) do 
+            path[i] = p + 1
+        end
+        if isContainer then
+            --path[#path + 1] = 1
+        end
+        local newIndex = get_fx_id_from_container_path(track, table.unpack(path)) 
+        return newIndex
+    else
+        if isContainer then
+            local newFxIndex = get_fx_id_from_container_path(track, fxIndex + 1, 1) 
+            return newFxIndex 
+        else
+            return fxIndex + 1
+        end
+    end
+end
+
+function getPathForNextFxIndex(track, fxIndex, notInsideContainer) 
+    if not fxIndex or not track then return false end
+    local isContainer = not notInsideContainer and GetNamedConfigParm( track, fxIndex, "container_count", true) or false
+    if fxIndex > 0x2000000 then 
+        local path = get_container_path_from_fx_id(track, fxIndex, true)
+        if not path then return false end
+        for i, p in ipairs(path) do 
+            --path[i] = p + 1
+        end
+        --path[1] = path[1] + 1
+        if isContainer then
+            path[#path + 1] = 1
+        else
+            path[#path] = path[#path] + 1
+        end 
+        return path
+    else
+        if isContainer then
+            return {fxIndex + 1, 1}
+        else
+            return {fxIndex + 1} -- for some reason it needs to be two to get on the other side of the selected
+        end
+    end
+end
+
+function moveFxIfNeeded(pathForNextIndex, oldIndex)
+    if pathForNextIndex and #pathForNextIndex > 1 then 
+        local newIndex = get_fx_id_from_container_path(track, table.unpack(pathForNextIndex)) 
+        moveFx(track, oldIndex, newIndex) 
+        return get_fx_id_from_container_path(track, table.unpack(pathForNextIndex)) 
+    else
+        return oldIndex
+    end
+end
+
+function addFxAfterSelection(track, fxIndex, fxName, notInsideContainer)  
+    local pathForNextIndex = not isAddFXAsLast and getPathForNextFxIndex(track, fxIndex, notInsideContainer) or false
+    local addIndex = (pathForNextIndex and #pathForNextIndex < 2) and pathForNextIndex[1] or 999
+    local newFxIndex = reaper.TrackFX_AddByName( track, fxName, false, -1000 - addIndex) 
+    newFxIndex = moveFxIfNeeded(pathForNextIndex, newFxIndex)
+    return newFxIndex
+end
+
+
 
 -- add container and move it to the first slot and rename to modulators
 function addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
@@ -2754,7 +2826,7 @@ function addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
     local modulatorContainerExist = true
     if modulatorsPos == -1 then
         --modulatorsPos = GetByName( track, "Container", true )
-        modulatorsPos = addContainer(0)
+        modulatorsPos = addFxAfterSelection(track, 0, "Container", true)
         
         --modulatorsPos = TrackFX_AddByName( track, "Container", modulatorsPos, -1 ) 
         rename = SetNamedConfigParm( track, modulatorsPos, 'renamed_name', "Modulators" )
@@ -2964,7 +3036,7 @@ end
 function movePluginToContainer(track, originalIndex)
     local modulationContainerPos = addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
     local position_of_FX_in_container = tonumber(select(2, GetNamedConfigParm(track, modulationContainerPos, 'container_count', true))) + 1
-    local parent_FX_count = GetCount(track)
+    local parent_FX_count = GetCount(track, true)
     local position_of_container = modulationContainerPos+1
     
     local insert_position = 0x2000000 + position_of_FX_in_container * (parent_FX_count + 1) + position_of_container
@@ -4615,8 +4687,10 @@ function openAllAddTrackFX(width)
                 reaper.ImGui_SameLine(ctx)
             end
             
-            if reaper.ImGui_Button(ctx, "Add FX##addTrackFX", elementsWidth) then  
-                openFxBrowserOnSpecificTrack(fxnumber) 
+            if reaper.ImGui_Button(ctx, "Add FX##addTrackFX", elementsWidth) then   
+                doNotMoveToModulatorContainer, browserHwnd, browserSearchFieldHwnd, insertAtFxIndex, fx_before = addFxViaBrowser(track, fxnumber)
+                pathForNextIndex = getPathForNextFxIndex(track, insertAtFxIndex)
+                moveToModulatorContainer = false
             end
             setToolTipFunc("Add new FX to track")
             sameLine = true 
@@ -4628,7 +4702,7 @@ function openAllAddTrackFX(width)
             end
             
             if reaper.ImGui_Button(ctx, "Container##add", elementsWidth) then  
-                addContainer(fxnumber)
+                fxnumber = addFxAfterSelection(track, fxnumber, "Container")
             end
             setToolTipFunc("Add new Container to track")
         end
@@ -6288,6 +6362,7 @@ function renameFxIndexPopup()
             if newName == "" then newName = trackSettings.renamed[guid] end -- ; trackSettings.renamed[fx.guid] = nil end
             if newName ~= originalName then 
                 renameModule(track, modulationContainerPos, renameFxIndex, newName)
+                reloadParameterLinkCatch = true
             end
             reaper.ImGui_CloseCurrentPopup(ctx)
         end
@@ -8048,6 +8123,7 @@ function modulesPanel(ctx, addToParameter, id, width_from_parent, height_from_pa
                     elseif val.func == "Any" then 
                         browserHwnd, browserSearchFieldHwnd = openFxBrowserOnSpecificTrack() 
                         fx_before = getAllTrackFXOnTrackSimple(track)  
+                        moveToModulatorContainer = true
                     end
                     click = true
                 end 
@@ -8089,6 +8165,7 @@ function modulesPanel(ctx, addToParameter, id, width_from_parent, height_from_pa
                     browserHwnd, browserSearchFieldHwnd = openFxBrowserOnSpecificTrack() 
                     fx_before = getAllTrackFXOnTrackSimple(track) 
                     click = true
+                    moveToModulatorContainer = true
                 end 
             end
             
@@ -8197,31 +8274,106 @@ function modulesPanel(ctx, addToParameter, id, width_from_parent, height_from_pa
     reaper.ImGui_PopStyleVar(ctx)
     
     
+    --[[
+    if moveToModulatorContainer then
+        doNotMoveToModulatorContainer = nil
+        if browserHwnd and track and track == lastTrack then 
+            firstBrowserHwnd = firstBrowserHwnd and firstBrowserHwnd + 1 or 0 
+            
+            fx_after = getAllTrackFXOnTrackSimple(track)
+            if #fx_after > #fx_before then
+                local newFxIndex
+                local fxName
+                for i, fx in ipairs(fx_after) do
+                    if not fx_before[i] or fx.name ~= fx_before[i].name then
+                        newFxIndex = fx.fxIndex
+                        fxName = fx.name
+                        break;
+                    end
+                end
+                -- An FX was added
+                openCloseFx(track, newFxIndex, false) 
+                SetNamedConfigParm( track, newFxIndex, 'renamed_name', fxName:gsub("^[^:]+: ", "")) 
+                modulationContainerPos, insert_position = movePluginToContainer(track, newFxIndex )
+                renameModulatorNames(track, modulationContainerPos)
+                browserHwnd = nil
+                paramTableCatch = {}
+                reaper.ShowConsoleMsg("added\n")
+            end
+             
+            if not addingAnyModuleWindow(browserHwnd) then
+                browserHwnd = nil
+            end
+            
+            -- first time after creating overlay we focus browser and search field
+            if firstBrowserHwnd == 1 and browserSearchFieldHwnd then
+                reaper.JS_Window_SetFocus(browserHwnd)
+                reaper.JS_Window_SetFocus(browserSearchFieldHwnd)
+            end
+            
+            local visible = reaper.JS_Window_IsVisible(browserHwnd) 
+            if not browserHwnd or not visible then   
+                browserHwnd = nil
+            end
+        else
+            -- we clear for next time
+            --fx_before = nil
+            --fx_after = nil
+            firstBrowserHwnd = nil
+            browserSearchFieldHwnd = nil
+            browserHwnd = nil
+            moveToModulatorContainer = nil
+            
+        end  
+    end 
+    ]]
+    return click, modulationContainerPos, insert_position
+end
+
+
+
+function waitForClosingAddFXBrowser(pathForNextIndex, fx_before) 
     if browserHwnd and track and track == lastTrack then 
         firstBrowserHwnd = firstBrowserHwnd and firstBrowserHwnd + 1 or 0 
         
         fx_after = getAllTrackFXOnTrackSimple(track)
         if #fx_after > #fx_before then
-            local newFxIndex
+            local addedFxIndex
             local fxName
             for i, fx in ipairs(fx_after) do
                 if not fx_before[i] or fx.name ~= fx_before[i].name then
-                    newFxIndex = fx.fxIndex
+                    addedFxIndex = fx.fxIndex
                     fxName = fx.name
                     break;
                 end
             end
             -- An FX was added
-            openCloseFx(track, newFxIndex, false) 
-            SetNamedConfigParm( track, newFxIndex, 'renamed_name', fxName:gsub("^[^:]+: ", "")) 
-            modulationContainerPos, insert_position = movePluginToContainer(track, newFxIndex )
-            renameModulatorNames(track, modulationContainerPos)
+            
+            openCloseFx(track, addedFxIndex, false) 
+            if moveToModulatorContainer then
+                SetNamedConfigParm( track, addedFxIndex, 'renamed_name', fxName:gsub("^[^:]+: ", "")) 
+                modulationContainerPos, insert_position = movePluginToContainer(track, addedFxIndex )
+                renameModulatorNames(track, modulationContainerPos)
+            else
+                newFxIndex = addNewFXToEnd and addedFxIndex or moveFxIfNeeded(pathForNextIndex, addedFxIndex, addNewFXToEnd)
+            end
             browserHwnd = nil
+            --reloadParameterLinkCatch = true
+            --last_paramTableCatch = {}
+            paramTableCatch = {}
+            return newFxIndex
         end
          
-        if not addingAnyModuleWindow(browserHwnd) then
-            browserHwnd = nil
-        end
+         if isAddFXAsLast and (not last_isAddFXAsLast_time or time - last_isAddFXAsLast_time > 0.5) then
+            addNewFXToEnd = not addNewFXToEnd
+            last_isAddFXAsLast_time = time
+         end
+        --if moveToModulatorContainer then
+            if not addingAnyModuleWindow(browserHwnd, moveToModulatorContainer) then
+                reaper.JS_Window_Destroy(browserHwnd)
+                browserHwnd = nil
+            end
+        --end
         
         -- first time after creating overlay we focus browser and search field
         if firstBrowserHwnd == 1 and browserSearchFieldHwnd then
@@ -8240,16 +8392,9 @@ function modulesPanel(ctx, addToParameter, id, width_from_parent, height_from_pa
         firstBrowserHwnd = nil
         browserSearchFieldHwnd = nil
         browserHwnd = nil
+        moveToModulatorContainer = nil
     end  
-    
-         
-        
-    return click, modulationContainerPos, insert_position
 end
-
-
-
-
 
 
 
@@ -9952,7 +10097,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                     if insert_position == m.fxIndex then 
                         mapModulatorActivate(m, m.output[1], m.name, nil, #m.output == 1)
                         local isLFO = mapActiveName:match("LFO") ~= nil
-                        setParamaterToLastTouched(track, modulationContainerPos, insert_position, fxIndex, param, GetParam(track,fxIndex, param), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
+                        setParamaterToLastTouched(track, modulationContainerPos, insert_position, fxIndex, param, GetParam(track,fxIndex, param, true), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
                         if parameterLinkActive or settings.mapOnce then mapModulatorActivate(nil) end
                         reloadParameterLinkCatch = true
                         break;
@@ -11475,12 +11620,12 @@ function appSettingsWindow()
                 end
                 setToolTipFunc("Show Open all button in plugins area")  
                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add FX" button',settings.showAddTrackFX) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add FX popup" button (+)',settings.showAddTrackFX) 
                 if ret then 
                     settings.showAddTrackFX = val
                     saveSettings()
                 end
-                setToolTipFunc("Show a button that will allow to add track fx (not a modulator) in the plugins panel")  
+                setToolTipFunc("Show a button (+) that will allow to add track fx, fx chains and more through a popup, in the plugins panel")  
                 
                 local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add FX Directly" button',settings.showAddTrackFXDirectly) 
                 if ret then 
@@ -11489,7 +11634,7 @@ function appSettingsWindow()
                 end
                 setToolTipFunc("Show a button that will allow to add track fx (not a modulator) in the plugins panel")  
                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add Continaer" button',settings.showAddContainer) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add Contianer" button',settings.showAddContainer) 
                 if ret then 
                     settings.showAddContainer = val
                     saveSettings()
@@ -12772,7 +12917,7 @@ end
     
 local automationTypes = {"Trim/Read", "Read", "Touch", "Write", "Latch", "Latch Preview"}
 local automationTypesShort = {"Te", "Re", "To", "Wr", "La", "Lp"}
-local automationTypesDescription = {"Envelopes are active but faders are all for time", "Play faders with armed envelopes", "Record fader movements to armed envelopes", "Record fader movements after first movement", "Allow adjusting parameters but do not apply to envelopes", "Record fader positions to armed envelopes"}
+local automationTypesDescription = {"Envelopes are active but faders are all for time", "Play faders with armed envelopes", "Record fader movements to armed envelopes", "Record fader movements after first movement", "Record fader positions to armed envelopes", "Allow adjusting parameters but do not apply to envelopes"}
 local automationTypesColors = {colorsAutomationButton and colorTrimRead or colorAlmostWhite, colorRead, colorTouch, colorWrite, colorLatch, colorLatchPreview}
 
 function automationButton(track)
@@ -12855,7 +13000,7 @@ function smallAutomationButton(track, id, size)
     reaper.ImGui_PopStyleVar(ctx)
 end
 
-function addingAnyModuleWindow(hwnd) 
+function addingAnyModuleWindow(hwnd, moveToModulatorContainer) 
     local ret, x, y = reaper.JS_Window_GetClientRect(hwnd)
     local ret, w, h = reaper.JS_Window_GetClientSize(hwnd)
     local _, avTop, _, avBottom = reaper.JS_Window_GetViewportFromRect(0, 0, 0, 0, false)
@@ -12869,7 +13014,13 @@ function addingAnyModuleWindow(hwnd)
     y = y - topbar
     
     
-    local text = "Adding FX to Modulator container - Click to stop"
+    local text
+    if moveToModulatorContainer then
+        text = "Adding FX to Modulator container - Click to stop"
+    else
+        text = "Adding FX to at " .. (addNewFXToEnd and "end" or "position") .. ". - Click " .. convertModifierOptionToString(settings.modifierOptionFx.addFXAsLast) .. " to toggle position."
+        --text = "Adding FX to at " .. (addNewFXToEnd and "end" or "position") .. ". Toggle placement with " .. convertModifierOptionToString(settings.modifierOptionFx.addFXAsLast) .. " - Click to stop"
+    end
     --reaper.ImGui_SetCursorPos(ctx, 0, h - 20)
     
     reaper.ImGui_PushFont(ctx, font1)
@@ -13260,7 +13411,6 @@ end
 
     
 _, screenHeight, screenWidth = reaper.JS_Window_GetViewportFromRect( 0, 0, 1, 1, false)
-local fx_before, fx_after, firstBrowserHwnd
 local dock_id, is_docked
 local runs = -1
             
@@ -13544,10 +13694,15 @@ local function loop()
             lastFxCount = fxCount
         end
         
-        if not settings.limitParameterLinkLoading or (reloadParameterLinkCatch or not parameterLinks or (mapActiveFxIndex and isMouseWasReleased)) then
+        
+        if reloadParameterLinkCatch then
+            last_paramTableCatch = {}
+            reloadParameterLinkCatch = false 
+            parameterLinks = nil
+        end
+        
+        if not settings.limitParameterLinkLoading or (not parameterLinks or (mapActiveFxIndex and isMouseWasReleased)) then
             parameterLinks = getAllParameterModulatorMappings(track)
-            reloadParameterLinkCatch = false
-            
         end
         
         if modulationContainerPos then 
@@ -15292,6 +15447,14 @@ local function loop()
                     -- PARAMETERS ----------
                     ------------------------
                     
+                    function addFxViaBrowser(track, fxnumber)
+                        local browserHwnd, browserSearchFieldHwnd = openFxBrowserOnSpecificTrack() 
+                        local fx_before = getAllTrackFXOnTrackSimple(track)  
+                        local doNotMoveToModulatorContainer = true
+                        local insertAtFxIndex = fxnumber -- isAddFXAsLast and 999 or fxnumber
+                        return doNotMoveToModulatorContainer, browserHwnd, browserSearchFieldHwnd, insertAtFxIndex, fx_before
+                    end
+                    
                     if openAddFXPopupWindow then 
                         reaper.ImGui_OpenPopup(ctx, "add popup")  
                         openAddFXPopupWindow = false
@@ -15299,19 +15462,30 @@ local function loop()
                     
                     if reaper.ImGui_BeginPopup(ctx, "add popup") then
                         if reaper.ImGui_Selectable(ctx, "Add FX via browser", false) then 
-                            openFxBrowserOnSpecificTrack(fxnumber) 
+                            doNotMoveToModulatorContainer, browserHwnd, browserSearchFieldHwnd, insertAtFxIndex, fx_before = addFxViaBrowser(track, fxnumber)
+                            pathForNextIndex = getPathForNextFxIndex(track, insertAtFxIndex)
+                            addNewFXToEnd = isAddFXAsLast
+                            moveToModulatorContainer = false
                         end
                         setToolTipFunc("Add new FX via the native Reaper FX Browser")
                         
-                        if reaper.ImGui_Selectable(ctx, "Add container##add", false) then  
-                            addContainer(fxnumber)
+                        if reaper.ImGui_Selectable(ctx, "Add container##", false) then  
+                            fxnumber = addFxAfterSelection(track, fxnumber, "Container")
+                            reaper.ImGui_CloseCurrentPopup(ctx)
+                        end 
+                        
+                        if reaper.ImGui_Selectable(ctx, "Move focused FX in to new container##", false) then 
+                            local containerIndex = addFxAfterSelection(track, fxnumber, "Container", true)
+                            local containerPath = getPathForNextFxIndex(track, containerIndex)
+                            local newIndex = get_fx_id_from_container_path(track, table.unpack(containerPath))
+                            moveFx(track, fxnumber, newIndex)
                             reaper.ImGui_CloseCurrentPopup(ctx)
                         end
                         
                         if reaper.ImGui_BeginMenu(ctx, "fx chains") then
                             for _, fxChain in ipairs(fxChainPresetsFiles) do
-                                if reaper.ImGui_Selectable(ctx, fxChain.name, false) then
-                                    insertFXChainPreset(fxChain,track, fxnumber and fxnumber + 2 or 1000, false)
+                                if reaper.ImGui_Selectable(ctx, fxChain.name, false) then   
+                                    fxnumber = addFxAfterSelection(track, fxnumber, fxChain.id)
                                 end
                             end
                               
@@ -15322,7 +15496,13 @@ local function loop()
                         reaper.ImGui_EndPopup(ctx)
                     end
                     
-                    
+                    --if doNotMoveToModulatorContainer then
+                        local newFxIndexFocus = waitForClosingAddFXBrowser(pathForNextIndex, fx_before)
+                        if newFxIndexFocus then
+                            fxnumber = newFxIndexFocus
+                            newFxIndexFocus = nil
+                        end
+                    --end
                     
                    -- reaper.ImGui_EndChild(ctx)
                 --end
