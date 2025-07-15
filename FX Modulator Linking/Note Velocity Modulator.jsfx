@@ -1,8 +1,8 @@
 desc:Note Velocity Modulator
 author: saxmand
-version: 1.0
+version: 1.1
 noindex: true
-changelog: Initial release
+changelog: added ignore outside min and max slider
 
 /**
  * JSFX : MIDI Fader Modulator
@@ -27,6 +27,7 @@ slider9:passthrough=1<0,1,1>Pass Through
 
 slider10:listenMinimum=0<0,1,1>Listen Minimum
 slider11:listenMaximum=0<0,1,1>Listen Maximum
+slider12:ignoreOutsideMinAndMax=1<0,1,1>Ignore Notes outside range
 
 options:no_meter
 
@@ -55,8 +56,12 @@ while (
     );
     
     msg3 > 0 ? (
-      crampedMsg3 = min(max(msg3-1, minimum), maximum)-minimum;
-      target = (crampedMsg3)/(maximum-minimum);
+      ignoreOutsideMinAndMax ? (
+          msg3 >= minimum && msg3 <= maximum ? target = (msg3 - minimum)/(maximum-minimum);
+      ):(
+          crampedMsg3 = min(max(msg3-1, minimum), maximum)-minimum;
+          target = (crampedMsg3)/(maximum-minimum);
+      );
       passthrough == 1 ? midisend(t, msg1, msg2, msg3);
     );
   ):(

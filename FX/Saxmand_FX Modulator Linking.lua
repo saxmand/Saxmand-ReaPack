@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.0.9
+-- @version 1.1.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,11 +15,12 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + added support to insert FX/chains on selected position or end
---   + fixed latch preview text
+--   + fixed ab slider working with plugins which parameters are not going from 0 to 1
+--   + fixed modulators show settings not working properly
+--   + added slider to ignore outside range on keytracker and note velocity modualtor
 
 
-local version = "1.0.9"
+local version = "1.1.0"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -370,8 +371,9 @@ local defaultSettings = {
     pluginsPanelHeight = 600,
     allow = 200,
     alwaysUsePluginsHeight = true,
-    showPluginsListGlobal = false,
+    showPluginsListGlobal = true,
     showPluginsList = true,
+    
     
     showContainers = true,
     colorContainers = true,
@@ -385,10 +387,10 @@ local defaultSettings = {
     showPluginNumberColumn = true,
     openPluginWhenClickingName = false,
     
-    showOpenAll = true, 
+    showOpenAll = false, 
     showAddTrackFX = true,
     showAddContainer = false,
-    showAddTrackFXDirectly = false,
+    showAddTrackFXDirectly = true,
     showPluginOptionsOnTop = true,
     
       -- Parameters
@@ -396,9 +398,8 @@ local defaultSettings = {
     --useKnobsPlugin = false,
     --useNarrowPlugin = false,
     searchClearsOnlyMapped = false,
-    showParametersPanelGlobal = false,
-    showParametersPanel = true,
-    showOnlyFocusedPluginGlobal = true,
+    showPluginsGlobal = true,
+    showPlugins = true,
     showOnlyFocusedPlugin = true,
     showAddPluginsList = false,
     parametersHeight = 250,
@@ -459,9 +460,12 @@ local defaultSettings = {
     
     
     -- Modulators
+    showAddModulatorsList = true,
     ModulatorParameterColumnAmount = 1,
     showModulatorsPanel = true,
+    showModulatorsGlobal = true,
     showModulators = true,
+    showOnlyFocusedModulators = true,
     modulatorsHeight = 250,
     modulatorsWidth = 188,
     showMapOnceModulator = true,
@@ -471,7 +475,7 @@ local defaultSettings = {
     
     showRemoveCrossModulator = true, 
     visualizerSize = 2,
-    showAddModulatorButton = true,
+    showAddModulatorButton = false,
     showAddModulatorButtonAfter = true,
     showAddModulatorButtonBefore = false,
     
@@ -486,14 +490,16 @@ local defaultSettings = {
     movementNeededToChangeStep = 5,
     scrollTimeRelease = 1000,
     
+    -- Performance
     useParamCatch = true,
-    useSemiStaticParamCatch = true,
+    useSemiStaticParamCatch = false,
     useStaticParamCatch = true,
     checkSemiStaticParamsEvery = 1000, 
     limitAmountOfDrawnParametersInPlugin = false,
     limitAmountOfDrawnParametersInPluginAmount = 100,
     filterParamterThatAreMostLikelyNotWanted = true,
     buildParamterFilterDataBase = true,
+    limitParameterLinkLoading = true,
     
     -- floating mapper
       useFloatingMapper = false,
@@ -505,7 +511,7 @@ local defaultSettings = {
       openFloatingMapperRelativeToMouse = true,
       openFloatingMapperRelativeToMousePos = {x= 50, y=50},
     -- envelopes  
-      showEnvelope = true,
+      showEnvelope = false,
       hideEnvelopesIfLastTouched = true,
       hideEnvelopesWithNoPoints = true,
       hideEnvelopesWithPoints = false,
@@ -1399,11 +1405,11 @@ function insertTrackTemplate(file, track)
     reaper.Undo_BeginBlock()
     
     -- Insert a new track at the bottom
-    if not track then
+    if not track and reaper.CountTracks(0) > 0 then
         track = reaper.GetTrack(0, reaper.CountTracks(0) - 1)
+        reaper.SetOnlyTrackSelected(track)
     end
     -- Select the new track
-    reaper.SetOnlyTrackSelected(track)
     
     -- Insert the template on the selected track
     reaper.Main_openProject(file.path) -- this inserts the track template
@@ -2945,7 +2951,7 @@ function insertContainerAddPluginAndRename(track, name, newName)
     local insert_position = get_fx_id_from_container_path(track, modulationContainerPos + 1, position_of_FX_in_container + 1)--
     
     -- not sure why this fix is needed but it seems to work when there were no container
-    if position_of_FX_in_container == 0 and not modulationContainerExist then insert_position = insert_position + 1 end
+    --if position_of_FX_in_container == 0 and not modulationContainerExist then insert_position = insert_position + 1 end
     
     local fxPosition = AddByNameFX( track, name, false, insert_position )
     SetNamedConfigParm( track, insert_position, 'renamed_name', newName)--getModulatorModulesNameCount(track, modulationContainerPos, newName, true) )
@@ -3234,7 +3240,7 @@ function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnum
     end
     useOffset = offsetForce and offsetForce or useOffset
     useScale = scaleForce and scaleForce or useScale
-    value = valueForce and valueForce or value
+    value = valueForce and valueForce or value 
      
     SetNamedConfigParm( track, fxnumber, 'param.'..param..'.mod.active',1 )
     SetNamedConfigParm( track, fxnumber, 'param.'..param..'.mod.baseline', value )
@@ -3325,7 +3331,7 @@ function getTrackPluginsParameterLinkValues(name, clearType)
             -- Iterate through all parameters for the current FX
             local param_count = GetNumParams(track, fxIndex)
             for param = 0, param_count - 1 do
-                if filterParametersThatAreMostLikelyNotWanted(p, track, fxIndex) then
+                if filterParametersThatAreMostLikelyNotWanted(param, track, fxIndex) then
                     local parameterLinkActive = getPlinkActive(track, fxIndex, param)
                     
                     -- we ignore values that have parameter link activated
@@ -3382,7 +3388,7 @@ function getTrackPluginValues(track, fx)
         end
     end
     
-    -- Iterate through all FX on the track
+    -- Iterate through all FX on the track 
     local fx_count = GetCount(track)
     for fxIndex = 0, fx_count - 1 do
         local fx_name = GetFXName(track, fxIndex) 
@@ -3395,8 +3401,8 @@ function getTrackPluginValues(track, fx)
             local param_count = GetNumParams(track, fxIndex)
             for param = 0, param_count - 1 do
                 if filterParametersThatAreMostLikelyNotWanted(param, track, fxIndex) then
-                    local parameterLinkActive = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.active'))) == 1
-                    
+                    local parameterLinkActive = tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'param.'..param..'.plink.active'))) == 1 
+                    local value, min, max = GetParam(track,fxIndex,param)
                     -- we ignore values that have parameter link activated
                     if not parameterLinkActive then
                         local valueNormalized = GetParamNormalized(track, fxIndex, param)
@@ -3405,6 +3411,9 @@ function getTrackPluginValues(track, fx)
                         table.insert(params, {
                             valueNormalized = valueNormalized,
                             param = param,
+                            min = min, 
+                            max = max, 
+                            value = value,
                         })
                     end
                 
@@ -3419,6 +3428,11 @@ function getTrackPluginValues(track, fx)
         end 
     end
     return plugin_values
+end
+
+function unnormalizeValue(value, min, max) 
+    local notNormalizedRange = max - min
+    return value * notNormalizedRange + min 
 end
 
 -- Function to compare two arrays of plugin values and log changes
@@ -3446,12 +3460,13 @@ function comparePluginValues(a_trackPluginStates, b_trackPluginStates, track, mo
                         --reaper.ShowConsoleMsg("3\n")
                         if a_value ~= b_value then
                         
-                            local range = b_value - a_value
+                            local range = a_value - b_value
                             --reaper.ShowConsoleMsg(a_states.name  .. " - " .. b_param .. " - " .. tostring(a_value) .. " - " .. tostring(b_value) .. " - " .. range .. "\n")
-                            --local max = a_states.max
-                            --local min = a_states.min
-                            --local range = (min and max) and max - min or 1 
-                            setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fx_number, b_param, a_value, 0, range, a_value)
+                            local range_converted = unnormalizeValue(range, a_states.min, a_states.max) 
+                            local a_value_converted = unnormalizeValue(b_value, a_states.min, a_states.max) 
+                            local value = b_value
+                            
+                            setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fx_number, b_param, a_value_converted, 0, range, a_value_converted)
                             foundParameters = true
                         end
                     end
@@ -5938,7 +5953,7 @@ function modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, f
                 if scrollChildOfPanel(id .. "scroll", width, height, heightAutoAdjust) then
                     modulatorAreaX, modulatorAreaY = reaper.ImGui_GetItemRectMin(ctx) -- hot fix
                     local maxScrollBar = math.floor(reaper.ImGui_GetScrollMaxY(ctx))
-                    local modulatorParameterWidth = width - (maxScrollBar == 0 and 2 or 12)
+                    local modulatorParameterWidth = width - (maxScrollBar == 0 and 8 or 20)
                     
                     
                     valuesFromModulator = func(id, name, modulationContainerPos, fxIndex, fxIndContainerIndex, isCollabsed, fx, genericModulatorInfo, modulatorParameterWidth, useKnobs, useNarrow)
@@ -6858,6 +6873,7 @@ function keytrackerModulator(id, name, modulatorsPos, fxIndex, fxInContainerInde
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,5), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow,0) 
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,6), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,1) 
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,7), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,2) 
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,11), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,3) 
     
     createSlider(track,fxIndex,"Checkbox",8,"Pass through MIDI",nil,nil,1,nil,nil,nil,nil,nil,nil, modulatorParameterWidth) 
 end
@@ -6964,6 +6980,8 @@ function noteVelocityModulator(id, name, modulatorsPos, fxIndex, fxInContainerIn
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,5), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow,0) 
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,6), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,1) 
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,7), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,2) 
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,11), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,3) 
+    
     
     createSlider(track,fxIndex,"Checkbox",8,"Pass through MIDI",nil,nil,1,nil,nil,nil,nil,nil, nil, modulatorParameterWidth) 
 end
@@ -9751,7 +9769,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     
     sliderStartPosX, sliderStartPosY = reaper.ImGui_GetCursorPos(ctx)
     -- we reduce the button size to make sure we do not get a horizontal scroll 
-    sliderW = faderWidth - spaceTaken -- 8
+    sliderW = faderWidth - spaceTaken --8 -- 8
     if sliderW <= 10 then sliderW = 10 end
     local click = false
     if reaper.ImGui_InvisibleButton(ctx, "slider" .. buttonId .. moduleId, sliderW, totalSliderHeight) then
@@ -11694,24 +11712,27 @@ function appSettingsWindow()
             reaper.ImGui_Indent(ctx)
                 
                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,'"Show plugins" setting is global##parameters',settings.showParametersPanelGlobal) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,'"Show plugins" setting is global##parameters',settings.showPluginsGlobal) 
                 if ret then 
-                    settings.showParametersPanelGlobal = val
+                    settings.showPluginsGlobal = val
                     saveSettings()
                 end
                 setToolTipFunc("Enable this to make the last panel show setting (focused or all plugins) global and not track based") 
                 
-                if settings.showParametersPanelGlobal then
+                if settings.showPluginsGlobal then
                     reaper.ImGui_Indent(ctx)
-                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show panels##parameters",settings.showParametersPanel) 
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show panels##parameters",settings.showPlugins) 
                     if ret then 
-                        settings.showParametersPanel = val
+                        settings.showPlugins = val
                         saveSettings()
                     end
                     setToolTipFunc("Show plugin panels") 
                     
                     local ret, val = reaper.ImGui_Checkbox(ctx,"Show only focused plugin##parameters",settings.showOnlyFocusedPlugin) 
                     if ret then 
+                        if val and not settings.showPlugins then
+                            settings.showPlugins = true
+                        end
                         settings.showOnlyFocusedPlugin = val
                         saveSettings()
                     end
@@ -11897,12 +11918,35 @@ function appSettingsWindow()
             reaper.ImGui_TextColored(ctx, colorGrey, "Modulators")
             
             reaper.ImGui_Indent(ctx)
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show modulators##modulators",settings.showModulators) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,'"Show modulators" setting is global##modulators',settings.showModulatorsGlobal) 
                 if ret then 
-                    settings.showModulators = val
+                    settings.showModulatorsGlobal = val
                     saveSettings()
                 end
                 setToolTipFunc("Show or hide modulators from the modulators panel")  
+                
+                if settings.showModulatorsGlobal then
+                    reaper.ImGui_Indent(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show panels##modulators",settings.showModulators) 
+                    if ret then 
+                        settings.showModulators = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show modulators panels") 
+                    
+                    --[[
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show only focused plugin##parameters",settings.showOnlyFocusedModulator) 
+                    if ret then 
+                        if val and not settings.showModulators then
+                            settings.showModulators = true
+                        end
+                        settings.showOnlyFocusedModulator = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Only one plugin panel will be shown")  
+                    ]]
+                    reaper.ImGui_Unindent(ctx)
+                end
                 
                 if sliderInMenu("Panels width", "modulatorsWidth", menuSliderWidth, 80, 400, "Set the width of the modulators panel. ONLY used for horizontal and floating") then 
                     --setWindowWidth = true
@@ -13851,6 +13895,8 @@ local function loop()
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_WindowRounding(), 8) 
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ChildRounding(), 5.0)
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ScrollbarSize(), 10.0)
+    
+    --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_WindowPadding(), 0.0, 0.0)
     local varPush = 4
     
     
@@ -14314,10 +14360,10 @@ local function loop()
                     --pluginFlags = pluginFlags | reaper.ImGui_TableFlags_Borders()
                     
                     local columnAmount = (settings.showPluginNumberColumn) and 2 or 1
-                    --local columnAmount = (settings.showPluginNumberColumn and settings.showParametersPanel) and 2 or 1
+                    --local columnAmount = (settings.showPluginNumberColumn and settings.showPluginsPanel) and 2 or 1
                     
                     local openPluginOnSingleClick = settings.openPluginWhenClickingName
-                    --local openPluginOnSingleClick = settings.openPluginWhenClickingName or not settings.showParametersPanel
+                    --local openPluginOnSingleClick = settings.openPluginWhenClickingName or not settings.showPluginsPanel
                     
                     local offset = settings.showOpenAll or settings.showAddTrackFX or settings.showAddTrackFXDirectly or settings.showAddContainer
                     local dragAndDropInside = false
@@ -14418,7 +14464,7 @@ local function loop()
                                     
                                     local isFocused = tonumber(fxnumber) == tonumber(f.fxIndex)
                                     --isFocused =  settings.showPluginNumberColumn and isFocused or true
-                                    --if not settings.showPluginNumberColumn or not settings.showParametersPanel then
+                                    --if not settings.showPluginNumberColumn or not settings.showPluginsPanel then
                                     if not settings.showPluginNumberColumn then
                                         isFocused = f.isOpen
                                     end
@@ -14504,7 +14550,7 @@ local function loop()
                                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), f.isFloating and settings.colors.pluginOpen or settings.colors.pluginOpenInContainer)
                                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), isFocused and colorText or colorTextDimmed)
                                             local buttonTitle = f.isContainer and (not isFolderClosed and " - " or " + ") or ((isFocused) and ">" or (settings.showPluginNumberInPluginOverview and count or ""))
-                                            --local buttonTitle = f.isContainer and (not isFolderClosed and " - " or " + ") or ((isFocused and settings.showParametersPanel) and ">" or (settings.showPluginNumberInPluginOverview and count or ""))
+                                            --local buttonTitle = f.isContainer and (not isFolderClosed and " - " or " + ") or ((isFocused and settings.showPluginsPanel) and ">" or (settings.showPluginNumberInPluginOverview and count or ""))
                                             if reaper.ImGui_Selectable(ctx, buttonTitle .. '##' .. f.fxIndex, f.isOpen ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
                                                 
                                                 
@@ -14541,7 +14587,7 @@ local function loop()
                                         
                                         
                                         if not settings.showPluginNumberColumn then
-                                        --if not settings.showPluginNumberColumn or not settings.showParametersPanel then
+                                        --if not settings.showPluginNumberColumn or not settings.showPluginsPanel then
                                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), beginFxDragAndDrop and colorTransparent or (f.isFloating and settings.colors.pluginOpen or settings.colors.pluginOpenInContainer))
                                         end
                                         
@@ -14581,7 +14627,7 @@ local function loop()
                                         
                                         reaper.ImGui_PopStyleColor(ctx, 3)
                                         if not settings.showPluginNumberColumn then
-                                        --if not settings.showPluginNumberColumn or not settings.showParametersPanel then
+                                        --if not settings.showPluginNumberColumn or not settings.showPluginsPanel then
                                             reaper.ImGui_PopStyleColor(ctx, 1)
                                         end
                                         setToolTipFunc(getButtonToolTipText(f)[openPluginOnSingleClick and 3 or 4])
@@ -14844,7 +14890,7 @@ local function loop()
                             --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), 4, 6)
                             
                             local parameterColumnAmount = settings.PluginParameterColumnAmount
-                            if scrollChildOfPanel(panelName .. "Scroll", width, scrollAreaHeight, heightAutoAdjust) then
+                            if scrollChildOfPanel(panelName .. "Scroll", width + 8, scrollAreaHeight, heightAutoAdjust) then
                                 local shownCount = 0
                                 for i, p in ipairs(paramsListThatAreNotFiltered) do
                                     
@@ -15133,21 +15179,21 @@ local function loop()
                             showPluginsList  = trackSettings.showPluginsList 
                         end
                         
-                        local showParametersPanel
-                        if settings.showParametersPanelGlobal then
-                            showParametersPanel = settings.showParametersPanel 
+                        local showPlugins
+                        if settings.showPluginsGlobal then
+                            showPlugins = settings.showPlugins 
                         else
-                            showParametersPanel = trackSettings.showParametersPanel
+                            showPlugins = trackSettings.showPlugins
                         end
                         local showOnlyFocusedPlugin
-                        if settings.showParametersPanelGlobal then
+                        if settings.showPluginsGlobal then
                             showOnlyFocusedPlugin = settings.showOnlyFocusedPlugin 
                         else
                             showOnlyFocusedPlugin = trackSettings.showOnlyFocusedPlugin
                         end
                         
                         local showAddPluginsList = settings.showAddPluginsList
-                        local isCollabsed = trackSettings.hidePlugins or (not showPluginsList and not showParametersPanel and not showAddPluginsList)
+                        local isCollabsed = trackSettings.hidePlugins or (not showPluginsList and not showPlugins and not showAddPluginsList)
                         
                         local fixedSize = settings.pluginsPanelWidthFixedSize
                         local width = vertical and elementsWidthInVertical or (isCollabsed and headerSizeW or (fixedSize and settings.pluginsPanelWidth or nil))
@@ -15210,27 +15256,27 @@ local function loop()
                                 end
                             end
                             
-                            local hideAllFXPanelsOnNextClick = not showOnlyFocusedPlugin and showParametersPanel
+                            local hideAllFXPanelsOnNextClick = not showOnlyFocusedPlugin and showPlugins
                             local posX, posY = getIconPosToTheLeft(vertical, 40, screenPosX, screenPosY, height)
                             local tip = hideAllFXPanelsOnNextClick and "Hide all plugin panels" or (showOnlyFocusedPlugin and "Show all plugins as seperate panels" or "Show focused plugin panel")
-                            if drawListHorizontalIcon(posX, posY, 20, not showOnlyFocusedPlugin, tip, showParametersPanel) then
+                            if drawListHorizontalIcon(posX, posY, 20, not showOnlyFocusedPlugin, tip, showPlugins) then
                                 
                                 if hideAllFXPanelsOnNextClick then
-                                    if settings.showParametersPanelGlobal then
-                                        settings.showParametersPanel = not settings.showParametersPanel
+                                    if settings.showPluginsGlobal then
+                                        settings.showPlugins = not settings.showPlugins
                                         saveSettings()
                                     else 
-                                        trackSettings.showParametersPanel = not trackSettings.showParametersPanel
+                                        trackSettings.showPlugins = not trackSettings.showPlugins
                                         --settings.showOnlyFocusedPlugin = not settings.showOnlyFocusedPlugin
                                         saveTrackSettings()  
                                     end
                                 else 
-                                    if settings.showParametersPanelGlobal then
-                                        settings.showParametersPanel = true
+                                    if settings.showPluginsGlobal then
+                                        settings.showPlugins = true
                                         settings.showOnlyFocusedPlugin = not settings.showOnlyFocusedPlugin
                                         saveSettings()
                                     else
-                                        trackSettings.showParametersPanel = true
+                                        trackSettings.showPlugins = true
                                         trackSettings.showOnlyFocusedPlugin = not trackSettings.showOnlyFocusedPlugin
                                         saveTrackSettings(track) 
                                     end 
@@ -15289,7 +15335,7 @@ local function loop()
                                 --    reaper.ImGui_EndChild(ctx)
                                 --end
                                 
-                                childPosSize = childPosSize + drawSeperatorAndAddPlacementOfNextPanel(settings.showPluginsList or settings.showParametersPanel, childPosSize, vertical, heightAutoAdjust, pluginsListWidth + 10, pluginsListHeight + 10)
+                                childPosSize = childPosSize + drawSeperatorAndAddPlacementOfNextPanel(settings.showPluginsList or settings.showPluginsPanel, childPosSize, vertical, heightAutoAdjust, pluginsListWidth + 10, pluginsListHeight + 10)
                                 
                             end
                             ]]
@@ -15304,12 +15350,12 @@ local function loop()
                                  pluginsList(title, pluginsListWidth, pluginsListHeight, childPosSize, vertical, heightAutoAdjust) 
                                  
                                  placingOfNextElement(settings.widthBetweenWidgets)
-                                 childPosSize = nil--childPosSize + drawSeperatorAndAddPlacementOfNextPanel(settings.showParametersPanel, childPosSize, vertical, heightAutoAdjust, pluginsListWidth, pluginsListHeight)
+                                 childPosSize = nil--childPosSize + drawSeperatorAndAddPlacementOfNextPanel(settings.showPluginsPanel, childPosSize, vertical, heightAutoAdjust, pluginsListWidth, pluginsListHeight)
                                  
                             end
                             
                             reaper.ImGui_PopStyleColor(ctx, 3) 
-                            if not isCollabsed and showParametersPanel then
+                            if not isCollabsed and showPlugins then
                                 if bodyChildOfPanel(title .. "bodyParameters", childPosSize, 6, vertical, nil, fixedSize, vertical and width_child + 4 or nil, not vertical and height_child + 4 or nil) then
                                     -- fix for now
                                     if fixedSize then 
@@ -15333,7 +15379,7 @@ local function loop()
                                     --local showOnlyFocusedPlugin = settings.showOnlyFocusedPluginGlobal and settings.showOnlyFocusedPlugin or trackSettings.showOnlyFocusedPlugin
                                     if showOnlyFocusedPlugin then
                                         singlePluginParameterPanelFocusFirstIfNeeded() 
-                                        --trackSettings.hidePluginSearchParameters[GetFXGUID(track, fxnumber)] = settings.showParametersPanel
+                                        --trackSettings.hidePluginSearchParameters[GetFXGUID(track, fxnumber)] = settings.showPluginsPanel
                                         pluginParametersPanel(track, fxnumber, nil, vertical, width_child, height_child, true,getFxInfoAsObject(track, fxnumber), showOnlyFocusedPlugin)
                                     else
                                         local currentIndent, currentParent
@@ -15423,6 +15469,8 @@ local function loop()
                                     if not settings.includeModulators and modulationContainerPos == beginFxDragAndDropIndexRelease then
                                         beginFxDragAndDropIndexRelease = beginFxDragAndDropIndexRelease + 1 
                                     end
+                                    
+                                    reloadParameterLinkCatch = true
                                     
                                     CopyToTrackFX(track, beginFxDragAndDropIndex, track, beginFxDragAndDropIndexRelease, not copyFX)-- + (beginDragAndDropFXIndex > beginDragAndDropFXIndexRelease and 1 or 0)), true)
                                 end
@@ -15533,7 +15581,20 @@ local function loop()
                     
                     local showModulatorsList = settings.showModulatorsList
                     local showAddModulatorsList = settings.showAddModulatorsList
-                    local showModulators = settings.showModulators
+                    
+                    local showModulators
+                    if settings.showModulatorsGlobal then
+                        showModulators = settings.showModulators 
+                    else
+                        showModulators = trackSettings.showModulators
+                    end
+                    local showOnlyFocusedPlugin
+                    if settings.showModulatorsGlobal then
+                        showOnlyFocusedModulator = settings.showOnlyFocusedModulator 
+                    else
+                        showOnlyFocusedModulator = trackSettings.showOnlyFocusedModulator
+                    end
+                    
                     
                     local isCollabsed = trackSettings.hideModules or (not showAddModulatorsList and not showModulators and not showModulatorsList)
                     
@@ -15627,23 +15688,34 @@ local function loop()
                             showOnlyFocusedModulator = trackSettings.showOnlyFocusedModulator  
                         end
                         
-                        local hideAllModulatorPanelsOnNextClick = not showOnlyFocusedModulator and settings.showModulatorsPanels
-                        local tip = hideAllModulatorPanelsOnNextClick and "Hide all modulator panels" or (showOnlyFocusedModulator and "Show all modulator as seperate panels" or "Show focused modulator panel")
-                        if drawListHorizontalIcon(posX, posY, 20, not showOnlyFocusedModulator, tip, settings.showModulatorsPanels) then
+                        -- until we have implemented a modulator list
+                        showOnlyFocusedModulator = false
+                        
+                        local hideAllModulatorPanelsOnNextClick = not showOnlyFocusedModulator and showModulators
+                        local tip = hideAllModulatorPanelsOnNextClick and "Hide all modulator panels" or "Show all modulator as seperate panels" 
+                        --local tip = hideAllModulatorPanelsOnNextClick and "Hide all modulator panels" or (showOnlyFocusedModulator and "Show all modulator as seperate panels" or "Show focused modulator panel")
+                        if drawListHorizontalIcon(posX, posY, 20, not showOnlyFocusedModulator, tip, showModulators) then
                             if hideAllModulatorPanelsOnNextClick then
-                                settings.showModulatorsPanels = not settings.showModulatorsPanels
-                                saveSettings()
+                                if settings.showModulatorsGlobal then
+                                    settings.showModulators = not settings.showModulators
+                                    saveSettings()
+                                else
+                                    trackSettings.showModulators = not trackSettings.showModulators
+                                    saveTrackSettings()  
+                                end
                             else 
-                                settings.showModulatorsPanels = true
-                                --[[
-                                if settings.showOnlyFocusedModulatorGlobal then
+                                if settings.showModulatorsGlobal then
+                                    settings.showModulators = true
                                     settings.showOnlyFocusedModulator = not settings.showOnlyFocusedModulator
                                     saveSettings()
                                 else
+                                    trackSettings.showModulators = true
                                     trackSettings.showOnlyFocusedModulator = not trackSettings.showOnlyFocusedModulator
                                     saveTrackSettings(track) 
-                                end ]]
+                                end 
                             end
+                            
+                            
                             
                         end
                         
@@ -15707,7 +15779,7 @@ local function loop()
                                 end]]
                             end
                             
-                            if settings.showModulatorsPanels then 
+                            if showModulators then 
                                 if bodyChildOfPanel(title .. "bodyParametersModule", childPosSize, 6, vertical, nil, fixedSize, vertical and width_child + 4 or nil, not vertical and height_child or nil) then
                                     
                                     

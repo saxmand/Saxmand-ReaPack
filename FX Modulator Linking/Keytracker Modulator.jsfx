@@ -1,8 +1,8 @@
 desc:Keytracker Modulator
 author: saxmand
-version: 1.0
+version: 1.1
 noindex: true
-changelog: Initial release
+changelog: added ignore outside min and max slider
 
 /**
  * JSFX : MIDI Fader Modulator
@@ -27,6 +27,7 @@ slider9:passthrough=1<0,1,1>Pass Through
 
 slider10:listenMinimum=0<0,1,1>Listen Minimum
 slider11:listenMaximum=0<0,1,1>Listen Maximum
+slider12:ignoreOutsideMinAndMax=1<0,1,1>Ignore Notes outside range
 
 options:no_meter
 
@@ -56,8 +57,13 @@ while (
     );
     
     msg3 > 0 ? (
-      crampedMsg2 = min(max(msg2, minimum), maximum)-minimum;
-      target = (crampedMsg2)/(maximum-minimum);
+      ignoreOutsideMinAndMax ? (
+          msg2 >= minimum && msg2 <= maximum ? target = (msg2 - minimum)/(maximum-minimum);
+      ):(
+          crampedMsg2 = min(max(msg2, minimum), maximum)-minimum;
+          target = (crampedMsg2)/(maximum-minimum);
+      );
+      
       passthrough == 1 ? midisend(t, msg1, msg2, msg3);
     );
   ):(
