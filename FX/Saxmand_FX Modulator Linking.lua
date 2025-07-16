@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.1.3
+-- @version 1.1.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,8 +17,9 @@
 -- @changelog
 --   + fixed some vertical UI stuff
 --   + fixed refocussing focused FX when adding new modulator via context menu
+--   + fixed custom modulators open gui does not affect minimize/maximize state
 
-local version = "1.1.3"
+local version = "1.1.4"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -3087,7 +3088,7 @@ function getModulatorNames(track, modulationContainerPos, parameterLinks, doNotU
                 end
                 
                 local mappings = (parameterLinks and parameterLinks[fxIndex]) and parameterLinks[fxIndex] or {}
-                local output = getOutputArrayForModulator(track, fxOriginalName, fxIndex, modulationContainerPos)
+                local output, genericModulatorInfo = getOutputArrayForModulator(track, fxOriginalName, fxIndex, modulationContainerPos)
                 local outputNames = getOutputNameArrayForModulator(track, fxOriginalName, fxIndex, modulationContainerPos)
                 
                 local mappingNames = {}
@@ -3108,7 +3109,7 @@ function getModulatorNames(track, modulationContainerPos, parameterLinks, doNotU
                 local isCollabsed = trackSettings.collabsModules[guid]
                 --if not nameCount[fxName] then nameCount[fxName] = 1 else nameCount[fxName] = nameCount[fxName] + 1 end
                 --table.insert(containerData, {name = fxName .. " " .. nameCount[fxName], fxIndex = tonumber(fxIndex)})
-                table.insert(containerData, {name = fxName, fxIndex = tonumber(fxIndex), guid = guid, fxInContainerIndex = c, fxName = fxOriginalName, mappings = mappings, output = output, mappingNames = mappingNames, outputNames = outputNames})
+                table.insert(containerData, {name = fxName, fxIndex = tonumber(fxIndex), guid = guid, fxInContainerIndex = c, fxName = fxOriginalName, mappings = mappings, output = output, mappingNames = mappingNames, outputNames = outputNames, genericModulatorInfo = genericModulatorInfo})
                 fxIndexs[tonumber(fxIndex)] = true
                 if not isCollabsed then allIsCollabsed = false end
                 if isCollabsed then allIsNotCollabsed = false end
@@ -5594,10 +5595,14 @@ function modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, f
     local hasGui = fx.fxName:match("ACS Native Modulator") ~= nil
     local showOpenGui = false
     local fxName = fx.fxName
-    for _, mod in ipairs(factoryModules) do
-        if mod.showOpenGui and (fxName == mod.insertName or fxName:match(mod.insertName) ~= nil) then
-            showOpenGui = true
-            break;
+    if fx.genericModulatorInfo then
+        showOpenGui = true
+    else
+        for _, mod in ipairs(factoryModules) do
+            if mod.showOpenGui and (fxName == mod.insertName or fxName:match(mod.insertName) ~= nil) then
+                showOpenGui = true
+                break;
+            end
         end
     end
     
