@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.1.2
+-- @version 1.1.3
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + updated Steps modulator to SNJUK2's request
+--   + fixed some vertical UI stuff
+--   + fixed refocussing focused FX when adding new modulator via context menu
 
-local version = "1.1.2"
+local version = "1.1.3"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -503,9 +504,9 @@ local defaultSettings = {
       keepWhenClickingInAppWindow = true,
       keepWhenClickingInOtherFxWindow = false,
       onlyKeepShowingWhenClickingFloatingWindow = false,
-      openFloatingMapperRelativeToWindow = false,
-      openFloatingMapperRelativeToWindowPos = 15,
-      openFloatingMapperRelativeToMouse = true,
+      openFloatingMapperRelativeToWindow = true,
+      openFloatingMapperRelativeToWindowPos = 10,
+      openFloatingMapperRelativeToMouse = false,
       openFloatingMapperRelativeToMousePos = {x= 50, y=50},
     -- envelopes  
       showEnvelope = false,
@@ -1806,6 +1807,15 @@ function GetFXGUID(track, index, doNotUseCatch)
     end 
 end
 
+function getFxIndexFromGuid(track, guid)
+    local trackFx = getAllTrackFXOnTrack(track, true)
+    for _, fx in ipairs(trackFx) do
+        if fx.guid == guid then
+            return fx.fxIndex
+        end
+    end
+end
+
 local listOfStaticParams = {
     "FXName",
     "ParamName",
@@ -1966,8 +1976,8 @@ function getPlinkParamInContainer(track,containerFxIndex,param, doNotUseCatch)
     return tonumber(select(2, GetNamedConfigParm( track, containerFxIndex, 'param.'..param..'.container_map.fx_parm', doNotUseCatch )))
 end
 
-function getFXParallelProcess(track,fxIndex,param) -- 0=non, 1=process plug-in in parallel with previous, 2=process plug-in parallel and merge MIDI
-    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'parallel' )))
+function getFXParallelProcess(track,fxIndex,doNotGetStatus) -- 0=non, 1=process plug-in in parallel with previous, 2=process plug-in parallel and merge MIDI
+    return tonumber(select(2, GetNamedConfigParm( track, fxIndex, 'parallel',doNotGetStatus )))
 end
 
 function getPlinkEffect(track,fxIndex, param)
@@ -1993,8 +2003,8 @@ function getContainerCount(track,fxIndex, doNotUseCatch)
     return tonumber(select(2, GetNamedConfigParm( track, fxIndex, "container_count", doNotUseCatch, 2)))
 end
 
-function getPlinkFxIndex(track,containerFxIndex, parameterLinkEffect)
-    local ret, val = GetNamedConfigParm( track, containerFxIndex, 'container_item.' .. parameterLinkEffect )
+function getPlinkFxIndex(track,containerFxIndex, parameterLinkEffect,doNotGetStatus)
+    local ret, val = GetNamedConfigParm( track, containerFxIndex, 'container_item.' .. parameterLinkEffect,doNotGetStatus)
     return ret and tonumber(val) or false
 end
 
@@ -2511,6 +2521,7 @@ function showFX(track, fxIndex, show)
 end
 
 function DeleteFX(track, fxIndex)
+    mapModulatorActivate(nil)
     reloadParameterLinkCatch = true
     check_semi_static_params = true
     return reaper.TrackFX_Delete(track, fxIndex)
@@ -4000,21 +4011,21 @@ local function findParentContainer(fxContainerIndex)
 end
 
 function getNameAndOtherInfo(track, fxIndex, doNotGetStatus) 
-    local fxName = GetFXName(track, fxIndex) -- Get the FX name'
-    local fxOriginalName = getOriginalFxName(track, fxIndex)
-    local containerCount = getContainerCount(track,fxIndex)
+    local fxName = GetFXName(track, fxIndex,doNotGetStatus) -- Get the FX name'
+    local fxOriginalName = getOriginalFxName(track, fxIndex,doNotGetStatus)
+    local containerCount = getContainerCount(track,fxIndex,doNotGetStatus)
     local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
-    local isEnabled = not doNotGetStatus and GetEnabled(track, fxIndex)
-    local isOpen = not doNotGetStatus and GetOpen(track,fxIndex)
-    local isFloating = not doNotGetStatus and GetFloatingWindow(track,fxIndex) 
-    local parallel = not doNotGetStatus and (settings.showParralelIndicationInName and getFXParallelProcess(track, fxIndex) or 0)
-    local guid = GetFXGUID(track,fxIndex)
+    local isEnabled = not doNotGetStatus and GetEnabled(track, fxIndex,doNotGetStatus)
+    local isOpen = not doNotGetStatus and GetOpen(track,fxIndex,doNotGetStatus)
+    local isFloating = not doNotGetStatus and GetFloatingWindow(track,fxIndex,doNotGetStatus) 
+    local parallel = not doNotGetStatus and (settings.showParralelIndicationInName and getFXParallelProcess(track, fxIndex,doNotGetStatus) or 0)
+    local guid = GetFXGUID(track,fxIndex,doNotGetStatus)
     return fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating
 end
 
-function getFxInfoAsObject(track, fxIndex)
+function getFxInfoAsObject(track, fxIndex,doNotGetStatus)
     if track and fxIndex then
-        local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex) 
+        local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex,doNotGetStatus) 
         return {fxIndex = fxIndex, fxName = fxName, guid = guid,isContainer = isContainer, containerCount = containerCount, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel}
     else
         return {fxName = "No FX on track", fxIndex = -1}
@@ -4023,7 +4034,7 @@ end
 
 
 -- Function to get all plugins on a track, including those within containers
-function getAllTrackFXOnTrack(track)
+function getAllTrackFXOnTrack(track,doNotGetStatus)
     
     --reaper.ShowConsoleMsg("\n\n")
     local plugins = {} -- Table to store plugin information
@@ -4033,9 +4044,9 @@ function getAllTrackFXOnTrack(track)
     local function getPluginsRecursively(track, fxContainerIndex, containerGuid, indent, fxCount, isModulator, fxContainerName)
         if fxCount then 
             for subFxIndex = 0, fxCount - 1 do
-                local fxIndex = getPlinkFxIndex(track, fxContainerIndex, subFxIndex)
+                local fxIndex = getPlinkFxIndex(track, fxContainerIndex, subFxIndex,doNotGetStatus)
                 if fxIndex then
-                    local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex) 
+                    local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex,doNotGetStatus) 
                     
                     --pLinks = CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
                     
@@ -4058,7 +4069,7 @@ function getAllTrackFXOnTrack(track)
         
         -- Iterate through each FX
         for fxIndex = 0, totalFX - 1 do
-            local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex)  
+            local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex,doNotGetStatus)  
             local isModulator = isContainer and fxName == "Modulators"
             --pLinks = CheckFXParamsMapping(pLinks, track, fxIndex)
     
@@ -5561,6 +5572,9 @@ function modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, f
     local width = modulatorWidth
     local height = modulatorHeight 
     local heightAutoAdjust = floating and true or not (not vertical or not settings.limitModulatorHeightToModulesHeight)
+    if isCollabsed then
+        heightAutoAdjust = false
+    end
     
     
     reaper.ImGui_BeginGroup(ctx)
@@ -10210,17 +10224,21 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
         if reaper.ImGui_BeginMenu(ctx, (parameterLinkActive and "Replace modulation with new" or "Map with new modulator")) then
             local hadModulationContainerPosAlready = modulationContainerPos
             local click, modulationContainerPosTemp, insert_position = modulesPanel(ctx, true, "menu") 
-            if click then 
+            if click then  
+            --  123
+                local storeFocusedFXnumberGuid = GetFXGUID(track, fxnumber)
                 modulationContainerPos = modulationContainerPosTemp
                 if not hadModulationContainerPosAlready then fxIndex = fxIndex + 1 end
                 modulatorNames, modulatorFxIndexes = getModulatorNames(track, modulationContainerPos, parameterLinks, true)
                 for pos, m in ipairs(modulatorNames) do 
                     if insert_position == m.fxIndex then 
+                        
                         mapModulatorActivate(m, m.output[1], m.name, nil, #m.output == 1)
                         local isLFO = mapActiveName:match("LFO") ~= nil
                         setParamaterToLastTouched(track, modulationContainerPos, insert_position, fxIndex, param, GetParam(track,fxIndex, param, true), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
                         if parameterLinkActive or settings.mapOnce then mapModulatorActivate(nil) end
                         reloadParameterLinkCatch = true
+                        fxnumber = getFxIndexFromGuid(track, storeFocusedFXnumberGuid)
                         break;
                     end
                 end  
@@ -10236,12 +10254,14 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                 for pos, m in ipairs(modulatorNames) do 
                     for _, out in ipairs(m.output) do 
                         if moduleButton(m.mappingNames[out]) then
+                            --local storeFocusedFXnumberGuid = GetFXGUID(track, fxnumber)
                             --reaper.ShowConsoleMsg(m.name)
                             --reaper.ImGui_CloseCurrentPopup(ctx)
                             mapModulatorActivate(m, out, m.name, nil, #m.output == 1)
                             local isLFO = mapActiveName:match("LFO") ~= nil
                             setParamaterToLastTouched(track, modulationContainerPos, m.fxIndex, fxIndex, param, GetParam(track,fxIndex, param), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
                             mapModulatorActivate(nil) 
+                            --fxnumber = getFxIndexFromGuid(track, storeFocusedFXnumberGuid)
                             break;
                         end
                     end
@@ -10774,7 +10794,7 @@ function placingOfNextElement(spacing)
         if not spacing then
             reaper.ImGui_Spacing(ctx)
         else
-            reaper.ImGui_SetCursorPosY(ctx, reaper.ImGui_GetCursorPosY(ctx) - 4 + spacing)
+            reaper.ImGui_SetCursorPosY(ctx, reaper.ImGui_GetCursorPosY(ctx) - 8 + spacing)
         end
         --reaper.ImGui_Separator(ctx)
         --reaper.ImGui_Spacing(ctx)
@@ -14292,7 +14312,7 @@ local function loop()
             --reaper.ImGui_SetCursorPos(ctx, x +20, y + 20)
             reaper.ImGui_EndGroup(ctx)
             
-            placingOfNextElement(4)
+            placingOfNextElement(settings.vertical and 8 or 4)
             drawSeperator()
             placingOfNextElement(settings.widthBetweenWidgets)
         end
