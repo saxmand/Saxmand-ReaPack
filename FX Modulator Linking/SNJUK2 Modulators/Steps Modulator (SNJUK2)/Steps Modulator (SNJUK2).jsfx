@@ -13,7 +13,7 @@ noindex: true
 slider2:val=0<0,100,1>-Output       
 slider3:amount=100<-100,100,1>-Amount    
 
-slider4:2<0,2,1{On,Ping Pong,Off}>Reverse
+slider4:2<0,2,1{On,Ping Pong,Off}>-Reverse
 slider5:0<0,1,1>-Bipolar
 slider6:16<2,64,1>-Steps       
       
@@ -32,7 +32,7 @@ slider20:rnd=0<0,1,1>-Randomize
 slider21:N_mi=0<0,127,1> -Note min
 slider22:N_ma=127<0,127,1> -Note max
 
-slider25:reset=0<0,1,1> Reset
+slider25:reset=0<0,1,1>-Reset
 
 slider33:0<0,127,1>-CC Out 
 slider34:0<0,15,1{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>-Out Ch
@@ -629,7 +629,7 @@ x = 407; y = 148; w = 48; h = 18;
 
 x = 460; y = 148; w = 48; h = 18;
 
-    rnd = 0;
+    //rnd = 0;
     mouse.left_click && mouse_in_rect ( x, y, w, h) ? (
     rnd = 1;
     s = 1 ;

@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.1.1
+-- @version 1.1.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,15 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + updated counter to be able to use single count, so everytime you press a note or trigger it.
---   + fixed search function in plugins
---   + fixed show only mapped function in plugins
---   + added to stop mapping when clicking on mapping text on mapped parameters
---   + added to hide mapping width and enable/bipolar if knob/slider area is too small
---   + added new modualtor to detect audio signal (all the way to zero), including a midi not out
+--   + updated Steps modulator to SNJUK2's request
 
-
-local version = "1.1.1"
+local version = "1.1.2"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -6507,6 +6501,12 @@ function createSlider(track,fxIndex, _type,paramIndex,name,min,max,divide, value
     elseif _type == "ButtonToggle" then
         if reaper.ImGui_Button(ctx, name.. '##slider' .. name .. fxIndex,width, narrowIsUsed and (14 + 16)  or buttonSizeH) then
             setParameterButReturnFocus(track, fxIndex, paramIndex, currentValue == 1 and 0 or 1) 
+            return true
+        end  
+    elseif _type == "ButtonVal" then
+        if reaper.ImGui_Button(ctx, name.. '##slider' .. name .. fxIndex,width, narrowIsUsed and (14 + 16)  or buttonSizeH) then
+            setParameterButReturnFocus(track, fxIndex, paramIndex, divide) 
+            return true
         end  
     elseif _type == "ButtonReturn" then
         if reaper.ImGui_Button(ctx, name.. '##slider' .. name .. fxIndex,width, narrowIsUsed and (14 + 16)  or buttonSizeH) then
@@ -6516,7 +6516,9 @@ function createSlider(track,fxIndex, _type,paramIndex,name,min,max,divide, value
     if val == true then val = 1 end
     if val == false then val = 0 end
     if tooltip and settings.showToolTip then reaper.ImGui_SetItemTooltip(ctx,tooltip) end 
-    return ret, val
+    if _type ~= "ButtonReturn" and _type ~= "ButtonToggle" then
+        return ret, val
+    end
 end
 
 
@@ -7612,6 +7614,9 @@ function snjuk2StepsModulator(id, name, modulatorsPos, fxIndex, fxInContainerInd
     createSlider(track,fxIndex,"Combo",10,"Mode",nil,nil,1,nil,nil,nil,listText,0,"Select the mode for the triggering. 'Play' only outputs when Reaper is playing", modulatorParameterWidth)
     if GetParam(track, fxIndex, 10) == 1 then
         pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,11), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow) 
+    else
+        createSlider(track,fxIndex,"ButtonToggle",16,"Reset",0,1,nil,nil,nil,nil,nil,0,"Reset steps position", modulatorParameterWidth)
+        --pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,16), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow, useColumns and 0 or nil, 2) 
     end
     
     
@@ -7625,24 +7630,34 @@ function snjuk2StepsModulator(id, name, modulatorsPos, fxIndex, fxInContainerInd
     -- smooth
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,7), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow,2) 
     
-    
+    local list = {"On","Ping Pong","Off"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    createSlider(track,fxIndex,"Combo",2,"Reverse",nil,nil,1,nil,nil,nil,listText,0,"Select the mode for the triggering. 'Play' only outputs when Reaper is playing", modulatorParameterWidth)
+    --[[
     ret, newValue = reaper.ImGui_Checkbox(ctx, "Reverse" .. "##" .. paramName .. fxIndex, GetParam(track, fxIndex, 2) == 0)
     if ret then 
         setParameterButReturnFocus(track, fxIndex, 2, newValue and "0" or "2")
     end
+    ]]
     
-    
-    -- reset
-    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,16), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow, useColumns and 0 or nil, 2) 
     
     
     --p = getAllDataFromParameter(track,fxIndex,13)
     --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), p.currentValue >= 0.5 and colorButtonsHover or colorButtons)
     --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), p.currentValue >= 0.5 and colorButtonsHover or colorButtons)
     --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), p.currentValue >= 0.5 and colorButtonsHover or colorButtons)
-    if createSlider(track,fxIndex,"ButtonReturn",13,"Randomize",0,1,nil,nil,nil,nil,nil,0,"Randomize Parameters", modulatorParameterWidth, useColumns and 1 or nil, 2) then
+    --aa, ab = createSlider(track,fxIndex,"ButtonVal",13,"Randomize",0,1,1,nil,nil,nil,nil,0,"Randomize Parameters", modulatorParameterWidth, useColumns and 1 or nil, 2)
+    --if aa then
+    --    reaper.ShowConsoleMsg("hej\n")
+    --end
+    if createSlider(track,fxIndex,"ButtonToggle",13,"Randomize",0,1,nil,nil,nil,nil,nil,0,"Randomize Parameters", modulatorParameterWidth, useColumns and 1 or nil, 2) then
+    --if createSlider(track,fxIndex,"ButtonReturn",13,"Randomize",0,1,nil,nil,nil,nil,nil,0,"Randomize Parameters", modulatorParameterWidth, useColumns and 1 or nil, 2) then
     --if reaper.ImGui_Button(ctx, "Randomize", modulatorParameterWidth, 20) then 
-        SetParam(track, fxIndex, 13, 1)
+        --SetParam(track, fxIndex, 13, 1)
+        
     end
     --reaper.ImGui_PopStyleColor(ctx, 3)
 end
