@@ -709,7 +709,6 @@ if type(settings.onlyMapped) == "table" then
     settings.onlyMapped = false
 end
 
-reaper.ShowConsoleMsg(type(settings.onlyMapped))
 
 --settings = {}
 
@@ -6329,7 +6328,6 @@ function modulatorsWrapped(modulatorWidth, modulatorHeight, m, isCollabsed, vert
     local found
     
     for _, mod in ipairs(factoryModules) do
-        reaper.ShowConsoleMsg(fxName .. "==" .. mod.insertName .."\n")
         if fxName == mod.insertName or fxName:match(mod.insertName) ~= nil then
             modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, mod.layout, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m, nil, m.output) 
             found = true
@@ -7026,8 +7024,18 @@ function audioDetectModulator(id, name, modulatorsPos, fxIndex, fxInContainerInd
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,5), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow,0) 
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,6), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,1)  
     
-    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,7), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,0)  
-    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,8), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,1)  
+    local list = {"Off","On"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    local useNoteOut = GetParam(track, fxIndex, 7) > 0
+    createSlider(track,fxIndex,"Combo",7,"Midi out",nil,nil,1,nil,nil,nil,listText,0,"Send out MIDI note when there's a signal", modulatorParameterWidth, (useColumns and useNoteOut) and 0 or nil, (useColumns and useNoteOut) and 2 or nil)
+     
+    --pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,7), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,0)  
+    if useNoteOut then
+        pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,8), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,1, (useColumns and useNoteOut) and 2 or nil)  
+    end
 end
 
 
