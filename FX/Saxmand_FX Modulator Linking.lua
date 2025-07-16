@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.1.0
+-- @version 1.1.1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,12 +15,15 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed ab slider working with plugins which parameters are not going from 0 to 1
---   + fixed modulators show settings not working properly
---   + added slider to ignore outside range on keytracker and note velocity modualtor
+--   + updated counter to be able to use single count, so everytime you press a note or trigger it.
+--   + fixed search function in plugins
+--   + fixed show only mapped function in plugins
+--   + added to stop mapping when clicking on mapping text on mapped parameters
+--   + added to hide mapping width and enable/bipolar if knob/slider area is too small
+--   + added new modualtor to detect audio signal (all the way to zero), including a midi not out
 
 
-local version = "1.1.0"
+local version = "1.1.1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -329,7 +332,6 @@ local defaultSettings = {
     allowCollapsingMainWindow = false,
     
     onlyMapped = false,
-    onlyMappedParameters = {},
     search = "", 
     searchParameters = {}, 
     partsWidth = 188,
@@ -392,6 +394,7 @@ local defaultSettings = {
     showAddContainer = false,
     showAddTrackFXDirectly = true,
     showPluginOptionsOnTop = true,
+    closeFxWindowAfterBeingAdded = false,
     
       -- Parameters
     PluginParameterColumnAmount = 1,
@@ -409,7 +412,7 @@ local defaultSettings = {
     showParametersOptionOnAllPlugins = true,
     showLastClicked = true,
     showParameterOptionsOnTop = true,
-    maxParametersShown = 0, 
+    --maxParametersShown = 0, 
     alignParameterKnobToTheRight = true,
     showBaselineInsteadOfModulatedValue = false,
     showValueOnNamePos = false,
@@ -665,7 +668,7 @@ local defaultTrackSettings = {
     showOnlyFocusedModulator = false,
     hidePluginSearchParameters = {},
     searchParameters = {},
-    onlyMappedParameters = {},
+    onlyMapped = {},
     focusedParam = {},
     hidePlugins = false,
     collabsModules = {},
@@ -701,6 +704,12 @@ settings.buildParamterFilterDataBase = true
 settings.limitParameterLinkLoading = true
 settings.maxParametersShown = 0
 
+-- for safety, as it was in there earlier as a table. Can remove at some point
+if type(settings.onlyMapped) == "table" then
+    settings.onlyMapped = false
+end
+
+reaper.ShowConsoleMsg(type(settings.onlyMapped))
 
 --settings = {}
 
@@ -2832,7 +2841,7 @@ function addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
     local modulatorContainerExist = true
     if modulatorsPos == -1 then
         --modulatorsPos = GetByName( track, "Container", true )
-        modulatorsPos = addFxAfterSelection(track, 0, "Container", true)
+        modulatorsPos = addFxAfterSelection(track, -1, "Container", true)
         
         --modulatorsPos = TrackFX_AddByName( track, "Container", modulatorsPos, -1 ) 
         rename = SetNamedConfigParm( track, modulatorsPos, 'renamed_name', "Modulators" )
@@ -5126,11 +5135,11 @@ function drawSearchIcon(size, buttonId, offsetX, offsetY, color, toolTip)
     return click
 end
 
-function searchAndOnlyMapped(track, fxIndex, searchAreaH, drawingWidth) 
+function searchAndOnlyMapped(track, fxIndex, searchAreaH, drawingWidth, showOnlyFocusedPlugin) 
     local guid = GetFXGUID(track,fxIndex)
     local param = trackSettings.focusedParam and trackSettings.focusedParam[guid]
     local showingLastClicked = settings.showLastClicked and fxIndex and param
-    local showOnlyFocusedPlugin = settings.showOnlyFocusedPluginGlobal and settings.showOnlyFocusedPlugin or trackSettings.showOnlyFocusedPlugin
+    --local showOnlyFocusedPlugin = settings.showOnlyFocusedPluginGlobal and settings.showOnlyFocusedPlugin or trackSettings.showOnlyFocusedPlugin
     if (showOnlyFocusedPlugin or settings.showParametersOptionOnAllPlugins) and (settings.showOnlyMappedAndSearchOnFocusedPlugin or settings.showLastClicked) then
         function lastClickDraw(searchAreaH) 
             if settings.showLastClicked then
@@ -5159,18 +5168,25 @@ function searchAndOnlyMapped(track, fxIndex, searchAreaH, drawingWidth)
         end
         
         if settings.showOnlyMappedAndSearchOnFocusedPlugin and guid then
-            local isShowing = showOnlyFocusedPlugin and settings.onlyMapped or trackSettings.onlyMappedParameters[guid]
-            ret, onlyMapped = reaper.ImGui_Checkbox(ctx, "##Only mapped" .. guid,isShowing)
+            local isShowing = false
+            if showOnlyFocusedPlugin then 
+                isShowing = settings.onlyMapped
+            else
+                isShowing = trackSettings.onlyMapped[guid] or false
+            end
+            
+            local ret, onlyMapped = reaper.ImGui_Checkbox(ctx, "##Only mapped" .. guid, isShowing)
             if ret then 
                 if onlyMapped then
                     --trackSettings.searchParameters[guid] = ""
                 end
                 if showOnlyFocusedPlugin then
-                    trackSettings.onlyMappedParameters[guid] = onlyMapped 
-                else
                     settings.onlyMapped = onlyMapped
+                    saveSettings()
+                else
+                    trackSettings.onlyMapped[guid] = onlyMapped 
+                    saveTrackSettings(track) 
                 end
-                saveTrackSettings(track) 
             end 
             setToolTipFunc("Show only mapped parameters")
             
@@ -5181,17 +5197,17 @@ function searchAndOnlyMapped(track, fxIndex, searchAreaH, drawingWidth)
             local searchWidth = drawingWidth - posX - 4 - 8
             reaper.ImGui_SetNextItemAllowOverlap(ctx)
             reaper.ImGui_SetNextItemWidth(ctx, searchWidth)
-            if focusSearchParameters then
+            if focusSearchParameters == guid then
                 reaper.ImGui_SetKeyboardFocusHere(ctx)
                 focusSearchParameters = nil
             end
             
-            if not settings.searchParameters[guid] then settings.searchParameters[guid] = "" end
-            ret, search = reaper.ImGui_InputText(ctx,"##SearchParameter" .. guid, settings.searchParameters[guid]) 
+            if not trackSettings.searchParameters[guid] then trackSettings.searchParameters[guid] = "" end
+            ret, search = reaper.ImGui_InputText(ctx,"##SearchParameter" .. guid, trackSettings.searchParameters[guid]) 
             if search ~= trackSettings.searchParameters[guid] then
                 trackSettings.searchParameters[guid] = search
                 if settings.searchClearsOnlyMapped then
-                    trackSettings.onlyMappedParameters[guid] = false
+                    trackSettings.onlyMapped[guid] = false
                     settings.onlyMapped = false
                 end
                 saveTrackSettings(track)
@@ -5200,14 +5216,15 @@ function searchAndOnlyMapped(track, fxIndex, searchAreaH, drawingWidth)
             if reaper.ImGui_IsItemFocused(ctx) then 
                 ignoreKeypress = true
             end
+            
             reaper.ImGui_SameLine(ctx, posX + searchWidth-8)
-            local hasSearch = settings.searchParameters[guid] and settings.searchParameters[guid] ~= ""
+            local hasSearch = trackSettings.searchParameters[guid] and trackSettings.searchParameters[guid] ~= ""
             if drawSearchIcon(20, "clearSearchParameter" .. guid, 0, 0, colorWhite, hasSearch and "Clear search" or "Search for parameters") then
                 if hasSearch then
                     trackSettings.searchParameters[guid] = ""
                     saveTrackSettings(track)
                 end
-                focusSearchParameters = true
+                focusSearchParameters = guid
             end
         end
         
@@ -6312,6 +6329,7 @@ function modulatorsWrapped(modulatorWidth, modulatorHeight, m, isCollabsed, vert
     local found
     
     for _, mod in ipairs(factoryModules) do
+        reaper.ShowConsoleMsg(fxName .. "==" .. mod.insertName .."\n")
         if fxName == mod.insertName or fxName:match(mod.insertName) ~= nil then
             modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, mod.layout, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m, nil, m.output) 
             found = true
@@ -6986,6 +7004,33 @@ function noteVelocityModulator(id, name, modulatorsPos, fxIndex, fxInContainerIn
     createSlider(track,fxIndex,"Checkbox",8,"Pass through MIDI",nil,nil,1,nil,nil,nil,nil,nil, nil, modulatorParameterWidth) 
 end
 
+
+function audioDetectModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isCollabsed, fx, genericModulatorInfo, modulatorParameterWidth, useKnobs, useNarrow)
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,1), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow, useColumns and 0 or nil, 0) 
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,2), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow, useColumns and 0 or nil, 1) 
+
+    local list = {"Off","Smooth", "Constant"}
+    local listText = ""
+    for _, t in ipairs(list) do
+        listText = listText .. t .. "\0" 
+    end
+    
+    local useColumns = settings.ModulatorParameterColumnAmount > 1
+    
+    local useTimer = GetParam(track, fxIndex, 3) > 0
+    createSlider(track,fxIndex,"Combo",3,"Timer",nil,nil,1,nil,nil,nil,listText,0,"Set the timer mode for changing the value", modulatorParameterWidth, (useColumns and useTimer) and 0 or nil, (useColumns and useTimer) and 2 or nil)
+    if useTimer then
+        pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,4), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow, useColumns and 1 or nil, 2) 
+    end 
+    
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,5), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow,0) 
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,6), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,1)  
+    
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,7), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,0)  
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,8), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,1)  
+end
+
+
 function xyPad(name, id, padSize, track, fxIndex, xParam, yParam,pX, pY, padSizeH, ignoreInput, useKnobs, useNarrow)
     
     
@@ -7222,7 +7267,7 @@ function abSliderModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex,
         reaper.ImGui_Spacing(ctx)
         
         -- AB SLIDER
-        pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,0), nil, true, false, false, modulatorParameterWidth, 0, "", nil,nil,"%0.2f", useKnobs,useNarrow) 
+        pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,0), nil, true, false, false, modulatorParameterWidth, 0, "", nil,nil,"%0.2f", useKnobs,false) 
         
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), mapActiveFxIndex == fxIndex and colorMappingPulsating or settings.colors.buttons) 
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), mapActiveFxIndex == fxIndex and colorMappingPulsating or settings.colors.buttons)
@@ -7444,7 +7489,7 @@ function snjuk2LfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex
     local useColumns = settings.ModulatorParameterColumnAmount > 1
     
     if GetParam(track, fxIndex, 2) == 6 then
-        pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,22), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow) 
+        pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,22), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, false) 
     end
     
     createSlider(track,fxIndex,"Checkbox",6,"Sync",nil,nil,1,nil,nil,nil,nil,nil, nil, modulatorParameterWidth, useColumns and 0) 
@@ -7466,6 +7511,7 @@ function snjuk2LfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,9), nil, nil, nil, true, modulatorParameterWidth, 1, nil,nil,nil,nil, useKnobs, useNarrow,3) 
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,10), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow,4) 
     pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,17), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow,5) 
+    pluginParameterSlider("modulator", getAllDataFromParameter(track,fxIndex,19), nil, nil, nil, true, modulatorParameterWidth, 0, nil,nil,nil,nil, useKnobs, useNarrow,6) 
 end
 
 
@@ -7847,6 +7893,14 @@ factoryModules = {
       output = {10}, 
       layout = adsrModulator,
       showOpenGui = true,
+    },
+    { 
+      name = "Audio Detect",
+      tooltip = "Use audio signale detection as a modulator",
+      func = "general",
+      insertName = "JS: Audio Detect Modulator",
+      output = {0}, 
+      layout = audioDetectModulator,
     },
     { 
       name = "Button",
@@ -8367,7 +8421,10 @@ function waitForClosingAddFXBrowser(pathForNextIndex, fx_before)
             end
             -- An FX was added
             
-            openCloseFx(track, addedFxIndex, false) 
+            if settings.closeFxWindowAfterBeingAdded then
+                openCloseFx(track, addedFxIndex, false) 
+            end
+            
             if moveToModulatorContainer then
                 SetNamedConfigParm( track, addedFxIndex, 'renamed_name', fxName:gsub("^[^:]+: ", "")) 
                 modulationContainerPos, insert_position = movePluginToContainer(track, addedFxIndex )
@@ -8721,7 +8778,7 @@ function drawCustomKnob(ctx, id, relativePosX, relativePosY, size, amount, textO
     return click
 end
 
-function modulatorMappingItems(minX, minY, maxX, maxY, p, id, padColor)
+function modulatorMappingItems(minX, minY, maxX, maxY, p, id, padColor, widthAvailableWithSpaceTaken)
         
         maxX = maxX  -- 20
         minY = minY + 2
@@ -8738,52 +8795,55 @@ function modulatorMappingItems(minX, minY, maxX, maxY, p, id, padColor)
             
             
             if settings.showWidthInParameters then
-                 
-                reaper.ImGui_SetCursorScreenPos(ctx, maxX+posXOffset, minY + 6)
                 
-                local overlayText = nil -- isMouseDown and "Width\n" .. math.floor(linkWidth * 100) .. "%"
-                if widthKnob(ctx, "width" .. id, 0, 0, 20, minWidth == 0 and p.width or p.width / 2 + 0.5, overlayText,  p.parameterModulationActive and colorText or colorTextDimmed, settings.colors.buttons, padColor, settings.colors.buttonsActive) then
+                if widthAvailableWithSpaceTaken - 35 > 30 then
+                    reaper.ImGui_SetCursorScreenPos(ctx, maxX+posXOffset, minY + 6)
                     
-                    if not dragKnob then
-                        dragKnob = "width" .. id
-                        mouseDragStartX = mouse_pos_x
-                        mouseDragStartY = mouse_pos_y
-                        if not isMouseDown then  
-                            if not overlayActive then setToolTipFunc("Width: " .. math.floor(p.width * 100) .. "%") end
-                            --reaper.ImGui_SetTooltip(ctx, parameterLinkName .. " width: " ..)
+                    local overlayText = nil -- isMouseDown and "Width\n" .. math.floor(linkWidth * 100) .. "%"
+                    if widthKnob(ctx, "width" .. id, 0, 0, 20, minWidth == 0 and p.width or p.width / 2 + 0.5, overlayText,  p.parameterModulationActive and colorText or colorTextDimmed, settings.colors.buttons, padColor, settings.colors.buttonsActive) then
+                        
+                        if not dragKnob then
+                            dragKnob = "width" .. id
+                            mouseDragStartX = mouse_pos_x
+                            mouseDragStartY = mouse_pos_y
+                            if not isMouseDown then  
+                                if not overlayActive then setToolTipFunc("Width: " .. math.floor(p.width * 100) .. "%") end
+                                --reaper.ImGui_SetTooltip(ctx, parameterLinkName .. " width: " ..)
+                            end
+                        elseif not p.parameterModulationActive then
+                            if isMouseDown then   
+                                toggleeModulatorAndSetBaselineAcordingly(track, p.fxIndex, p.param, not p.parameterModulationActive)
+                            end
+                            setToolTipFunc(toolTipText)
                         end
-                    elseif not p.parameterModulationActive then
-                        if isMouseDown then   
-                            toggleeModulatorAndSetBaselineAcordingly(track, p.fxIndex, p.param, not p.parameterModulationActive)
-                        end
-                        setToolTipFunc(toolTipText)
                     end
-                end
-                
-                posXOffset = posXOffset + 22
-                
+                    
+                    posXOffset = posXOffset + 22
+                end 
             end
             --if not settings.showWidthInParameters then reaper.ImGui_BeginDisabled(ctx) end
             if settings.showEnableAndBipolar then 
-                reaper.ImGui_SetCursorScreenPos(ctx, maxX + posXOffset, minY) 
-                if enableButton(ctx, id, 10, padColor) then 
-                    toggleeModulatorAndSetBaselineAcordingly(track, p.fxIndex, p.param, not p.parameterModulationActive)
-                end
-                if reaper.ImGui_IsItemHovered(ctx) and reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
-                    disableParameterLink(track, p.fxIndex, p.param)
-                end
-                
-                if not overlayActive then setToolTipFunc(toolTipText.. "\n - Doubleclick to remove") end
-                
-                reaper.ImGui_SetCursorScreenPos(ctx, maxX + posXOffset, minY + 10)
-                if drawModulatorDirection(10, 16, p, track, p.fxIndex, p.param, id, -2,1, padColor, toolTipText) then -- not settings.mappingModeBipolar and padColor or (p.bipolar and padColor or colorMappingLight), toolTipText)  then
-                    if settings.mappingModeBipolar then
-                        toggleBipolar(track, p.fxIndex, p.param, p.bipolar)
-                    else
-                        changeDirection(track, p)
+                if widthAvailableWithSpaceTaken - 13 > 30 then
+                    reaper.ImGui_SetCursorScreenPos(ctx, maxX + posXOffset, minY) 
+                    if enableButton(ctx, id, 10, padColor) then 
+                        toggleeModulatorAndSetBaselineAcordingly(track, p.fxIndex, p.param, not p.parameterModulationActive)
+                    end
+                    if reaper.ImGui_IsItemHovered(ctx) and reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
+                        disableParameterLink(track, p.fxIndex, p.param)
+                    end
+                    
+                    if not overlayActive then setToolTipFunc(toolTipText.. "\n - Doubleclick to remove") end
+                    
+                    reaper.ImGui_SetCursorScreenPos(ctx, maxX + posXOffset, minY + 10)
+                    if drawModulatorDirection(10, 16, p, track, p.fxIndex, p.param, id, -2,1, padColor, toolTipText) then -- not settings.mappingModeBipolar and padColor or (p.bipolar and padColor or colorMappingLight), toolTipText)  then
+                        if settings.mappingModeBipolar then
+                            toggleBipolar(track, p.fxIndex, p.param, p.bipolar)
+                        else
+                            changeDirection(track, p)
+                        end 
                     end 
-                end 
-                if not overlayActive then setToolTipFunc("Change direction of " .. ' "' .. tostring(parameterLinkName) .. '"' ) end
+                    if not overlayActive then setToolTipFunc("Change direction of " .. ' "' .. tostring(parameterLinkName) .. '"' ) end
+                end
                 
                 posXOffset = posXOffset + 13
             end
@@ -8945,7 +9005,7 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
     reaper.ImGui_DrawList_AddRectFilled(draw_list, minX, minY, maxX + spaceTaken, maxY, settings.colors.sliderAreaBackground, 4) 
     
     if sliderPos and p.parameterLinkActive then
-        modulatorMappingItems(minX, minY + (not modulatorMappingNextToTitle and 14 or 0), maxX, maxY, p, id, padColor)
+        modulatorMappingItems(minX, minY + (not modulatorMappingNextToTitle and 14 or 0), maxX, maxY, p, id, padColor, widthAvailableWithSpaceTaken)
         
         if (isAdjustWidthToggle and dragKnob == "baseline" .. id) or ((isAnyMouseDown or isScrollValue) and dragKnob == "width" .. id) then
             valueName = (linkWidth * 100) .. "%"
@@ -9070,11 +9130,11 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
         local y = minY + 2
         
         if useNarrow then
-            if spaceTaken == 0 or widthAvailableWithSpaceTaken / 2 > size then
+            if spaceTaken == 0 or widthAvailableWithSpaceTaken / 2 + size / 2 < widthAvailable then
                 x = centerOfWidget - size / 2
             else
-                x = minX
-                moveTextToTheLeft = true
+                x = minX + widthAvailable / 2 - size / 2
+                --moveTextToTheLeft = true
             end
             y = y + 14
         end
@@ -9657,10 +9717,12 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     
     local paramIsMappingParam = mapActiveFxIndex == p.fxIndex and mapActiveParam == p.param
     
+    local paramIsMappedToModulator = mapActiveFxIndex and parameterLinkActive and mapActiveName == parameterLinkName
+    
     -- this did not work
     --local paramIsModulationParam = mapActiveFxIndex == p.parameterLinkFxIndex and mapActiveParam == p.parameterLinkParam 
     
-    local canBeMapped = mapActiveFxIndex and not paramIsMappingParam and (not parameterLinkActive or (parameterLinkActive and mapActiveName ~= parameterLinkName )) 
+    local canBeMapped = mapActiveFxIndex and not paramIsMappingParam and (not parameterLinkActive or (not paramIsMappedToModulator )) 
     --local canBeMapped = mapActiveFxIndex and not paramIsMappingParam and (not parameterLinkActive or (parameterLinkActive and mapActiveFxIndex ~= p.parameterLinkFxIndex and mapActiveParam ~= p.parameterLinkParam )) 
     
     -- if we map from a generic modulator
@@ -9705,13 +9767,13 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     
     
     
-    function spaceForExtraButtons(canBeMapped)
+    function spaceForExtraButtons(canBeMapped, faderWidth)
         local spaceTaken = 0
         if parameterLinkActive or canBeMapped then
-            if settings.showEnableAndBipolar then
+            if settings.showEnableAndBipolar and faderWidth - 12 > 30 then
                 spaceTaken = spaceTaken + 12
             end 
-            if settings.showWidthInParameters then 
+            if settings.showWidthInParameters and faderWidth - spaceTaken - 23 > 30 then 
                 spaceTaken = spaceTaken + 23
             end
         end
@@ -9761,11 +9823,14 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
         end
     end
     
-    local totalSliderHeight = showMappingText and sliderHeight + 16 + 12 or sliderHeight + 16
+    local totalSliderHeight = sliderHeight + 16
+    if showMappingText and not paramIsMappedToModulator then
+        totalSliderHeight  = totalSliderHeight + 12
+    end
     if useNarrow and useKnobs then
         totalSliderHeight = totalSliderHeight + 16
     end
-    local spaceTaken = spaceForExtraButtons(canBeMapped)
+    local spaceTaken = spaceForExtraButtons(canBeMapped, faderWidth)
     
     sliderStartPosX, sliderStartPosY = reaper.ImGui_GetCursorPos(ctx)
     -- we reduce the button size to make sure we do not get a horizontal scroll 
@@ -9778,20 +9843,6 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     
     local minX, minY = reaper.ImGui_GetItemRectMin(ctx) 
     local maxX, maxY = reaper.ImGui_GetItemRectMax(ctx)
-    -- we add the missing size from above
-    maxX = maxX --+ 8 --
-    
-    parStartPosX, parStartPosY = minX, minY
-    
-    local buttonW = maxX - minX 
-    
-    --if not nameOnSide and dontShowName then 
-    reaper.ImGui_SameLine(ctx)
-    sliderEndPosX, sliderEndPosY = reaper.ImGui_GetCursorPos(ctx)
-    sliderEndPosX = sliderEndPosX --+ 8
-    reaper.ImGui_NewLine(ctx)
-    
-    
     
     
     local hover = false
@@ -9823,6 +9874,35 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
             end
         end
     end
+    
+    if showMappingText and paramIsMappedToModulator then
+        reaper.ImGui_SetCursorScreenPos(ctx, minX, maxY)
+        if reaper.ImGui_InvisibleButton(ctx, "sliderOff" .. buttonId .. moduleId, sliderW + spaceTaken, 12) then
+            mapModulatorActivate(nil)
+        end
+        if reaper.ImGui_IsItemHovered(ctx) then
+            showMappingText = "Stop mapping"
+        end
+        
+        maxY = maxY + 12 --+ 8 --
+    end
+    
+    -- we add the missing size from above
+    maxX = maxX --+ 8 --
+    
+    parStartPosX, parStartPosY = minX, minY
+    
+    local buttonW = maxX - minX 
+    
+    --if not nameOnSide and dontShowName then 
+    reaper.ImGui_SameLine(ctx)
+    sliderEndPosX, sliderEndPosY = reaper.ImGui_GetCursorPos(ctx)
+    sliderEndPosX = sliderEndPosX --+ 8
+    reaper.ImGui_NewLine(ctx)
+    
+    
+    
+    
     
     
     
@@ -11658,6 +11738,13 @@ function appSettingsWindow()
                     saveSettings()
                 end
                 setToolTipFunc("Show a button that will add a contininer to the FX list")  
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Close new FX window when added',settings.closeFxWindowAfterBeingAdded) 
+                if ret then 
+                    settings.closeFxWindowAfterBeingAdded = val
+                    saveSettings()
+                end
+                setToolTipFunc("Close the FX window's after FX was added, if open")  
                 
                 
                 reaper.ImGui_TextColored(ctx, colorGrey, "Containers")
@@ -14857,7 +14944,7 @@ local function loop()
                             if showOnlyFocusedPlugin then
                                 onlyMapped = settings.onlyMapped
                             else
-                                onlyMapped = trackSettings.onlyMappedParameters[guid]
+                                onlyMapped = trackSettings.onlyMapped[guid]
                             end 
                             -- check if any parameters links a active, if not we show all of them
                             local someAreActive = false
@@ -14869,9 +14956,10 @@ local function loop()
                                             someAreActive = true; break
                                         end
                                     else
-                                        someAreActive = true; break
+                                        --someAreActive = true; break
+                                        if getPlinkActive(track, fxIndex, p) then someAreActive = true; break end
                                     end
-                                    --if getPlinkActive(track, fxIndex, p) then someAreActive = true; break end
+                                    
                                 end
                             end 
                             

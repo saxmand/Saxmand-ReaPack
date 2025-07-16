@@ -1,0 +1,101 @@
+desc:Audio Detect Modulator
+author: saxmand
+version: 1.0
+noindex: true
+changelog: Initial release
+
+/**
+ * JSFX : Audio Detect Modulator
+ * Author: Jesper Ankarfeldt
+ * Reaper forum : 
+ * Licence: GPL v3
+ * REAPER: 7.0
+ * Version: 10 (2024-11-14)
+ */
+
+
+slider1:0<0,1,0.001>Signal Detected (Output)
+slider2:threshold=0<0,1,0.01>Threshold
+slider3:amount=100<1,100,1>amount
+
+
+slider4:timer=0<0,2,1{Off,Smooth,Constant}>Timer
+slider5:speed=500<1,5000,1>Speed (ms)
+
+slider6:offset=0<0,1,0.01>Offset
+slider7:width=1<-1,1,0.01>Width
+
+slider8:midiOut=0<0,1,1{Off,On}>MIDI Out
+slider9:note_number=64<0,127,1>Note number
+
+@init
+signal_max = 0;
+target = 0;
+current = 0;
+msg3 = -1;
+last_msg3 = -1;
+
+@slider
+threshold = max(threshold, 0.0000001); // Prevent zero division
+speed = max(speed, 1); // Avoid 0 speed
+@block
+
+midiOut == 1 ? ( 
+    msg3 = floor(slider1 * 127);
+    last_msg3 != msg3 ? (
+        msg3 == 0 ? (
+            midisend(0, 0x80, note_number, 64);
+        ):(
+            last_msg3 != 0 ? midisend(0, 0x80, note_number, 64);
+            midisend(0, 0x90, note_number, msg3);
+        );
+        last_msg3 = msg3;
+    );
+);
+
+@sample
+// Check left and right channel for signal above threshold
+signal_max = max(abs(spl0), abs(spl1)) * 3;
+//signal_active = signal_max > threshold ? min(amount / 100 / signal_max, 1) : 0;
+target = signal_max > threshold ? (amount == 100 ? 1 : min(signal_max * amount, 1)) : 0;
+
+delta = target - current;
+
+(timer == 0) ? (
+  current = target;
+)
+: timer == 1 ? (
+  current += delta * 0.1/speed;
+)
+: (
+  step = 0.022/speed;
+  current += (delta > step) ? step :
+            (delta < -step) ? -step : delta;
+);
+
+out = current*width+offset; 
+out < 0 ? out = 0;
+out > 1 ? out = 1;
+slider1 = out;
+
+
+
+
+@gfx
+gfx_h = 100; // Height in pixels
+gfx_set(1, 1, 1, 0.15);
+gfx_rect(0, 0, gfx_w, gfx_h);
+gfx_setfont(1, "Arial", 16); // Font slot 1 with custom font and size
+gfx_set(1, 1, 1, 1); // Set color to white (RGBA: 1, 1, 1, 1)
+
+function drawCenteredText(text, posY) (
+    w = h = 0;
+    gfx_measurestr(text, w, h);
+    gfx_x = (gfx_w - w) / 2;
+    gfx_y = posY;
+    gfx_printf(text);
+);
+
+drawCenteredText("This plugin is part of ''Saxmand_FX Modulator Linking''.", 10);
+drawCenteredText("The script helps working with modulators.", 30);
+drawCenteredText("Run the script to map and adjust parameters.",50);

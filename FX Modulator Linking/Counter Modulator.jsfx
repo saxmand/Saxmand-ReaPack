@@ -18,7 +18,7 @@ slider1:0<0,1,0.001>Output
 slider2:mode=0<0,2,1{Note,Trigger,Both}>Mode
 slider3:trigger_slider=0<0,1,1>Trigger
 slider4:trigger_threshold=1<1,127,1>Threshold
-slider5:maximum=4<2,100,1>Steps
+slider5:maximum=4<1,100,1>Steps
 slider6:timer=0<0,2,1{Off,Smooth,Constant}>Timer
 slider7:speed=500<1,5000,1>Speed (ms)
 slider8:direction=0<0,3,1{Up, Down, Up & Down, Random}>Direction
@@ -28,6 +28,8 @@ slider10:reset_value=0<1,100,1>Reset Value
 
 slider11:offset=0<0,1,0.01>Offset
 slider12:width=1<-1,1,0.01>Width
+slider13:count1Length=100<1,1000,1>Single count ms length
+slider14:count1ResetOnNoteOff=0<0,1,1>Reset on note off
 
 options:no_meter
 
@@ -40,27 +42,33 @@ counter = 0;
 cur_dir = 0;
 trigger_now = 0;
 trigger_again = 1;
+wait = 0;
 
 function setCounterTarget()(
-    direction == 0 ? (
-        counter >= maximum ? counter = 0;
-        counter += 1;
-    ): direction == 1 ? (
-        counter -= 1;
-        counter <= 0 ? counter = maximum;          
-    ): direction == 2 ? (
-        counter >= maximum ? cur_dir = 1;
-        cur_dir == 0 ? (
+    maximum == 1 ? (
+        trigger_now = 1;
+        target = 1;
+    ):(
+        direction == 0 ? (
+            counter >= maximum ? counter = 0;
             counter += 1;
-        ):(
+        ): direction == 1 ? (
             counter -= 1;
-        );          
-        counter <= 1 ? cur_dir = 0;                        
-    ): direction == 3 ? (
-        counter = floor(rand() * maximum + 0.5);
+            counter <= 0 ? counter = maximum;          
+        ): direction == 2 ? (
+            counter >= maximum ? cur_dir = 1;
+            cur_dir == 0 ? (
+                counter += 1;
+            ):(
+                counter -= 1;
+            );          
+            counter <= 1 ? cur_dir = 0;                        
+        ): direction == 3 ? (
+            counter = floor(rand() * maximum + 0.5);
+        );
+    
+        target = (counter - 1)/(maximum-1);
     );
-
-    target = (counter - 1)/(maximum-1);
 );
 
 @slider
@@ -73,6 +81,9 @@ while (
     status = msg1 & 0xF0;
     (status == 0x90 && mode != 1 && msg3 >= trigger_threshold) ? (    
         setCounterTarget()
+    );
+    (count1ResetOnNoteOff == 1 && status == 0x80 && mode != 1) ? (
+        target = 0;
     );
     midisend(t, msg1, msg2, msg3);
 );
@@ -116,7 +127,14 @@ out < 0 ? out = 0;
 out > 1 ? out = 1;
 slider1 = out;
 
-
+(mode != 0 || count1ResetOnNoteOff == 0) && maximum == 1 && target == 1 ? (
+    wait < srate/1000*count1Length ? (
+        wait += 1;
+    ):(
+        wait = 0;
+        target = 0;
+    );
+);
 
 @gfx
 
