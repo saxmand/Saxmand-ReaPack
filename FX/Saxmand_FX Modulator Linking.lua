@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.1.4
+-- @version 1.1.5
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,11 +15,10 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed some vertical UI stuff
---   + fixed refocussing focused FX when adding new modulator via context menu
---   + fixed custom modulators open gui does not affect minimize/maximize state
+--   + added wet knobs to containers
+--   + added selector function to containers
 
-local version = "1.1.4"
+local version = "1.1.5"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -394,6 +393,8 @@ local defaultSettings = {
     
       -- Parameters
     PluginParameterColumnAmount = 1,
+    
+    showWetKnobOnPlugins = true,
     --useKnobsPlugin = false,
     --useNarrowPlugin = false,
     searchClearsOnlyMapped = false,
@@ -445,6 +446,8 @@ local defaultSettings = {
     
     
     
+    
+    widthBetweenWidgets = 5,
       -- Modules 
     showModulatorsList = true, 
     modulesHeight = 250,
@@ -456,7 +459,6 @@ local defaultSettings = {
     modulatorsPanelHeight = 600,
     
     showOnlyFocusedModulator = false,
-    
     
     -- Modulators
     showAddModulatorsList = true,
@@ -674,6 +676,7 @@ local defaultTrackSettings = {
     hideParametersFromModulator = {},
     showAbSliderMappings = {},
     containerColors = {},
+    closeFolderVisually = {},
 }
 
 local function saveSettings()
@@ -2010,8 +2013,10 @@ function getPlinkFxIndex(track,containerFxIndex, parameterLinkEffect,doNotGetSta
 end
 
 function getPlinkFxIndexInContainer(track,containerFxIndex, param, doNotUseCatch)
-    local ret, val = GetNamedConfigParm( track, containerFxIndex, 'param.'..param..'.container_map.fx_index', doNotUseCatch )
-    return ret and tonumber(val) or false
+    if param then
+        local ret, val = GetNamedConfigParm( track, containerFxIndex, 'param.'..param..'.container_map.fx_index', doNotUseCatch )
+        return ret and tonumber(val) or false
+    end
 end
 
 
@@ -3213,24 +3218,34 @@ function setParamaterToLastTouched(track, modulationContainerPos, fxIndex, fxnum
         -- map from fx in the root
         outputPos = tonumber(select(2, GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam, true )))
     else
-        containerPath = get_container_path_from_fx_id(track, fxnumber)
-        if containerPath and containerPath[1] == modulationContainerPos + 1 then 
-            -- map a modulator from within the modulator folder
-            -- could this be done in a better way? -- I need to get the position of the FX inside the container
-            outputPos = mapActiveParam -- this is the paramater in the lfo plugin 
-            
-            local mappingFxContainerPath = get_container_path_from_fx_id(track, mapActiveFxIndex)
-            modulationContainerPos = fxContainerIndex -- mappingFxContainerPath[#mappingFxContainerPath] - 1 -- mapActiveFxIndex--
+        
+        -- we map a thing specifically from within the folder
+        if tonumber(modulationContainerPos) > 0x2000000 and modulationContainerPos == fxIndex then
+            outputPos = mapActiveParam  
+            local mappingFxContainerPath = get_container_path_from_fx_id(track, modulationContainerPos)
+            modulationContainerPos = mappingFxContainerPath[#mappingFxContainerPath] - 1
         else
-            -- map a fx in a container
-            new_fxnumber, new_param = fx_map_parameter(track, fxnumber, param) 
-            if not new_param then
-                reaper.ShowConsoleMsg(appName .. ":\nThere was an issue finding the pos of the parameter. Report this to developer:\nMod container pos: " .. tostring(modulationContainerPos) .. ", fxIndex: " .. tostring(fxIndex) .. ", fxnumber: " .. tostring(fxnumber) .. ", param: " .. tostring(param))
-                return
+            local containerPath = get_container_path_from_fx_id(track, fxnumber)
+        
+            if containerPath and containerPath[1] == modulationContainerPos + 1 then 
+                -- map a modulator from within the modulator folder
+                -- could this be done in a better way? -- I need to get the position of the FX inside the container
+                outputPos = mapActiveParam -- this is the paramater in the lfo plugin 
+                
+                local mappingFxContainerPath = get_container_path_from_fx_id(track, mapActiveFxIndex)
+                modulationContainerPos = mappingFxContainerPath[#mappingFxContainerPath] - 1
+                --modulationContainerPos = fxContainerIndex -- mappingFxContainerPath[#mappingFxContainerPath] - 1 -- mapActiveFxIndex--
+            else
+                -- map a fx in a container
+                new_fxnumber, new_param = fx_map_parameter(track, fxnumber, param) 
+                if not new_param then
+                    reaper.ShowConsoleMsg(appName .. ":\nThere was an issue finding the pos of the parameter. Report this to developer:\nMod container pos: " .. tostring(modulationContainerPos) .. ", fxIndex: " .. tostring(fxIndex) .. ", fxnumber: " .. tostring(fxnumber) .. ", param: " .. tostring(param))
+                    return
+                end
+                fxnumber = new_fxnumber
+                param = new_param
+                outputPos = tonumber(select(2, GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam, true )))
             end
-            fxnumber = new_fxnumber
-            param = new_param
-            outputPos = tonumber(select(2, GetNamedConfigParm( track, modulationContainerPos, 'container_map.add.'..fxIndex..'.' .. mapActiveParam, true )))
         end
     end 
     
@@ -4016,18 +4031,20 @@ function getNameAndOtherInfo(track, fxIndex, doNotGetStatus)
     local fxOriginalName = getOriginalFxName(track, fxIndex,doNotGetStatus)
     local containerCount = getContainerCount(track,fxIndex,doNotGetStatus)
     local isContainer = fxOriginalName == "Container" -- Check if FX is a container 
+    local isSelector = not isContainer and fxOriginalName == "JS: Container Selector Expansion" and fxName == "Selector" -- Check if FX is a container 
+
     local isEnabled = not doNotGetStatus and GetEnabled(track, fxIndex,doNotGetStatus)
     local isOpen = not doNotGetStatus and GetOpen(track,fxIndex,doNotGetStatus)
     local isFloating = not doNotGetStatus and GetFloatingWindow(track,fxIndex,doNotGetStatus) 
     local parallel = not doNotGetStatus and (settings.showParralelIndicationInName and getFXParallelProcess(track, fxIndex,doNotGetStatus) or 0)
     local guid = GetFXGUID(track,fxIndex,doNotGetStatus)
-    return fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating
+    return fxName, fxOriginalName, guid, containerCount, isContainer, isSelector, isEnabled, isOpen, isFloating
 end
 
 function getFxInfoAsObject(track, fxIndex,doNotGetStatus)
     if track and fxIndex then
-        local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex,doNotGetStatus) 
-        return {fxIndex = fxIndex, fxName = fxName, guid = guid,isContainer = isContainer, containerCount = containerCount, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel}
+        local fxName, fxOriginalName, guid, containerCount, isContainer, isSelector, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex,doNotGetStatus) 
+        return {fxIndex = fxIndex, fxName = fxName, guid = guid,isContainer = isContainer, isSelector = isSelector, containerCount = containerCount, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel}
     else
         return {fxName = "No FX on track", fxIndex = -1}
     end
@@ -4044,14 +4061,52 @@ function getAllTrackFXOnTrack(track,doNotGetStatus)
     -- Helper function to get plugins recursively from containers
     local function getPluginsRecursively(track, fxContainerIndex, containerGuid, indent, fxCount, isModulator, fxContainerName)
         if fxCount then 
+            --local parentIsSelectorFxIndex = false
+            local parentIsSelectorIndex = false
+            local selectorFxIndex = false
+            local selectorFxIndexNumbers = {}
             for subFxIndex = 0, fxCount - 1 do
                 local fxIndex = getPlinkFxIndex(track, fxContainerIndex, subFxIndex,doNotGetStatus)
+                
                 if fxIndex then
-                    local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex,doNotGetStatus) 
+                    local fxName, fxOriginalName, guid, containerCount, isContainer, isSelector, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex,doNotGetStatus) 
                     
+                    if parentIsSelectorIndex then
+                        table.insert(plugins[parentIsSelectorIndex].selectorChildren, fxIndex) 
+                        --table.insert(selectorFxIndexNumbers, fxIndex)
+                    end 
+                    
+                    if isSelector then
+                        selectorFxIndex = fxIndex
+                        for i, p in ipairs(plugins) do
+                            -- we find the container
+                            if p.fxIndex == fxContainerIndex then
+                                plugins[i].isSelectorContainer = true    
+                                plugins[i].isSelectorIndexForParent = fxIndex
+                                --parentIsSelectorFxIndex = fxContainerIndex
+                                parentIsSelectorIndex = i
+                            elseif parentIsSelectorIndex then
+                                if p.fxContainerIndex == fxContainerIndex then
+                                    plugins[i].isSelectorIndex = selectorFxIndex
+                                    --plugins[i].isSelectorIndex = fxIndex
+                                    table.insert(selectorFxIndexNumbers, p.fxIndex)
+                                    plugins[i].isSelectorIndexNumber = #selectorFxIndexNumbers 
+                                else
+                                    break
+                                end
+                            end
+                        end 
+                        if parentIsSelectorIndex then
+                            plugins[parentIsSelectorIndex].selectorChildren = selectorFxIndexNumbers
+                        end
+                    end
+                    
+                    --1234
                     --pLinks = CheckFXParamsMapping(pLinks, track, fxIndex, isModulator)
                     
-                    table.insert(plugins, {fxIndex = fxIndex, name = fxName, guid = guid, isModulator = isModulator, indent = indent, fxContainerIndex = fxContainerIndex, containerGuid = containerGuid, fxContainerName = fxContainerName, containerCount = containerCount, isContainer = isContainer, base1Index = subFxIndex + 1, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
+                    table.insert(plugins, {fxIndex = fxIndex, name = fxName, guid = guid, isModulator = isModulator, indent = indent, fxContainerIndex = fxContainerIndex, containerGuid = containerGuid, fxContainerName = fxContainerName, containerCount = containerCount, isContainer = isContainer, base1Index = subFxIndex + 1, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel
+                    , isSelector = isSelector, isSelectorIndex = selectorFxIndex, isSelectorIndexNumber = #selectorFxIndexNumbers,
+                    })
                     if isContainer then
                         table.insert(containersFetch, {fxIndex = fxIndex, fxName = fxName, guid = guid, isContainer = isContainer, containerCount = containerCount, fxContainerIndex = fxContainerIndex, fxContainerName = fxContainerName, base1Index = subFxIndex + 1, indent = indent, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
                     end
@@ -4070,12 +4125,12 @@ function getAllTrackFXOnTrack(track,doNotGetStatus)
         
         -- Iterate through each FX
         for fxIndex = 0, totalFX - 1 do
-            local fxName, fxOriginalName, guid, containerCount, isContainer, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex,doNotGetStatus)  
+            local fxName, fxOriginalName, guid, containerCount, isContainer, isSelector, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxIndex,doNotGetStatus)  
             local isModulator = isContainer and fxName == "Modulators"
             --pLinks = CheckFXParamsMapping(pLinks, track, fxIndex)
     
             -- Add the plugin information
-            table.insert(plugins, {fxIndex = fxIndex, name = fxName, guid = guid, isContainer = isContainer, containerCount = containerCount, isModulator = isModulator, indent = 0, fxContainerName = "ROOT", base1Index = fxIndex + 1, indent = 0, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
+            table.insert(plugins, {fxIndex = fxIndex, name = fxName, guid = guid, isContainer = isContainer, isSelector = isSelector, containerCount = containerCount, isModulator = isModulator, indent = 0, fxContainerName = "ROOT", base1Index = fxIndex + 1, indent = 0, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
             if isContainer then
                 table.insert(containersFetch, {fxIndex = fxIndex, fxName = fxName, guid = guid, isContainer = isContainer, containerCount = containerCount, fxContainerIndex = fxContainerIndex, fxContainerName = fxContainerName, base1Index = fxIndex + 1, indent = 0, isEnabled = isEnabled, isOpen = isOpen, isFloating = isFloating, parallel = parallel})
             end
@@ -6476,7 +6531,7 @@ function samelineIfWithinColumnAmount(i, parameterColumnAmount, modulatorParamet
 end
 
 -- wrap slider in to mapping function
-function createSlider(track,fxIndex, _type,paramIndex,name,min,max,divide, valueFormat,sliderFlag, checkboxFlipped, dropDownText, dropdownOffset,tooltip, width, visualIndex, parameterColumnAmount)  
+function createSlider(track,fxIndex, _type,paramIndex,name,min,max,divide, valueFormat,flag, checkboxFlipped, dropDownText, dropdownOffset,tooltip, width, visualIndex, parameterColumnAmount)  
     --local sizeW = width --and width or buttonWidth
     local narrowIsUsed = false
     if visualIndex then
@@ -6511,8 +6566,8 @@ function createSlider(track,fxIndex, _type,paramIndex,name,min,max,divide, value
         scrollValue = 1
         local minX, minY = reaper.ImGui_GetItemRectMin(ctx)
         local maxX, maxY = reaper.ImGui_GetItemRectMax(ctx) 
-        if narrowIsUsed then
-            reaper.ImGui_DrawList_AddText(draw_list, minX,maxY, colorText, name) 
+        if narrowIsUsed and flag ~= "TextOnSameLine" then
+            reaper.ImGui_DrawList_AddText(draw_list, minX, maxY, colorText, name) 
         else
             reaper.ImGui_DrawList_AddText(draw_list, maxX + 2,minY+2, colorText, name)
         end
@@ -9032,7 +9087,7 @@ end
 
 
 
-function drawCustomSlider(showName, valueName, valueColor, padColor, currentValue, spaceTaken, minX, minY, maxX, maxY, sliderFlags, min, max,parameterLinkActive, parameterModulationActive, linkValue, linkWidth, baseline, offset, isHovered, showMappingText, p, sliderPos, id, useKnobs, useNarrow)
+function drawCustomSlider(showName, valueName, valueColor, padColor, currentValue, spaceTaken, minX, minY, maxX, maxY, sliderFlags, min, max,parameterLinkActive, parameterModulationActive, linkValue, linkWidth, baseline, offset, isHovered, showMappingText, p, sliderPos, id, useKnobs, useNarrow, specialSetting)
     
     
     if useKnobs == nil then useKnobs = settings.useKnobs end
@@ -9044,7 +9099,9 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
     local moveTextToTheLeft = false
     local modulatorMappingNextToTitle = (useNarrow and (not useKnobs and not showMappingText) or not useNarrow)
     -- background
-    reaper.ImGui_DrawList_AddRectFilled(draw_list, minX, minY, maxX + spaceTaken, maxY, settings.colors.sliderAreaBackground, 4) 
+    if (not specialSetting or specialSetting ~= "WetKnob") then
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, minX, minY, maxX + spaceTaken, maxY, settings.colors.sliderAreaBackground, 4) 
+    end
     
     if sliderPos and p.parameterLinkActive then
         modulatorMappingItems(minX, minY + (not modulatorMappingNextToTitle and 14 or 0), maxX, maxY, p, id, padColor, widthAvailableWithSpaceTaken)
@@ -9168,6 +9225,11 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
         valTextPosMax = valTextPosMax - 4
     else 
         local size = 26
+        local outerCircleSize = 4
+        local thicknessOfBigValueKnob = settings.thicknessOfBigValueKnob
+        local sliderBackground = settings.colors.sliderBackground
+        
+        
         local x = settings.alignParameterKnobToTheRight and maxX - size or minX 
         local y = minY + 2
         
@@ -9180,11 +9242,27 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
             end
             y = y + 14
         end
+        
+        
+        local wetKnob = false
+        if (specialSetting and specialSetting == "WetKnob") then
+            size = 16
+            thicknessOfBigValueKnob = 1
+            outerCircleSize = 2
+            wetKnobBackground = settings.colors.sliderAreaBackground & (isHovered and 0xFFFFFFBB or 0xFFFFFFFF)
+            isHovered = false
+            x = minX - 1
+            y = y
+            --sliderBackground = settings.colors.sliderAreaBackground
+            wetKnob = true
+        end
+        
+        
         --local maxX, maxY = reaper.ImGui_GetItemRectMax(ctx) 
         
         local center_x = x + size / 2
         local center_y = y + size / 2
-        local radius = size / 2 * 1--* (outerCircleColor and 1 or 0.8) -- Scale down a bit for aesthetic reasons
+        local radius = size / 2 * 1 - (4 - outerCircleSize) --* (outerCircleColor and 1 or 0.8) -- Scale down a bit for aesthetic reasons
         
         -- Map 'amount' from [0, 1] to [-135, 135] degrees
         local startPosAngle = - 230 --246
@@ -9200,11 +9278,16 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
         
         -- draw shade of background
         
-        local sliderBg = isHovered and settings.colors.sliderBackgroundHover or settings.colors.sliderBackground
-        reaper.ImGui_DrawList_PathArcTo(draw_list, center_x , center_y, size / 2 - 2, leftAngle, rightAngle)
-        reaper.ImGui_DrawList_PathStroke(draw_list, sliderBg, reaper.ImGui_DrawFlags_None(), 4) 
+        if wetKnob then
+            reaper.ImGui_DrawList_AddCircleFilled(draw_list, center_x, center_y, size / 2, settings.colors.sliderAreaBackground) 
+        end
         
-        reaper.ImGui_DrawList_AddCircleFilled(draw_list, center_x, center_y, size / 4, settings.colors.sliderBackground & 0xFFFFFF55) 
+        reaper.ImGui_DrawList_AddCircleFilled(draw_list, center_x, center_y, size / 4, sliderBackground & 0xFFFFFF55) 
+        
+        local sliderBg = isHovered and settings.colors.sliderBackgroundHover or sliderBackground
+        reaper.ImGui_DrawList_PathArcTo(draw_list, center_x , center_y, size / 2 - 2, leftAngle, rightAngle)
+        reaper.ImGui_DrawList_PathStroke(draw_list, sliderBg, reaper.ImGui_DrawFlags_None(), outerCircleSize) 
+        
         
         if parameterLinkActive then  
             local playingPosAngle = (startPosAngle + linkValue * maxAngel) * (math.pi / 180)
@@ -9222,20 +9305,20 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
             local centerAngle2 = (startPosAngle + (currentValue + (settings.thicknessOfSmallValueKnob / 100)) * maxAngel) * (math.pi / 180)
         
             reaper.ImGui_DrawList_PathArcTo(draw_list, center_x , center_y, size / 2 - 2, leftModAngle, centerAngle)
-            reaper.ImGui_DrawList_PathStroke(draw_list, colorLeft, reaper.ImGui_DrawFlags_None(), 4) 
+            reaper.ImGui_DrawList_PathStroke(draw_list, colorLeft, reaper.ImGui_DrawFlags_None(), outerCircleSize) 
             
             reaper.ImGui_DrawList_PathArcTo(draw_list, center_x , center_y, size / 2 - 2, centerAngle, rightModAngle)
-            reaper.ImGui_DrawList_PathStroke(draw_list, colorRight, reaper.ImGui_DrawFlags_None(), 4) 
+            reaper.ImGui_DrawList_PathStroke(draw_list, colorRight, reaper.ImGui_DrawFlags_None(), outerCircleSize) 
             
             reaper.ImGui_DrawList_PathArcTo(draw_list, center_x , center_y, size / 2 - 2, settings.bigSliderMoving and centerAngle1 or playingPosAngle1, settings.bigSliderMoving and centerAngle2 or playingPosAngle2)
-            reaper.ImGui_DrawList_PathStroke(draw_list, settings.colors.sliderOutput, reaper.ImGui_DrawFlags_None(), 4) 
+            reaper.ImGui_DrawList_PathStroke(draw_list, settings.colors.sliderOutput, reaper.ImGui_DrawFlags_None(), outerCircleSize) 
             
             
             local p2_x = center_x + math.cos(settings.bigSliderMoving and playingPosAngle or centerAngle) * radius * 0.7
             local p2_y = center_y + math.sin(settings.bigSliderMoving and playingPosAngle or centerAngle) * radius * 0.7
-            reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, p2_x, p2_y, settings.colors.sliderOutput, settings.thicknessOfBigValueKnob)
+            reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, p2_x, p2_y, settings.colors.sliderOutput, thicknessOfBigValueKnob)
         else
-            reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, p2_x, p2_y, settings.colors.sliderOutput, settings.thicknessOfBigValueKnob)
+            reaper.ImGui_DrawList_AddLine(draw_list, center_x, center_y, p2_x, p2_y, settings.colors.sliderOutput, thicknessOfBigValueKnob)
         end
         
         
@@ -9657,7 +9740,7 @@ function convertModifierOptionToString(option)
     return str:sub(0,-2)
 end
 
-function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingMappings, nameOnSide, width, resetValue, valueAsString, genericModulatorOutput, parametersWindow, formatString, useKnobs, useNarrow, visualIndex,parameterColumnAmount)
+function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingMappings, nameOnSide, width, resetValue, valueAsString, genericModulatorOutput, parametersWindow, formatString, useKnobs, useNarrow, visualIndex,parameterColumnAmount, specialSetting)
     local parameterLinkActive = p.parameterLinkActive
     --reaper.ShowConsoleMsg(p.fxName .. " - " .. p.name .. " - " .. tostring(parameterLinkActive) .. "\n")
     local parameterModulationActive = p.parameterModulationActive
@@ -9878,6 +9961,17 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     -- we reduce the button size to make sure we do not get a horizontal scroll 
     sliderW = faderWidth - spaceTaken --8 -- 8
     if sliderW <= 10 then sliderW = 10 end
+    
+    if specialSetting and specialSetting == "WetKnob" then
+        sliderW = 20
+        totalSliderHeight = 20
+        useNarrow = false
+        useKnobs = true
+        showName = nil
+        showMappingText = nil
+        reaper.ImGui_SetCursorPos(ctx, sliderStartPosX - 8, sliderStartPosY - 4)
+    end
+    
     local click = false
     if reaper.ImGui_InvisibleButton(ctx, "slider" .. buttonId .. moduleId, sliderW, totalSliderHeight) then
         click = true
@@ -9976,7 +10070,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     
     
     local sliderVal = {endPosX = sliderEndPosX, endPosY = sliderEndPosY, startPosX = sliderStartPosX, startPosY = sliderStartPosY}
-    sliderWidthAvailable = drawCustomSlider(showName, valueName, valueColor, padColor, currentValueNormalized, spaceTaken, minX, minY, maxX, maxY, sliderFlags, 0, 1,parameterLinkActive, parameterModulationActive, linkValue, linkWidth, baseline, linkOffset, dragKnob == "baseline" .. id, showMappingText, p, sliderVal, id, useKnobs, useNarrow)
+    sliderWidthAvailable = drawCustomSlider(showName, valueName, valueColor, padColor, currentValueNormalized, spaceTaken, minX, minY, maxX, maxY, sliderFlags, 0, 1,parameterLinkActive, parameterModulationActive, linkValue, linkWidth, baseline, linkOffset, dragKnob == "baseline" .. id, showMappingText, p, sliderVal, id, useKnobs, useNarrow, specialSetting)
     if not useKnobs then 
         faderResolution = sliderWidthAvailable --/ range
     end
@@ -14402,7 +14496,7 @@ local function loop()
         
             
             
-            function getIfPluginShouldBeShown(folderClosed, track, f, i, trackFxTableWithIndentIndicators)
+            function getIfPluginShouldBeShown(folderClosed, track, f, i, trackFxTableWithIndentIndicators, hideUsingSelectors)
                 local guid = GetFXGUID(track, f.fxIndex)
                 local isFolderClosed = (f.isContainer and trackSettings.closeFolderVisually and trackSettings.closeFolderVisually[guid])
                 
@@ -14410,6 +14504,20 @@ local function loop()
                 --if (beginDragAndDropFX and (not f.isModulator or (f.fxIndex == modulationContainerPos))) or (not f.isModulator and (settings.showContainers or (not settings.showContainers and not f.isContainer))) then
                 local showPlugin 
                 showPlugin = (settings.includeModulators or not f.isModulator) and (settings.showContainers or (not settings.showContainers and not f.isContainer))
+                
+                if f.isSelector then
+                    showPlugin = false
+                    --reaper.ShowConsoleMsg(f.name .. " - " .. tostring(f.isSelectorIndexNumber) .. " hej\n")
+                elseif hideUsingSelectors and f.isSelectorIndex and f.isSelectorIndexNumber then 
+                    if GetParam(track, f.isSelectorIndex, 5) == 1 then
+                        showPlugin = GetParam(track, f.isSelectorIndex, f.isSelectorIndexNumber + 5) > 0 
+                        if not showPlugin and f.isContainer then
+                            isFolderClosed = true
+                        end
+                    end
+                end
+                
+                
                 
                 local fxInClosedFolderCount = 0
                 if folderClosed then 
@@ -14814,6 +14922,16 @@ local function loop()
                 end
             end
             
+            function fxSimpleName(title)
+                if settings.hidePluginTypeName then
+                    title  = title:gsub("^[^:]+: ", "")
+                end
+                if settings.hideDeveloperName then
+                    title  = title:gsub("%s*%b()", "") 
+                end
+            
+                return title
+            end
             
             
             function pluginParametersPanel(track, fxIndex, isCollabsed, vertical, widthFromParent, heightFromParent, collabsedOverwrite, f, showOnlyFocusedPlugin)
@@ -14823,9 +14941,15 @@ local function loop()
                 local isCollabsed = (guid ~= "" and not collabsedOverwrite) and trackSettings.hidePluginSearchParameters[guid] or false
                 
                 local isContainer = f and f.isContainer
-                if isContainer and not showOnlyFocusedPlugin then 
+                local isSelectorContainer = f and f.isSelectorContainer
+                if isContainer and not showOnlyFocusedPlugin and not isSelectorContainer then  
                     isCollabsed = true
                 end
+                
+                if isSelectorContainer then
+                    isCollabsed = trackSettings.closeFolderVisually[guid]
+                end
+                
                 local width = vertical and widthFromParent or (isCollabsed and headerSizeW or settings.parametersWidth)
                 local height = vertical and (isCollabsed and headerSizeW or settings.parametersHeight) or heightFromParent
                 local heightAutoAdjust = not isCollabsed and vertical and not settings.alwaysUseParametersHeight
@@ -14837,12 +14961,7 @@ local function loop()
                 
                 local title = "- no fx selected -"
                 title = (validateTrack(track) and fxIndex) and GetFXName(track, fxIndex) or title -- Get the FX name'
-                if settings.hidePluginTypeName then
-                    title  = title:gsub("^[^:]+: ", "")
-                end
-                if settings.hideDeveloperName then
-                    title  = title:gsub("%s*%b()", "") 
-                end
+                title = fxSimpleName(title)
                 
                 if isContainer then 
                     title = "[" ..title .. "]" 
@@ -14850,7 +14969,7 @@ local function loop()
                         title = title .. " [" .. f.fxInClosedFolderCount .. "]"
                     end
                 end
-                
+                    --title = title .. " [Switch]"
                 -- we could set the color based on the focused FX
                 
                 local screenPosX, screenPosY = reaper.ImGui_GetCursorScreenPos(ctx)
@@ -14879,6 +14998,9 @@ local function loop()
                     local headerW = vertical and width or headerSizeW
                     local headerH = vertical and headerSizeW or height  
                     local headerAreaRemoveTop = 20
+                    if settings.showWetKnobOnPlugins then
+                        headerAreaRemoveTop = headerAreaRemoveTop + 20
+                    end
                     local headerAreaRemoveBottom = isContainer and 0 or 20 
                     
                     
@@ -14916,20 +15038,61 @@ local function loop()
                     end
                     
                     
+                    function updateSelectorContainer(f)
+                        for i, fxi in ipairs(f.selectorChildren) do 
+                            mapActiveParam = i + 5
+                            local wetParam = GetNumParams(track, fxi) - 2
+                            setParamaterToLastTouched(track, f.isSelectorIndexForParent, f.isSelectorIndexForParent, fxi, wetParam, 0, 0, 1) 
+                        end 
+                        SetParam(track, f.isSelectorIndexForParent, 1, #f.selectorChildren)
+                        SetParam(track, f.isSelectorIndexForParent, 0, GetParam(track, f.isSelectorIndexForParent, 0))
+                        mapActiveParam = nil
+                    end
+                    
+                    
+                    function removeSelector(f)
+                        for i, fxi in ipairs(f.selectorChildren) do  
+                            local wetParam = GetNumParams(track, fxi) - 2 
+                            SetParam(track, fxi, wetParam, 1)
+                        end 
+                        DeleteFX(track, f.isSelectorIndexForParent)
+                    end
+                    
+                    function addSelector(fxIndex) 
+                        local fxnumber = addFxAfterSelection(track, fxIndex, "JS: Container Selector Expansion") 
+                        local rename = SetNamedConfigParm( track, fxnumber, 'renamed_name', "Selector" )
+                        newSelectorAdded = true
+                    end
+                    
                     --popupOpen["container" .. fxIndex] = reaper.ImGui_IsPopupOpen(ctx, 'container##' .. fxIndex)
                     --if popupOpen[buttonId] then 
                     if reaper.ImGui_BeginPopup(ctx, 'container##' .. fxIndex) then 
-                        reaper.ImGui_Text(ctx, "Set container color")
-                        local indent = f.indent and f.indent + (f.isContainer and 1 or 0) or 0
-                        local containerColor = (trackSettings.containerColors and trackSettings.containerColors[guid]) and trackSettings.containerColors[guid] or indentColors[(indent)%3 + 1] 
-                        local ret, col = reaper.ImGui_ColorPicker4(ctx, "##ContainerColor", containerColor)
-                        if ret and col then
-                            --popupAlreadyOpen = false
-                            trackSettings.containerColors[guid] = col
-                            saveTrackSettings(track)
-                            if isCloseColorSelectionOnClick then
-                                reaper.ImGui_CloseCurrentPopup(ctx)
+                        if reaper.ImGui_BeginMenu(ctx, "Set container color") then
+                            local indent = f.indent and f.indent + (f.isContainer and 1 or 0) or 0
+                            local containerColor = (trackSettings.containerColors and trackSettings.containerColors[guid]) and trackSettings.containerColors[guid] or indentColors[(indent)%3 + 1] 
+                            local ret, col = reaper.ImGui_ColorPicker4(ctx, "##ContainerColor", containerColor)
+                            if ret and col then
+                                --popupAlreadyOpen = false
+                                trackSettings.containerColors[guid] = col
+                                saveTrackSettings(track)
+                                if isCloseColorSelectionOnClick then
+                                    reaper.ImGui_CloseCurrentPopup(ctx)
+                                end
                             end
+                            reaper.ImGui_EndMenu(ctx)
+                        end
+                        
+                        
+                        
+                        --ret, trackSettings.selectorContainer[guid] = reaper.ImGui_Checkbox(ctx, "Selector container",trackSettings.selectorContainer[guid])
+                        local buttonText = f.isSelectorContainer and "Remove as selector" or "Convert to selector"
+                        if reaper.ImGui_Button(ctx, buttonText) then
+                            if f.isSelectorContainer then
+                                removeSelector(f)
+                            else
+                                addSelector(fxIndex)
+                            end
+                            reaper.ImGui_CloseCurrentPopup(ctx)
                         end
                         reaper.ImGui_EndPopup(ctx)
                     end
@@ -14951,6 +15114,11 @@ local function loop()
                         openCloseFx(track, fxIndex, not isFxOpen)
                     end
                     
+                    if settings.showWetKnobOnPlugins then
+                        pluginParameterSlider("parameter",getAllDataFromParameter(track,f.fxIndex,GetNumParams(track, f.fxIndex)-2),nil,nil,nil,nil,20,1,valueText,nil,true, nil, true, false, 0,1, "WetKnob")--, shownCount - 1, parameterColumnAmount)
+                    end
+                    
+                    
                     -- set position and size of sub child, eg the search
                     
                     
@@ -14968,124 +15136,238 @@ local function loop()
                     
                     if not isCollabsed then
                         
-                        if bodyChildOfPanel(panelName .. "mid", 20, 6, vertical) then
+                        if bodyChildOfPanel(panelName .. "mid", 20, 6, vertical, false,false) then
                             width = width - 14 - (vertical and 0 or 20)
                             height = height - (vertical and 20 or 0)
-                             
-                            local showOnlyMappedAndSearchOnFocusedPlugin = settings.showOnlyMappedAndSearchOnFocusedPlugin --and (showOnlyFocusedPlugin or settings.showParametersOptionOnAllPlugins)
-                            local showLastClicked = settings.showLastClicked --and (settings.showOnlyFocusedPlugin or settings.showParametersOptionOnAllPlugins)
-                            
-                            -- the two splitter lines
-                            local searchAreaH = ((showOnlyMappedAndSearchOnFocusedPlugin or showLastClicked) and (settings.showParameterOptionsOnTop and 10 or 8) or 0)
-                            searchAreaH = searchAreaH + ((showOnlyMappedAndSearchOnFocusedPlugin) and 24 or 0)
-                            local lastClickedAreaH = (showLastClicked and sliderHeight + 16 or 0)
-                            lastClickedAreaH = lastClickedAreaH + ((showLastClicked and settings.showMappedModulatorNameBelow) and 12 or 0) --(showingLastClicked and 28 or 0)
-                            
-                            -- if we show the search area at the top
-                            if settings.showParameterOptionsOnTop then
-                                searchAndOnlyMapped(track, fxIndex, lastClickedAreaH, width, showOnlyFocusedPlugin)
-                            end
                             
                             
-                            local paramsListThatAreNotFiltered = (track and fxIndex) and getFxParamsThatAreNotFiltered(track, fxIndex) or {}
-                            local onlyMapped 
-                            if showOnlyFocusedPlugin then
-                                onlyMapped = settings.onlyMapped
-                            else
-                                onlyMapped = trackSettings.onlyMapped[guid]
-                            end 
-                            -- check if any parameters links a active, if not we show all of them
-                            local someAreActive = false
-                            if onlyMapped then
-                                for i, p in ipairs(paramsListThatAreNotFiltered) do
-                                    if f.indent and f.indent > 0 then 
-                                        local root_fxIndex, root_param = fx_get_mapped_parameter_with_catch(track, fxIndex, p)
-                                        if root_fxIndex and root_param then
-                                            someAreActive = true; break
-                                        end
-                                    else
-                                        --someAreActive = true; break
-                                        if getPlinkActive(track, fxIndex, p) then someAreActive = true; break end
-                                    end
-                                    
+                            if isSelectorContainer then  
+                                local isSelectorIndex = f.isSelectorIndexForParent
+                                
+                                local selectorChildrenAmount = #f.selectorChildren
+                                local roundValue, isFill
+                                local isToggle = GetParam(track, isSelectorIndex, 2) == 1 
+                                
+                                if colorButton("SELECTOR", colorTextDimmed, colorTransparent, colorTransparent, colorTransparent, "Force updated mapping", colorText, width) then
+                                    updateSelectorContainer(f)
                                 end
-                            end 
-                            
-                            -- we need this to know if we are in the scroll area or not
-                            local startPosX, startPosY = reaper.ImGui_GetCursorScreenPos(ctx)
-                            
-                            local scrollAreaHeight = height - searchAreaH - lastClickedAreaH - 16
-                            
-                            -- if mouse is outside the slider area we do not accidentially want to set any sliders
-                            local doNotSetFocus = not mouseInsideArea(startPosX, startPosY, width, scrollAreaHeight)  
-                            
-                            -- we need the fx name for custom fx setups, like realearn track controls
-                            local fxName = title--GetFXName(track, fxnumber)
-                            
-                            -- show the scroll area with found parameters
-                            --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), 4, 6)
-                            
-                            local parameterColumnAmount = settings.PluginParameterColumnAmount
-                            if scrollChildOfPanel(panelName .. "Scroll", width + 8, scrollAreaHeight, heightAutoAdjust) then
-                                local shownCount = 0
-                                for i, p in ipairs(paramsListThatAreNotFiltered) do
+                                
+                                --centerText("SELECTOR", colorText, 0, width, 0, 0)
+                                reaper.ImGui_BeginGroup(ctx)
+                                local isManual = GetParam(track, isSelectorIndex, 3) == 0
+                                
+                                createSlider(track,isSelectorIndex,"Checkbox",2,"Toggle",nil,nil,1,nil,"TextOnSameLine",nil,nil,nil,nil, width,0,2)  
+                                setToolTipFunc("Layers will be activated on or off")
+                                
+                                if not isManual then 
+                                    createSlider(track,isSelectorIndex,"Checkbox",4,"Fill",nil,nil,1,nil,"TextOnSameLine",nil,nil,nil,nil, width,1,2) 
+                                    setToolTipFunc("Fill up selection from the top to the selected layer")
                                     
-                                    if not settings.limitAmountOfDrawnParametersInPlugin or shownCount <= settings.limitAmountOfDrawnParametersInPluginAmount + (settings.limitAmountOfDrawnParametersInPluginAmount%parameterColumnAmount) then
-                                        local name = GetParamName(track, fxIndex, p)
-                                         
-                                        local parameterLinkActive
-                                        -- check if fx is inside a folder
+                                    isFill = GetParam(track, isSelectorIndex, 4) == 1 
+                                    local p = getAllDataFromParameter(track,isSelectorIndex,0)
+                                    roundValue = math.ceil(math.floor(p.value*selectorChildrenAmount + 0.5)/100)
+                                    --local roundValue =  math.max(isToggle and 0 or 1, math.ceil(math.floor(p.value*selectorChildrenAmount)/100))
+                                    local valueText = roundValue--not isFill and roundValue or math.floor(p.value)
+                                    pluginParameterSlider("parameter",p,nil,nil,nil,nil,width,0,valueText,nil,true, nil, true, false, 0,1)--, shownCount - 1, parameterColumnAmount)
+                                else
+                                    reaper.ImGui_Dummy(ctx, width, 1)
+                                end
+                                
+                                createSlider(track,isSelectorIndex,"Checkbox",3,"Manual",nil,nil,1,nil,"TextOnSameLine",true,nil,nil,nil, width,0,2)
+                                setToolTipFunc("Manually adjust what will be played")
+                                createSlider(track,isSelectorIndex,"Checkbox",5,"Hide",nil,nil,1,nil,"TextOnSameLine",nil,nil,nil,nil, width,1,2)
+                                setToolTipFunc("Hide non active layers")
+                                
+                                reaper.ImGui_EndGroup(ctx)
+                                reaper.ImGui_Separator(ctx)
+                                
+                                -- create table if needed
+                                if not lastSelectorContainer then lastSelectorContainer = {} end
+                                if not lastSelectorContainer[isSelectorIndex] then lastSelectorContainer[isSelectorIndex] = {} end
+                                if #lastSelectorContainer[isSelectorIndex] ~= #f.selectorChildren then lastSelectorContainer[isSelectorIndex] = {} end
+                                
+                                local updateContainerNow = false
+                                
+                                local pluginFlags = reaper.ImGui_TableFlags_ScrollY() | reaper.ImGui_TableFlags_NoPadOuterX()
+                                if reaper.ImGui_BeginTable(ctx, "selector" .. fxIndex, isToggle and 1 or 2) then --, pluginFlags | reaper.ImGui_TableFlags_BordersInner(), nil, nil, reaper.ImGui_ChildFlags_AlwaysAutoResize()) then
+                                    for i, fxi in ipairs(f.selectorChildren) do
+                                        local sliderParam = i + 5
+                                        --local fxName = GetFXName(track, fxi)
+                                        local fxName, fxOriginalName, guid, containerCount, isContainer, isSelector, isEnabled, isOpen, isFloating, parallel = getNameAndOtherInfo(track, fxi, false) 
+                                        if not lastSelectorContainer[isSelectorIndex][i] or lastSelectorContainer[isSelectorIndex][i] ~= guid then 
+                                            updateContainerNow = true 
+                                        end
+                                        
+                                        --[[
+                                        reaper.ImGui_TableNextColumn(ctx)
+                                            local isSelected = GetParam(track, f.isSelectorIndex, sliderParam) > 0
+                                            if reaper.ImGui_RadioButton(ctx, "##selector" .. fxi, isSelected) then
+                                                if isManual then
+                                                    SetParam(track, f.isSelectorIndex, sliderParam, isSelected and 0 or 1)
+                                                else 
+                                                    SetParam(track, f.isSelectorIndex, 0, i * 100 / selectorChildrenAmount)
+                                                end
+                                            end
+                                            reaper.ImGui_PopFont(ctx)
+                                        else
+                                        ]]
+                                        if not isToggle then
+                                            reaper.ImGui_TableNextColumn(ctx)
+                                            reaper.ImGui_SetCursorPosX(ctx, 8)
+                                            pluginParameterSlider("selector",getAllDataFromParameter(track,isSelectorIndex,sliderParam),nil,nil,nil,nil,20,1,valueText,nil,true, nil, true, false, 0,1, "WetKnob")--, shownCount - 1, parameterColumnAmount)
+                                        end
+                                        
+                                        reaper.ImGui_TableNextColumn(ctx)
+                                        
+                                        local simpleName = fxSimpleName(fxName)
+                                        local isSelected = false
+                                        local selectedAmount = GetParam(track, isSelectorIndex, sliderParam)
+                                        
+                                        isSelected = selectedAmount > 0
+                                        if isToggle then 
+                                            --if isManual then
+                                            --else
+                                            --    isSelected = i == roundValue 
+                                            --end
+                                        end
+                                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), colorButtons & (0xFFFFFF00+ math.ceil(0xFF * selectedAmount/100)))
+                                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), colorButtons & (0xFFFFFF00+ math.ceil(0xFF * selectedAmount/100)))
+                                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), colorButtons & (0xFFFFFF00+ math.ceil(0xFF * selectedAmount/100)))
+                                        if reaper.ImGui_Selectable(ctx, simpleName .. "##" .. fxi, isSelected, reaper.ImGui_SelectableFlags_SpanAllColumns()) then
+                                            if isManual then
+                                                SetParam(track, isSelectorIndex, sliderParam, isSelected and 0 or 100)
+                                            else 
+                                                SetParam(track, isSelectorIndex, 0, i * 100 / selectorChildrenAmount)
+                                            end
+                                        end
+                                        reaper.ImGui_PopStyleColor(ctx,3)
+                                        
+                                        lastSelectorContainer[isSelectorIndex][i] = guid
+                                    end
+                                    reaper.ImGui_EndTable(ctx)
+                                end
+                                
+                                if updateContainerNow or (newSelectorAdded and lastSelectorContainer) then
+                                    --lastSelectorContainer[isSelectorIndex] = {}
+                                    updateSelectorContainer(f)
+                                    newSelectorAdded = false
+                                end
+                            else
+                                local showOnlyMappedAndSearchOnFocusedPlugin = settings.showOnlyMappedAndSearchOnFocusedPlugin --and (showOnlyFocusedPlugin or settings.showParametersOptionOnAllPlugins)
+                                local showLastClicked = settings.showLastClicked --and (settings.showOnlyFocusedPlugin or settings.showParametersOptionOnAllPlugins)
+                                
+                                -- the two splitter lines
+                                local searchAreaH = ((showOnlyMappedAndSearchOnFocusedPlugin or showLastClicked) and (settings.showParameterOptionsOnTop and 10 or 8) or 0)
+                                searchAreaH = searchAreaH + ((showOnlyMappedAndSearchOnFocusedPlugin) and 24 or 0)
+                                local lastClickedAreaH = (showLastClicked and sliderHeight + 16 or 0)
+                                lastClickedAreaH = lastClickedAreaH + ((showLastClicked and settings.showMappedModulatorNameBelow) and 12 or 0) --(showingLastClicked and 28 or 0)
+                                
+                                -- if we show the search area at the top
+                                if settings.showParameterOptionsOnTop then
+                                    searchAndOnlyMapped(track, fxIndex, lastClickedAreaH, width, showOnlyFocusedPlugin)
+                                end
+                                
+                                
+                                local paramsListThatAreNotFiltered = (track and fxIndex) and getFxParamsThatAreNotFiltered(track, fxIndex) or {}
+                                local onlyMapped 
+                                if showOnlyFocusedPlugin then
+                                    onlyMapped = settings.onlyMapped
+                                else
+                                    onlyMapped = trackSettings.onlyMapped[guid]
+                                end 
+                                -- check if any parameters links a active, if not we show all of them
+                                local someAreActive = false
+                                if onlyMapped then
+                                    for i, p in ipairs(paramsListThatAreNotFiltered) do
                                         if f.indent and f.indent > 0 then 
                                             local root_fxIndex, root_param = fx_get_mapped_parameter_with_catch(track, fxIndex, p)
                                             if root_fxIndex and root_param then
-                                                parameterLinkActive = getPlinkActive(track, root_fxIndex, root_param) 
+                                                someAreActive = true; break
                                             end
                                         else
-                                            parameterLinkActive = getPlinkActive(track, fxIndex, p) 
+                                            --someAreActive = true; break
+                                            if getPlinkActive(track, fxIndex, p) then someAreActive = true; break end
                                         end
                                         
+                                    end
+                                end 
+                                
+                                -- we need this to know if we are in the scroll area or not
+                                local startPosX, startPosY = reaper.ImGui_GetCursorScreenPos(ctx)
+                                
+                                local scrollAreaHeight = height - searchAreaH - lastClickedAreaH - 16
+                                
+                                -- if mouse is outside the slider area we do not accidentially want to set any sliders
+                                local doNotSetFocus = not mouseInsideArea(startPosX, startPosY, width, scrollAreaHeight)  
+                                
+                                -- we need the fx name for custom fx setups, like realearn track controls
+                                local fxName = title--GetFXName(track, fxnumber)
+                                
+                                -- show the scroll area with found parameters
+                                --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), 4, 6)
+                                
+                                local parameterColumnAmount = settings.PluginParameterColumnAmount
+                                if scrollChildOfPanel(panelName .. "Scroll", width + 8, scrollAreaHeight, heightAutoAdjust) then
+                                    local shownCount = 0
+                                    for i, p in ipairs(paramsListThatAreNotFiltered) do
                                         
-                                        local pMappedShown = not settings.showOnlyMappedAndSearchOnFocusedPlugin or not someAreActive or not onlyMapped or (onlyMapped and parameterLinkActive)
-                                        
-                                        local pSearchShown = not settings.showOnlyMappedAndSearchOnFocusedPlugin or not trackSettings.searchParameters[guid] or trackSettings.searchParameters[guid] == "" or searchName(name, trackSettings.searchParameters[guid])
-                                        
-                                        local pTrackControlShown = true
-                                        if fxName == "Track controls" and i > 35 then
-                                            pTrackControlShown = false
-                                        end 
-                                        
-                                        if pMappedShown and pSearchShown and pTrackControlShown then 
-                                            shownCount = shownCount + 1
-                                        --reaper.ImGui_Spacing(ctx)  
-                                            local maxScrollBar = math.floor(reaper.ImGui_GetScrollMaxY(ctx))
-                                            local modulatorParameterWidth = width - 12 + (maxScrollBar == 0 and 12 or 0)
-                                            local scrollPos = reaper.ImGui_GetScrollY(ctx)
-                                            local startPosY = reaper.ImGui_GetCursorPosY(ctx)
-                                            
-                                            
-                                            modulatorParameterWidth = findModulationParameterWidth(parameterColumnAmount, modulatorParameterWidth)
-                                            -- 456
-                                            
-                                            local useKnobs = settings.useKnobsPlugin
-                                            local useNarrow = (settings.useKnobsPlugin == nil and not settings.useNarrowPlugin) and settings.useNarrow or settings.useNarrowPlugin
-                                            
-                                            if startPosY - scrollPos < scrollAreaHeight and (startPosY + sliderHeight + 16) - scrollPos > 0 then
-                                                pluginParameterSlider("parameter",getAllDataFromParameter(track,fxIndex,p),doNotSetFocus,nil,nil,nil,modulatorParameterWidth,nil,nil,nil,true, nil, useKnobs, useNarrow)--, shownCount - 1, parameterColumnAmount)
+                                        if not settings.limitAmountOfDrawnParametersInPlugin or shownCount <= settings.limitAmountOfDrawnParametersInPluginAmount + (settings.limitAmountOfDrawnParametersInPluginAmount%parameterColumnAmount) then
+                                            local name = GetParamName(track, fxIndex, p)
+                                             
+                                            local parameterLinkActive
+                                            -- check if fx is inside a folder
+                                            if f.indent and f.indent > 0 then 
+                                                local root_fxIndex, root_param = fx_get_mapped_parameter_with_catch(track, fxIndex, p)
+                                                if root_fxIndex and root_param then
+                                                    parameterLinkActive = getPlinkActive(track, root_fxIndex, root_param) 
+                                                end
                                             else
-                                                dummySlider(parameterLinkActive, useKnobs, useNarrow)
+                                                parameterLinkActive = getPlinkActive(track, fxIndex, p) 
                                             end
                                             
-                                            samelineIfWithinColumnAmount(shownCount, parameterColumnAmount, modulatorParameterWidth)
+                                            
+                                            local pMappedShown = not settings.showOnlyMappedAndSearchOnFocusedPlugin or not someAreActive or not onlyMapped or (onlyMapped and parameterLinkActive)
+                                            
+                                            local pSearchShown = not settings.showOnlyMappedAndSearchOnFocusedPlugin or not trackSettings.searchParameters[guid] or trackSettings.searchParameters[guid] == "" or searchName(name, trackSettings.searchParameters[guid])
+                                            
+                                            local pTrackControlShown = true
+                                            if fxName == "Track controls" and i > 35 then
+                                                pTrackControlShown = false
+                                            end 
+                                            
+                                            if pMappedShown and pSearchShown and pTrackControlShown then 
+                                                shownCount = shownCount + 1
+                                            --reaper.ImGui_Spacing(ctx)  
+                                                local maxScrollBar = math.floor(reaper.ImGui_GetScrollMaxY(ctx))
+                                                local modulatorParameterWidth = width - 12 + (maxScrollBar == 0 and 12 or 0)
+                                                local scrollPos = reaper.ImGui_GetScrollY(ctx)
+                                                local startPosY = reaper.ImGui_GetCursorPosY(ctx)
+                                                
+                                                
+                                                modulatorParameterWidth = findModulationParameterWidth(parameterColumnAmount, modulatorParameterWidth)
+                                                -- 456
+                                                
+                                                local useKnobs = settings.useKnobsPlugin
+                                                local useNarrow = (settings.useKnobsPlugin == nil and not settings.useNarrowPlugin) and settings.useNarrow or settings.useNarrowPlugin
+                                                
+                                                if startPosY - scrollPos < scrollAreaHeight and (startPosY + sliderHeight + 16) - scrollPos > 0 then
+                                                    pluginParameterSlider("parameter",getAllDataFromParameter(track,fxIndex,p),doNotSetFocus,nil,nil,nil,modulatorParameterWidth,nil,nil,nil,true, nil, useKnobs, useNarrow)--, shownCount - 1, parameterColumnAmount)
+                                                else
+                                                    dummySlider(parameterLinkActive, useKnobs, useNarrow)
+                                                end
+                                                
+                                                samelineIfWithinColumnAmount(shownCount, parameterColumnAmount, modulatorParameterWidth)
+                                            end
                                         end
                                     end
+                                    reaper.ImGui_EndChild(ctx)
                                 end
-                                reaper.ImGui_EndChild(ctx)
-                            end
-                            --reaper.ImGui_PopStyleVar(ctx)
-                            
-                            -- if we show the search area at the bottom
-                            if not settings.showParameterOptionsOnTop then
-                                searchAndOnlyMapped(track, fxIndex, lastClickedAreaH, width, showOnlyFocusedPlugin)
+                                --reaper.ImGui_PopStyleVar(ctx)
+                                
+                                -- if we show the search area at the bottom
+                                if not settings.showParameterOptionsOnTop then
+                                    searchAndOnlyMapped(track, fxIndex, lastClickedAreaH, width, showOnlyFocusedPlugin)
+                                end
                             end
                         
                             reaper.ImGui_EndChild(ctx)
@@ -15526,7 +15808,9 @@ local function loop()
                                             if not f.isModulator and not f.seperator  then
                                                 
                                                 
-                                                folderClosed, showPlugin, isFolderClosed, fxInClosedFolderCount = getIfPluginShouldBeShown(folderClosed, track, f, i, trackFxTableWithIndentIndicators) 
+                                                folderClosed, showPlugin, isFolderClosed, fxInClosedFolderCount = getIfPluginShouldBeShown(folderClosed, track, f, i, trackFxTableWithIndentIndicators, true) 
+                                                
+                                                
                                                 
                                                 
                                                 if showPlugin then
