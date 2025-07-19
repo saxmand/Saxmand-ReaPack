@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.1.7
+-- @version 1.1.8
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + attempt to fix crash from sws startup script
+--   + fixed wet knob pos and width between widgets in vertical mode
 
-local version = "1.1.7"
+local version = "1.1.8"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -9331,7 +9331,7 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
             wetKnobBackground = settings.colors.sliderAreaBackground & (isHovered and 0xFFFFFFBB or 0xFFFFFFFF)
             isHovered = false
             x = minX - 1
-            y = y
+            y = y - 1
             --sliderBackground = settings.colors.sliderAreaBackground
             wetKnob = true
         end
@@ -10048,7 +10048,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
         useKnobs = true
         showName = nil
         showMappingText = nil
-        reaper.ImGui_SetCursorPos(ctx, sliderStartPosX - 8, sliderStartPosY - 4)
+        reaper.ImGui_SetCursorPos(ctx, sliderStartPosX, sliderStartPosY)
     end
     
     local click = false
@@ -10972,7 +10972,7 @@ function placingOfNextElement(spacing)
         if not spacing then
             reaper.ImGui_Spacing(ctx)
         else
-            reaper.ImGui_SetCursorPosY(ctx, reaper.ImGui_GetCursorPosY(ctx) - 8 + spacing)
+            reaper.ImGui_SetCursorPosY(ctx, reaper.ImGui_GetCursorPosY(ctx) - 4 + spacing)
         end
         --reaper.ImGui_Separator(ctx)
         --reaper.ImGui_Spacing(ctx)
@@ -11393,6 +11393,7 @@ function layoutKnobsOrSliders(id)
         saveSettings()
     end
     setToolTipFunc("Use narrow " .. name .. " layout when working with a compressed module width") 
+    
     
     sliderInMenu(name .. " per row", id .."ParameterColumnAmount", menuSliderWidth, 1, 10, "Set how many " .. name .. " should be per row.")  
 end
@@ -12067,6 +12068,13 @@ function appSettingsWindow()
                 
                 
                 layoutKnobsOrSliders("Plugin")
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show wet knob##",settings.showWetKnobOnPlugins) 
+                if ret then 
+                    settings.showWetKnobOnPlugins = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show the wet knob button on the plugins header") 
                 
                 --inputInMenu("Max parameters shown", "maxParametersShown", 100, "Will only fetch X amount of parameters from focused FX. 0 will show all.\nIf you have problems with performance reduce the amount might help", true, 0, nil) 
                 
@@ -15201,7 +15209,9 @@ local function loop()
                         openCloseFx(track, fxIndex, not isFxOpen)
                     end
                     
-                    if settings.showWetKnobOnPlugins then
+                    if settings.showWetKnobOnPlugins then 
+                        local posX, posY = getIconPosToTheRight(vertical, 40, screenPosX, screenPosY, width)
+                        reaper.ImGui_SetCursorScreenPos(ctx, posX, posY)
                         pluginParameterSlider("parameter",getAllDataFromParameter(track,f.fxIndex,GetNumParams(track, f.fxIndex)-2),nil,nil,nil,nil,20,1,valueText,nil,true, nil, true, false, 0,1, "WetKnob")--, shownCount - 1, parameterColumnAmount)
                     end
                     
