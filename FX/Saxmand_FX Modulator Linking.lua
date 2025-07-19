@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.1.6
+-- @version 1.1.7
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,10 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + attempt to solve corner cases where plugins are moved around folders from a selector container, automatically removing mappings
---   + added more logic reading parameter mappings to get selector names correct
+--   + attempt to fix crash from sws startup script
 
-local version = "1.1.6"
+local version = "1.1.7"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -16396,6 +16395,9 @@ local function loop()
         if track or not settings.showInsertOptionsWhenNoTrackIsSelected then
             if reaper.ImGui_BeginChild(ctx, "mainArea", mainAreaW, mainAreaH , nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()) then
                 
+                reaper.ImGui_Dummy(ctx, 1,1)
+                reaper.ImGui_SetCursorPos(ctx, 0,0)
+                
                 elementsHeightInHorizontal = elementsHeightInHorizontal - 8
                 elementsWidthInVertical = elementsWidthInVertical -- 8
                 
@@ -16437,7 +16439,6 @@ local function loop()
                 end
                 
                 --reaper.ImGui_PopStyleColor(ctx)
-                --reaper.ImGui_Dummy(ctx, 1,1)
                 reaper.ImGui_EndChild(ctx)
             end
         elseif settings.showInsertOptionsWhenNoTrackIsSelected then 
