@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.1.8
+-- @version 1.1.9
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Helpers/*.lua
 --   Color sets/*.txt
 -- @changelog
---   + fixed wet knob pos and width between widgets in vertical mode
+--   + fixed wet knob pos on selector list
 
-local version = "1.1.8"
+local version = "1.1.9"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -15310,7 +15310,8 @@ local function loop()
                                         ]]
                                         if not isToggle then
                                             reaper.ImGui_TableNextColumn(ctx)
-                                            reaper.ImGui_SetCursorPosX(ctx, 8)
+                                            reaper.ImGui_SetCursorPosX(ctx, 0)
+                                            reaper.ImGui_SetCursorPosY(ctx, reaper.ImGui_GetCursorPosY(ctx)-3)
                                             pluginParameterSlider("selector",getAllDataFromParameter(track,isSelectorIndex,sliderParam),nil,nil,nil,nil,20,1,valueText,nil,true, nil, true, false, 0,1, "WetKnob")--, shownCount - 1, parameterColumnAmount)
                                         end
                                         
