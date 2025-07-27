@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.2.3
+-- @version 1.2.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + clean up old folders also working on windows 2
+--   + clean up old folders also working on windows 3
 
-local version = "1.2.3"
+local version = "1.2.4"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -244,6 +244,7 @@ function move_folder_contents(src, dest)
     i = i + 1
   end
 
+--[[
   -- Optionally handle subdirectories too
   local j = 0
   while true do
@@ -258,6 +259,7 @@ function move_folder_contents(src, dest)
 
     j = j + 1
   end
+  ]]
 
   -- Remove original folder if empty
   os.remove(src)
@@ -287,9 +289,9 @@ end
 
 
 -- new structure clean up of old folders. Can be deleted later
-local previousColorFolder = scriptPath .. colorFolderName .. seperator
+local previousColorFolder = scriptPath .. colorFolderName
 local previousHelpFolder = scriptPath .. "Helpers" .. seperator
-local newColorFolder = scriptPathSubfolder .. colorFolderName .. seperator
+local newColorFolder = scriptPathSubfolder .. colorFolderName
 if folder_exists(previousColorFolder) then
     delete_folder_recursive(newColorFolder)
     delete_folder_recursive(previousHelpFolder)
