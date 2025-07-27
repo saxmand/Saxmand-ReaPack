@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.1.9
+-- @version 1.2.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -12,26 +12,38 @@
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/Steps Modulator (SNJUK2)/*.jsfx-inc
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/Curve (SNJUK2)/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/Curve (SNJUK2)/*.jsfx-inc
---   Helpers/*.lua
---   Color sets/*.txt
+--   Saxmand_FX Modulator Linking/Helpers/*.lua
+--   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fixed wet knob pos on selector list
+--   + fixed visual flaw if no track selected
+--   + added buttons for export app settings
+--   + moved all app files to subfolder (BREAKING CHANGE)
+--   + made missing dependencies not run script and give proper error message 
+--   + Made native LFO speed parameter use knob/slider visual setting. 
+--   + Corrected Show "Add Contianer" Button typo
 
-local version = "1.1.9"
+local version = "1.2.0"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
-package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
+local scriptPathSubfolder = scriptPath .. "Saxmand_FX Modulator Linking" .. seperator         
+
+package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers/?.lua"
+
+if not require("dependencies").main() then return end
+
 local json = require("json")
 local specialButtons = require("special_buttons")
 local getFXList = require("get_fx_list").getFXList
+
+
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local ImGui = require 'imgui' '0.9.3.3'
 local stateName = "ModulationLinking"
 local appName = "FX Modulator Linking"
 
-            
 local colorFolderName = "Color sets"
+local settingsFolderName = "Exported Settings"
 
 local ctx
 font = reaper.ImGui_CreateFont('Arial', 14)
@@ -137,9 +149,14 @@ local function prettifyString(str)
     return with_spaces
 end
 
-local function saveFile(data, fileName, subfolder)  
-    local target_dir = scriptPath .. (subfolder and (subfolder .. seperator) or "")
-    local save_path = target_dir .. fileName .. ".txt"
+local function saveFile(data, fileName, subfolder, save_path)  
+    local target_dir
+    if not save_path then
+        target_dir = scriptPathSubfolder .. (subfolder and (subfolder .. seperator) or "")
+        save_path = target_dir .. fileName .. ".txt"
+    else
+        target_dir = save_path:match("^(.*)[/\\][^/\\]+$")
+    end
     -- Make sure subfolder exists (cross-platform)
     os.execute( (seperator == "/" and "mkdir -p \"" or "mkdir \"" ) .. target_dir .. "\"")
     
@@ -151,10 +168,12 @@ local function saveFile(data, fileName, subfolder)
     end
 end
 
-function readFile(fileName, subfolder) 
+function readFile(fileName, subfolder, target_path) 
   if not fileName then return nil end
-  local target_dir = scriptPath .. (subfolder and (subfolder .. seperator) or "")
-  local target_path = target_dir .. fileName .. ".txt"
+  if not target_path then
+      local target_dir = scriptPathSubfolder .. (subfolder and (subfolder .. seperator) or "")
+      target_path = target_dir .. fileName .. ".txt"
+  end
   local file = io.open(target_path, "r") -- "r" for read mode
   if not file then
     return nil
@@ -169,7 +188,7 @@ function readFile(fileName, subfolder)
 end
 
 function open_folder(subfolder)
-    local target_dir = scriptPath .. (subfolder and (subfolder .. seperator) or "")
+    local target_dir = scriptPathSubfolder .. (subfolder and (subfolder .. seperator) or "")
     -- Normalize slashes
     target_dir = target_dir:gsub("\\", "/")
   
@@ -185,7 +204,7 @@ end
 
 
 function get_files_in_folder(subfolder) 
-    target_dir = scriptPath .. (subfolder and (subfolder .. seperator) or "")
+    target_dir = scriptPathSubfolder .. (subfolder and (subfolder .. seperator) or "")
     target_dir = target_dir:gsub("\\", "/")
     local names = {}
     local i = 0
@@ -4559,7 +4578,7 @@ function getAlignAndHeaderPlacementAndSize(title, vertical, screenPosX, screenPo
 end
 
 
-function drawHeaderText(title, x, y, w, h, vertical, textMargin, color, align) 
+function drawHeaderText(title, x, y, w, h, vertical, textMargin, color, align, thickness, textSize) 
     --drawInvisibleDummyButtonAtScreenPos(x,y,w,h) 
     local maxTextW = (vertical and w or h)
     local textMargin = textMargin and textMargin or 8
@@ -4569,12 +4588,12 @@ function drawHeaderText(title, x, y, w, h, vertical, textMargin, color, align)
     y = y + (vertical and 2 or textMargin)
     color = color and color or colorText
     
-    reaper.ImGui_PushFont(ctx, font15) 
+    reaper.ImGui_PushFont(ctx, textSize and _G["font"..textSize] or font15) 
     local lastPos, points
     if vertical then 
         lastPos = reaper.ImGui_CalcTextSize(ctx, title, 0,0)  
     else 
-        points, lastPos = textToPointsVertical(title,0, 0, 9.5, 3, maxTextW)
+        points, lastPos = textToPointsVertical(title,0, 0, textSize and textSize * 0.633 or 9.5, 3, maxTextW)
     end 
     
     local text_pos_x = x
@@ -4614,7 +4633,7 @@ function drawHeaderText(title, x, y, w, h, vertical, textMargin, color, align)
         draw_clipped_text(draw_list, title, text_pos_x, text_pos_y, color, maxTextW)
     else 
         for _, line in ipairs(points) do
-            reaper.ImGui_DrawList_AddLine(draw_list, text_pos_x + line[1], text_pos_y +line[2],  text_pos_x + line[3],text_pos_y+ line[4], color, 1.2)
+            reaper.ImGui_DrawList_AddLine(draw_list, text_pos_x + line[1], text_pos_y +line[2],  text_pos_x + line[3],text_pos_y+ line[4], color, thickness and thickness or 1.2)
         end 
     end
     reaper.ImGui_PopFont(ctx)
@@ -6874,7 +6893,7 @@ function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isC
     local paramName = "Speed"
     local visualIndexOffset = 0
     if tonumber(isTempoSync) == 0 then
-        nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.speed", "Speed", 0.0039, 16,1, "%0.4f Hz", reaper.ImGui_SliderFlags_Logarithmic(), nil, nil, nil, nil,modulatorParameterWidth, 1, nil, false, false)
+        nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.speed", "Speed", 0.0039, 16,1, "%0.4f Hz", reaper.ImGui_SliderFlags_Logarithmic(), nil, nil, nil, nil,modulatorParameterWidth, 1, nil,  useKnobs, useNarrow)
         --visualIndexOffset = visualIndexOffset + 1
     else  
         -- speed drop down menu
@@ -11954,7 +11973,7 @@ function appSettingsWindow()
                 end
                 setToolTipFunc("Show a button that will allow to add track fx (not a modulator) in the plugins panel")  
                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add Contianer" button',settings.showAddContainer) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add Container" button',settings.showAddContainer) 
                 if ret then 
                     settings.showAddContainer = val
                     saveSettings()
@@ -13233,7 +13252,44 @@ function appSettingsWindow()
                 settings = defaultSettings
                 saveSettings()
             end
+             
             
+            reaper.ImGui_NewLine(ctx)
+            
+            if reaper.ImGui_Button(ctx, "Export app settings") then
+                
+                local data = json.encodeToJson(settings) 
+                -- -- Get username (cross-platform)
+                local username = os.getenv("USERNAME") or os.getenv("USER") or "unknown_user"
+                
+                -- Get date and time
+                local timestamp = os.date("%Y-%m-%d_%H-%M-%S")  -- format: 2025-07-27_15-30-45
+                
+                -- Combine into filename
+                local filename = "FX-Modulator-Linking-Settings_" .. username .. "_" .. timestamp
+                saveFile(data, filename, settingsFolderName) 
+            end
+            reaper.ImGui_SameLine(ctx)
+            
+            if reaper.ImGui_Button(ctx, "Open app settings folder") then
+                open_folder(settingsFolderName)
+            end
+            
+            
+            if reaper.ImGui_Button(ctx, "Import app settings") then 
+                local retval, file = reaper.GetUserFileNameForRead(settingsFolderName, "Select a file", "txt")
+                if retval then
+                    data = readFile(true, nil, file) 
+                    if data then
+                        settings = json.decodeFromJson(data) 
+                        saveSettings()
+                    end
+                end
+            end
+            
+            
+            
+            reaper.ImGui_NewLine(ctx)
             
             local ret, val = reaper.ImGui_Checkbox(ctx,"Log loop start",settings.createDevLogStartOfLoop) 
             if ret then 
@@ -14253,6 +14309,8 @@ local function loop()
             screenPosY = screenPosY - 8
         end
         
+        reaper.ImGui_Dummy(ctx, 1,1)
+        reaper.ImGui_SetCursorPos(ctx, x,y)
         
         mouseInsideAppWindow = mouse_pos_x_imgui >= winX and mouse_pos_x_imgui <= winX + winW and mouse_pos_y_imgui >= winY and mouse_pos_y_imgui <= winY + winH
         
@@ -16522,12 +16580,14 @@ local function loop()
                 local name = reaper.ImGui_IsItemHovered(ctx) and nameHover or nameStatic
                 reaper.ImGui_PopStyleColor(ctx,3)
                 
+                
                 reaper.ImGui_PushFont(ctx, font60)
                 local textW, textH = reaper.ImGui_CalcTextSize(ctx, name, 0,0)
-                local textX = minX + mainAreaW / 2 - textW / 2
-                local textY = minY + mainAreaH / 2 - textH / 2
-                reaper.ImGui_DrawList_AddRectFilled(draw_list, textX, textY, textX + textW, textY + textH, bgColor)
-                reaper.ImGui_DrawList_AddText(draw_list, textX, textY, settings.colors.text, name)
+                local textX = minX + mainAreaW / 2 - ((vertical and textH or textW) / 2)
+                local textY = minY + mainAreaH / 2 - ((vertical and textW or textH) / 2)
+                --reaper.ImGui_DrawList_AddRectFilled(draw_list, textX, textY, textX + textW, textY + textH, bgColor)
+                --reaper.ImGui_DrawList_AddText(draw_list, textX, textY, settings.colors.text, name)
+                drawHeaderText(name, textX, textY, mainAreaW, mainAreaH, not vertical, textMargin, settings.colors.text, vertical and "Right" or "Left", 4, 60) 
                 
                 reaper.ImGui_PopFont(ctx)
                 reaper.ImGui_EndChild(ctx)
