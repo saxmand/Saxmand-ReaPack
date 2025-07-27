@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.2.7
+-- @version 1.2.8
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + clean up old folders also working on windows 5
+--   + clean up old folders also working on windows 6
 
-local version = "1.2.7"
+local version = "1.2.8"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -223,7 +223,7 @@ function delete_folder_recursive(path)
   end
 
   -- Delete the folder itself
-  os.remove(path)
+  os.remove(path:gsub("\\", "/"))
 end
 
 function move_folder_contents(src, dest)
@@ -262,7 +262,7 @@ function move_folder_contents(src, dest)
   ]]
 
   -- Remove original folder if empty
-  os.remove(src)
+  os.remove(src:gsub("\\", "/"))
 end
 
 function get_files_in_folder(subfolder) 
