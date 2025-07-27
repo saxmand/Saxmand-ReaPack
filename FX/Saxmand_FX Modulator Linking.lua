@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.2.2
+-- @version 1.2.3
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + clean up old folders also working on windows
+--   + clean up old folders also working on windows 2
 
-local version = "1.2.2"
+local version = "1.2.3"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -226,6 +226,43 @@ function delete_folder_recursive(path)
   os.remove(path)
 end
 
+function move_folder_contents(src, dest)
+  -- Create destination if it doesn't exist
+  reaper.RecursiveCreateDirectory(dest, 0)
+
+  local i = 0
+  while true do
+    local file = reaper.EnumerateFiles(src, i)
+    if not file then break end
+
+    local src_file = src .. "/" .. file
+    local dest_file = dest .. "/" .. file
+
+    -- Rename (move) file
+    os.rename(src_file, dest_file)
+
+    i = i + 1
+  end
+
+  -- Optionally handle subdirectories too
+  local j = 0
+  while true do
+    local subdir = reaper.EnumerateSubdirectories(src, j)
+    if not subdir then break end
+
+    local src_sub = src .. "/" .. subdir
+    local dest_sub = dest .. "/" .. subdir
+
+    move_folder_contents(src_sub, dest_sub) -- recursive
+    os.remove(src_sub) -- try to remove the empty folder after move
+
+    j = j + 1
+  end
+
+  -- Remove original folder if empty
+  os.remove(src)
+end
+
 function get_files_in_folder(subfolder) 
     target_dir = scriptPathSubfolder .. (subfolder and (subfolder .. seperator) or "")
     target_dir = target_dir:gsub("\\", "/")
@@ -256,7 +293,7 @@ local newColorFolder = scriptPathSubfolder .. colorFolderName .. seperator
 if folder_exists(previousColorFolder) then
     delete_folder_recursive(newColorFolder)
     delete_folder_recursive(previousHelpFolder)
-    os.execute((seperator == "/" and 'mv' or 'move') ..' "' .. previousColorFolder .. '" "' .. scriptPathSubfolder .. '"')
+    move_folder_contents(previousColorFolder, scriptPathSubfolder)
 end
 ----------------------
 
