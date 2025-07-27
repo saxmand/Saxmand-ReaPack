@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.2.6
+-- @version 1.2.7
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,9 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + clean up old folders also working on windows 4
+--   + clean up old folders also working on windows 5
 
-local version = "1.2.6"
+local version = "1.2.7"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -209,7 +209,7 @@ function delete_folder_recursive(path)
   while true do
     local file = reaper.EnumerateFiles(path, i)
     if not file then break end
-    os.remove(path .. seperator .. file)
+    os.remove(path .. file)
     i = i + 1
   end
 
@@ -218,7 +218,7 @@ function delete_folder_recursive(path)
   while true do
     local subdir = reaper.EnumerateSubdirectories(path, j)
     if not subdir then break end
-    delete_folder_recursive(path .. seperator .. subdir)
+    delete_folder_recursive(path .. subdir)
     j = j + 1
   end
 
@@ -235,8 +235,8 @@ function move_folder_contents(src, dest)
     local file = reaper.EnumerateFiles(src, i)
     if not file then break end
 
-    local src_file = src .. seperator .. file
-    local dest_file = dest .. seperator .. file
+    local src_file = src .. file
+    local dest_file = dest .. file
 
     -- Rename (move) file
     os.rename(src_file, dest_file)
@@ -289,9 +289,9 @@ end
 
 
 -- new structure clean up of old folders. Can be deleted later
-local previousColorFolder = scriptPath .. colorFolderName
-local previousHelpFolder = scriptPath .. "Helpers"
-local newColorFolder = scriptPathSubfolder .. colorFolderName
+local previousColorFolder = scriptPath .. colorFolderName .. seperator
+local previousHelpFolder = scriptPath .. "Helpers" .. seperator
+local newColorFolder = scriptPathSubfolder .. colorFolderName .. seperator
 if folder_exists(previousColorFolder) then
     delete_folder_recursive(newColorFolder)
     delete_folder_recursive(previousHelpFolder)
