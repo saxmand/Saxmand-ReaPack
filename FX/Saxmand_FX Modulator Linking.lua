@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.2.0
+-- @version 1.2.1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,14 +15,10 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fixed visual flaw if no track selected
---   + added buttons for export app settings
---   + moved all app files to subfolder (BREAKING CHANGE)
---   + made missing dependencies not run script and give proper error message 
---   + Made native LFO speed parameter use knob/slider visual setting. 
---   + Corrected Show "Add Contianer" Button typo
+--   + updated behaviour when automation mode is latch preview
+--   + clean up old folders
 
-local version = "1.2.0"
+local version = "1.2.1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -202,6 +198,34 @@ function open_folder(subfolder)
     end
 end
 
+function folder_exists(path)
+  local ok, err, code = os.rename(path, path)
+  return ok ~= nil or code == 13  -- 13 = permission denied (folder exists but not accessible)
+end
+
+-- Recursively delete a folder and its contents
+function delete_folder_recursive(path)
+  -- Delete files
+  local i = 0
+  while true do
+    local file = reaper.EnumerateFiles(path, i)
+    if not file then break end
+    os.remove(path .. "/" .. file)
+    i = i + 1
+  end
+
+  -- Delete subfolders recursively
+  local j = 0
+  while true do
+    local subdir = reaper.EnumerateSubdirectories(path, j)
+    if not subdir then break end
+    delete_folder_recursive(path .. "/" .. subdir)
+    j = j + 1
+  end
+
+  -- Delete the folder itself
+  os.remove(path)
+end
 
 function get_files_in_folder(subfolder) 
     target_dir = scriptPathSubfolder .. (subfolder and (subfolder .. seperator) or "")
@@ -225,6 +249,17 @@ end
 -----------------------------------------
 -----------------------------------------
 
+
+-- new structure clean up of old folders. Can be deleted later
+local previousColorFolder = scriptPath .. colorFolderName .. seperator
+local previousHelpFolder = scriptPath .. "Helpers" .. seperator
+local newColorFolder = scriptPathSubfolder .. colorFolderName .. seperator
+if folder_exists(previousColorFolder) then
+    delete_folder_recursive(newColorFolder)
+    delete_folder_recursive(previousHelpFolder)
+    os.execute('mv "' .. previousColorFolder .. '" "' .. scriptPathSubfolder .. '"')
+end
+----------------------
 
 
 local _, lastTrackIndexTouched, lastItemIndexTouched, lastTakeIndexTouched, lastFxIndexTouched, lastParameterTouched = reaper.GetTouchedOrFocusedFX( 0 ) 
@@ -3910,15 +3945,22 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
             
         end
         local currentValue = value
-        if parameterModulationActive and not usesEnvelope and baseline then
+        if not automation then
+            automation = math.floor(reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE'))
+        end
+        
+        if automation == 5 and not parameterModulationActive then
+        elseif parameterModulationActive and (not usesEnvelope or automation == 5) and baseline then
             currentValue = tonumber(baseline)
-        elseif singleEnvelopePointAtStart and firstEnvelopeValue then
+        elseif singleEnvelopePointAtStart and firstEnvelopeValue and automation ~= 5 then
             currentValue = firstEnvelopeValue
         elseif usesEnvelope and envelopeValueAtPos and not scrollTime then 
-            local automation = math.floor(reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE'))
             -- not write, latch, latch preview
-            if (not isMouseDragging and automation < 3) or (isMouseDragging and automation < 2) then-- or automation < 3 then --not automationTypes[automation+1] ~= "Write" then
+            if (not isMouseDragging and (automation < 3 or automation == 5)) or 
+            (isMouseDragging and (automation < 2)) 
+            then-- or automation < 3 then --not automationTypes[automation+1] ~= "Write" then
             
+            --reaper.ShowConsoleMsg(tostring(automation) .. " a\n")
             -- we do not need to use the envelope value here it seems, as it will not make it change properly
                 currentValue = envelopeValueAtPos
             end
@@ -9581,11 +9623,11 @@ function setParamAdvanced(track, p, amount)
     
     if p.param and p.param > -1 then 
         updateVisibleEnvelopes(track, p)
-        if p.usesEnvelope then  
+        if p.usesEnvelope and automation ~= 5 then  
             return setEnvelopePointAdvanced(track, p, amount)
         elseif p.parameterLinkEffect and p.parameterModulationActive then
             SetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline', amount ) 
-            local newVal = tonumber(select(2, GetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline') ))
+            local newVal = tonumber(select(2, GetNamedConfigParm( track, p.fxIndex, 'param.'..p.param..'.mod.baseline', true) ))
             return newVal  
         else  
             SetParam(track, p.fxIndex, p.param, amount)
@@ -14128,7 +14170,7 @@ local function loop()
             modulatorFxIndexes = {}
         end
         
-        automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
+        automation = math.floor(reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE'))
         isAutomationRead = automation < 2
         
         if fxnumber and modulationContainerPos ~= fxnumber and not modulatorFxIndexes[fxnumber] then
