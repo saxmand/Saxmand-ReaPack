@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.2.1
+-- @version 1.2.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,10 +15,9 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + updated behaviour when automation mode is latch preview
---   + clean up old folders
+--   + clean up old folders also working on windows
 
-local version = "1.2.1"
+local version = "1.2.2"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -257,7 +256,7 @@ local newColorFolder = scriptPathSubfolder .. colorFolderName .. seperator
 if folder_exists(previousColorFolder) then
     delete_folder_recursive(newColorFolder)
     delete_folder_recursive(previousHelpFolder)
-    os.execute('mv "' .. previousColorFolder .. '" "' .. scriptPathSubfolder .. '"')
+    os.execute((seperator == "/" and 'mv' or 'move') ..' "' .. previousColorFolder .. '" "' .. scriptPathSubfolder .. '"')
 end
 ----------------------
 
