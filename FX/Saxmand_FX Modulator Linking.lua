@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.2.9
+-- @version 1.3.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -15,9 +15,10 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + clean up old folders also working on windows 6
+--   + fixed narrow knobs not showing name correctly in some cases (when aligned to the left)
+--   + fixed position of plugins module when very narrow width between modules was used
 
-local version = "1.2.9"
+local version = "1.3.0"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -9408,7 +9409,7 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
         local sliderBackground = settings.colors.sliderBackground
         
         
-        local x = settings.alignParameterKnobToTheRight and maxX - size or minX 
+        local x = (useNarrow or settings.alignParameterKnobToTheRight) and maxX - size or minX 
         local y = minY + 2
         
         if useNarrow then
@@ -9500,9 +9501,9 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
         end
         
         
-        valTextPosMax = settings.alignParameterKnobToTheRight and valTextPosMax - size - 3 or maxX
+        valTextPosMax = (useNarrow or settings.alignParameterKnobToTheRight) and valTextPosMax - size - 3 or maxX
         
-        minX = settings.alignParameterKnobToTheRight and minX or minX + size + 4
+        minX = (useNarrow or settings.alignParameterKnobToTheRight) and minX or minX + size + 4
         
         if not useNarrow then
             ImGui.PushClipRect(ctx, minX, minY, valTextPosMax, minY+32, true)
@@ -13363,6 +13364,20 @@ function appSettingsWindow()
                     if data then
                         settings = json.decodeFromJson(data) 
                         saveSettings()
+                        local allColorSets, selectedColorSetIndex = getColorSetsAndSelectedIndex() 
+                        
+                        local colorSetExist = false
+                        for _, name in ipairs(allColorSets) do
+                            if name == settings.selectedColorSet then
+                                colorSetExist = true
+                                break
+                            end
+                        end
+                        if not colorSetExist then 
+                            saveFile(json.encodeToJson(settings.colors), settings.selectedColorSet, colorFolderName) 
+                            --allColorSets, selectedColorSetIndex =  getColorSetsAndSelectedIndex() 
+                        end
+                        
                     end
                 end
             end
@@ -14638,7 +14653,7 @@ local function loop()
             
             placingOfNextElement(settings.vertical and 8 or 4)
             drawSeperator()
-            placingOfNextElement(settings.widthBetweenWidgets)
+            placingOfNextElement(4)
         end
         
         
@@ -15708,7 +15723,7 @@ local function loop()
                     local addNewModulatorWidth = settings.vertical and moduleWidth or addNewModulatorW 
                     
                     
-                    if settings.showAddModulatorButtonBefore then
+                    if settings.showAddModulatorButtonBefore and (#modulatorNames > 0 or not settings.showAddModulatorButtonAfter) then
                         if titleButtonStyle("+", "Add new modulator", addNewModulatorWidth,true,false, addNewModulatorHeight ) then 
                             reaper.ImGui_OpenPopup(ctx, 'Add new modulator')  
                         end
