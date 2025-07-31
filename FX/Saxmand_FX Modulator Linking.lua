@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.3.3
+-- @version 1.3.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,9 +17,9 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + added option to rename parameters
+--   + fix option to rename parameters missing param
 
-local version = "1.3.3"
+local version = "1.3.4"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -11228,7 +11228,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                 end
             end
             
-            if customSettings.rename then
+            if customSettings and customSettings.rename then
                 if reaper.ImGui_BeginMenu(ctx, "Rename settings") then 
                     
                     if reaper.ImGui_Button(ctx, "Rename ".. '"' .. name.. '"') then
