@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.3.5
+-- @version 1.3.6
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,9 +17,9 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + Added option to set default where to use renamed parameter name for
+--   + fix use rename on wide sliders to only apply when not narrow
 
-local version = "1.3.5"
+local version = "1.3.6"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -10338,7 +10338,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     local name = p.name and p.name or "NA"
     local customSettings = (customPluginSettings and customPluginSettings[p.fxNameSimple]) and customPluginSettings[p.fxNameSimple][p.param]
     
-    if (customSettings and customSettings.rename) and (customSettings.useRenameOnWide or (useNarrow and customSettings.useRenameOnNarrow)) then
+    if (customSettings and customSettings.rename) and ((not useNarrow and customSettings.useRenameOnWide) or (useNarrow and customSettings.useRenameOnNarrow)) then
         name = customSettings.rename
     end
     

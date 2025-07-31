@@ -1,1 +1,1 @@
-{"3":{"useRenameOnNarrow":true, "rename":"P.W Mod", "useRenameOnWide":false}, "2":{"useRenameOnNarrow":true, "rename":"P. Width", "useRenameOnWide":false}}
+{"3":{"rename":"P.W Mod", "useRenameOnNarrow":true, "useRenameOnWide":false}, "2":{"rename":"P. Width", "useRenameOnNarrow":true, "useRenameOnWide":false}, "15":{"rename":"Osc.MG", "useRenameOnWide":false, "useRenameOnNarrow":true}}
