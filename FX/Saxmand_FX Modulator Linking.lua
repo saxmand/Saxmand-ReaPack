@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.3.4
+-- @version 1.3.5
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,9 +17,9 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fix option to rename parameters missing param
+--   + Added option to set default where to use renamed parameter name for
 
-local version = "1.3.4"
+local version = "1.3.5"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -536,6 +536,9 @@ local defaultSettings = {
     showSeperationLineBeforeMappingName = true,
     alignModulatorMappingNameRight = true, 
     showEnvelopeIndicationInName = true,
+    
+    useRenamingOnNarrow = true,
+    useRenamingOnWide = true,
     
     -- slider design
     bigSliderMoving = true,
@@ -6912,7 +6915,7 @@ function editPluginSetting(_do, paramObj, var)
         
         if _do == "rename" and not customPluginSettings[simpleName][paramObj.param][_do] then
             
-            customPluginSettings[simpleName][paramObj.param] = {useRenameOnWide = true, useRenameOnNarrow = true} 
+            customPluginSettings[simpleName][paramObj.param] = {useRenameOnWide = settings.useRenamingOnWide, useRenameOnNarrow = settings.useRenamingOnNarrow} 
         end
         customPluginSettings[simpleName][paramObj.param][_do] = var
         saveFile(json.encodeToJson(customPluginSettings[simpleName]), simpleName, pluginsFolderName) 
@@ -12323,6 +12326,27 @@ function appSettingsWindow()
                         setToolTipFunc("Align mapped modulator name to the left or right") 
                 
                     reaper.ImGui_Unindent(ctx)
+                
+                reaper.ImGui_Unindent(ctx)
+                
+                reaper.ImGui_TextColored(ctx, colorTextDimmed, "Renaming:")
+                
+                
+                local sliderKnobName = settings.useKnobs and "knob" or "slider" 
+                reaper.ImGui_Indent(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Use renamed on narrow " .. sliderKnobName .. "##parameters",settings.useRenamingOnNarrow) 
+                    if ret then 
+                        settings.useRenamingOnNarrow = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("When renaming use the name on narrow ".. sliderKnobName .. " by default") 
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Use renamed on wide " .. sliderKnobName .. "##parameters",settings.useRenamingOnWide) 
+                    if ret then 
+                        settings.useRenamingOnWide = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("When renaming use the name on wide ".. sliderKnobName .. " by default")
                 
                 reaper.ImGui_Unindent(ctx)
                  

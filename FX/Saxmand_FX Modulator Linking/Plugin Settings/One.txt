@@ -1,0 +1,1 @@
+{"3":{"useRenameOnNarrow":true, "rename":"P.W Mod", "useRenameOnWide":false}, "2":{"useRenameOnNarrow":true, "rename":"P. Width", "useRenameOnWide":false}}
