@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.3.1
+-- @version 1.3.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,14 +17,11 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + added seperate width for modulators modules list (not popup)
---   + added early support for mapping curves
---   + added option where to insert modulators container
---   + fixed to not delete presets on windows (old folder has to be deleted manually)
---   + fixed add (+) buttons not behaving correctly in settings and in gui
+--   + fixed mapping showing when mapping inside the modulators container
+--   + fixed mapping showing name correctly when using PM curve inside the modulators container
 
 
-local version = "1.3.1"
+local version = "1.3.2"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -3910,6 +3907,7 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                         --root_fxIndex = path[#path-1] --get_fx_id_from_container_path(track, table.unpack(path))
                         --root_fxIndex = modulationContainerPos
                         root_fxIndex = path[#path-1] and path[#path-1] - 1 or false
+                        
                         --reaper.ShowConsoleMsg(name .. " - fxIndex: " .. fxIndex .. " - param: " .. param .. " - Root index: " .. tostring(path[#path-1]) .. " - Root param: " .. tostring(root_fxIndex) .. "  2\n")
                     end
                 end
@@ -3934,6 +3932,33 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
         
         local midiMsg, midiMsg2, midiBus, midiChan, linkFromMidiText
         
+        
+        function findSettingsIfCurver()
+            local retName, originalName = GetNamedConfigParm( track, parameterLinkFXIndex, 'fx_name' )
+            isCurver = originalName == "JS: Curve Mapped Modulation"
+            if isCurver then
+                --local curvePath = get_container_path_from_fx_id(track, parameterLinkFXIndex)
+                local parameterLinkEffectOnCurve = getPlinkEffect(track,parameterLinkFXIndex, 0) 
+                --parameterLinkParamForCurve = getPlinkParam(track,parameterLinkFXIndex,0)
+                local parameterLinkFXIndexOnCurve = getPlinkFxIndex(track, modulationContainerPos, parameterLinkEffectOnCurve) 
+                
+                --parameterLinkNameForCurve = parameterLinkName
+                --parameterLinkNameForCurve = simplifyParameterNameName(parameterLinkNameForCurve, 1)
+                parameterLinkName =  getRenamedFxName(track, parameterLinkFXIndexOnCurve)
+                parameterLinkParamForCurve = parameterLinkParam
+                
+                --
+                originalName = getOriginalFxName( track, parameterLinkFXIndexOnCurve )
+                --parameterLinkName
+                --reaper.ShowConsoleMsg(originalName .. " - " .. parameterLinkFXIndex .. "\n")
+                
+                parameterLinkParam = getPlinkParam(track,parameterLinkFXIndex,0)
+                parameterLinkFXIndexForCurve = parameterLinkFXIndex
+                parameterLinkFXIndex = parameterLinkFXIndexOnCurve
+                parameterLinkEffect = parameterLinkEffectOnCurve
+                parameterLinkCurverOpen = GetOpen(track, parameterLinkFXIndexForCurve)
+            end
+        end
         
         if parameterLinkActive then
             parameterLinkEffect = getPlinkEffect(track, fxIndex, param)
@@ -3974,6 +3999,8 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                              paramName = GetParamName(track, parameterLinkFXIndex, parameterLinkParam)
                              parameterLinkName = parameterLinkName .. ": " .. paramName 
                          end
+                         
+                         findSettingsIfCurver()
                          --reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - " .. parameterLinkEffect .. " - " .. parameterLinkParam .. " - "..#outputsForLinkedModulator  .. " - " .. parameterLinkName .. "\n")
                         
                      end 
@@ -4005,6 +4032,7 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                     end
                     
                     
+                    
                     if parameterLinkFXIndexInContainer then
                         parameterLinkFXIndex = getPlinkFxIndex( track, modulationContainerPos, parameterLinkFXIndexInContainer)
                         
@@ -4013,30 +4041,8 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                             -- overwrite the parameter to be the parameter that's within the modulation container
                             parameterLinkParam = getPlinkParamInContainer(track,modulationContainerPos,parameterLinkParam) 
                             if parameterLinkParam then
-                                local retName, originalName = GetNamedConfigParm( track, parameterLinkFXIndex, 'fx_name' )
-                                isCurver = originalName == "JS: Curve Mapped Modulation"
-                                if isCurver then
-                                    --local curvePath = get_container_path_from_fx_id(track, parameterLinkFXIndex)
-                                    local parameterLinkEffectOnCurve = getPlinkEffect(track,parameterLinkFXIndex, 0) 
-                                    --parameterLinkParamForCurve = getPlinkParam(track,parameterLinkFXIndex,0)
-                                    local parameterLinkFXIndexOnCurve = getPlinkFxIndex(track, modulationContainerPos, parameterLinkEffectOnCurve) 
-                                    
-                                    --parameterLinkNameForCurve = parameterLinkName
-                                    --parameterLinkNameForCurve = simplifyParameterNameName(parameterLinkNameForCurve, 1)
-                                    parameterLinkName =  getRenamedFxName(track, parameterLinkFXIndexOnCurve)
-                                    parameterLinkParamForCurve = parameterLinkParam
-                                    
-                                    --
-                                    originalName = getOriginalFxName( track, parameterLinkFXIndexOnCurve )
-                                    --parameterLinkName
-                                    --reaper.ShowConsoleMsg(originalName .. " - " .. parameterLinkFXIndex .. "\n")
-                                    
-                                    parameterLinkParam = getPlinkParam(track,parameterLinkFXIndex,0)
-                                    parameterLinkFXIndexForCurve = parameterLinkFXIndex
-                                    parameterLinkFXIndex = parameterLinkFXIndexOnCurve
-                                    parameterLinkEffect = parameterLinkEffectOnCurve
-                                    parameterLinkCurverOpen = GetOpen(track, parameterLinkFXIndexForCurve)
-                                end
+                                
+                                findSettingsIfCurver()
                                 
                                 local outputsForLinkedModulator = getOutputArrayForModulator(track, originalName, parameterLinkFXIndex, modulationContainerPos)
                                 
@@ -4448,11 +4454,11 @@ function getAllTrackFXOnTrack(track,doNotGetStatus)
 end
 
 
-function getLinkFxIndex(fxIndex, p) 
+function getLinkFxIndex(fxIndex, p, isModulator) 
     local linkFxIndex
     local linkFx = getPlinkEffect(track, fxIndex, p) -- index of the fx that's linked. if outside modulation folder, it will be modulation folder index
     local linkParam = getPlinkParam(track, fxIndex, p)  -- parameter of the fx that's linked. 
-    if modulationContainerPos then
+    if modulationContainerPos then  
         --local _, linkFxIndex = GetNamedConfigParm(track, modulationContainerPos, 'param.' .. linkParam .. '.container_map.hint_id')
         if isModulator then 
             linkFxIndex = tonumber(get_fx_id_from_container_path(track, modulationContainerPos+1, linkFx + 1)) -- test hierarchy
@@ -4480,21 +4486,22 @@ function CheckFXParamsMapping(pLinks, track, fxIndex, isModulator, isSelector)
                 -- TODO: STILL MORE WORK TO DO HERE.
                 -- Here we would get modulators if allowed outside of folder as well
                 
-                local linkFxIndex = getLinkFxIndex(fxIndex, param)
+                local linkFxIndex = getLinkFxIndex(fxIndex, param, isModulator)
                 
                 -- we check the name if the link is a curver
                 local fxOriginalName = getOriginalFxName(track, linkFxIndex,doNotGetStatus)
-                local isCurved = fxOriginalName  == "JS: Curve Mapped Modulation"
+                local isCurved = fxOriginalName == "JS: Curve Mapped Modulation"
                 -- if the param mapping is curved, we use the curved fx index instead
                 if isCurved then 
                     linkFxIndexCurved = linkFxIndex
                     --param = 1
-                    linkFxIndex = getLinkFxIndex(linkFxIndex, 0)
+                    linkFxIndex = getLinkFxIndex(linkFxIndex, 0, isModulator)
                 end
                 
                 
                 if linkFxIndex then 
                     if not pLinks[linkFxIndex] then pLinks[linkFxIndex] = {} end
+                    
                     table.insert(pLinks[linkFxIndex], {fxIndex = fxIndex, param = param, isCurved = isCurved, linkFxIndexCurved = linkFxIndexCurved})
                 end
                 
