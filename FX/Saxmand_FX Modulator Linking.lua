@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.3.2
+-- @version 1.3.3
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,11 +17,9 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fixed mapping showing when mapping inside the modulators container
---   + fixed mapping showing name correctly when using PM curve inside the modulators container
+--   + added option to rename parameters
 
-
-local version = "1.3.2"
+local version = "1.3.3"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -43,6 +41,7 @@ local appName = "FX Modulator Linking"
 
 local colorFolderName = "Color sets"
 local settingsFolderName = "Exported Settings"
+local pluginsFolderName = "Plugin Settings"
 
 local ctx
 font = reaper.ImGui_CreateFont('Arial', 14)
@@ -269,7 +268,7 @@ function move_folder_contents(src, dest)
   os.remove(src:gsub("\\", "/"))
 end
 
-function get_files_in_folder(subfolder) 
+function get_files_in_folder(subfolder, nameAsKey) 
     target_dir = scriptPathSubfolder .. (subfolder and (subfolder .. seperator) or "")
     target_dir = target_dir:gsub("\\", "/")
     local names = {}
@@ -279,7 +278,11 @@ function get_files_in_folder(subfolder)
         if not file then break end
         if file:match(".txt") ~= nil then
             local name = file:match("(.+)%..+$") or file  -- remove extension
-            table.insert(names, name)
+            if nameAsKey then
+                names[name] = json.decodeFromJson(readFile(name, subfolder))
+            else
+                table.insert(names, name)
+            end
         end 
         i = i + 1
     end
@@ -312,6 +315,7 @@ local lastParameterTouchedMouse, lastFxIndexTouchedMouse, lastTrackIndexTouchedM
 local renameFxIndex = ""
 local beginFxDragAndDropIndexRelease, beginFxDragAndDropName, beginFxDragAndDrop, HideToolTipTemp, beginFxDragAndDropFX 
 local factoryModules, indentColors
+local customPluginSettings
 
 local fx_before, fx_after, firstBrowserHwnd, all_fx_last
 
@@ -2127,7 +2131,52 @@ function getPlinkParentContainer(track, fxIndex, doNotUseCatch)
     return ret and tonumber(val) or false
 end
 
+function fxSimpleName(title, force)
+    if settings.hidePluginTypeName or force then
+        title  = title:gsub("^[^:]+: ", "")
+    end
+    if settings.hideDeveloperName or force then
+        title  = title:gsub("%s*%b()", "") 
+    end
 
+    return title
+end
+
+function GetFXName(track, index, doNotUseCatch)
+    if not track or not index then return end
+    local tableStr = "::GetFXName"
+    local catch = getParameterTableCatch(track, index, tableStr, 1)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch 
+    else 
+        local ret, val = reaper.TrackFX_GetFXName(track, index) 
+        setParameterTableCatch(track, index, tableStr, val)
+        return val
+    end
+end
+
+
+function GetParamNameFromCustomSetting(track, index, param, version, doNotUseCatch)
+    --if not customPluginSettings then doNotUseCatch = true end
+    local tableStr = param .. "::GetParamNameCustom"..version
+    local catch = getParameterTableCatch(track, index, tableStr, 1)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then  
+        return catch 
+    else  
+        local fxName = GetFXName(track, index) 
+        local simpleName = fxName and fxSimpleName(fxName, true) 
+        --local currentStr = readFile(simpleName, pluginsFolderName) 
+        --pluginObj = currentStr and json.decodeFromJson(currentStr) or {}
+        
+        if customPluginSettings and customPluginSettings[simpleName] and customPluginSettings[simpleName][param] and customPluginSettings[simpleName][param][version] then
+            return customPluginSettings[simpleName][param][version]
+        else
+            local ret, val = reaper.TrackFX_GetParamName(track, index, param) 
+            setParameterTableCatch(track, index, tableStr, val)
+            return val
+        end
+    end 
+end
 
 function GetParamName(track, index, param, doNotUseCatch)
     local tableStr = param .. "::GetParamName"
@@ -2139,18 +2188,6 @@ function GetParamName(track, index, param, doNotUseCatch)
         setParameterTableCatch(track, index, tableStr, val)
         return val
     end   
-end
-
-function GetFXName(track, index, doNotUseCatch)
-    local tableStr = "::GetFXName"
-    local catch = getParameterTableCatch(track, index, tableStr, 1)
-    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
-        return catch 
-    else 
-        local ret, val = reaper.TrackFX_GetFXName(track, index) 
-        setParameterTableCatch(track, index, tableStr, val)
-        return val
-    end
 end
 
 function GetNumParams(track, index, doNotUseCatch)
@@ -2348,6 +2385,8 @@ function getFxParamsThatAreNotFiltered(track, fxIndex, doNotUseCatch)
     for param = 0, param_count - 1 do 
         if param == param_count - 3 then
             -- we don't want the bypass knob as part of the parameters
+        elseif param == param_count - 2 then 
+            -- we don't want the wet param as part of the parameters
         elseif param == param_count - 1 then
             -- we don't want the delta param as part of the parameters
         else
@@ -2682,6 +2721,16 @@ function toggleFxFloatAuto()
     reaper.SNM_SetIntConfigVar("fxfloat_focus", val + (isSet and -4 or 4))
 end    
 
+function setFxFloatAutoToTrue()
+    local isFxOpen = track and getFXWindowOpen(track)
+    
+    if not getFxFloatAuto() and not isFxOpen then
+        toggleFxFloatAuto()
+        return false
+    else
+        return true
+    end
+end
 
 
 -- Avarage update for params read count
@@ -2962,8 +3011,10 @@ end
 function addFxAfterSelection(track, fxIndex, fxName, notInsideContainer)  
     local pathForNextIndex = not isAddFXAsLast and getPathForNextFxIndex(track, fxIndex, notInsideContainer) or false
     local addIndex = (pathForNextIndex and #pathForNextIndex < 2) and pathForNextIndex[1] or 999
+    local wasSetToFloatingAuto = setFxFloatAutoToTrue()
     local newFxIndex = reaper.TrackFX_AddByName( track, fxName, false, -1000 - addIndex) 
     newFxIndex = moveFxIfNeeded(pathForNextIndex, newFxIndex)
+    if not wasSetToFloatingAuto then toggleFxFloatAuto() end
     return newFxIndex
 end
 
@@ -3379,8 +3430,7 @@ function deleteParameterFromContainer(track, modulationContainerPos, param)
 end
 
 function insertCurveForMapping(track, p)
-    local wasSetToFloatingAuto = getFxFloatAuto()
-    if not wasSetToFloatingAuto then toggleFxFloatAuto() end
+    local wasSetToFloatingAuto = setFxFloatAutoToTrue()
     
     local curveName = "Curve_" .. p.guid .."_" .. p.param
     -- insert curver
@@ -3860,11 +3910,16 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
     if not track or not validateTrack(track) then return {} end
     if not fxIndex or not param then return {} end
     
-    local name = GetParamName(track,fxIndex,param)
+    
+    --local name = GetParamName(track,fxIndex,param)
+    local name = GetParamName(track, fxIndex, param)
+    local rename = GetParamNameFromCustomSetting(track, fxIndex, param, "rename")
+    
     local valueName = GetFormattedParamValue(track,fxIndex,param)
     -- we filter internal and midi parameters from plugin parameter list
     if ignoreFilter or filterParametersThatAreMostLikelyNotWanted(param, track, fxIndex) then  
         local fxName = GetFXName(track, fxIndex)
+        local fxNameSimple = fxSimpleName(fxName, true)
         local root_fxIndex, root_param = fx_get_mapped_parameter_with_catch(track, fxIndex, param)
         --local containerPath = GetContainerPath(track, fxIndex)
         --local modulated_fxIndex = fxIndex
@@ -4176,8 +4231,8 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
         --end
         local currentValueNormalized = (currentValue - min) / range
         --local visualValueNormalized = currentValueNormalized + offset + 
-        return {param = param, name = name, currentValue = currentValue, currentValueNormalized = currentValueNormalized,  value = value, valueNormalized = valueNormalized, min = min, max = max, range = range, baseline = tonumber(baseline), width = tonumber(width), offset = tonumber(offset), bipolar = bipolar, direction = direction,
-        valueName = valueName, fxIndex = fxIndex, guid = guid,
+        return {param = param, name = name, rename = rename, currentValue = currentValue, currentValueNormalized = currentValueNormalized,  value = value, valueNormalized = valueNormalized, min = min, max = max, range = range, baseline = tonumber(baseline), width = tonumber(width), offset = tonumber(offset), bipolar = bipolar, direction = direction,
+        valueName = valueName, fxIndex = fxIndex, guid = guid, fxNameSimple = fxNameSimple,
         parameterModulationActive = parameterModulationActive, parameterLinkActive = parameterLinkActive, parameterLinkEffect = parameterLinkEffect,containerItemFxId = tonumber(containerItemFxId),
         envelope = trackEnvelope, hasEnvelopePoints = hasEnvelopePoints, usesEnvelope = usesEnvelope, envelopeActive = envelopeActive, envelopePointCount = envelopePointCount, singleEnvelopePointAtStart = singleEnvelopePointAtStart, envelopeValue = envelopeValueAtPos, 
         parameterLinkFXIndex = parameterLinkFXIndex, parameterLinkParam = parameterLinkParam, parameterLinkName = parameterLinkName,
@@ -4627,6 +4682,7 @@ function compareTrackFxArray(fx_before, fx_after)
 end
 
 
+
 local function getAllTrackFXOnTrackSimpleRecursively(track)
     
     local data = {}
@@ -4639,7 +4695,8 @@ local function getAllTrackFXOnTrackSimpleRecursively(track)
            end
               
            local name = GetFXName(track,fxIndex)
-           table.insert(data, {fxIndex = fxIndex, name = name})
+           local nameSimple = fxSimpleName(name, true)
+           table.insert(data, {fxIndex = fxIndex, name = name, nameSimple = nameSimple})
            
            local fxOriginalName = getOriginalFxName(track, fxIndex,doNotGetStatus)
            local containerCount = getContainerCount(track,fxIndex,doNotGetStatus)
@@ -5570,7 +5627,9 @@ function drawPlusIcon(x, y, size, isActive, toolTipText)
         if isMouseClick then
             return true
         end
-        setToolTipFunc2((isActive and "Close " or "Open ") .. toolTipText)
+        if toolTipText then
+            setToolTipFunc2((isActive and "Close " or "Open ") .. toolTipText)
+        end
     end
 end
 
@@ -6252,7 +6311,7 @@ function modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, f
         
         
         modulatorWidth = modulatorWidth + (vertical and 0 or -12)
-        modulatorHeight = modulatorHeight - 12 -- (settings.vertical and 20 or (sizeId == 0 and headerSize or 0) ) 
+        modulatorHeight = modulatorHeight - 20 -- (settings.vertical and 20 or (sizeId == 0 and headerSize or 0) ) 
         
         local posX, posY = getIconPosToTheRight(vertical, 20, screenPosX, screenPosY, width)
         
@@ -6841,6 +6900,59 @@ function modulatorsWrapped(modulatorWidth, modulatorHeight, m, isCollabsed, vert
             modulatorWrapper(floating, vertical, modulatorWidth, modulatorHeight, genericModulator, name, modulationContainerPos, fxIndex, fxInContainerIndex, isCollabsed, m, genericModulatorInfo,output)
         end
     end
+end
+
+function editPluginSetting(_do, paramObj, var)
+    local simpleName = paramObj.fxNameSimple
+    --local currentStr = readFile(simpleName, pluginsFolderName)
+    --pluginObj = currentStr and json.decodeFromJson(currentStr) or {}
+    
+        if not customPluginSettings[simpleName] then customPluginSettings[simpleName] = {} end
+        if not customPluginSettings[simpleName][paramObj.param] then customPluginSettings[simpleName][paramObj.param] = {} end
+        
+        if _do == "rename" and not customPluginSettings[simpleName][paramObj.param][_do] then
+            
+            customPluginSettings[simpleName][paramObj.param] = {useRenameOnWide = true, useRenameOnNarrow = true} 
+        end
+        customPluginSettings[simpleName][paramObj.param][_do] = var
+        saveFile(json.encodeToJson(customPluginSettings[simpleName]), simpleName, pluginsFolderName) 
+        last_paramTableCatch = {}
+    --end
+      
+      if _do == "rename" then
+          paramTableCatch = {}
+      end  
+    --aa = currentStr
+    --settings.colors = currentSettingsStr and json.decodeFromJson(currentSettingsStr) or {}
+    
+end
+
+function renameParamPopup()
+    if openRenameParam then
+        ImGui.OpenPopup(ctx, 'rename param##') 
+        openRenameParam = false
+    end
+    
+    if reaper.ImGui_BeginPopup(ctx, 'rename param##', nil) then
+        ignoreKeypress = true 
+        local fxName = GetFXName(track, renameParam.fxIndex)
+        
+        local paramName = GetParamNameFromCustomSetting(track, renameParam.fxIndex, renameParam.param, "rename")
+        reaper.ImGui_Text(ctx, "Rename " .. paramName)
+        reaper.ImGui_SetKeyboardFocusHere(ctx)
+        local originalName = paramName
+        local ret, newName = reaper.ImGui_InputText(ctx,"##" .. renameParam.fxIndex, paramName,nil,nil)
+        --reaper.ShowConsoleMsg(newName .. "\n")
+        if reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Escape(),false) then
+            reaper.ImGui_CloseCurrentPopup(ctx)
+        end
+        if reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Enter(),false) then
+            if not newName or newName == "" then newName = GetParamName(track, renameParam.fxIndex, renameParam.param) end
+            editPluginSetting("rename", renameParam, newName)
+            reaper.ImGui_CloseCurrentPopup(ctx)
+        end
+        ImGui.EndPopup(ctx)
+    end 
 end
 
 
@@ -8919,6 +9031,10 @@ end
 
 function waitForClosingAddFXBrowser(pathForNextIndex, fx_before) 
     if browserHwnd and track and track == lastTrack then 
+        if wasSetToFloatingAuto == nil then
+            wasSetToFloatingAuto = setFxFloatAutoToTrue()
+        end
+        
         firstBrowserHwnd = firstBrowserHwnd and firstBrowserHwnd + 1 or 0 
         
         fx_after = getAllTrackFXOnTrackSimple(track)
@@ -8932,6 +9048,7 @@ function waitForClosingAddFXBrowser(pathForNextIndex, fx_before)
                     break;
                 end
             end
+            
             -- An FX was added
             
             if settings.closeFxWindowAfterBeingAdded then
@@ -8949,6 +9066,8 @@ function waitForClosingAddFXBrowser(pathForNextIndex, fx_before)
             --reloadParameterLinkCatch = true
             --last_paramTableCatch = {}
             paramTableCatch = {}
+            
+            --if not wasSetToFloatingAuto then toggleFxFloatAuto(); wasSetToFloatingAuto = nil end
             return newFxIndex
         end
          
@@ -8981,6 +9100,9 @@ function waitForClosingAddFXBrowser(pathForNextIndex, fx_before)
         browserSearchFieldHwnd = nil
         browserHwnd = nil
         moveToModulatorContainer = nil
+        
+        if wasSetToFloatingAuto ~= nil and wasSetToFloatingAuto == false then toggleFxFloatAuto(); wasSetToFloatingAuto = nil end
+        
     end  
 end
 
@@ -10211,6 +10333,12 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     end
     
     local name = p.name and p.name or "NA"
+    local customSettings = (customPluginSettings and customPluginSettings[p.fxNameSimple]) and customPluginSettings[p.fxNameSimple][p.param]
+    
+    if (customSettings and customSettings.rename) and (customSettings.useRenameOnWide or (useNarrow and customSettings.useRenameOnNarrow)) then
+        name = customSettings.rename
+    end
+    
     local hasEnvelope = p.hasEnvelopePoints
     local singleEnvelopePointAtStart = p.singleEnvelopePointAtStart
     local envelopeActive = p.envelopeActive 
@@ -10524,7 +10652,23 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     
     
     
-    
+    function focusParameterFromScript(moduleId, p)
+        if moduleId:match("Floating") == nil and moduleId:match("modulator") == nil and moduleId:match("mappings") == nil then
+            if not doNotSetFocus then
+                paramnumber = p.param
+                trackSettings.focusedParam[p.guid] = p.param
+                saveTrackSettings(track)
+                
+                -- THIS DOESN*T WORK YET I THINK
+                --if not showingMappings then
+                --if moduleId:match("parameter") == nil then
+                    --reaper.ShowConsoleMsg(moduleId .. "\n")
+                --    ignoreScroll = true
+                --    ignoreFocusBecauseOfUiClick = true
+                --end
+            end
+        end
+    end
     
     -- Check if the mouse is within the button area
     --if parStartPosX and mouse_pos_x_imgui >= parStartPosX and mouse_pos_x_imgui <= parStartPosX + areaWidth and
@@ -10534,25 +10678,13 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
     if hover then
       if not popupAlreadyOpen and reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Right(),false) then  --parameterLinkActive and 
           reaper.ImGui_OpenPopup(ctx, 'popup##' .. buttonId)  
+          
+          focusParameterFromScript(moduleId, p)
           --popupAlreadyOpen = true
       end
       
       if reaper.ImGui_IsMouseClicked(ctx,reaper.ImGui_MouseButton_Left(),false) then 
-          if moduleId:match("Floating") == nil and moduleId:match("modulator") == nil and moduleId:match("mappings") == nil then
-              if not doNotSetFocus then
-                  paramnumber = param
-                  trackSettings.focusedParam[p.guid] = param
-                  saveTrackSettings(track)
-                  
-                  -- THIS DOESN*T WORK YET I THINK
-                  --if not showingMappings then
-                  --if moduleId:match("parameter") == nil then
-                      --reaper.ShowConsoleMsg(moduleId .. "\n")
-                  --    ignoreScroll = true
-                  --    ignoreFocusBecauseOfUiClick = true
-                  --end
-              end
-          end
+          focusParameterFromScript(moduleId, p)
           --end
       end
     end
@@ -11096,6 +11228,51 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                 end
             end
             
+            if customSettings.rename then
+                if reaper.ImGui_BeginMenu(ctx, "Rename settings") then 
+                    
+                    if reaper.ImGui_Button(ctx, "Rename ".. '"' .. name.. '"') then
+                        openRenameParam = true
+                        renameParam = p -- we pass the object for most info
+                    end
+                    
+                    -- use on narrow
+                    local useOnNarrow = customPluginSettings[p.fxNameSimple][p.param].useRenameOnNarrow
+                    local ret, newVal = reaper.ImGui_Checkbox(ctx, "Use on narrow", useOnNarrow)
+                    if ret then
+                        editPluginSetting("useRenameOnNarrow", p, newVal)
+                    end
+                    setToolTipFunc("Use rename on narrow sliders/knobs")
+                    
+                    local useOnWide = customPluginSettings[p.fxNameSimple][p.param].useRenameOnWide
+                    local ret, newVal = reaper.ImGui_Checkbox(ctx, "Use on wide", useOnWide)
+                    if ret then
+                        editPluginSetting("useRenameOnWide", p, newVal)
+                    end
+                    setToolTipFunc("Use rename on wide sliders/knobs")
+                    
+                    if reaper.ImGui_Button(ctx, "Reset") then
+                        editPluginSetting("rename", p, nil)
+                    end
+                    
+                    reaper.ImGui_EndMenu(ctx)
+                end
+            else
+            
+                if reaper.ImGui_Button(ctx, "Rename ".. '"' .. name.. '"') then
+                    openRenameParam = true
+                    renameParam = p -- we pass the object for most info
+                end
+            end
+            --[[
+            if reaper.ImGui_Button(ctx, "Rename narrow " .. '"'.. name.. '"') then
+                openRenameParam = true
+                renameParamVersion = "nameNarrow"
+                renameParam = p -- we pass the object for most info
+            end
+            ]]
+            renameParamPopup()
+            
         end
         
         
@@ -11385,6 +11562,9 @@ function drawConnectionToNextElement(vertical, width, height)
     end
 end
 
+function getCustomPluginSettings() 
+    return get_files_in_folder(pluginsFolderName, true) 
+end
 
 function getColorSetsAndSelectedIndex() 
     local allColorSets = get_files_in_folder(colorFolderName) 
@@ -14228,7 +14408,9 @@ function mergeTables(tb1, tb2)
     return temp
 end
 
-    
+
+customPluginSettings = getCustomPluginSettings() 
+            
 _, screenHeight, screenWidth = reaper.JS_Window_GetViewportFromRect( 0, 0, 1, 1, false)
 local dock_id, is_docked
 local runs = -1
@@ -14518,15 +14700,23 @@ local function loop()
         if all_fx_last then
             if not compareTrackFxArray(all_fx, all_fx_last) then
                 reloadParameterLinkCatch = true
+                reloadCustomPluginSettings = true
             end
         end
         all_fx_last = all_fx
+        
+        if reloadCustomPluginSettings or not customPluginSettings then
+            customPluginSettings = getCustomPluginSettings() 
+            --aa = customPluginSettings
+            reloadCustomPluginSettings = false
+        end
         
         if reloadParameterLinkCatch then
             last_paramTableCatch = {}
             reloadParameterLinkCatch = false 
             parameterLinks = nil
         end
+        
         
         if not settings.limitParameterLinkLoading or (not parameterLinks or (mapActiveFxIndex and isMouseWasReleased)) then
             parameterLinks = getAllParameterModulatorMappings(track)
@@ -15479,16 +15669,6 @@ local function loop()
                 end
             end
             
-            function fxSimpleName(title)
-                if settings.hidePluginTypeName then
-                    title  = title:gsub("^[^:]+: ", "")
-                end
-                if settings.hideDeveloperName then
-                    title  = title:gsub("%s*%b()", "") 
-                end
-            
-                return title
-            end
             
             
             function pluginParametersPanel(track, fxIndex, isCollabsed, vertical, widthFromParent, heightFromParent, collabsedOverwrite, f, showOnlyFocusedPlugin)
@@ -15881,8 +16061,8 @@ local function loop()
                                     for i, p in ipairs(paramsListThatAreNotFiltered) do
                                         
                                         if not settings.limitAmountOfDrawnParametersInPlugin or shownCount <= settings.limitAmountOfDrawnParametersInPluginAmount + (settings.limitAmountOfDrawnParametersInPluginAmount%parameterColumnAmount) then
-                                            local name = GetParamName(track, fxIndex, p)
-                                             
+                                            local name = GetParamNameFromCustomSetting(track, fxIndex, p, "rename")
+                                          
                                             local parameterLinkActive
                                             -- check if fx is inside a folder
                                             if f.indent and f.indent > 0 then 
@@ -16284,6 +16464,7 @@ local function loop()
                             
                             -- most right 
                             local posX, posY = getIconPosToTheRight(vertical, 20, screenPosX, screenPosY, width)
+                            
                             local isFxOpen = track and getFXWindowOpen(track)
                             if drawOpenFXWindow(posX, posY, 20, isFxOpen, "FX window") then
                                 SetOpen(track, fxnumber or 0, not isFxOpen, true)
@@ -16291,7 +16472,8 @@ local function loop()
                             
                             -- most right 
                             local posX, posY = getIconPosToTheRight(vertical, 40, screenPosX, screenPosY, width)
-                            if drawPlusIcon(posX, posY, 20, false, "add FX popup") then
+                            local tip = not reaper.ImGui_IsPopupOpen(ctx, "add popup", reaper.ImGui_PopupFlags_AnyPopup()) and "add FX popup" or nil
+                            if drawPlusIcon(posX, posY, 20, false, tip) then
                                 openAddFXPopupWindow = true
                             end
                             

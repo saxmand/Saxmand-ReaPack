@@ -1,0 +1,1 @@
+{"2":{"useRenameOnNarrow":true, "useRenameOnWide":false, "rename":"D.Sec"}, "3":{"useRenameOnNarrow":true, "useRenameOnWide":false, "rename":"D.BPM"}, "4":{"useRenameOnNarrow":true, "useRenameOnWide":false}}
