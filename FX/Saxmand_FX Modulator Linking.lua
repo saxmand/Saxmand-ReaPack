@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.3.9
+-- @version 1.4.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,10 +17,10 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + possible fix for sws autostart crash
+--   + added option for mouse behavior in layout->general including to hide mouse, reset position on release, and knob resolution
 
 
-local version = "1.3.9"
+local version = "1.4.0"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -535,7 +535,11 @@ local defaultSettings = {
     openMappingsPanelPosFixedCoordinates = {}, -- not in settings
     
     midiNoteNamesMiddleC = 3,
-    showMidiNoteNames = true,
+    showMidiNoteNames = true, 
+    
+    knobResolution = 100,
+    hideMouseOnDrag = true,
+    keepMouseAtClickPosition = true,
     
     -- mapping general layout
     useKnobs = false,
@@ -10097,14 +10101,20 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
     local currentValueNormalized = p.currentValueNormalized
     local linkWidth = p.width or 1
     
+    if useKnobs then
+        faderResolution = settings.knobResolution
+    end
     
     function setWidthValue(track, p)
         local amount
         local grains = (isFineAdjust and 100 * settings.fineAdjustAmount or 100)
-        if isMouseDown then 
+        if isMouseDown then
             amount = p.width + ((mouse_pos_x - mouseDragStartX) - (mouse_pos_y - mouseDragStartY) * (isApple and -1 or 1)) / grains
             mouseDragStartX = mouse_pos_x
             mouseDragStartY = mouse_pos_y
+            if settings.hideMouseOnDrag then
+                reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
+            end
         elseif isScrollValue and scrollVertical and scrollVertical ~= 0 then
             local scrollVal = settings.scrollValueInverted and -scrollVertical or scrollVertical
             amount = p.width - ((scrollVal * ((settings.scrollValueSpeed+50)/100)) / grains) --* (scrollVal > 0 and 1 or -1)
@@ -10192,6 +10202,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
             local changeResolution = isFineAdjust and faderResolution * settings.fineAdjustAmount or faderResolution
             local useStepsChange = settings.makeItEasierToChangeParametersThatHasSteps and p.hasSteps and range / p.step < settings.maxAmountOfStepsForStepSlider
             if isMouseDown then 
+                
                 if useKnobs then 
                     mouseDragWidth = ((settings.changeKnobValueOnHorizontalDrag and (mouse_pos_x - mouseDragStartX) or 0) - (settings.changeKnobValueOnVerticalDrag and mouse_pos_y - mouseDragStartY or 0) * (isApple and -1 or 1))
                 else
@@ -10217,9 +10228,15 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
                         amount = currentValueNormalized + mouseDragWidth / changeResolution
                     end 
                     mouseDragStartX = mouse_pos_x
-                    mouseDragStartY = mouse_pos_y
+                    mouseDragStartY = mouse_pos_y 
                 end
                 
+                
+                mouseDragStartX = mouse_pos_x
+                mouseDragStartY = mouse_pos_y 
+                if settings.hideMouseOnDrag then
+                    reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
+                end
             elseif isScrollValue and scrollVertical and scrollVertical ~= 0 then
                 local scrollVal = settings.scrollValueInverted and -scrollVertical or scrollVertical
                 
@@ -10309,6 +10326,9 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         lastDragParam = nil
         lastDragKnob = nil
         scrollTime = nil
+        if settings.keepMouseAtClickPosition then 
+            reaper.JS_Mouse_SetPosition(mouse_pos_x_on_click, mouse_pos_y_on_click)
+        end
     end
 
     
@@ -12448,8 +12468,7 @@ function appSettingsWindow()
                     end
                     setToolTipFunc("Show MIDI notes in the right click parameter menu")  
                     
-                    
-                    reaper.ImGui_Indent(ctx)
+                     reaper.ImGui_Indent(ctx)
                         reaper.ImGui_SetNextItemWidth(ctx, 100)
                         local ret, val = reaper.ImGui_Combo(ctx,"Middle C##", settings.midiNoteNamesMiddleC, table.concat(middle_c_offsetsStr, "\0") .. "\0")  
                         if ret then 
@@ -12459,6 +12478,28 @@ function appSettingsWindow()
                         setToolTipFunc("Select which C should be the middle C, eg. value 60")  
                     reaper.ImGui_Unindent(ctx)
                     
+                reaper.ImGui_Unindent(ctx)
+                
+                reaper.ImGui_TextColored(ctx, colorTextDimmed, "Mouse behavior")
+                
+                reaper.ImGui_Indent(ctx) 
+                    sliderInMenu("Knob resoultion", "knobResolution", menuSliderWidth, 40, 800, "Set how long the mouse needs to travel in order for the a parameter to go from lowest to heights value.\nA small value means that drags will change the parameters faster. This ONLY affects knobs.")  
+                    sliderInMenu("Fine adjust amount", "fineAdjustAmount", menuSliderWidth, 2, 200, "Set how fine a parameter is changed when the fine adjust modifiers is held (" .. convertModifierOptionToString(settings.modifierOptionsParameter.fineAdjust) .."). Higher is finer") 
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Hide mouse cursor on drag##",settings.hideMouseOnDrag) 
+                    if ret then 
+                        settings.hideMouseOnDrag = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Enable to hide the mouse course on drag")  
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Set mouse position to click pos on release##",settings.keepMouseAtClickPosition) 
+                    if ret then 
+                        settings.keepMouseAtClickPosition = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Enable to reset the mouse cursor to it's original position after drag is finished") 
+                
                 reaper.ImGui_Unindent(ctx)
             reaper.ImGui_Unindent(ctx)
             
@@ -13513,7 +13554,7 @@ function appSettingsWindow()
                     modifiersSettingsModule(name, "modifierOptionsParameter")
                     
                     if name == "fineAdjust" then
-                        sliderInMenu("Fine adjust amount", "fineAdjustAmount", menuSliderWidth, 2, 200, "Set how fine the fine adjust key should be. Higher is finer") 
+                        --sliderInMenu("Fine adjust amount", "fineAdjustAmount", menuSliderWidth, 2, 200, "Set how fine the fine adjust key should be. Higher is finer") 
                     end
                     
                     if name == "scrollValue" then
