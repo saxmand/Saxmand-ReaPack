@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.3.8+dev1
+-- @version 1.3.8
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,9 +17,10 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fix for bug when trying to get map name
+--   + fix for bug when trying to map with existing through right click context
+--   + fix removing curve jsfx from context right click replace mapping
 
-local version = "1.3.8+dev1"
+local version = "1.3.8"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -4047,7 +4048,7 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
         parameterLinkParamForCurve = nil
         parameterLinkCurverOpen = nil
         
-        function findSettingsIfCurver(modulationContainerPos, parameterLinkFXIndex, parameterLinkParam)
+        function findSettingsIfCurver()
             local retName, originalName = GetNamedConfigParm( track, parameterLinkFXIndex, 'fx_name' )
             isCurver = originalName == "JS: Curve Mapped Modulation"
             if isCurver then
@@ -4058,7 +4059,7 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                 
                 --parameterLinkNameForCurve = parameterLinkName
                 --parameterLinkNameForCurve = simplifyParameterNameName(parameterLinkNameForCurve, 1)
-                parameterLinkName =  getRenamedFxName(track, parameterLinkFXIndexOnCurve)
+                parameterLinkName = getRenamedFxName(track, parameterLinkFXIndexOnCurve)
                 parameterLinkParamForCurve = parameterLinkParam
                 
                 --
@@ -4071,7 +4072,7 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                 parameterLinkFXIndex = parameterLinkFXIndexOnCurve
                 parameterLinkEffect = parameterLinkEffectOnCurve
                 parameterLinkCurverOpen = GetOpen(track, parameterLinkFXIndexForCurve)
-                return parameterLinkName, parameterLinkFXIndex, parameterLinkEffect, parameterLinkParam, parameterLinkFXIndexForCurve, parameterLinkParamForCurve, parameterLinkCurverOpen
+                --return parameterLinkName, parameterLinkFXIndex, parameterLinkEffect, parameterLinkParam, parameterLinkFXIndexForCurve, parameterLinkParamForCurve, parameterLinkCurverOpen
             end
         end
         
@@ -4103,7 +4104,7 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                           
                         parameterLinkName = getParameterLinkName(track, modulationContainerPos, parameterLinkFXIndex, parameterLinkParam)
                          
-                        findSettingsIfCurver(modulationContainerPos, parameterLinkFXIndex,parameterLinkParam)
+                        findSettingsIfCurver(modulationContainerPos, parameterLinkFXIndex,parameterLinkParam,parameterLinkName)
                          --reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - " .. parameterLinkEffect .. " - " .. parameterLinkParam .. " - "..#outputsForLinkedModulator  .. " - " .. parameterLinkName .. "\n")
                         
                     end 
@@ -4145,7 +4146,7 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                             parameterLinkParam = getPlinkParamInContainer(track,modulationContainerPos,parameterLinkParam) 
                             if parameterLinkParam then
                                 
-                                findSettingsIfCurver(modulationContainerPos, parameterLinkFXIndex,parameterLinkParam)
+                                findSettingsIfCurver(modulationContainerPos, parameterLinkFXIndex,parameterLinkParam, parameterLinkName)
                                 
                                 local outputsForLinkedModulator = getOutputArrayForModulator(track, originalName, parameterLinkFXIndex, modulationContainerPos)
                                 
@@ -10998,18 +10999,23 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
         
         if modulationContainerPos then
             if reaper.ImGui_BeginMenu(ctx, (parameterLinkActive and "Replace modulation with existing" or "Map with existing modulator")) then
-                for pos, m in ipairs(modulatorNames) do 
-                    for _, out in ipairs(m.output) do 
-                        if moduleButton(m.mappingNames[out]) then
-                            --local storeFocusedFXnumberGuid = GetFXGUID(track, fxnumber)
-                            --reaper.ShowConsoleMsg(m.name)
-                            --reaper.ImGui_CloseCurrentPopup(ctx)
-                            mapModulatorActivate(m, out, m.name, nil, #m.output == 1)
-                            local isLFO = mapActiveName and mapActiveName:match("LFO") ~= nil
-                            setParamaterToLastTouched(track, modulationContainerPos, m.fxIndex, fxIndex, param, GetParam(track,fxIndex, param), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
-                            mapModulatorActivate(nil) 
-                            --fxnumber = getFxIndexFromGuid(track, storeFocusedFXnumberGuid)
-                            break;
+                for pos, m in ipairs(modulatorNames) do
+                    if not m.isCurver then
+                        for _, out in ipairs(m.output) do  
+                            local isTheSelectedModulator = p.parameterLinkName == m.mappingNames[out]
+                            if isTheSelectedModulator then reaper.ImGui_BeginDisabled(ctx) end
+                            if moduleButton(m.mappingNames[out]) then
+                                --local storeFocusedFXnumberGuid = GetFXGUID(track, fxnumber)
+                                --reaper.ShowConsoleMsg(m.name)
+                                --reaper.ImGui_CloseCurrentPopup(ctx)
+                                mapModulatorActivate(m, out, m.name, nil, #m.output == 1)
+                                local isLFO = mapActiveName and mapActiveName:match("LFO") ~= nil
+                                setParamaterToLastTouched(track, modulationContainerPos, m.fxIndex, fxIndex, param, GetParam(track,fxIndex, param), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
+                                mapModulatorActivate(nil) 
+                                --fxnumber = getFxIndexFromGuid(track, storeFocusedFXnumberGuid)
+                                break;
+                            end
+                            if isTheSelectedModulator then reaper.ImGui_EndDisabled(ctx); setToolTipFunc("Is the modulator used") end
                         end
                     end
                 end
@@ -13051,6 +13057,7 @@ function appSettingsWindow()
         end
                 
         local groups = {"General", "Plugins", "Modulators", "Matrix", "Floating Mapper" }
+        local groups = {"General", "Plugins", "Modulators", "Floating Mapper" }
         
         
         
@@ -17653,7 +17660,7 @@ local function loop()
                  
                 placingOfNextElement() 
                 
-                matrixPanel() 
+                --matrixPanel() 
                 
                 if disable then reaper.ImGui_EndDisabled(ctx) end
                 
