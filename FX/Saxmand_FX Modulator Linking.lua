@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.3.7
+-- @version 1.3.8+dev1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,9 +17,9 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fix mappings being correctly shown
+--   + fix for bug when trying to get map name
 
-local version = "1.3.7"
+local version = "1.3.8+dev1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -316,6 +316,8 @@ local renameFxIndex = ""
 local beginFxDragAndDropIndexRelease, beginFxDragAndDropName, beginFxDragAndDrop, HideToolTipTemp, beginFxDragAndDropFX 
 local factoryModules, indentColors
 local customPluginSettings
+local parameterLinkEffectForCurve, parameterLinkFXIndexForCurve, parameterLinkNameForCurve, parameterLinkParamForCurve, parameterLinkCurverOpen
+        
 
 local fx_before, fx_after, firstBrowserHwnd, all_fx_last
 
@@ -2195,6 +2197,7 @@ function GetParamNameFromCustomSetting(track, index, param, version, doNotUseCat
 end
 
 function GetParamName(track, index, param, doNotUseCatch)
+    if not track or not index or not param then return end
     local tableStr = param .. "::GetParamName"
     local catch = getParameterTableCatch(track, index, tableStr, 1)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
@@ -3933,6 +3936,29 @@ local function setNativeACSParamSettings(track,fxIndex, settings)
     end 
 end
 
+        
+        
+
+function getParameterLinkName(track, modulationContainerPos, fxIndex, param, onlyParamName)
+    local parameterLinkName = getRenamedFxName(track, fxIndex)
+    local originalName = getOriginalFxName(track, fxIndex)
+    local outputsForLinkedModulator = getOutputArrayForModulator(track, originalName, fxIndex, modulationContainerPos)
+   
+    --if not parameterLinkName and parameterLinkIndex then
+    --    parameterLinkName = GetFXName(track, parameterLinkIndex)
+    --end
+    
+    -- reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - pLinkEfx: " .. parameterLinkEffect .. " - pLinkParam: " .. parameterLinkParam .. " - outputsAmount: "..#outputsForLinkedModulator  .. " - pLinkName: " .. parameterLinkName .. " - ".. originalName .. "\n")
+    local hasMoreOutputs = #outputsForLinkedModulator > 1
+    if hasMoreOutputs then
+        paramName = GetParamName(track, fxIndex, param)
+        if onlyParamName then
+            return paramName, hasMoreOutputs
+        end
+        parameterLinkName = parameterLinkName .. ": " .. paramName 
+    end
+    return parameterLinkName, hasMoreOutputs
+ end
 
 local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter) 
     if not track or not validateTrack(track) then return {} end
@@ -4011,12 +4037,17 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
         local parameterLinkName = "" 
         local isCurved = false
         local isCurver = false
-        local parameterLinkEffectForCurve, parameterLinkFXIndexForCurve, parameterLinkNameForCurve, parameterLinkParamForCurve, parameterLinkCurverOpen
+        
         
         local midiMsg, midiMsg2, midiBus, midiChan, linkFromMidiText
         
+        parameterLinkEffectForCurve = nil
+        parameterLinkFXIndexForCurve = nil
+        parameterLinkNameForCurve = nil
+        parameterLinkParamForCurve = nil
+        parameterLinkCurverOpen = nil
         
-        function findSettingsIfCurver()
+        function findSettingsIfCurver(modulationContainerPos, parameterLinkFXIndex, parameterLinkParam)
             local retName, originalName = GetNamedConfigParm( track, parameterLinkFXIndex, 'fx_name' )
             isCurver = originalName == "JS: Curve Mapped Modulation"
             if isCurver then
@@ -4040,6 +4071,7 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                 parameterLinkFXIndex = parameterLinkFXIndexOnCurve
                 parameterLinkEffect = parameterLinkEffectOnCurve
                 parameterLinkCurverOpen = GetOpen(track, parameterLinkFXIndexForCurve)
+                return parameterLinkName, parameterLinkFXIndex, parameterLinkEffect, parameterLinkParam, parameterLinkFXIndexForCurve, parameterLinkParamForCurve, parameterLinkCurverOpen
             end
         end
         
@@ -4067,26 +4099,14 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                     
                     parameterLinkFXIndex = getPlinkFxIndex(track, modulationContainerPos, parameterLinkEffect)
                    
-                    if parameterLinkFXIndex then
-                         parameterLinkName =  getRenamedFxName(track, parameterLinkFXIndex)
+                    if parameterLinkFXIndex then 
+                          
+                        parameterLinkName = getParameterLinkName(track, modulationContainerPos, parameterLinkFXIndex, parameterLinkParam)
                          
-                         local originalName = getOriginalFxName(track, parameterLinkFXIndex)
-                         local outputsForLinkedModulator = getOutputArrayForModulator(track, originalName, parameterLinkFXIndex, modulationContainerPos)
-                        
-                         --if not parameterLinkName and parameterLinkIndex then
-                         --    parameterLinkName = GetFXName(track, parameterLinkIndex)
-                         --end
-                         
-                         -- reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - pLinkEfx: " .. parameterLinkEffect .. " - pLinkParam: " .. parameterLinkParam .. " - outputsAmount: "..#outputsForLinkedModulator  .. " - pLinkName: " .. parameterLinkName .. " - ".. originalName .. "\n")
-                         if #outputsForLinkedModulator > 1 then
-                             paramName = GetParamName(track, parameterLinkFXIndex, parameterLinkParam)
-                             parameterLinkName = parameterLinkName .. ": " .. paramName 
-                         end
-                         
-                         findSettingsIfCurver()
+                        findSettingsIfCurver(modulationContainerPos, parameterLinkFXIndex,parameterLinkParam)
                          --reaper.ShowConsoleMsg(tostring(parameterLinkFXIndex) ..  " - " .. parameterLinkEffect .. " - " .. parameterLinkParam .. " - "..#outputsForLinkedModulator  .. " - " .. parameterLinkName .. "\n")
                         
-                     end 
+                    end 
                      --reaper.ShowConsoleMsg(fxIndex .. " - " .. p .. " - " .. parameterLinkName .. " test\n")
                 else
                     local parameterLinkFXIndexInContainer
@@ -4125,7 +4145,7 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                             parameterLinkParam = getPlinkParamInContainer(track,modulationContainerPos,parameterLinkParam) 
                             if parameterLinkParam then
                                 
-                                findSettingsIfCurver()
+                                findSettingsIfCurver(modulationContainerPos, parameterLinkFXIndex,parameterLinkParam)
                                 
                                 local outputsForLinkedModulator = getOutputArrayForModulator(track, originalName, parameterLinkFXIndex, modulationContainerPos)
                                 
@@ -10126,6 +10146,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         end
     end 
     
+    --reaper.ShowConsoleMsg(tostring(dragKnob) .. " - " ..tostring(buttonId) .. " - " ..tostring(moduleId) .. "\n")
     
     if dragKnob and dragKnob == "baseline" .. buttonId .. moduleId then
         if wasMouseClickedAndNowReleasedAtSamePoint then
@@ -10960,7 +10981,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                     if insert_position == m.fxIndex then 
                         
                         mapModulatorActivate(m, m.output[1], m.name, nil, #m.output == 1)
-                        local isLFO = mapActiveName:match("LFO") ~= nil
+                        local isLFO = mapActiveName and mapActiveName:match("LFO") ~= nil
                         setParamaterToLastTouched(track, modulationContainerPos, insert_position, fxIndex, param, GetParam(track,fxIndex, param, true), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
                         if parameterLinkActive or settings.mapOnce then mapModulatorActivate(nil) end
                         reloadParameterLinkCatch = true
@@ -10984,7 +11005,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                             --reaper.ShowConsoleMsg(m.name)
                             --reaper.ImGui_CloseCurrentPopup(ctx)
                             mapModulatorActivate(m, out, m.name, nil, #m.output == 1)
-                            local isLFO = mapActiveName:match("LFO") ~= nil
+                            local isLFO = mapActiveName and mapActiveName:match("LFO") ~= nil
                             setParamaterToLastTouched(track, modulationContainerPos, m.fxIndex, fxIndex, param, GetParam(track,fxIndex, param), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100) 
                             mapModulatorActivate(nil) 
                             --fxnumber = getFxIndexFromGuid(track, storeFocusedFXnumberGuid)
@@ -11361,7 +11382,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
             --ignoreScroll = true
             
             if (canBeMapped and not mapOutput) then
-                local isLFO = mapActiveName:match("LFO") ~= nil
+                local isLFO = mapActiveName and mapActiveName:match("LFO") ~= nil
                 local setWidth = (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100
                 local setOffset = (isLFO and (settings.mappingModeBipolar and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultLFODirection - 3)/2) or ((settings.mappingModeBipolar and settings.defaultBipolar and -0.5 or 0) or (settings.defaultDirection - 3) / 2))
                 setParamaterToLastTouched(track, modulationContainerPos, mapActiveFxIndex, fxIndex, param, p.value, setOffset, setWidth)
@@ -13030,7 +13051,7 @@ function appSettingsWindow()
         end
                 
         local groups = {"General", "Plugins", "Modulators", "Matrix", "Floating Mapper" }
-        local groups = {"General", "Plugins", "Modulators", "Floating Mapper" }
+        
         
         
         if reaper.ImGui_BeginTabBar(ctx, '##layouttab') then
@@ -14206,7 +14227,7 @@ function updateMapping()
     local canBeMapped = mapActiveFxIndex and (not p.parameterLinkActive or (p.parameterLinkActive and mapActiveName ~= p.parameterLinkName)) 
     
     if canBeMapped then
-        local isLFO = mapActiveName:match("LFO") ~= nil
+        local isLFO = mapActiveName and mapActiveName:match("LFO") ~= nil
         setParamaterToLastTouched(track, modulationContainerPos, mapActiveFxIndex, fxnumber, paramnumber, GetParam(track,fxnumber, paramnumber), (isLFO and (settings.defaultBipolarLFO and -0.5 or 0) or (settings.defaultBipolar and -0.5 or 0)), (isLFO and settings.defaultMappingWidthLFO or settings.defaultMappingWidth) / 100)
         if settings.mapOnce then stopMappingOnRelease = true end
     end
@@ -17189,13 +17210,14 @@ local function loop()
                 --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), colorAlmostBlack)
                 
                 local pluginFlags = reaper.ImGui_TableFlags_ScrollY() | reaper.ImGui_TableFlags_BordersInner() -- | reaper.ImGui_TableFlags_NoPadOuterX() 
+                pluginFlags = pluginFlags | reaper.ImGui_TableFlags_ScrollX()
                 if settings.allowHorizontalScroll then
                     pluginFlags = pluginFlags | reaper.ImGui_TableFlags_ScrollX()
                 end
                 -- USE FOR DEBUGGIN
                 --pluginFlags = pluginFlags | reaper.ImGui_TableFlags_Borders()
                 
-                local columnAmount = 2--(settings.showPluginNumberColumn) and 2 or 1
+                local columnAmount = 3--(settings.showPluginNumberColumn) and 2 or 1
                 --local columnAmount = (settings.showPluginNumberColumn and settings.showPluginsPanel) and 2 or 1
                 
                 local openPluginOnSingleClick = settings.openPluginWhenClickingName
@@ -17209,6 +17231,7 @@ local function loop()
                 
                 --local tableMinX, tableMinY = reaper.ImGui_GetCursorScreenPos(ctx) 
                 --local copyFX = false
+                local scrollAreaWidth = width - (vertical and 0 or 10) -- (offset and 12 or 12)
                 local scrollAreaHeight = height -- (offset and 12 or 12)
                 
                 local scrollAreaHeightFixed = (not vertical or settings.alwaysUsePluginsHeight) and scrollAreaHeight or nil
@@ -17218,19 +17241,23 @@ local function loop()
                 --if reaper.ImGui_BeginChild(ctx, "parametersForFocused", width, scrollAreaHeightFixed, childFlag, scrollFlags) then
                 
                 reaper.ImGui_PushFont(ctx, font11)
-                if scrollChildOfPanel(title .. "scroll", width - 12, scrollAreaHeight, heightAutoAdjust) then
+                if scrollChildOfPanel(title .. "scroll", scrollAreaWidth, scrollAreaHeight, heightAutoAdjust) then
                     
-                    if reaper.ImGui_BeginTable(ctx, 'PluginsTable',columnAmount, pluginFlags, nil, not heightAutoAdjust and scrollAreaHeight or nil) then -- (offset and (height -  64) or 0)) then
+                    if parameterLinks and reaper.ImGui_BeginTable(ctx, 'PluginsTable',columnAmount, pluginFlags, nil, not heightAutoAdjust and scrollAreaHeight or nil) then -- (offset and (height -  64) or 0)) then
                         
+                        local maxScrollBar = math.floor(reaper.ImGui_GetScrollMaxY(ctx))
+                        local modulatorParameterWidth = scrollAreaWidth + (maxScrollBar == 0 and 12 or 0)
+                        local scrollPos = reaper.ImGui_GetScrollY(ctx)
+                        local startPosY = reaper.ImGui_GetCursorPosY(ctx)
                         
                         --
-                        if columnAmount > 1 then
-                            reaper.ImGui_TableSetupColumn(ctx, 'Send')--, reaper.ImGui_TableColumnFlags_WidthFixed(), 16)--settings.elementsWidthInVertical-60) -- Default to 100.0
-                            reaper.ImGui_TableSetupColumn(ctx, 'Receive')--, reaper.ImGui_TableColumnFlags_WidthFixed(), width-20)--settings.elementsWidthInVertical-60) -- Default to 100.0
-                        
+                        tableWidth = scrollAreaWidth - 12 * (columnAmount-1)
+                        reaper.ImGui_TableSetupColumn(ctx, 'Receive', reaper.ImGui_TableColumnFlags_WidthFixed(), tableWidth/columnAmount)--settings.elementsWidthInVertical-60) -- Default to 100.0
+                        reaper.ImGui_TableSetupColumn(ctx, 'Send', reaper.ImGui_TableColumnFlags_WidthFixed(), tableWidth/columnAmount)--settings.elementsWidthInVertical-60) -- Default to 100.0
+                        reaper.ImGui_TableSetupColumn(ctx, 'Amount', reaper.ImGui_TableColumnFlags_WidthFixed(), tableWidth/columnAmount)--settings.elementsWidthInVertical-60) -- Default to 100.0
+                    
                         --ImGui.TableSetupColumn(ctx, 'two', ImGui.TableColumnFlags_WidthFixed, 20.0) -- Default to 200.0
-                            reaper.ImGui_TableSetupScrollFreeze(ctx, 1,0)
-                        end
+                        --reaper.ImGui_TableSetupScrollFreeze(ctx, 1,0)
                         
                         
                         reaper.ImGui_TableHeadersRow(ctx)
@@ -17246,26 +17273,107 @@ local function loop()
                         local folderClosed = false
                         --local fxInClosedFolderCount = 0
                         local stopFolderClosingAfter = 0
-                        aa = parameterLinks
+                        --aa = parameterLinks
                         --modulatorNames, modulatorFxIndexes
                         --parameterLinks
+                        
+                        -- we need this to know if we are in the scroll area or not
+                        local startPosX, startPosY = reaper.ImGui_GetCursorScreenPos(ctx)
+                        
+                        --local scrollAreaHeight = height - searchAreaH - lastClickedAreaH - 16
+                        
+                        
                         for pFxIndex, pLinks in pairs(parameterLinks) do  
-                            for i, f in ipairs(pLinks) do  
-                                if not f.isCurved then
-                                    local sendName = GetFXName(track, pFxIndex)
-                                    local receiveName = GetFXName(track, f.fxIndex)
-                                    reaper.ImGui_TableNextRow(ctx)
-                                    reaper.ImGui_TableNextColumn(ctx)
-                                    
-                                    reaper.ImGui_Selectable(ctx, sendName .. '##' .. f.fxIndex, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
-                                    
-                                    
-                                    reaper.ImGui_TableNextColumn(ctx)
-                                    reaper.ImGui_Selectable(ctx, receiveName .. '##' .. f.fxIndex, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                            for i, p in ipairs(pLinks) do 
+                                local fxIndex = p.fxIndex
+                                local param = p.param
+                                
+                                local moduleId = fxIndex .."::".. param
+                                
+                                local linkParam = getPlinkParam(track,fxIndex,param)
+                                
+                                local sendName = GetFXName(track, pFxIndex)
+                                local sendParam, hasMoreOutputs = getParameterLinkName(track, modulationContainerPos, pFxIndex, linkParam, true)
+                                
+                                local receiveName = fxSimpleName(GetFXName(track, fxIndex))
+                                local receiveParam = GetParamName(track, fxIndex, param)
+                                
+                                local baseline = getModBassline(track, fxIndex, param)
+                                local retStaticValueName, staticValueName = FormatParamValue( track, fxIndex, param, baseline )
+                                if retStaticValueName and staticValueName then
+                                    baseline = staticValueName
                                 end
+                                
+                                local width = getPlinkScale(track, fxIndex, param) * 100
+                                
+                                reaper.ImGui_TableNextRow(ctx)
+                                
+                                
+                                reaper.ImGui_TableNextColumn(ctx)
+                                reaper.ImGui_Selectable(ctx, receiveName .. '##' .. fxIndex, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                                reaper.ImGui_Selectable(ctx, receiveParam .. '##' .. fxIndex, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                                
+                                
+                                reaper.ImGui_TableNextColumn(ctx) 
+                                reaper.ImGui_Selectable(ctx, sendName .. '##' .. fxIndex, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                                if hasMoreOutputs then
+                                    reaper.ImGui_Selectable(ctx, sendParam .. '##' .. fxIndex, false, nil, tableWidth/6)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then  
+                                else
+                                    reaper.ImGui_Dummy(ctx,tableWidth/6, 10)
+                                end
+                                
+                                reaper.ImGui_SameLine(ctx, tableWidth/6+6)
+                                
+                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), p.isCurved and colorText or colorTextDimmed)
+                                reaper.ImGui_Selectable(ctx, "Curve" .. '##' .. fxIndex, false, nil, tableWidth/6)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then  
+                                reaper.ImGui_PopStyleColor(ctx)
+                                
+                                reaper.ImGui_TableNextColumn(ctx)
+                                if reaper.ImGui_Selectable(ctx, baseline .. '##value' .. fxIndex .. param, false) then-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then  
+                                    
+                                end
+                                if reaper.ImGui_IsItemHovered(ctx) and isMouseClick then
+                                    if not dragKnob then 
+                                        dragKnob = "baselineWindow" .. moduleId
+                                        mouseDragStartX = mouse_pos_x
+                                        mouseDragStartY = mouse_pos_y
+                                    end 
+                                end
+                                
+                                reaper.ImGui_Selectable(ctx, width .. ' %##value' .. fxIndex .. param, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                                if reaper.ImGui_IsItemHovered(ctx) and isMouseClick then
+                                    if not dragKnob then 
+                                        dragKnob = "widthWindow" .. moduleId
+                                        mouseDragStartX = mouse_pos_x
+                                        mouseDragStartY = mouse_pos_y
+                                    end 
+                                end
+                                
+                                
+                                if dragKnob then
+                                    p = getAllDataFromParameter(track, fxIndex, param)
+                                    setParameterValuesViaMouse(track, "Window", moduleId, p, p.range, p.min, p.currentValue, 100, nil, nil,nil,true)
+                                end
+                                --if startPosY - scrollPos < scrollAreaHeight and (startPosY + sliderHeight + 16) - scrollPos > 0 then
+                                    --pluginParameterSlider("parameter",getAllDataFromParameter(track,f.fxIndex,f.param),false,true,false,nil,20,nil,nil,nil,true, nil, true, false)--, shownCount - 1, parameterColumnAmount)
+                                --else
+                                --    reaper.ImGui_Dummy(ctx, 20,20)
+                                    --dummySlider(parameterLinkActive, useKnobs, useNarrow)
+                                --end
+                            
                             end
+                            
                         end
                          
+                         reaper.ImGui_TableNextRow(ctx)
+                         reaper.ImGui_TableNextColumn(ctx)
+                         
+                         reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_SelectableTextAlign(), 0.5, 1)
+                         reaper.ImGui_Selectable(ctx, '+##sendadd', false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                         
+                         reaper.ImGui_TableNextColumn(ctx)
+                         reaper.ImGui_Selectable(ctx, '+##receiveadd', false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                         reaper.ImGui_PopStyleVar(ctx)
                         
                         reaper.ImGui_EndTable(ctx)
                         
@@ -17317,7 +17425,7 @@ local function loop()
                 
                 local isCollabsed = not showMatrix
                 
-                local fixedSize = true-- settings.matrixPanelWidthFixedSize
+                local fixedSize = settings.matrixPanelWidthFixedSize
                 local width = vertical and elementsWidthInVertical or (isCollabsed and headerSizeW or settings.matrixWidth)
                 local height = vertical and (isCollabsed and headerSizeW or settings.matrixHeight) or elementsHeightInHorizontal
                 
@@ -17545,7 +17653,7 @@ local function loop()
                  
                 placingOfNextElement() 
                 
-                --matrixPanel() 
+                matrixPanel() 
                 
                 if disable then reaper.ImGui_EndDisabled(ctx) end
                 
