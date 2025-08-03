@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.3.8
+-- @version 1.3.9
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,10 +17,10 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fix for bug when trying to map with existing through right click context
---   + fix removing curve jsfx from context right click replace mapping
+--   + possible fix for sws autostart crash
 
-local version = "1.3.8"
+
+local version = "1.3.9"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -17664,6 +17664,7 @@ local function loop()
                 
                 if disable then reaper.ImGui_EndDisabled(ctx) end
                 
+                reaper.ImGui_Dummy(ctx, 1,1)
                 --reaper.ImGui_PopStyleColor(ctx)
                 reaper.ImGui_EndChild(ctx)
             end
