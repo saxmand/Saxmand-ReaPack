@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.4.2
+-- @version 1.4.3
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,10 +17,10 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + added Sexan_FX_Browser_ParserV7 to "+" add fx button
+--   + fixed crash from new imgui version on plotlines line 7327 
 
 
-local version = "1.4.2"
+local version = "1.4.3"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -6121,7 +6121,7 @@ local function drawFaderFeedback(sizeW, sizeH, fxIndex, param, min, max, isColla
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), bgColor)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PlotLines(), settings.colors.modulatorOutput)
     
-    reaper.ImGui_PlotLines(ctx, '##'..fxIndex, inputPlots[id], offset[id] - 1, nil, 0, 1, sizeW, sizeH)
+    reaper.ImGui_PlotLines(ctx, '##'..id, inputPlots[id], offset[id] - 1, nil, 0, 1, sizeW, sizeH)
     
     
     reaper.ImGui_PopStyleColor(ctx,2)
@@ -7353,7 +7353,7 @@ function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isC
             
             reaper.ImGui_SetCursorPos(ctx, posX, posY) 
             
-            reaper.ImGui_PlotLines(ctx, '', plots, 0, nil, -1.0, 1.0, buttonSizeW, buttonSizeH)
+            reaper.ImGui_PlotLines(ctx, '##plotline' .. fxIndex ..":" .. i, plots, 0, nil, -1.0, 1.0, buttonSizeW, buttonSizeH)
             reaper.ImGui_PopStyleColor(ctx,2)
             
             if i < #shapesPlots - 1 then
@@ -8135,7 +8135,7 @@ function snjuk2LfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex
             
             reaper.ImGui_SetCursorPos(ctx, posX, posY) 
             
-            reaper.ImGui_PlotLines(ctx, '', plots, 0, nil, -1.0, 1.0, buttonSizeW, buttonSizeH)
+            reaper.ImGui_PlotLines(ctx, '##plotline' .. fxIndex ..":" .. i, plots, 0, nil, -1.0, 1.0, buttonSizeW, buttonSizeH)
             reaper.ImGui_PopStyleColor(ctx,2)
             
             if i < #shapesPlots then
