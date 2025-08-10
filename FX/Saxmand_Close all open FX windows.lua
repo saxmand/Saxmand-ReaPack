@@ -9,6 +9,7 @@ function close_fx_chain_recursive(track, fx, is_take_fx, take)
     
     reaper[takeOrTrackVar .. "FX_Show"](takeOrTrack, fx, 0) -- non floating
     reaper[takeOrTrackVar .. "FX_Show"](takeOrTrack, fx, 2) -- hide floating
+    
   
     local _, fx_type = reaper[takeOrTrackVar .. "FX_GetNamedConfigParm"](takeOrTrack, fx, "fx_type")
   
@@ -28,12 +29,18 @@ function close_all_fx_windows()
   local num_tracks = reaper.CountTracks(0)
 
   for i = 0, num_tracks - 1 do
-    local track = reaper.GetTrack(0, i)
+    local track 
+    if num_tracks == i then
+        track = reaper.GetMasterTrack(0)
+    else
+        track = reaper.GetTrack(0, i)
+    end
 
     -- Track FX
     local fx_count = reaper.TrackFX_GetCount(track)
     for fx = 0, fx_count - 1 do
-        close_fx_chain_recursive(track, fx, faslse, nil)
+        _, name = reaper.TrackFX_GetFXName(track, fx)
+        close_fx_chain_recursive(track, fx, false, nil)
     end
     
     
@@ -53,9 +60,9 @@ function close_all_fx_windows()
       end
     end
   end
-
   -- Also ensure main floating chain window is closed (safe fallback)
-  --reaper.Main_OnCommand(40859, 0) -- FX: Close floating FX windows
+  
+  --reaper.Main_OnCommand(reaper.NamedCommandLookup("_S&M_WNCLS4"), 0) --SWS/S&M: Close all FX chain windows
 end
 
 reaper.Undo_BeginBlock()

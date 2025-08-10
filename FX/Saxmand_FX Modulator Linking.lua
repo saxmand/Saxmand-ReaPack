@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.4.2+dev1
+-- @version 1.4.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,10 +17,10 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + potential fix for sws autostart error
+--   + added Sexan_FX_Browser_ParserV7 to "+" add fx button
 
 
-local version = "1.4.2+dev1"
+local version = "1.4.2"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -33,6 +33,7 @@ if not require("dependencies").main() then return end
 local json = require("json")
 local specialButtons = require("special_buttons")
 local getFXList = require("get_fx_list").getFXList
+local fx_parser_list = require("fx_parser_list")
 
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
@@ -3044,8 +3045,19 @@ function moveFxIfNeeded(pathForNextIndex, oldIndex)
     end
 end
 
-function addFxAfterSelection(track, fxIndex, fxName, notInsideContainer)  
-    local pathForNextIndex = not isAddFXAsLast and getPathForNextFxIndex(track, fxIndex, notInsideContainer) or false
+                        
+function addFxAslastFunc()
+    local addAsLast
+    if settings.addFxAsLast then 
+        addAsLast = not isAddFXAsLast 
+    else
+        addAsLast = isAddFXAsLast
+    end
+    return addAsLast
+end
+
+function addFxAfterSelection(track, fxIndex, fxName, notInsideContainer) 
+    local pathForNextIndex = not addFxAslastFunc() and getPathForNextFxIndex(track, fxIndex, notInsideContainer) or false
     local addIndex = (pathForNextIndex and #pathForNextIndex < 2) and pathForNextIndex[1] or 999
     local wasSetToFloatingAuto = setFxFloatAutoToTrue()
     local newFxIndex = reaper.TrackFX_AddByName( track, fxName, false, -1000 - addIndex) 
@@ -3054,6 +3066,23 @@ function addFxAfterSelection(track, fxIndex, fxName, notInsideContainer)
     return newFxIndex
 end
 
+
+function addFxViaFxBrowserAfterSelection(track, fxIndex, colorTextDimmed)  
+    local pathForNextIndex = not addFxAslastFunc() and getPathForNextFxIndex(track, fxIndex) or false
+    local addIndex = (pathForNextIndex and #pathForNextIndex < 2) and pathForNextIndex[1] or 999
+    local wasSetToFloatingAuto = setFxFloatAutoToTrue() 
+    local newFxIndex = -1000 - addIndex
+    fx_parser_list.Main(ctx, track, newFxIndex, colorTextDimmed)--reaper.TrackFX_AddByName( track, fxName, false, -1000 - addIndex) 
+    newFxAmount = reaper.TrackFX_GetCount(track) - 1
+    
+    if lastFxAmount and lastFxAmount < newFxAmount then
+        newFxIndex = moveFxIfNeeded(pathForNextIndex, newFxAmount)
+    end
+    
+    lastFxAmount = newFxAmount
+    if not wasSetToFloatingAuto then toggleFxFloatAuto() end
+    return newFxIndex
+end
 
 
 -- add container and move it to the first slot and rename to modulators
@@ -16900,27 +16929,36 @@ local function loop()
                     end
                     
                     if reaper.ImGui_BeginPopup(ctx, "add popup") then
-                        if reaper.ImGui_Selectable(ctx, "Add FX via browser", false) then 
-                            doNotMoveToModulatorContainer, browserHwnd, browserSearchFieldHwnd, insertAtFxIndex, fx_before = addFxViaBrowser(track, fxnumber)
-                            pathForNextIndex = getPathForNextFxIndex(track, insertAtFxIndex)
-                            addNewFXToEnd = isAddFXAsLast
-                            moveToModulatorContainer = false
+                        
+                        local pathForNextIndex = getPathForNextFxIndex(track, fxnumber) or false 
+                        local addAsLast = not pathForNextIndex
+                        if pathForNextIndex then
+                            addAsLast = addFxAslastFunc()
                         end
-                        setToolTipFunc("Add new FX via the native Reaper FX Browser")
-                        
-                        if reaper.ImGui_Selectable(ctx, "Add container##", false) then  
-                            fxnumber = addFxAfterSelection(track, fxnumber, "Container")
-                            reaper.ImGui_CloseCurrentPopup(ctx)
-                        end 
-                        
-                        if reaper.ImGui_Selectable(ctx, "Move focused FX in to new container##", false) then 
-                            local containerIndex = addFxAfterSelection(track, fxnumber, "Container", true)
-                            local containerPath = getPathForNextFxIndex(track, containerIndex)
-                            local newIndex = get_fx_id_from_container_path(track, table.unpack(containerPath))
-                            moveFx(track, fxnumber, newIndex)
-                            reaper.ImGui_CloseCurrentPopup(ctx)
+                        local addIndex = pathForNextIndex and table.concat(pathForNextIndex, " -> ")
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorTextDimmed)
+                        if reaper.ImGui_Button(ctx, addAsLast and "[Add FX as last]" or "[Add FX at position: " .. addIndex .. "]") then
+                            if pathForNextIndex then
+                                settings.addFxAsLast = not settings.addFxAsLast
+                                saveSettings(ctx)
+                            end
                         end
+                        setToolTipFunc(not pathForNextIndex and "Select an existing FX to add new at specific position" or ("Press " .. convertModifierOptionToString(settings.modifierOptionFx.addFXAsLast) .. " to toggle insert position"))
                         
+                        reaper.ImGui_PopStyleColor(ctx,1)
+                        
+                        
+                        reaper.ImGui_Separator(ctx)
+                        
+                        addFxViaFxBrowserAfterSelection(track, fxnumber, colorTextDimmed)
+                        
+                        reaper.ImGui_PopStyleColor(ctx,1)
+                        
+                        --if reaper.ImGui_BeginMenu(ctx, "FX list") then
+                        --    reaper.ImGui_EndMenu(ctx)
+                        --end
+                        --[[
                         if reaper.ImGui_BeginMenu(ctx, "fx chains") then
                             for _, fxChain in ipairs(fxChainPresetsFiles) do
                                 if reaper.ImGui_Selectable(ctx, fxChain.name, false) then   
@@ -16930,8 +16968,47 @@ local function loop()
                               
                             reaper.ImGui_EndMenu(ctx)
                         end
+                        ]]
                         
+                        reaper.ImGui_Separator(ctx)
+                        
+                        
+                        if reaper.ImGui_Selectable(ctx, "Add container##", false) then  
+                            fxnumber = addFxAfterSelection(track, fxnumber, "Container")
+                            reaper.ImGui_CloseCurrentPopup(ctx)
+                        end 
                         setToolTipFunc("Add new Container to track")
+                        
+                        
+                        
+                        
+                        
+                        
+                        if reaper.ImGui_Selectable(ctx, "Add video processor##", false) then  
+                            fxnumber = addFxAfterSelection(track, fxnumber, "Video processor")
+                            reaper.ImGui_CloseCurrentPopup(ctx)
+                        end 
+                        setToolTipFunc("Add new video processor to track")
+                        
+                        if reaper.ImGui_Selectable(ctx, "Add FX via browser", false) then 
+                            doNotMoveToModulatorContainer, browserHwnd, browserSearchFieldHwnd, insertAtFxIndex, fx_before = addFxViaBrowser(track, fxnumber)
+                            pathForNextIndex = getPathForNextFxIndex(track, insertAtFxIndex)
+                            addNewFXToEnd = isAddFXAsLast
+                            moveToModulatorContainer = false
+                        end
+                        setToolTipFunc("Add new FX via the native Reaper FX Browser")
+                        
+                        
+                        reaper.ImGui_Separator(ctx)
+                        
+                        if reaper.ImGui_Selectable(ctx, "Move focused FX in to new container##", false) then 
+                            local containerIndex = addFxAfterSelection(track, fxnumber, "Container", true)
+                            local containerPath = getPathForNextFxIndex(track, containerIndex)
+                            local newIndex = get_fx_id_from_container_path(track, table.unpack(containerPath))
+                            moveFx(track, fxnumber, newIndex)
+                            reaper.ImGui_CloseCurrentPopup(ctx)
+                        end
+                        
                         reaper.ImGui_EndPopup(ctx)
                     end
                     
