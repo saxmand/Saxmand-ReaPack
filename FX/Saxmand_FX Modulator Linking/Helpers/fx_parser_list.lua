@@ -1,7 +1,16 @@
 -- @noindex
-local os_separator = package.config:sub(1, 1)
-package.path = debug.getinfo(1, "S").source:match [[^@?(.*[\/])[^\/]-$]] .. "?.lua;"  -- GET DIRECTORY FOR REQUIRE
-require("Sexan_FX_Browser_ParserV7")
+--local os_separator = package.config:sub(1, 1)
+--package.path = debug.getinfo(1, "S").source:match [[^@?(.*[\/])[^\/]-$]] .. "?.lua;"  -- GET DIRECTORY FOR REQUIRE
+--require("Sexan_FX_Browser_ParserV7")
+
+local fx_parser_list_filepath = reaper.GetResourcePath() .. "/Scripts/Sexan_Scripts/FX/Sexan_FX_Browser_ParserV7.lua"
+local fx_parser_list_exist
+if reaper.file_exists(fx_parser_list_filepath) then
+    dofile(fx_parser_list_filepath)
+    --fx_parser_list = require("fx_parser_list")
+else    
+    return false
+end
 
 local r = reaper
 local ctx, TRACK, fxIndex --= r.ImGui_CreateContext('FX INI PARSER')
