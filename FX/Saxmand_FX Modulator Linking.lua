@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.4.4
+-- @version 1.4.5
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,13 +17,12 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + updated about section
---   + Build-in FX browser requires Sexan reapack
---   + added track control panel (still in development)
---   + fixed issue when reaching each with mouse while changing a parameter
+--   + added some code for trying to fix crash on startup
+--   + more work on track control panel (still in development)
 
+local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.4.4"
+local version = "1.4.5"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -48,6 +47,8 @@ local appName = "FX Modulator Linking"
 local colorFolderName = "Color sets"
 local settingsFolderName = "Exported Settings"
 local pluginsFolderName = "Plugin Settings"
+local imagesFolderName = "Images"
+local imagesFolderPath = scriptPathSubfolder .. imagesFolderName .. seperator
 
 local ctx
 font = reaper.ImGui_CreateFont('Arial', 14)
@@ -294,6 +295,19 @@ function get_files_in_folder(subfolder, nameAsKey)
     end
     return names
 end
+
+function exportAppSettings(settings)
+    local data = json.encodeToJson(settings) 
+    -- -- Get username (cross-platform)
+    local username = os.getenv("USERNAME") or os.getenv("USER") or "unknown_user"
+    
+    -- Get date and time
+    local timestamp = os.date("%Y-%m-%d_%H-%M-%S")  -- format: 2025-07-27_15-30-45
+    
+    -- Combine into filename
+    local filename = "FX-Modulator-Linking-Settings_" .. username .. "_" .. timestamp
+    saveFile(data, filename, settingsFolderName) 
+end
 -----------------------------------------
 -----------------------------------------
 -----------------------------------------
@@ -312,6 +326,32 @@ if not folder_exists(newColorFolder) then
         delete_folder_recursive(previousHelpFolder)
     end
 end
+
+function useThemeKnobs() 
+    local themePath = reaper.GetLastColorThemeFile()
+    local themePath = themePath .. (themePath:match("ReaperThemeZip") == nil and "Zip" or "")
+    local filename = themePath:gsub("%.ReaperThemeZip", ""):match("[^" .. seperator .. "]+$") 
+    local themePathUnzip = themePath:gsub("%.ReaperThemeZip", "")..seperator
+    if lol and not reaper.file_exists(themePathUnzip) then
+        local outdir = themePathUnzip
+        
+        if isWin then
+            os.execute(string.format(
+              'powershell -command "Expand-Archive -Path \'%s\' -DestinationPath \'%s\' -Force"',
+              zipfile, outdir
+            ))
+        else  
+            local str = string.format('unzip -o "%s" -d "%s"', zipfile, outdir) 
+            os.execute(str)
+        end
+    end
+    return themePathUnzip .. filename .. "_unpacked" .. seperator
+end
+local themePathUnzipFolder = useThemeKnobs() 
+local faderImagePath = imagesFolderPath.. "mcp_volthumb.png"--themePathUnzipFolder .. "mcp_volthumb.png"
+local images = {}
+
+
 ----------------------
 
 
@@ -324,7 +364,8 @@ local factoryModules, indentColors
 local customPluginSettings
 local parameterLinkEffectForCurve, parameterLinkFXIndexForCurve, parameterLinkNameForCurve, parameterLinkParamForCurve, parameterLinkCurverOpen
         
-
+local target_time = 0
+local playState, playPos, playPos2
 local fx_before, fx_after, firstBrowserHwnd, all_fx_last
 
 local focusedTrackFXNames = {}
@@ -499,6 +540,7 @@ local defaultSettings = {
     showMediaPlaybackOffset = true,
     showPanning = true,
     showAutomation = true,
+    showVolumeValue = true,
     colorsOnButtons = true,
     colorsOnButtonsBorders = false,
     colorsAutomationButton = true,
@@ -507,6 +549,7 @@ local defaultSettings = {
     showSoloButton = true,
     showPhaseButton = true,
     showFXButton = true,
+    showVolumeValueInPopup = false,
     
     showContainers = true,
     colorContainers = true,
@@ -758,6 +801,9 @@ local defaultSettings = {
       containerLayer1 = colorRead, 
       containerLayer2 = colorTouch, 
       containerLayer3 = colorWrite,
+      
+      trackControlPeakMax = colorRedHidden,
+      trackControlPeakMin = colorGreen,
     },
     selectedColorSet = "Dark",
     
@@ -857,8 +903,11 @@ if type(settings.onlyMapped) == "table" then
     settings.onlyMapped = false
 end
 
-
---settings = {}
+if exportCurrentSettingsAndRecetOnStart then
+    exportAppSettings(settings)
+    open_folder(settingsFolderName)
+    settings = {}
+end
 
 -- BACKWARDS COMPATABILITY
 for key, value in pairs(defaultSettings) do
@@ -2287,6 +2336,7 @@ function GetFormattedParamValue(track, index, param, doNotUseCatch)
 end
 
 function FormatParamValue(track, index, param, val, doNotUseCatch)
+    if not track or not index or not param or not val then return end
     local tableStr = param .. "::FormatParamValue"
     local catch = getParameterTableCatch(track, index, tableStr)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
@@ -2465,28 +2515,26 @@ function GetFXEnvelope(track,fxIndex,param, doNotUseCatch)
     end 
 end
 
-function GetEnvelopeInfo_String(track,fxIndex, param, str)
-    local tableStr = param .. ":" .. str .. "::GetEnvelopeInfo_String"
-    local catch = getParameterTableCatch(track, fxIndex, tableStr)
+function GetEnvelopeInfo_String(envelope, str, doNotUseCatch)
+    local tableStr = tostring(envelope) .. ":" .. str .. "::GetEnvelopeInfo_String"
+    local catch = getParameterTableCatch(track, "envelope", tableStr)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
         return catch 
     else  
-        local envelope = GetFXEnvelope(track,fxIndex,param)
         local ret, val = reaper.GetSetEnvelopeInfo_String(envelope, str, "", false)
-        setParameterTableCatch(track, fxIndex, tableStr, val)
+        setParameterTableCatch(track, "envelope", tableStr, val)
         return val
     end
 end
 
-function CountEnvelopePoints(track,fxIndex,param) 
-    local tableStr = param .. "::CountEnvelopePoints"
-    local catch = getParameterTableCatch(track, fxIndex, tableStr)
+function CountEnvelopePoints(envelope) 
+    local tableStr = tostring(envelope) .. "::CountEnvelopePoints"
+    local catch = getParameterTableCatch(track, "envelope", tableStr)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
         return catch 
     else 
-        local envelope = GetFXEnvelope(track,fxIndex,param)
         local val = reaper.CountEnvelopePoints(envelope) 
-        setParameterTableCatch(track, fxIndex, tableStr, val)
+        setParameterTableCatch(track, "envelope", tableStr, val)
         return val
     end 
 end
@@ -2498,52 +2546,68 @@ function Envelope_Evaluate( envelope, time, sampleRate,samplesRequest)
     end
 end
 
-function getEnvelopeValueAndPos(track,fxIndex,param, time)
-    local tableStr = param .. "::EnvelopeValueAndPos"
-    local catch = getParameterTableCatch(track, fxIndex, tableStr)
+
+
+function GetEnvelopeScalingMode(envelope, doNotUseCatch)
+    local tableStr = tostring(envelope) .. "::getEnvelopeScalingMode"
+    local catch = getParameterTableCatch(track, "envelope", tableStr)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
         return catch 
     else 
-        local envelope = GetFXEnvelope(track,fxIndex,param)
-        local val = Envelope_Evaluate(envelope, time, 0,0)
-        setParameterTableCatch(track, fxIndex, tableStr, val)
+        local val = reaper.GetEnvelopeScalingMode(envelope)
+        setParameterTableCatch(track, "envelope", tableStr, val)
         return val
     end 
 end
 
 
-function GetEnvelopePoint(track,fxIndex,param, ptidx, doNotUseCatch)
-    local tableStr = param .. ":" .. ptidx .. "::EnvelopeValueAndPos"
-    local catch = getParameterTableCatch(track, fxIndex, tableStr)
+function GetEnvelopeValueAndPos(envelope, time, doNotUseCatch)
+    local tableStr = tostring(envelope) .. "::EnvelopeValueAndPos"
+    local catch = getParameterTableCatch(track, "envelope", tableStr)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
-        return catch.time, catch.value 
+        return catch 
     else 
-        local envelope = GetFXEnvelope(track,fxIndex,param)
-        local ret, time, value = reaper.GetEnvelopePoint(envelope, ptidx)
-        setParameterTableCatch(track, fxIndex, tableStr, {time, value})
-        return time, value
+        local scalingMode = GetEnvelopeScalingMode(envelope)
+        local val = reaper.ScaleFromEnvelopeMode(scalingMode, Envelope_Evaluate(envelope, time, 0,0))
+        setParameterTableCatch(track, "envelope", tableStr, val)
+        return val
     end 
 end
 
-function envelopeIsVisible(track,fxIndex,param)
-    return tonumber(GetEnvelopeInfo_String(track,fxIndex,param, "VISIBLE")) == 1
+
+function GetEnvelopePoint(envelope, ptidx, doNotUseCatch)
+    local tableStr = tostring(envelope) .. ":" .. ptidx .. "::EnvelopeValueAndPos"
+    local catch = getParameterTableCatch(track, "envelope", tableStr)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch.time, catch.value 
+    else  
+        local ret, time, value = reaper.GetEnvelopePoint(envelope, ptidx) 
+        local scalingMode = GetEnvelopeScalingMode(envelope)
+        local valueScaled = reaper.ScaleFromEnvelopeMode(scalingMode, value)
+        setParameterTableCatch(track, "envelope", tableStr, {time, valueScaled})
+        return time, valueScaled
+    end 
 end
 
-function envelopeIsActive(track,fxIndex,param) 
-    return tonumber(GetEnvelopeInfo_String(track,fxIndex,param, "ACTIVE")) == 1
+function envelopeIsVisible(envelope, doNotUseCatch)
+    return tonumber(GetEnvelopeInfo_String(envelope, "VISIBLE", doNotUseCatch)) == 1
 end
 
-function envelopeIsArmed(track,fxIndex,param)
-    return tonumber(GetEnvelopeInfo_String(track,fxIndex,param, "ARM")) == 1
+function envelopeIsActive(envelope, doNotUseCatch) 
+    return tonumber(GetEnvelopeInfo_String(envelope, "ACTIVE", doNotUseCatch)) == 1
 end
 
-function envelopeIsInLane(track,fxIndex,param)
-    return tonumber(GetEnvelopeInfo_String(track,fxIndex,param, "SHOWLANE")) == 1
+function envelopeIsArmed(envelope, doNotUseCatch)
+    return tonumber(GetEnvelopeInfo_String(envelope, "ARM", doNotUseCatch)) == 1
 end
 
-function getEnvelopeState(track,fxIndex,param) 
-    if track and fxIndex and param then
-        return {visible = envelopeIsVisible(track,fxIndex,param), active = envelopeIsActive(track,fxIndex,param), arm = envelopeIsArmed(track,fxIndex,param), envelopeIsInLane(track,fxIndex,param)}
+function envelopeIsInLane(envelope, doNotUseCatch)
+    return tonumber(GetEnvelopeInfo_String(envelope, "SHOWLANE", doNotUseCatch)) == 1
+end
+
+function getEnvelopeState(envelope, doNotUseCatch) 
+    if envelope then
+        return {visible = envelopeIsVisible(envelope, doNotUseCatch), active = envelopeIsActive(envelope, doNotUseCatch), arm = envelopeIsArmed(envelope, doNotUseCatch), envelopeIsInLane(envelope, doNotUseCatch)}
     else
         return {visible = false, active = false, arm = false, showLane = true}
     end
@@ -2626,22 +2690,111 @@ function GetTrackGuid(track, doNotUseCatch)
         return val
     end 
 end
- 
-function GetMuted(track)
+
+function GetMediaTrackInfo_Value(track, parmname, doNotUseCatch)
+    local tableStr = parmname .. "::GetMediaTrackInfo_Value"
+    local catch = getParameterTableCatch(track, "track", tableStr)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch 
+    else 
+        local val = reaper.GetMediaTrackInfo_Value( track, parmname )
+        setParameterTableCatch(track, "track", tableStr, val)
+        return val
+    end 
+end
+
+function GetMuted(track, doNotUseCatch)
     local tableStr = "::GetMuted"
     local catch = getParameterTableCatch(track, "track", tableStr, 2)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
         return catch 
     else 
-        local val = math.floor(reaper.GetMediaTrackInfo_Value( track, "B_MUTE" )) == 1
+        local val = math.floor(GetMediaTrackInfo_Value( track, "B_MUTE", true )) == 1
         setParameterTableCatch(track, "track", tableStr, val)
         return val
     end
 end
 
 function setMuted(track, val)
-    val = val == nil and not GetMuted(track) or val
+    val = val == nil and not GetMuted(track, true) or val
     reaper.SetMediaTrackInfo_Value( track, "B_MUTE", val and 1 or 0)
+end
+
+
+
+ 
+function GetAutomation(track)
+    local tableStr = "::GetAutomation"
+    local catch = getParameterTableCatch(track, "track", tableStr)
+    if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
+        return catch 
+    else 
+        local val = math.floor(GetMediaTrackInfo_Value( track, "I_AUTOMODE",true ))
+        setParameterTableCatch(track, "track", tableStr, val)
+        return val
+    end
+end
+
+function getEnvelopeInformation(envelope)
+    local envelopePointCount, usesEnvelope, firstEnvelopeValue, envelopeValueAtPos, hasEnvelopePoints, envTime, singleEnvelopePointAtStart
+    
+    
+    if envelope then
+        envelopePointCount = CountEnvelopePoints(envelope, doNotUseCatch)
+        envelopeActive = envelopeIsActive(envelope, doNotUseCatch) 
+        
+        hasEnvelopePoints = envelopePointCount > 0
+        usesEnvelope = envelopeActive and envelopePointCount > 0-- and envelopeActive == "1"
+        if usesEnvelope then
+            
+            --local _, block_size = reaper.GetAudioDeviceInfo("BSIZE")
+            --local _, sample_rate = reaper.GetAudioDeviceInfo("SRATE")
+            if envelopePointCount == 1 then
+                envTime, firstEnvelopeValue = GetEnvelopePoint(envelope, 0, doNotUseCatch)
+                
+                -- for some reason this does not work as expected, but this is a fix, to not check envTime
+                --if envTime ~= nil then -- and tonumber(envTime) == 0 then
+                    singleEnvelopePointAtStart = true
+                --end
+            else 
+                envelopeValueAtPos = GetEnvelopeValueAndPos(envelope, target_time, doNotUseCatch)
+            end
+        end
+    end
+    return envelopePointCount, usesEnvelope, firstEnvelopeValue, envelopeValueAtPos, hasEnvelopePoints, singleEnvelopePointAtStart
+end
+
+function getCurrentValue(track, value, baseline, firstEnvelopeValue, envelopeValueAtPos, parameterModulationActive,usesEnvelope )
+    local currentValue = value
+    
+    if not automation then
+        automation = GetAutomation(track)
+    end
+    
+    if automation == 5 and not parameterModulationActive then
+    elseif parameterModulationActive and (not usesEnvelope or automation == 5) and baseline then
+        currentValue = tonumber(baseline)
+    elseif singleEnvelopePointAtStart and firstEnvelopeValue and automation ~= 5 then
+        currentValue = firstEnvelopeValue
+    elseif usesEnvelope and envelopeValueAtPos and not scrollTime then 
+        local mouseActivation = isMouseDragging -- isMouseDOwn makes it react directly, maybe better
+        -- not write, latch, latch preview
+        if (not mouseActivation and (automation < 3 or automation == 5)) or 
+        (mouseActivation and (automation < 2)) 
+        then-- or automation < 3 then --not automationTypes[automation+1] ~= "Write" then
+        --reaper.ShowConsoleMsg(tostring(automation) .. " a\n")
+        -- we do not need to use the envelope value here it seems, as it will not make it change properly
+            currentValue = envelopeValueAtPos
+            
+            
+            --reaper.ShowConsoleMsg(value .. " - ".. tostring(currentValue) .. " - " ..reaper.ImGui_GetTime(ctx) .. "  envelope val\n")
+        else
+            --reaper.ShowConsoleMsg(value .. " - ".. tostring(currentValue) .. " - " ..reaper.ImGui_GetTime(ctx) .. "   current val\n")
+        end
+    else
+      
+    end
+    return currentValue
 end
 -------------------------
 -------------------------
@@ -4266,37 +4419,8 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
         
         
         
-        local envelopePointCount, usesEnvelope, firstEnvelopeValue, envelopeValueAtPos, hasEnvelopePoints, envTime, singleEnvelopePointAtStart
         local trackEnvelope = GetFXEnvelope(track,fxIndex,param,false)
-        
-        if trackEnvelope then
-            envelopePointCount = CountEnvelopePoints(track,fxIndex,param)
-            envelopeActive = envelopeIsActive(track,fxIndex,param) 
-            
-            hasEnvelopePoints = envelopePointCount > 0
-            usesEnvelope = envelopeActive and envelopePointCount > 0-- and envelopeActive == "1"
-            if usesEnvelope then
-                local playState = reaper.GetPlayState()
-                local target_time
-                if playState == 0 then --not lastEnvelopeInsertPos or lastEnvelopeInsertPos ~= playPos then
-                    target_time = reaper.GetCursorPosition()
-                else
-                    target_time = playPos2 
-                end
-                --local _, block_size = reaper.GetAudioDeviceInfo("BSIZE")
-                --local _, sample_rate = reaper.GetAudioDeviceInfo("SRATE")
-                envelopeValueAtPos = getEnvelopeValueAndPos(track,fxIndex,param, target_time)
-                if envelopePointCount == 1 then
-                    envTime, firstEnvelopeValue = GetEnvelopePoint(track,fxIndex,param, 0)
-                    
-                    -- for some reason this does not work as expected, but this is a fix, to not check envTime
-                    --if envTime ~= nil then -- and tonumber(envTime) == 0 then
-                        singleEnvelopePointAtStart = true
-                    --end
-                end
-            end
-        end
-        
+        envelopePointCount, usesEnvelope, firstEnvelopeValue, envelopeValueAtPos, hasEnvelopePoints, singleEnvelopePointAtStart = getEnvelopeInformation(trackEnvelope)
         
         local value, min, max = GetParam(track,fxIndex,param)
         local hasSteps, step, smallStep, largeStep, isToggle = GetParameterStepSizes(track, fxIndex, param)
@@ -4321,27 +4445,9 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
             --reaper.ShowConsoleMsg(fxName .. " : " .. name .. " : " .. min .. " : ".. max .. " : " .. tostring(baseline) .."\n")
             
         end
-        local currentValue = value
-        if not automation then
-            automation = math.floor(reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE'))
-        end
         
-        if automation == 5 and not parameterModulationActive then
-        elseif parameterModulationActive and (not usesEnvelope or automation == 5) and baseline then
-            currentValue = tonumber(baseline)
-        elseif singleEnvelopePointAtStart and firstEnvelopeValue and automation ~= 5 then
-            currentValue = firstEnvelopeValue
-        elseif usesEnvelope and envelopeValueAtPos and not scrollTime then 
-            -- not write, latch, latch preview
-            if (not isMouseDragging and (automation < 3 or automation == 5)) or 
-            (isMouseDragging and (automation < 2)) 
-            then-- or automation < 3 then --not automationTypes[automation+1] ~= "Write" then
-            
-            --reaper.ShowConsoleMsg(tostring(automation) .. " a\n")
-            -- we do not need to use the envelope value here it seems, as it will not make it change properly
-                currentValue = envelopeValueAtPos
-            end
-        end
+        
+        local currentValue = getCurrentValue(track, value, baseline, firstEnvelopeValue, envelopeValueAtPos, parameterModulationActive,usesEnvelope )
         -- 123
         --if valueName == "-" then
             --reaper.ShowConsoleMsg(tostring(valueName) .. " a\n")
@@ -6905,7 +7011,7 @@ function mappingsArea(mappingWidth, mappingHeight, m, vertical, floating, isColl
     
     --local useFlags = childFlags
     --useFlags = reaper.ImGui_ChildFlags_Border()
-    local useFlags = reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_AlwaysAutoResize() | reaper.ImGui_ChildFlags_AutoResizeY()
+    local useFlags = reaper.ImGui_ChildFlags_Borders() | reaper.ImGui_ChildFlags_AlwaysAutoResize() | reaper.ImGui_ChildFlags_AutoResizeY()
     if not vertical then 
         reaper.ImGui_SetNextWindowSizeConstraints(ctx, 40, 60, mappingWidth, mappingHeight)
         --mappingHeight = nil
@@ -10376,6 +10482,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
             lastDragParam = p.param
                 if amount < 0 then amount = 0 end
                 if amount > 1 then amount = 1 end 
+                -- if bypassed we react on mouse down
                 if amount ~= currentValueNormalized then  
                     local addOffset = useStepsChange and 0 or (missingOffset and missingOffset or 0) -- these deals with moving the mouse but the parameter does not change, so we store them and add the difference
                     local newVal = (amount + addOffset) * range + min
@@ -11062,7 +11169,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                 reaper.GetFXEnvelope(track, fxIndex, param, true) 
             end
         else
-            local envelopeStates = getEnvelopeState(track, fxIndex, p.param) 
+            local envelopeStates = getEnvelopeState(p.envelope) 
             local types = {"visible","active","arm", "showLane"}
             --local types = {"Show","Activate","Arm"}
             for i, t in ipairs(types) do 
@@ -11617,7 +11724,7 @@ end
 
 
 function openFxBrowserOnSpecificTrack()
-    local index = reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER")
+    local index = GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER")
     local trackTitleIndex = "Track " .. math.floor(index)
     local ret, name = reaper.GetTrackName(track)
     local addFXToTrackWindowNameSimple = "Add FX to " .. trackTitleIndex
@@ -13244,7 +13351,14 @@ function appSettingsWindow()
                     settings.showAutomation = val
                     saveSettings()
                 end
-                setToolTipFunc("Show or hide automation mode for the track") 
+                setToolTipFunc("Show or hide automation mode for the track")  
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show volume value##trackControl",settings.showVolumeValue) 
+                if ret then 
+                    settings.showVolumeValue = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show or hide a text field with the volume value for the track") 
                 
                 reaper.ImGui_NewLine(ctx)
                 
@@ -13278,6 +13392,16 @@ function appSettingsWindow()
                 setToolTipFunc("Show or hide FX button for the track") 
             reaper.ImGui_Unindent(ctx)
             
+             
+            reaper.ImGui_TextColored(ctx, colorGrey, "Popup options")
+            reaper.ImGui_Indent(ctx) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show volume value in popup##trackControl",settings.showVolumeValueInPopup) 
+                if ret then 
+                    settings.showVolumeValueInPopup = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show a popup with the volume value when changing it")
+            reaper.ImGui_Unindent(ctx)
             
             reaper.ImGui_TextColored(ctx, colorGrey, "Color options")
             reaper.ImGui_Indent(ctx) 
@@ -14234,18 +14358,8 @@ function appSettingsWindow()
             
             reaper.ImGui_NewLine(ctx)
             
-            if reaper.ImGui_Button(ctx, "Export app settings") then
-                
-                local data = json.encodeToJson(settings) 
-                -- -- Get username (cross-platform)
-                local username = os.getenv("USERNAME") or os.getenv("USER") or "unknown_user"
-                
-                -- Get date and time
-                local timestamp = os.date("%Y-%m-%d_%H-%M-%S")  -- format: 2025-07-27_15-30-45
-                
-                -- Combine into filename
-                local filename = "FX-Modulator-Linking-Settings_" .. username .. "_" .. timestamp
-                saveFile(data, filename, settingsFolderName) 
+            if reaper.ImGui_Button(ctx, "Export app settings") then 
+                exportAppSettings(settings)
             end
             reaper.ImGui_SameLine(ctx)
             
@@ -14340,7 +14454,7 @@ local automationTypesColors = {colorsAutomationButton and colorTrimRead or color
 function automationButton(track)
     --centerText("Timebase", colorLightGrey, posXOffset, widthWithPadding, 0, posYOffset) 
     --posYOffset = posYOffset + 16 
-    local automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
+    local automation = GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
     local automationString = automationTypes[automation+1]
     local color = automationTypesColors[automation+1]
     
@@ -14378,7 +14492,7 @@ function automationButton(track)
 end
 
 function automationRadioSelect(track)
-    local automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
+    local automation = GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
     for i, a in ipairs(automationTypes) do
         automationColor = automationTypesColors[i]
         --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), automationColor)
@@ -14395,7 +14509,7 @@ end
 
 function smallAutomationButton(track, id, size)
     
-    local automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
+    local automation = GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
     local name = automationTypesShort[automation+1]
     local color = automationTypesColors[automation+1]
     
@@ -14590,7 +14704,6 @@ function updateTouchedFX()
             end
             
             
-            updateMapping()
             --scrollToParameter = true
             
             -- we always set these though they are only used when not in force mapping mode
@@ -14603,6 +14716,8 @@ function updateTouchedFX()
                 lastParameterTouchedMouse = lastParameterTouched
                 lastFxIndexTouchedMouse = lastFxIndexTouched 
                 lastTrackIndexTouchedMouse = lastTrackIndexTouched
+                -- maybe it needs to be outside this, but maybe we don't need to update it cunstantly. 
+                updateMapping()
             end
             hwndWindowOnTouchParam = clickedHwnd
             --hwndWindowOnTouchParam = reaper.JS_Window_GetFocus() 
@@ -14844,7 +14959,8 @@ local runs = -1
             
 local function loop() 
     playPos = reaper.GetPlayPosition() 
-    playPos2 = reaper.GetPlayPosition2() 
+    playPos2 = reaper.GetPlayPosition2()  
+    playState = reaper.GetPlayState()
     runs = runs + 1
     popupAlreadyOpen = false
     ignoreKeypress = false
@@ -15093,6 +15209,7 @@ local function loop()
             
             _, trackName = reaper.GetTrackName(track)
             --lastTrack = track
+            catchImagesAgain = true
         end
         
         
@@ -15112,9 +15229,13 @@ local function loop()
         trackGuid = GetTrackGuid(track)
         modulationContainerPos = getModulationContainerPos(track)
         
-        trackIndex = math.floor(reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER"))
+        trackIndex = math.floor(GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER"))
         
-
+        if playState == 0 then --not lastEnvelopeInsertPos or lastEnvelopeInsertPos ~= playPos then
+            target_time = reaper.GetCursorPosition()
+        else
+            target_time = playPos2 
+        end
         -- only reload mappings sometimes
         -- could use more settings maybe, like a timer, or just on more actions. Now it's on load or mapping
         fxCount = GetCount(track)
@@ -15157,7 +15278,7 @@ local function loop()
             modulatorFxIndexes = {}
         end
         
-        automation = math.floor(reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE'))
+        automation = math.floor(GetMediaTrackInfo_Value(track, 'I_AUTOMODE'))
         isAutomationRead = automation < 2
         
         if fxnumber and modulationContainerPos ~= fxnumber and not modulatorFxIndexes[fxnumber] then
@@ -15307,7 +15428,7 @@ local function loop()
     local automationColor
     local fillEnvelopeButton
     if track and settings.useAutomationColorOnEnvelopeButton then
-        local automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE') 
+        local automation = GetMediaTrackInfo_Value(track, 'I_AUTOMODE') 
         automationTypesColors = {colorText, colorRead, colorTouch, colorWrite, colorLatch, colorLatchPreview}
         automationColor = automationTypesColors[automation+1]
         fillEnvelopeButton = settings.colors.envelopeButtonBackground
@@ -15623,7 +15744,7 @@ local function loop()
             
             
             function topChildOfPanel(title, width, height, heightAutoAdjust, fixedSize, innerBorder)
-                local flags =  reaper.ImGui_ChildFlags_Border()
+                local flags =  reaper.ImGui_ChildFlags_Borders()
                 local flags =  flags | reaper.ImGui_ChildFlags_AlwaysAutoResize() | reaper.ImGui_ChildFlags_AutoResizeX() | reaper.ImGui_ChildFlags_AutoResizeY()
                 local visible = reaper.ImGui_BeginChild(ctx, title, width, (heightAutoAdjust and not fixedSize) and 0 or height,flags, reaper.ImGui_WindowFlags_NoScrollWithMouse() | reaper.ImGui_WindowFlags_NoScrollbar() | scrollFlags)
                 return visible
@@ -16524,7 +16645,7 @@ local function loop()
                                             local pTrackControlShown = true
                                             if fxName == "Track controls" then
                                                 if i > 35 then
-                                                    pTrackControlShown = false
+                                                    pMappedShown = false
                                                 end
                                             end 
                                             
@@ -17547,6 +17668,15 @@ local function loop()
             local DB_INF = -1000
             local CROSS_POINT = 0.75 -- slider position where 0 dB crosses
             local EXP = 0.45-- exponent for smoothing curve below 0 dB
+            
+            
+            local EXPPEAK = 0.33-- 45
+            local EXPPEAK = 0.22-- 90
+            local EXPPEAK = 0.17-- 180
+            local EXPPEAK = 0.14-- 360
+            local EXPPEAK = 0.13-- 720
+            local EXPPEAK = 0.126-- 1440
+            
               
             local function dbFromSlider(val)
                 return 20 * math.log(val, 10)
@@ -17570,12 +17700,17 @@ local function loop()
                 local norm = slider ^ EXP
                 return DB_MIN + norm * (DB_MAX - DB_MIN)
             end
-
+            
+            local function expPeak(x)
+                return 0.119285 + 11.8653 * (x ^ -1.03787)
+                --return 0.119285 + 61.8653 * (x ^ -5.53787)
+            end
+            
             -- peak meter (0..1) to dB value, inverse of the curve
-            local function peak_exponential(value)
+            local function peak_exponential(value, height)
                 if value <= 0 then return 0 end
                 if value >= 1 then return 1 end
-                local norm = value ^ EXP 
+                local norm = value ^ expPeak(height)
                 if norm <= 0 then return 0 end
                 if norm >= 1 then return 1 end 
                 return norm * 1
@@ -17589,7 +17724,62 @@ local function loop()
                 local norm = slider ^ EXP
                 return DB_MIN + norm * (DB_MAX - DB_MIN)
             end
-
+            
+            function getTrackUIValOld(track, parmName, envelopeName) 
+                local env = reaper.GetTrackEnvelopeByName(track, envelopeName)
+                local val
+                
+                local automation = GetAutomation(track)
+                if env and automation ~= 5 then
+                    -- scalemode = reaper.GetEnvelopeScalingMode(env)
+                    val = reaper.ScaleFromEnvelopeMode(1, Envelope_Evaluate(env, target_time - 0.05, 0,0))
+                else
+                    --val = GetMediaTrackInfo_Value(track, parmName)  
+                    local retval, volume, pan = reaper.GetTrackUIVolPan( track )
+                    if envelopeName == "Volume" then
+                        val = volume
+                    end
+                end
+                if automation == 5 and automationValStart then
+                   -- val = automationValStart 
+                end
+                return val
+            end
+            
+            function getTrackUIVal(track, parmName, envelopeName, doNotUseCatch)   
+                local envelope = reaper.GetTrackEnvelopeByName(track, envelopeName)
+                
+                local value --= getTrackUIValOld(track, parmName, envelopeName)--GetMediaTrackInfo_Value(track, parmName, true)
+                local retval, volume, pan = reaper.GetTrackUIVolPan( track )
+                if envelopeName == "Volume" then
+                    value = volume
+                end
+                --aab = value
+                local envelopePointCount, usesEnvelope, firstEnvelopeValue, envelopeValueAtPos, hasEnvelopePoints, singleEnvelopePointAtStart = getEnvelopeInformation(envelope)
+                --aac = envelopeValueAtPos
+                local currentValue = getCurrentValue(track, value, baseline, firstEnvelopeValue, envelopeValueAtPos, parameterModulationActive,usesEnvelope ) 
+                --aad = currentValue
+                return currentValue
+            end
+            
+            
+            function getTrackUIStartAutomation(val, envelopeName, mouseDownOnElement)
+                local automation = GetAutomation(track)
+                if mouseDownOnElement or ((automation == 3 or automation == 5 or (automation == 4 and automationValStart)) and playState ~= 0) then
+                    if not automationValStart then automationValStart = val end
+                    val = automationValStart
+                    --automationValStart = val
+                else
+                    if automationValStart then 
+                        if envelopeName == "Volume" and automation < 3 then
+                            reaper.SetTrackUIVolume(track, automationValStart, false, true, 1|2) 
+                        end
+                        automationValStart = nil
+                    end
+                end
+                return val
+            end
+            
             
             function drawKnob(id, relativePosX, relativePosY, size, amount, textOnTop, outerCircleColor, thickness, centerOffset, staticColor)
                 winPosX, winPosY = reaper.ImGui_GetCursorScreenPos(ctx)
@@ -17676,11 +17866,11 @@ local function loop()
                 
                 function setTrackValuesLink(parmName, exactValue, relativeValue, overwriteAbsolute, minAmount, maxAmount)
                     relativeValue = relativeValue and relativeValue or 0
-                    local amount = exactValue and exactValue or reaper.GetMediaTrackInfo_Value(track, parmName) 
+                    local amount = exactValue and exactValue or GetMediaTrackInfo_Value(track, parmName) 
                     if isLinkingFXs then
                         for _, tr in ipairs(selectedTracks) do  
                             if not settings.linkFXAbsoluteValues and not overwriteAbsolute then
-                                amount = reaper.GetMediaTrackInfo_Value(tr, parmName) 
+                                amount = GetMediaTrackInfo_Value(tr, parmName) 
                             end
                             amount = amount + relativeValue
                             if minAmount and amount < minAmount then amount = minAmount end
@@ -17695,24 +17885,23 @@ local function loop()
                     end
                 end
                 
-                function setTrackValuesLinkVolume(parmName, relativeValue, minAmount, maxAmount)
-                    local startAmount = reaper.GetMediaTrackInfo_Value(track, parmName)  
-                    if isLinkingFXs then
-                        for _, tr in ipairs(selectedTracks) do  
-                            if not settings.linkFXAbsoluteValues then
-                                startAmount = reaper.GetMediaTrackInfo_Value(tr, parmName) 
-                            end
-                            local amount = db_to_slider(dbFromSlider(startAmount)) + relativeValue
-                            if minAmount and amount < minAmount then amount = minAmount end
-                            if maxAmount and amount > maxAmount then amount = maxAmount end
-                            reaper.SetMediaTrackInfo_Value(tr, parmName, sliderFromDB(slider_to_db(amount)))
-                        end
-                    else
-                        local amount = db_to_slider(dbFromSlider(startAmount)) + relativeValue
-                        if minAmount and amount < minAmount then amount = minAmount end
-                        if maxAmount and amount > maxAmount then amount = maxAmount end
-                        reaper.SetMediaTrackInfo_Value(track, parmName, sliderFromDB(slider_to_db(amount)))
-                    end
+                function setTrackValuesLinkVolume(parmName, relativeValue, startValue, minAmount, maxAmount)
+                    --local startAmount = automationValStart--getTrackUIVal(track, "D_VOL", "Volume")
+                    
+                    local amount = db_to_slider(dbFromSlider(startValue)) + relativeValue
+                    if minAmount and amount < minAmount then amount = minAmount end
+                    if maxAmount and amount > maxAmount then amount = maxAmount end
+                    --local startAmount = db_to_slider(dbFromSlider(startAmount))
+                    --local difference = startAmount - amount
+                    --reaper.SetMediaTrackInfo_Value(track, parmName, sliderFromDB(slider_to_db(amount)))
+                    --local val = relativeValue == 0 and 0 or (relativeValue < 0 and -1 or 1)
+                    --local val2 = relativeValue * 100
+                    --reaper.SetTrackUIVolume(track, 10^(math.abs(difference)/20) * val , true, true, 1|2) 
+                    local newAmount = sliderFromDB(slider_to_db(amount))
+                    
+                    reaper.SetTrackUIVolume(track, newAmount, false, false, 1|2) 
+                    --reaper.ShowConsoleMsg(relativeValue .. " - " .. newAmount  .. " - " .. sliderFromDB(slider_to_db(startValue)) .. "\n")
+                    automationValStart = newAmount
                 end
                 
                 local hiddenPluginWidth = 28
@@ -17758,6 +17947,7 @@ local function loop()
                 showMediaPlaybackOffset = settings.showMediaPlaybackOffset
                 showPanning = settings.showPanning
                 showAutomation = settings.showAutomation
+                showVolumeValue = settings.showVolumeValue
                 colorsOnButtons = settings.colorsOnButtons
                 colorsOnButtonsBorders = settings.colorsOnButtonsBorders
                 colorsAutomationButtonText = settings.colorsAutomationButtonText
@@ -17775,7 +17965,7 @@ local function loop()
                     --posYOffset = posYOffset + 16
                     reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
                     local timebaseStrings = {"Default", "Time", "Beats", "Beats Pos"}
-                    local timebase = reaper.GetMediaTrackInfo_Value(track, 'C_BEATATTACHMODE')
+                    local timebase = GetMediaTrackInfo_Value(track, 'C_BEATATTACHMODE')
                     local timebaseString = timebaseStrings[timebase+2]
                     if timebase == -1 then
                         local timebaseDefault = {"(T)", "(B)", "(BP)"}
@@ -17818,9 +18008,9 @@ local function loop()
                     
                     
                     local offsetFlagStrings = {"ms", "Off", "Smpl"}
-                    local offsetFlag = reaper.GetMediaTrackInfo_Value(track, 'I_PLAY_OFFSET_FLAG')
+                    local offsetFlag = GetMediaTrackInfo_Value(track, 'I_PLAY_OFFSET_FLAG')
                     if not offsetFlag then offsetFlag = 1 end
-                    local offsetAmount = reaper.GetMediaTrackInfo_Value(track, 'D_PLAY_OFFSET')
+                    local offsetAmount = GetMediaTrackInfo_Value(track, 'D_PLAY_OFFSET')
                     reaper.ImGui_SetNextItemWidth(ctx, widthWithPadding / 2)
                     offsetAmountOffset = offsetFlag == 0 and 1000 or 1
                     if offsetFlag ~= 1 then
@@ -17851,11 +18041,11 @@ local function loop()
                         mouseDragStartY = mouse_pos_y
                     end
                     
-                    local panMode = math.floor(reaper.GetMediaTrackInfo_Value(track, 'I_PANMODE'))
-                    local panAmount = reaper.GetMediaTrackInfo_Value(track, 'D_PAN') 
-                    local panWidth = reaper.GetMediaTrackInfo_Value(track, 'D_WIDTH') 
-                    local panL = reaper.GetMediaTrackInfo_Value(track, 'D_DUALPANL') 
-                    local panR = reaper.GetMediaTrackInfo_Value(track, 'D_DUALPANR') 
+                    local panMode = math.floor(GetMediaTrackInfo_Value(track, 'I_PANMODE'))
+                    local panAmount = GetMediaTrackInfo_Value(track, 'D_PAN') 
+                    local panWidth = GetMediaTrackInfo_Value(track, 'D_WIDTH') 
+                    local panL = GetMediaTrackInfo_Value(track, 'D_DUALPANL') 
+                    local panR = GetMediaTrackInfo_Value(track, 'D_DUALPANR') 
                     
                     reaper.ImGui_SetCursorPos(ctx,posXOffset+panW, posYOffset) 
                     
@@ -18004,7 +18194,7 @@ local function loop()
                     reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
                     local automationStrings = {"Trim/Read", "Read", "Touch", "Write", "Latch", "Latch Prevw"}
                     local automationColors = {colorsAutomationButton and colorTrimRead or colorAlmostWhite, colorRead, colorTouch, colorWrite, colorLatch, colorLatchPreview}
-                    local automation = reaper.GetMediaTrackInfo_Value(track, 'I_AUTOMODE')
+                    local automation = GetAutomation(track)
                     local automationString = automationStrings[automation+1]
                     local color = automationColors[automation+1]
                     if colorsAutomationButton then
@@ -18042,7 +18232,7 @@ local function loop()
                         reaper.ImGui_EndPopup(ctx)
                     end
                     
-                    posYOffset = posYOffset + 26
+                    posYOffset = posYOffset + 22
                 end
                 --[[
                 local _, trackname = reaper.GetTrackName(track)
@@ -18058,43 +18248,69 @@ local function loop()
                     --focusedFxName = fx.name_original
                 --end 
                 ]]
+                local volume = getTrackUIVal(track, "D_VOL", "Volume")
+                volume = automationValStart == nil and volume or automationValStart
                 
-                
-                
-                local volume = reaper.GetMediaTrackInfo_Value(track, 'D_VOL')
                 local db = dbFromSlider(volume)
                 if db < DB_MIN then db = DB_INF end
                 
                 local slider_pos = db_to_slider(db) 
                 
+                local useImages = true
+                if useImages and (not images[faderImagePath] or catchImagesAgain) then 
+                    local image = reaper.ImGui_CreateImage(faderImagePath) 
+                    local w, h = reaper.ImGui_Image_GetSize(image) 
+                    
+                    -- cropting
+                    local x1 = 0
+                    local x2 = (w-1)/w
+                    local y1 = 5 / h
+                    local y2 = 1--(images[faderImagePath].h - 5) / images[faderImagePath].h
+                    
+                    local width = w-1
+                    local height = h - 5
+                    
+                    images[faderImagePath] = {image = image, w = w, h = h, x1 = x1, y1 = y1, x2 = x2, y2 = y2, width = width, height = height}
+                    catchImagesAgain = false 
+                end
+                
+                
+                local new_db = slider_to_db(slider_pos)
+                if new_db <= DB_MIN then new_db = DB_INF end
+                
+                local text = string.format("%.1f dB", new_db == DB_INF and -math.huge or new_db)
+                
+                
+                if useImages then 
+                    volumeSliderX = volumeSliderX + images[faderImagePath].width/2 - 2
+                    
+                    if showVolumeValue then
+                        reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
+                        reaper.ImGui_TextColored(ctx, colorText, text)
+                        if reaper.ImGui_IsItemClicked(ctx, 0) then
+                            peakPeaked = nil
+                        end
+                        local screenPosX, screenPosY = reaper.ImGui_GetCursorScreenPos(ctx)
+                        --centerText(text, colorText, posXOffset, volumeSliderW, 0,posYOffset)
+                        posYOffset = posYOffset +18
+                    end
+                end
+                
+                local width = useImages and images[faderImagePath].width or volumeSliderW
+                local height = useImages and images[faderImagePath].height or 30
+                local heightUsed = useImages and height - 7 or height
+              
                 
                 reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
-                volumeSliderH = windowH - posYOffset - padding/2
+                volumeSliderH = windowH - posYOffset - padding
                 
-                -- peaks
-                local posX, posY = reaper.ImGui_GetCursorScreenPos(ctx)
-                local posYStart = volumeSliderH+posY - 1
-                local trackCount = math.min(reaper.GetMediaTrackInfo_Value(track, 'I_NCHAN'), 10)
-                local peakWidth = (volumeSliderW - (trackCount-1))/trackCount
+                if volumeSliderH <= 0 then volumeSliderH = 10 end
                 
                 
-                
-                reaper.ImGui_DrawList_AddRectFilled(draw_list,posX, posY,posX + volumeSliderW,posY+volumeSliderH,settings.colors.backgroundModules,8)
-                for i = 0, trackCount - 1 do
-                    local peaks = peak_exponential(math.floor(reaper.Track_GetPeakInfo( track, i ) * 1000)/1000)
-                    --local posXStart = math.floor(posX + (i * (peakWidth + 1)) + peakWidth / 2)
-                    --reaper.ImGui_DrawList_AddLine(draw_list, posXStart, posYStart, posXStart, posYStart - (volumeSliderH * (peaks)), colorOrange,peakWidth) 
-                    local posXStart = math.floor(posX + (i * (peakWidth + 1)))
-                    if peaks > 0 then
-                        reaper.ImGui_DrawList_AddRectFilled(draw_list, posXStart, posYStart - (volumeSliderH * (peaks)), posXStart+peakWidth, posYStart, colorOrange,4) 
-                    end
-                end 
-                
-                reaper.ImGui_DrawList_AddLine(draw_list,posX + volumeSliderW / 2-1,posY,posX + volumeSliderW / 2-1,posY+volumeSliderH - 1,settings.colors.backgroundWidgets,4)
                 --reaper.ImGui_DrawList_AddRect(draw_list,posX, posY,posX + volumeSliderW,posY+volumeSliderH,settings.colors.buttonsBitDarker,8)
                 
                 -- slider
-                
+                --[[
                 reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_GrabMinSize(), 20)
                 reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_GrabRounding(), 0)
                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_SliderGrab(), settings.colors.backgroundWidgets)
@@ -18109,11 +18325,161 @@ local function loop()
                 
                 reaper.ImGui_PopStyleVar(ctx,2)
                 reaper.ImGui_PopStyleColor(ctx,5)
+                ]]
+                -- area for slider
+                reaper.ImGui_InvisibleButton(ctx, "##volumeslider" .. trackIndex,volumeSliderW, volumeSliderH)
                 
-                reaper.ImGui_InvisibleButton(ctx, "##volumeslider" .. trackIndex,volumeSliderW, volumeSliderH) 
                 local minX, minY = reaper.ImGui_GetItemRectMin(ctx)
                 local maxX, maxY = reaper.ImGui_GetItemRectMax(ctx)
+                local sliderW = maxX - minX
+                local sliderH = maxY - minY
                 
+                -- peaks
+                --local posX, posY = reaper.ImGui_GetCursorScreenPos(ctx)
+                local posYStart = volumeSliderH+minY -- 1
+                local trackCount = math.min(GetMediaTrackInfo_Value(track, 'I_NCHAN'), 10)
+                local peakWidth = (volumeSliderW - (trackCount-1))/trackCount
+                
+                
+                local function addValue(tbl, val)
+                    table.insert(tbl, val)         -- add new value at the end
+                    local maxSize = 5
+                    if #tbl > maxSize then
+                        table.remove(tbl, 1)       -- remove oldest value (first element)
+                    end
+                    return tbl
+                end
+                
+                local function average(tbl)
+                    local sum = 0
+                    for _, v in ipairs(tbl) do
+                        sum = sum + v
+                    end
+                    return sum / #tbl
+                end
+                local function slowRound(x)
+                    if x <= 0.0000001 then return 0 elseif x > 1 then x = 1 end
+                    local k = 5
+                    local p = 0.55--k/10  -- <1 means faster climb near 0
+                    local B = 1 / (1 - math.exp(-k))
+                    return B * (1 - math.exp(-k * (x^p)))
+                end
+                
+                
+                if not lastPeak then lastPeak = {} end
+                if not lastPeakHeight then lastPeakHeight = {} end
+                if not lastPeakIgnored then lastPeakIgnored = {} end
+                if not peakPeaked then peakPeaked = {}; clear = true else clear = false end
+                if not peakHold then peakHold = {} end
+                if not peakHoldCount then peakHoldCount = {} end
+                --reaper.ImGui_DrawList_AddRectFilled(draw_list,minX, minY,maxX,maxY,settings.colors.backgroundModules,8)
+                for i = 0, trackCount - 1 do
+                    if not lastPeak[i] then lastPeak[i] = {} end
+                    local peak = reaper.Track_GetPeakInfo( track, i )
+                    --local peakHold = (db_to_slider((reaper.Track_GetPeakHoldDB( track, i, clear ) + 0.122) * 100))
+                    --peakHold = db_to_slider(sliderFromDB(peakHold))
+                    --aa1 = (peakHold)
+                    --aa2 = (reaper.Track_GetPeakHoldDB( track, i, clear ) * 100)
+                    if peak > 1 then peakPeaked[i] = true end
+                    
+                    
+                    
+                    
+                    --local peak = --peak_exponential(math.floor(reaper.Track_GetPeakInfo( track, i ) * 10000000)/10000000, volumeSliderH)
+                    --[[
+                    if lastPeak[i] then
+                        if slider_to_db(lastPeak[i]) - slider_to_db(peak) > 1 then 
+                            peak = lastPeak[i]
+                            lastPeak[i] = (peak + lastPeak[i]) / 2
+                        else
+                            --lastPeak[i] = peak
+                        end
+                    else
+                        lastPeak[i] = peak
+                    end
+                    ]]
+                    
+                    --addValue(lastPeak[i], peak)
+                    flattenPeak = slowRound(peak) --slowRound(average(lastPeak[i]))
+                    a1 = flattenPeak 
+                    if not peakHold[i] or peakHold[i] < flattenPeak then 
+                        peakHold[i] = flattenPeak 
+                    else
+                        if not peakHoldCount[i] then
+                            peakHoldCount[i] = 0
+                        else
+                            peakHoldCount[i] = peakHoldCount[i] + 1
+                            -- TODO: make variable peak hold release
+                            if peakHoldCount[i] > 33 then
+                                peakHoldCount[i] = 0
+                                peakHold[i] = flattenPeak 
+                            end
+                        end 
+                    end
+                    
+                    --local posXStart = math.floor(posX + (i * (peakWidth + 1)) + peakWidth / 2)
+                    --reaper.ImGui_DrawList_AddLine(draw_list, posXStart, posYStart, posXStart, posYStart - (volumeSliderH * (peaks)), colorOrange,peakWidth) 
+                    local posXStart = math.floor(minX + (i * (peakWidth + 1)))
+                    if flattenPeak > 0 then
+                        -- we do this to avoid the weird drops that are in the peak meter
+                        local peakHeight = volumeSliderH * (flattenPeak)
+                        if lastPeakHeight[i] and lastPeakHeight[i] - peakHeight > 20 and not lastPeakIgnored[i] then
+                            peakHeight = lastPeakHeight[i]
+                            lastPeakIgnored[i] = true
+                        else
+                            lastPeakHeight[i] = peakHeight
+                            lastPeakIgnored[i] = false
+                        end
+                        reaper.ImGui_DrawList_AddRectFilledMultiColor(draw_list, posXStart, minY, posXStart+peakWidth, maxY, settings.colors.trackControlPeakMax,settings.colors.trackControlPeakMax, settings.colors.trackControlPeakMin, settings.colors.trackControlPeakMin) 
+                        reaper.ImGui_DrawList_AddRectFilled(draw_list, posXStart, posYStart - peakHeight, posXStart+peakWidth, minY, settings.colors.backgroundModules) 
+                        if peakPeaked[i] then 
+                            reaper.ImGui_DrawList_AddRectFilled(draw_list, posXStart, minY-3, posXStart+peakWidth, minY, settings.colors.trackControlPeakMax, 0) 
+                        end
+                        
+                        if peakHold[i] and peakHold[i] > 0 and peakHold[i] < 1 then 
+                            reaper.ImGui_DrawList_AddRectFilled(draw_list, posXStart, posYStart-peakHold[i]*volumeSliderH, posXStart+peakWidth, posYStart-peakHold[i]*volumeSliderH - 1, settings.colors.trackControlPeakMin, 0) 
+                        end
+                        --reaper.ImGui_DrawList_AddRectFilled(draw_list, posXStart, posYStart - (volumeSliderH * (peaks)), posXStart+peakWidth, posYStart, settings.colors.trackControlPeakMin) 
+                    end
+                    if lastPeak[i] then
+                    
+                    end
+                end 
+                
+                -- slider line
+                reaper.ImGui_DrawList_AddLine(draw_list,minX + sliderW/2-1,minY,minX + sliderW/2-1,maxY,settings.colors.backgroundWidgets,4)
+                
+                local colorOfVal = colorText & 0xFFFFFF77
+                local hideValIfLessThen = 360
+                local valTextOffset = 6
+                if volumeSliderH > 360 then
+                    reaper.ImGui_DrawList_AddText(draw_list, minX+valTextOffset+7, maxY - volumeSliderH * db_to_slider(11.1), colorOfVal, "-6.0")
+                end
+                reaper.ImGui_DrawList_AddText(draw_list, minX+valTextOffset, maxY - volumeSliderH * db_to_slider(7.8), colorOfVal, "-12.0")
+                
+                if volumeSliderH > 300 then
+                    reaper.ImGui_DrawList_AddText(draw_list, minX+valTextOffset, maxY - volumeSliderH * db_to_slider(2), colorOfVal, "-18.0")
+                end
+                
+                reaper.ImGui_DrawList_AddText(draw_list, minX+valTextOffset, maxY - volumeSliderH * db_to_slider(-6), colorOfVal, "-24.0")
+                
+                if volumeSliderH > 300 then
+                    reaper.ImGui_DrawList_AddText(draw_list, minX+valTextOffset, maxY - volumeSliderH * db_to_slider(-15), colorOfVal, "-30.0")
+                end
+                reaper.ImGui_DrawList_AddText(draw_list, minX+valTextOffset, maxY - volumeSliderH * db_to_slider(-24), colorOfVal, "-36.0")
+                
+                if volumeSliderH > 300 then
+                reaper.ImGui_DrawList_AddText(draw_list, minX+valTextOffset, maxY - volumeSliderH * db_to_slider(-34), colorOfVal, "-42.0")
+                end
+                
+                if volumeSliderH <= 300 then
+                    reaper.ImGui_DrawList_AddText(draw_list, minX+valTextOffset, maxY - volumeSliderH * db_to_slider(-42), colorOfVal, "-48.0")
+                end
+                if volumeSliderH > 300 then
+                    reaper.ImGui_DrawList_AddText(draw_list, minX+valTextOffset, maxY - volumeSliderH * db_to_slider(-50.8), colorOfVal, "-54.0")
+                end
+                
+                local sliderImageY = posYOffset + (volumeSliderH - heightUsed) * (1 - slider_pos) ---30 + posYOffset + volumeSliderH - ((volumeSliderH - padding * 2 - 15) * slider_pos)
                 
                 local isInsideFaderArea = false
                 
@@ -18127,7 +18493,10 @@ local function loop()
                     end
                     isInsideFaderArea = true
                     
+                    
                     if isScrollValue then
+                    
+                    --setTrackValuesLinkVolume("D_VOL", relativeValue, volume, 0, 1)
                         --if scrollVertical ~= 0 then
                             new_slider_pos = new_slider_pos - (scrollVertical / (shift and 1000 or 100))
                             if new_slider_pos > 1 then new_slider_pos = 1
@@ -18135,25 +18504,33 @@ local function loop()
                             changed = true
                         --end
                         ignoreScrollHorizontal = true
+                        if settings.showVolumeValueInPopup then
+                            setToolTip = {text = text, x = minX + width + volumeSliderX, y = sliderImageY + height/2}
+                        end
+                    else
+                        setToolTip = nil
                     end
                 end
+                
                 
                 if faderStartPos then
                     new_slider_pos = (faderStartPos - mouse_pos_y_imgui) / (maxY - minY) + slider_pos 
                     if new_slider_pos > 1 then new_slider_pos = 1
                     elseif new_slider_pos < 0 then new_slider_pos = 0
                     else faderStartPos = mouse_pos_y_imgui end
-                    if isInsideFaderArea then
-                        faderStartPos = mouse_pos_y_imgui  
-                    end
+                    --if isInsideFaderArea then
+                    --    faderStartPos = mouse_pos_y_imgui  
+                    --end
                     if settings.hideMouseOnDrag then
                         reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
                     end
+                    
+                    if settings.showVolumeValueInPopup then
+                        setToolTip = {text = text, x = minX + width + volumeSliderX, y = sliderImageY + height/2}
+                    end
                 end
+                volume = getTrackUIStartAutomation(volume, "Volume", faderStartPos)
                 
-                
-                local new_db = slider_to_db(new_slider_pos)
-                if new_db <= DB_MIN then new_db = DB_INF end
                 
                 
                 
@@ -18162,13 +18539,13 @@ local function loop()
                 if changed then
                     local newVolume = new_db == DB_INF and 0 or sliderFromDB(new_db)
                     if (isMouseDoubleClickImgui or (isMouseClick and super)) then 
-                        setTrackValuesLinkVolume("D_VOL", db_to_slider(0) - slider_pos, 0, 1) 
+                        setTrackValuesLinkVolume("D_VOL", db_to_slider(0) - slider_pos,volume, 0, 1) 
                         resetVolume = true
                     end
                     if not resetVolume then
                         local relativeValue = new_slider_pos - slider_pos --(math.floor((new_slider_pos - slider_pos) * 10000)/10000) 
                         --if resetVolume then newVolume = 1 end
-                        setTrackValuesLinkVolume("D_VOL", relativeValue, 0, 1)
+                        setTrackValuesLinkVolume("D_VOL", relativeValue, volume, 0, 1)
                     end
                 end
                 if isMouseReleased then
@@ -18177,14 +18554,20 @@ local function loop()
                 
                 
                 
-                local text = string.format("%.1f dB", new_db == DB_INF and -math.huge or new_db)
+                local sliderImageX = volumeSliderX
+                --local sliderImageY = -30 + posYOffset + volumeSliderH - ((volumeSliderH - padding * 2 - 15) * slider_pos)
+                
                 --centerText(text, colorWhite, volumeSliderX, volumeSliderW, -4, posYOffset + volumeSliderH - padding * 2.4 - ((volumeSliderH - padding * 3) * new_slider_pos)) 
-                reaper.ImGui_SetCursorPos(ctx, volumeSliderX, -30 + posYOffset + volumeSliderH - ((volumeSliderH - padding * 2 - 15) * new_slider_pos))
-                reaper.ImGui_Button(ctx, text, volumeSliderW, 30)
+                reaper.ImGui_SetCursorPos(ctx, volumeSliderX, sliderImageY)
+                if useImages then 
+                    reaper.ImGui_Image(ctx, images[faderImagePath].image, width, height, images[faderImagePath].x1, images[faderImagePath].y1, images[faderImagePath].x2, images[faderImagePath].y2)  
+                else
+                    reaper.ImGui_Button(ctx, text, volumeSliderW, height)
+                end
                 
                 
                 function buttonWithColor(parm, name, color, offColor) 
-                    local curVal = reaper.GetMediaTrackInfo_Value(track, parm)
+                    local curVal = GetMediaTrackInfo_Value(track, parm)
                     local isActive =  curVal == (flip and 0 or 1)
                     --color = (offColor and not colorsOnButton) and colorWhite or color
                     offColor = offColor and offColor or (colorsOnButtons and color or colorText)
@@ -18230,7 +18613,9 @@ local function loop()
                 if settings.showFXButton then
                     reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
                     buttonWithColor("I_FXEN", "FX", colorsOnButtons and colorDarkGreen or colorWhite, colorRedHidden)
+                    posYOffset = posYOffset + buttonW + padding/2
                 end
+                
                 
                 
                 reaper.ImGui_PopFont(ctx)
@@ -18391,67 +18776,72 @@ local function loop()
                                     local receiveParam = GetParamName(track, fxIndex, param)
                                     
                                     local baseline = getModBassline(track, fxIndex, param)
-                                    local retStaticValueName, staticValueName = FormatParamValue( track, fxIndex, param, baseline )
-                                    if retStaticValueName and staticValueName then
-                                        baseline = staticValueName
-                                    end
-                                    
-                                    local width = getPlinkScale(track, fxIndex, param) * 100
-                                    
-                                    reaper.ImGui_TableNextRow(ctx)
-                                    
-                                    
-                                    reaper.ImGui_TableNextColumn(ctx)
-                                    reaper.ImGui_Selectable(ctx, receiveName .. '##' .. fxIndex, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
-                                    reaper.ImGui_Selectable(ctx, receiveParam .. '##' .. fxIndex, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
-                                    
-                                    
-                                    reaper.ImGui_TableNextColumn(ctx) 
-                                    reaper.ImGui_Selectable(ctx, sendName .. '##' .. fxIndex, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
-                                    if hasMoreOutputs then
-                                        reaper.ImGui_Selectable(ctx, sendParam .. '##' .. fxIndex, false, nil, tableWidth/6)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then  
-                                    else
-                                        reaper.ImGui_Dummy(ctx,tableWidth/6, 10)
-                                    end
-                                    
-                                    reaper.ImGui_SameLine(ctx, tableWidth/6+6)
-                                    
-                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), p.isCurved and colorText or colorTextDimmed)
-                                    reaper.ImGui_Selectable(ctx, "Curve" .. '##' .. fxIndex, false, nil, tableWidth/6)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then  
-                                    reaper.ImGui_PopStyleColor(ctx)
-                                    
-                                    reaper.ImGui_TableNextColumn(ctx)
-                                    if reaper.ImGui_Selectable(ctx, baseline .. '##value' .. fxIndex .. param, false) then-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then  
+                                    if baseline then
+                                        local retStaticValueName, staticValueName = FormatParamValue( track, fxIndex, param, baseline )
+                                        if retStaticValueName and staticValueName then
+                                            baseline = staticValueName
+                                        end
                                         
+                                        local widthNormalized = getPlinkScale(track, fxIndex, param)
+                                        
+                                        reaper.ImGui_TableNextRow(ctx)
+                                        
+                                        
+                                        reaper.ImGui_TableNextColumn(ctx)
+                                        reaper.ImGui_Selectable(ctx, receiveName .. '##' .. fxIndex, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                                        reaper.ImGui_Selectable(ctx, receiveParam .. '##' .. fxIndex, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                                        
+                                        
+                                        reaper.ImGui_TableNextColumn(ctx) 
+                                        reaper.ImGui_Selectable(ctx, sendName .. '##' .. fxIndex, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                                        if hasMoreOutputs then
+                                            reaper.ImGui_Selectable(ctx, sendParam .. '##' .. fxIndex, false, nil, tableWidth/6)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then  
+                                        else
+                                            reaper.ImGui_Dummy(ctx,tableWidth/6, 10)
+                                        end
+                                        
+                                        reaper.ImGui_SameLine(ctx, tableWidth/6+6)
+                                        
+                                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), p.isCurved and colorText or colorTextDimmed)
+                                        reaper.ImGui_Selectable(ctx, "Curve" .. '##' .. fxIndex, false, nil, tableWidth/6)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then  
+                                        reaper.ImGui_PopStyleColor(ctx)
+                                        
+                                        reaper.ImGui_TableNextColumn(ctx)
+                                        if reaper.ImGui_Selectable(ctx, baseline .. '##value' .. fxIndex .. param, false) then-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then  
+                                            
+                                        end
+                                        if reaper.ImGui_IsItemHovered(ctx) and isMouseClick then
+                                            if not dragKnob then 
+                                                dragKnob = "baselineWindow" .. moduleId
+                                                mouseDragStartX = mouse_pos_x
+                                                mouseDragStartY = mouse_pos_y
+                                            end 
+                                        end
+                                        
+                                        if widthNormalized then 
+                                            local width = widthNormalized * 100
+                                            reaper.ImGui_Selectable(ctx, width .. ' %##value' .. fxIndex .. param, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                                            if reaper.ImGui_IsItemHovered(ctx) and isMouseClick then
+                                                if not dragKnob then 
+                                                    dragKnob = "widthWindow" .. moduleId
+                                                    mouseDragStartX = mouse_pos_x
+                                                    mouseDragStartY = mouse_pos_y
+                                                end 
+                                            end
+                                        end
+                                        
+                                        
+                                        if dragKnob then
+                                            p = getAllDataFromParameter(track, fxIndex, param)
+                                            setParameterValuesViaMouse(track, "Window", moduleId, p, p.range, p.min, p.currentValue, 100, nil, nil,nil,true)
+                                        end
+                                        --if startPosY - scrollPos < scrollAreaHeight and (startPosY + sliderHeight + 16) - scrollPos > 0 then
+                                            --pluginParameterSlider("parameter",getAllDataFromParameter(track,f.fxIndex,f.param),false,true,false,nil,20,nil,nil,nil,true, nil, true, false)--, shownCount - 1, parameterColumnAmount)
+                                        --else
+                                        --    reaper.ImGui_Dummy(ctx, 20,20)
+                                            --dummySlider(parameterLinkActive, useKnobs, useNarrow)
+                                        --end
                                     end
-                                    if reaper.ImGui_IsItemHovered(ctx) and isMouseClick then
-                                        if not dragKnob then 
-                                            dragKnob = "baselineWindow" .. moduleId
-                                            mouseDragStartX = mouse_pos_x
-                                            mouseDragStartY = mouse_pos_y
-                                        end 
-                                    end
-                                    
-                                    reaper.ImGui_Selectable(ctx, width .. ' %##value' .. fxIndex .. param, false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
-                                    if reaper.ImGui_IsItemHovered(ctx) and isMouseClick then
-                                        if not dragKnob then 
-                                            dragKnob = "widthWindow" .. moduleId
-                                            mouseDragStartX = mouse_pos_x
-                                            mouseDragStartY = mouse_pos_y
-                                        end 
-                                    end
-                                    
-                                    
-                                    if dragKnob then
-                                        p = getAllDataFromParameter(track, fxIndex, param)
-                                        setParameterValuesViaMouse(track, "Window", moduleId, p, p.range, p.min, p.currentValue, 100, nil, nil,nil,true)
-                                    end
-                                    --if startPosY - scrollPos < scrollAreaHeight and (startPosY + sliderHeight + 16) - scrollPos > 0 then
-                                        --pluginParameterSlider("parameter",getAllDataFromParameter(track,f.fxIndex,f.param),false,true,false,nil,20,nil,nil,nil,true, nil, true, false)--, shownCount - 1, parameterColumnAmount)
-                                    --else
-                                    --    reaper.ImGui_Dummy(ctx, 20,20)
-                                        --dummySlider(parameterLinkActive, useKnobs, useNarrow)
-                                    --end
                                 
                                 end
                                 
@@ -18694,7 +19084,7 @@ local function loop()
                 
                 --placingOfNextElement()
                 --drawSeperator()
-            local isMuted = track and GetMuted(track)
+            local isMuted = track and GetMuted(track, true)
             local disable = not track or isMuted 
             elementsHeightInHorizontal = winH - y --28 
             elementsWidthInVertical = winW - x - 8-- margin * 4
