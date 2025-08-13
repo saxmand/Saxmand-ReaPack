@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.5.2
+-- @version 1.5.3
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,14 +18,13 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + added individual color for scroll bar grabs 
---   + fixed too wide plugin list in vertical mode
-
+--   + fixed a bunch of things with track control and modifiers 
+ 
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.5.2"
+local version = "1.5.3"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -605,6 +604,7 @@ local defaultSettings = {
     
     knobResolution = 100,
     hideMouseOnDrag = true,
+    hideMouseOnScroll = true,
     resetMouseWhenReachingWindowEdge = true,
     keepMouseAtClickPosition = true,
     
@@ -2406,6 +2406,7 @@ function FormatParamValue(track, index, param, val, doNotUseCatch)
 end
 
 function GetParameterStepSizes(track, index, param, doNotUseCatch)
+    if not track or not index or not param then return end
     local tableStr = param .. "::GetParameterStepSizes"
     local catch = getParameterTableCatch(track, index, tableStr, 1)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
@@ -2418,6 +2419,7 @@ function GetParameterStepSizes(track, index, param, doNotUseCatch)
 end
 
 function GetEnabled(track, index, doNotUseCatch)
+    if not track or not index then return end
     local tableStr = "::GetEnabled"
     local catch = getParameterTableCatch(track, index, tableStr, 2)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
@@ -2430,6 +2432,7 @@ function GetEnabled(track, index, doNotUseCatch)
 end
 
 function GetOpen(track, index, doNotUseCatch)
+    if not track or not index then return end
     local tableStr = "::GetOpen"
     local catch = getParameterTableCatch(track, index, tableStr)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
@@ -2442,6 +2445,7 @@ function GetOpen(track, index, doNotUseCatch)
 end
 
 function GetFloatingWindow(track, index, doNotUseCatch)
+    if not track or not index then return end
     local tableStr = "::GetFloatingWindow"
     local catch = getParameterTableCatch(track, index, tableStr)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
@@ -10001,7 +10005,6 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
         if (isAdjustWidthToggle and dragKnob == "baseline" .. id) or ((isAnyMouseDown or isScrollValue) and dragKnob == "width" .. id) then
             valueName = (linkWidth * 100) .. "%"
         end
-        
     end
     
     if id and useNarrow and ((dragKnob == "baseline" .. id and (isMouseDown or isScrollValue))) then -- or ((isAnyMouseDown or isScrollValue) and dragKnob == "width" .. id)) then
@@ -12800,6 +12803,13 @@ function appSettingsWindow()
                     end
                     setToolTipFunc("Enable to hide the mouse course on drag")  
                     
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Hide mouse cursor on scroll##",settings.hideMouseOnScroll) 
+                    if ret then 
+                        settings.hideMouseOnScroll = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Enable to hide the mouse course when scrolling values")  
+                    
                     local ret, val = reaper.ImGui_Checkbox(ctx,"Reset mouse cursor on window edge##",settings.resetMouseWhenReachingWindowEdge) 
                     if ret then 
                         settings.resetMouseWhenReachingWindowEdge = val
@@ -15132,6 +15142,7 @@ local function loop()
         end
         return true
     end
+    
     function isMatchExact(optionMods, currentMods)
         for mod, required in pairs(currentMods) do
             if not optionMods[mod] == required then
@@ -15145,6 +15156,18 @@ local function loop()
         local match =  isMatch(requiredMods, modifierTable)
         local varName = "is" .. name:sub(1,1):upper() .. name:sub(2)
         _G[varName] = match
+        if name == "scrollValue" then
+            aa = requiredMods
+            aa1 = isScrollValue
+        end
+    end
+    
+    if isMatchExact(settings.modifierOptionsParameter.fineAdjust, noModifiersTable) then
+        isFineAdjust = false
+    end
+    
+    if isMatchExact(settings.modifierOptionsParameter.adjustWidth, noModifiersTable) then
+        isAdjustWidth = false
     end
     
     for name, requiredMods in pairs(settings.modifierOptionsParameterClick) do
@@ -15217,13 +15240,13 @@ local function loop()
     end
     
     scrollVertical, scrollHorizontal = reaper.ImGui_GetMouseWheel(ctx)
-    
+
     -- Add a scroll modifier to bypass isScrollValue and allow scrolling windows 
     local isScrollValueNoModifiers = isMatchExact(settings.modifierOptionsParameter.scrollValue, noModifiersTable)
-    if isScrollValueNoModifiers and not dragKnob then
+    if isScrollValue and not dragKnob then
         isScrollValue = false
     end
-    if isMatchExact(settings.modifierEnablingScrollVerticalVertical, modifierTable) and not isMatchExact(settings.modifierEnablingScrollVerticalVertical, noModifiersTable) then
+    if isScrollValue and not dragKnob and not isMatchExact(settings.modifierEnablingScrollVerticalVertical, noModifiersTable) then
         isScrollValue = false
     end
     
@@ -17072,10 +17095,10 @@ local function loop()
                         
                         -- instead of -12 we use -14 so in case we do fixed size, it still works
                         local width_child = elementsWidthInVertical - 14
-                        local height_child = elementsHeightInHorizontal - 14
+                        local height_child = elementsHeightInHorizontal -4- margin
                         
                         local pluginsListWidth = vertical and elementsWidthInVertical - 14 - 12 or settings.pluginsWidth
-                        local pluginsListHeight = vertical and settings.pluginsHeight or elementsHeightInHorizontal - 14
+                        local pluginsListHeight = vertical and settings.pluginsHeight or elementsHeightInHorizontal - margin
                         local heightAutoAdjust = not isCollabsed and not (not vertical or settings.alwaysUsePluginsHeight)
                         local childPosSize = 20
                         local childPosMargin = 0
@@ -18298,7 +18321,7 @@ local function loop()
                         end
                         
                         local toolTipX = screenPosX - winX
-                        local toolTipY = screenPosY - winY
+                        local toolTipY = screenPosY - winY + panW
                         
                         if dragKnobParm then
                             if isMouseDown then 
@@ -18311,9 +18334,13 @@ local function loop()
                                     reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
                                 end
                             elseif isScrollValue then
-                                local relativeValue = -scrollVertical / (shift and 1000 or 100) 
+                                local relativeValue = -scrollVertical / (isFineAdjust and 1000 or 100) 
                                 setTrackValuesLink(dragKnobParm, nil, relativeValue, nil, -1, 1) 
                                 setToolTip = dragKnob and {text = panAmountText, x = toolTipX, y = toolTipY} or false
+                                
+                                if settings.hideMouseOnScroll then
+                                    reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
+                                end
                             else
                                 dragKnobParm = nil
                                 setToolTip = nil
@@ -18480,6 +18507,8 @@ local function loop()
                 reaper.ImGui_PopStyleColor(ctx,5)
                 ]]
                 -- area for slider
+                
+                local screenPosX, screenPosY = reaper.ImGui_GetCursorScreenPos(ctx)
                 if reaper.ImGui_InvisibleButton(ctx, "##volumeslider" .. tostring(trackIndex),volumeSliderW, volumeSliderH) then
                     peakPeaked = nil
                 end
@@ -18640,52 +18669,65 @@ local function loop()
                 local new_slider_pos = slider_pos
                 --local change, faderStartPos -- move to start of script
                 if isMouseReleased then faderStartPos = false; changed = false; end
-                if mouse_pos_x_imgui >= minX and mouse_pos_x_imgui <= maxX and mouse_pos_y_imgui >= minY and mouse_pos_y_imgui <= maxY then
-                    if isMouseClick then
-                        faderStartPos = mouse_pos_y_imgui
+                --if mouse_pos_x_imgui >= minX and mouse_pos_x_imgui <= maxX and mouse_pos_y_imgui >= minY and mouse_pos_y_imgui <= maxY then
+                
+                
+                
+                local toolTipX = screenPosX - winX
+                local toolTipY = screenPosY - winY + slider_pos
+                
+                if reaper.ImGui_IsItemHovered(ctx) then
+                    if not dragKnob then 
+                        dragKnob2 = "Volume"
+                        dragKnob = "Volume"
+                    end 
+                end
+                
+                if dragKnob2 == "Volume" then
+                    --isInsideFaderArea = true 
+                    local grains = (isFineAdjust and 100 * settings.fineAdjustAmount or 100)
+                    if isMouseDown then
+                        if not faderStartPos then 
+                            faderStartPos = mouse_pos_y_imgui
+                        end
+                        new_slider_pos = ((faderStartPos - mouse_pos_y_imgui)* (100/grains)) / (maxY - minY) + slider_pos
+                        if new_slider_pos > 1 then new_slider_pos = 1
+                        elseif new_slider_pos < 0 then new_slider_pos = 0 end
+                        --else faderStartPos = mouse_pos_y_imgui end
+                        --if isInsideFaderArea then
+                            faderStartPos = mouse_pos_y_imgui  
+                        --end
+                        if settings.hideMouseOnDrag then
+                            reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
+                        end
+                        
+                        if settings.showVolumeValueInPopup then
+                            setToolTip = {text = text, x = toolTipX, y = toolTipY}
+                        end
                         changed = true
-                    end
-                    isInsideFaderArea = true
-                    
-                    
-                    if isScrollValue then
-                    
-                    --setTrackValuesLinkVolume("D_VOL", relativeValue, volume, 0, 1)
+                    elseif isScrollValue then 
                         --if scrollVertical ~= 0 then
-                            new_slider_pos = new_slider_pos - (scrollVertical / (shift and 1000 or 100))
+                            new_slider_pos = new_slider_pos - (scrollVertical / grains)
                             if new_slider_pos > 1 then new_slider_pos = 1
                             elseif new_slider_pos < 0 then new_slider_pos = 0 end
                             changed = true
                         --end
+                        
                         ignoreScrollHorizontal = true
                         if settings.showVolumeValueInPopup then
-                            setToolTip = {text = text, x = minX + width + volumeSliderX, y = sliderImageY + height/2}
+                            setToolTip = {text = text, x = toolTipX, y = toolTipY}
+                        end
+                        if settings.hideMouseOnScroll then
+                            reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
                         end
                     else
+                        dragKnob2 = nil
                         setToolTip = nil
+                        faderStartPos = nil
                     end
                 end
                 
-                
-                if faderStartPos then
-                    new_slider_pos = (faderStartPos - mouse_pos_y_imgui) / (maxY - minY) + slider_pos 
-                    if new_slider_pos > 1 then new_slider_pos = 1
-                    elseif new_slider_pos < 0 then new_slider_pos = 0
-                    else faderStartPos = mouse_pos_y_imgui end
-                    --if isInsideFaderArea then
-                    --    faderStartPos = mouse_pos_y_imgui  
-                    --end
-                    if settings.hideMouseOnDrag then
-                        reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
-                    end
-                    
-                    if settings.showVolumeValueInPopup then
-                        setToolTip = {text = text, x = minX + width + volumeSliderX, y = sliderImageY + height/2}
-                    end
-                end
                 volume = getTrackUIStartAutomation(volume, "Volume", faderStartPos)
-                
-                
                 
                 
                 
@@ -19314,8 +19356,7 @@ local function loop()
                     reaper.ImGui_EndChild(ctx)
                 end
             elseif settings.showInsertOptionsWhenNoTrackIsSelected then 
-                insertOptionsTables(mainAreaW, mainAreaH)
-                
+                insertOptionsTables(mainAreaW, mainAreaH) 
             end
                 
                 if setToolTip then
