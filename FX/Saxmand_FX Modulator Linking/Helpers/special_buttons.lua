@@ -1,4 +1,5 @@
 --@noindex
+-- updated to use imgui 0.10.0.0
 
 local buttons = {}
 local colorTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0, 0, 0, 0)
@@ -19,7 +20,7 @@ function buttons.close(ctx, x, y, size, onlyXOnHover, id, textColor, textColorHo
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), backgroundColorHover and backgroundColorHover or colorRedHidden)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), backgroundColorHover and backgroundColorHover or colorRedHidden)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorTransparent)
-    reaper.ImGui_PushFont(ctx, closeTitle)
+    --reaper.ImGui_PushFont(ctx, closeTitle)
 
     local click = false
     --[[
@@ -46,7 +47,7 @@ function buttons.close(ctx, x, y, size, onlyXOnHover, id, textColor, textColorHo
     end
 
 
-    reaper.ImGui_PopFont(ctx)
+    --reaper.ImGui_PopFont(ctx)
     reaper.ImGui_PopStyleColor(ctx, 4)
     reaper.ImGui_PopStyleVar(ctx, 1)
     return click
@@ -59,7 +60,7 @@ function buttons.fullscreen(ctx, x, y, size)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorGreen)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorGreen)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorTransparent)
-    reaper.ImGui_PushFont(ctx, closeTitle)
+    --reaper.ImGui_PushFont(ctx, closeTitle)
 
     local click = false
     if reaper.ImGui_Button(ctx, "##fullscreen", size + 1, size + 1) then
@@ -72,7 +73,7 @@ function buttons.fullscreen(ctx, x, y, size)
     reaper.ImGui_DrawList_AddLine(draw_list, posX + size/2, posY+ crop - 1, posX + size/2, posY - crop + size, colorWhite, 2)
 
 
-    reaper.ImGui_PopFont(ctx)
+    --reaper.ImGui_PopFont(ctx)
     reaper.ImGui_PopStyleColor(ctx, 4)
     reaper.ImGui_PopStyleVar(ctx, 1)
     return click
@@ -86,7 +87,7 @@ function buttons.openClose(ctx, id, x, y, size, open)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorGreen)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorGreen)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorTransparent)
-    reaper.ImGui_PushFont(ctx, closeTitle)
+    --reaper.ImGui_PushFont(ctx, closeTitle)
 
     local click = false
     if reaper.ImGui_Button(ctx, "##" .. id, size + 1, size + 1) then
@@ -100,7 +101,7 @@ function buttons.openClose(ctx, id, x, y, size, open)
     end
 
 
-    reaper.ImGui_PopFont(ctx)
+    --reaper.ImGui_PopFont(ctx)
     reaper.ImGui_PopStyleColor(ctx, 4)
     reaper.ImGui_PopStyleVar(ctx, 1)
     return click
@@ -216,7 +217,7 @@ function buttons.knob(ctx, id, relativePosX, relativePosY, size, amount, textOnT
     if dragKnob and dragKnob == id and textOnTop then
         reaper.ImGui_DrawList_AddRectFilled(draw_list, x - 1, y - 1, x + size + 1, y + size + 1, textOverlayColorBackground, 3, nil)
         --reaper.ImGui_SetCursorPos(ctx, curPosX + relativePosX, curPosY + relativePosY - 4)
-        reaper.ImGui_PushFont(ctx, font10)            
+        reaper.ImGui_PushFont(ctx, font, 10)            
         reaper.ImGui_DrawList_AddText(draw_list, x, y, textOverlayColor, textOnTop)
         --reaper.ImGui_Text(ctx, textOnTop)
         reaper.ImGui_PopFont(ctx)

@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.4.6
+-- @version 1.4.7
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,13 +17,13 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + sexan fx_parser_list only creates index files one user interaction
---   + some bug fix for images
+--   + updated to use imgui 0.10.0.0
+--   + fixed issue with fx parser sub folders
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.4.6"
+local version = "1.4.7"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -43,7 +43,8 @@ local getFXList = require("get_fx_list").getFXList
 local fx_parser_list = require("fx_parser_list")
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
-local ImGui = require 'imgui' '0.9.3.3'
+local ImGui = require 'imgui' '0.10.0.0'
+--local ImGui = require 'imgui' '0.9.3.3'
 local stateName = "ModulationLinking"
 local appName = "FX Modulator Linking"
 
@@ -5023,7 +5024,7 @@ function titleButtonStyle(name, tooltipText, sizeW, bigText, background, sizeH)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),background and settings.colors.menuBar or colorTransparent)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(),colorText)
     local clicked = false
-    if bigText then reaper.ImGui_PushFont(ctx, font2) end
+    if bigText then reaper.ImGui_PushFont(ctx, font2,17) end
     
     reaper.ImGui_PushStyleVar(ctx,reaper.ImGui_StyleVar_FrameRounding(),5)
     
@@ -5060,7 +5061,7 @@ function verticalButtonStyle(name, tooltipText, sizeW, verticalName, background,
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(),colorText)
     local clicked = false 
     
-    reaper.ImGui_PushFont(ctx, font2)
+    reaper.ImGui_PushFont(ctx, font2,17)
     reaper.ImGui_PushStyleVar(ctx,reaper.ImGui_StyleVar_FrameRounding(),5)
     
     
@@ -5209,7 +5210,7 @@ function drawHeaderText(title, x, y, w, h, vertical, textMargin, color, align, t
     y = y + (vertical and 2 or textMargin)
     color = color and color or colorText
     
-    reaper.ImGui_PushFont(ctx, textSize and _G["font"..textSize] or font15) 
+    reaper.ImGui_PushFont(ctx, textSize and _G["font"..textSize] or font15, textSize and textSize or 15) 
     local lastPos, points
     if vertical then 
         lastPos = reaper.ImGui_CalcTextSize(ctx, title, 0,0)  
@@ -5265,7 +5266,7 @@ function drawInvisibleDummyButtonAtScreenPos(x,y,w,h)
     w = w > 0 and w or 20
     h = h > 0 and h or 20
     reaper.ImGui_SetCursorScreenPos(ctx, x, y)
-    reaper.ImGui_InvisibleButton(ctx,"dummy", w, h)
+    reaper.ImGui_InvisibleButton(ctx,"dummy:" .. x .. ":" .. y .. ":" .. w ..":" .. h , w, h)
 end
 
 function drawHeaderTextAndGetHover(title, x, y, w, h, isCollabsed, vertical, textMargin, toolTipText, color, align, bgX, bgW)  
@@ -5275,7 +5276,7 @@ function drawHeaderTextAndGetHover(title, x, y, w, h, isCollabsed, vertical, tex
     bgW = bgW > 0 and bgW or 20
     
     reaper.ImGui_SetCursorScreenPos(ctx, (vertical and bgX) and bgX or x, (vertical or not bgX) and y or bgX)
-    reaper.ImGui_InvisibleButton(ctx, "##bg" .. x .. ":" .. y .. ":" .. w .. ":" .. h, (vertical and bgW) and bgW or headerSizeW, (vertical or not bgW) and headerSizeW or bgW)
+    reaper.ImGui_InvisibleButton(ctx, "##bg" .. x .. ":" .. y .. ":" .. w .. ":" .. h .. ":" .. title, (vertical and bgW) and bgW or headerSizeW, (vertical or not bgW) and headerSizeW or bgW)
     local isHovered = reaper.ImGui_IsItemHovered(ctx)
     color = getColorForIcon(false, isHovered, color) 
     drawHeaderText(title, x, y, w, h, vertical,textMargin, color, align)
@@ -5790,7 +5791,7 @@ function drawSortingIcon(x, y, size, isActive, toolTipText)
     local isHovered = mouseInsideArea(x,y,size,size) 
     local color = getColorForIcon(isActive, isHovered) 
     
-    reaper.ImGui_PushFont(ctx, font9)
+    reaper.ImGui_PushFont(ctx, font9, 9)
     reaper.ImGui_DrawList_AddText(draw_list, pad_x+2, pad_y + 2.5, color, "AZ")
     reaper.ImGui_PopFont(ctx)
     reaper.ImGui_DrawList_AddRect(draw_list, pad_x, pad_y, pad_x + pad_size, pad_y + pad_size - 1, color & 0xFFFFFF99 , 3)
@@ -5819,7 +5820,7 @@ function drawMapOnceIcon(x, y, size, isActive, toolTipText)
     reaper.ImGui_DrawList_PathArcTo(draw_list, pad_x + pad_size*0.5, pad_y + pad_size*0.5, pad_size*0.5, 3.141592 * 0.75, 3.141592 * 2.25)
     reaper.ImGui_DrawList_PathStroke(draw_list, color & 0xFFFFFF99, reaper.ImGui_DrawFlags_None(), 1)
     
-    reaper.ImGui_PushFont(ctx, font10)
+    reaper.ImGui_PushFont(ctx, font10,10)
     reaper.ImGui_DrawList_AddText(draw_list, pad_x + pad_size /4, pad_y + pad_size / 5, color, "1")
     reaper.ImGui_PopFont(ctx)
     
@@ -6132,7 +6133,7 @@ function openCloseMappings(fx, fxIndex, mappings, floating)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),settings.colors.buttonsSpecialActive)
     local tv = #mappings -- (isShowing and ">" or "^")
     
-    reaper.ImGui_PushFont(ctx, font11) 
+    reaper.ImGui_PushFont(ctx, font11,11) 
     local size = 15
     if reaper.ImGui_Button(ctx,  "##" .. fxIndex .. tostring(floating), size,size) then
        --[[ if floating then
@@ -7037,7 +7038,7 @@ function mappingsArea(mappingWidth, mappingHeight, m, vertical, floating, isColl
     
     
     --local useFlags = childFlags
-    --useFlags = reaper.ImGui_ChildFlags_Border()
+    --useFlags = reaper.ImGui_ChildFlags_Borders()
     local useFlags = reaper.ImGui_ChildFlags_Borders() | reaper.ImGui_ChildFlags_AlwaysAutoResize() | reaper.ImGui_ChildFlags_AutoResizeY()
     if not vertical then 
         reaper.ImGui_SetNextWindowSizeConstraints(ctx, 40, 60, mappingWidth, mappingHeight)
@@ -7052,7 +7053,7 @@ function mappingsArea(mappingWidth, mappingHeight, m, vertical, floating, isColl
     local visible = reaper.ImGui_BeginChild(ctx, "mappings" .. name .. fxIndex, mappingWidth, mappingHeight, useFlags ,reaper.ImGui_WindowFlags_MenuBar() | reaper.ImGui_WindowFlags_HorizontalScrollbar())
     if visible then
         --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorDarkGrey)
-        reaper.ImGui_PushFont(ctx, font1)
+        reaper.ImGui_PushFont(ctx, font1,15)
         --reaper.ImGui_TableSetupColumn(ctx, "< Mappings")
         
         --reaper.ImGui_TableSetupScrollFreeze(ctx,1,2) 
@@ -7910,7 +7911,7 @@ function xyPad(name, id, padSize, track, fxIndex, xParam, yParam,pX, pY, padSize
     reaper.ImGui_DrawList_AddRectFilled(draw_list, minX, minY, maxX, maxY, colorButtons, 0)
     reaper.ImGui_DrawList_AddRect(draw_list, minX, minY, maxX, maxY, colorTextDimmed, 0) 
     
-    reaper.ImGui_PushFont(ctx, font2)
+    reaper.ImGui_PushFont(ctx, font2,17)
     local textW, textH = reaper.ImGui_CalcTextSize(ctx, name, 0, 0)
     reaper.ImGui_DrawList_AddText(draw_list, minX + w / 2 - textW/2, minY + h / 2 - textH / 2, colorTextDimmed, name)
     reaper.ImGui_PopFont(ctx)
@@ -9466,7 +9467,7 @@ end
 
 function titleTextStyle(name, tooltipText, sizeW, background)
     if background then
-        reaper.ImGui_PushFont(ctx, font2)
+        reaper.ImGui_PushFont(ctx, font2,17)
     end
     local clicked = false
     if not sizeW then sizeW = reaper.ImGui_CalcTextSize(ctx,name, 0,0) end
@@ -9949,7 +9950,7 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
         if settings.useKnobs and settings.showSeperationLineBeforeMappingName then
             reaper.ImGui_DrawList_AddLine(draw_list, minX+2, maxY- 13, maxX-2,maxY-13, padColor & 0xFFFFFF33, 1)     
         end
-        reaper.ImGui_PushFont(ctx, font11)
+        reaper.ImGui_PushFont(ctx, font11,11)
         
         ImGui.PushClipRect(ctx, minX, minY, maxX + ((useNarrow and not useKnobs) and 0 or spaceTaken), maxY, true) 
         local textW = reaper.ImGui_CalcTextSize(ctx, showMappingText)
@@ -14598,7 +14599,7 @@ function addingAnyModuleWindow(hwnd, moveToModulatorContainer)
     end
     --reaper.ImGui_SetCursorPos(ctx, 0, h - 20)
     
-    reaper.ImGui_PushFont(ctx, font1)
+    reaper.ImGui_PushFont(ctx, font1,15)
     local textW = reaper.ImGui_CalcTextSize(ctx, text, 0, 0)
     local windowW = textW  + 24
     --if isDocked then
@@ -15377,15 +15378,15 @@ local function loop()
     end
     
     
-    reaper.ImGui_PushFont(ctx, font)
+    reaper.ImGui_PushFont(ctx, font, 14)
     --[[
     partsWidth = settings.partsWidth
     if partsWidth >= 180 then
-        reaper.ImGui_PushFont(ctx, font)
+        reaper.ImGui_PushFont(ctx, font,14)
     elseif partsWidth < 180 and partsWidth >= 160 then
-        reaper.ImGui_PushFont(ctx, font13)
+        reaper.ImGui_PushFont(ctx, font13,13)
     elseif partsWidth < 160 and partsWidth >= 140 then
-        reaper.ImGui_PushFont(ctx, font12)
+        reaper.ImGui_PushFont(ctx, font12,12)
     end
     ]]
     
@@ -15812,7 +15813,7 @@ local function loop()
                     flags = flags | reaper.ImGui_ChildFlags_AlwaysAutoResize() | reaper.ImGui_ChildFlags_AutoResizeX() | reaper.ImGui_ChildFlags_AutoResizeY()
                 end
                 if useBorder then
-                    flags = flags | reaper.ImGui_ChildFlags_Border()
+                    flags = flags | reaper.ImGui_ChildFlags_Borders()
                 end
                 local windowFlags = reaper.ImGui_WindowFlags_None()
                 if not fixedSize then
@@ -16764,7 +16765,7 @@ local function loop()
                 local modulatorsH = vertical and (isCollabsed and headerSizeW or settings.modulatorsHeight) or height_from_parent
                 
                 --modulatorsH = winH-y-30
-                --local visible = ImGui.BeginChild(ctx, 'ModulatorsChilds', modulatorsW, modulatorsH, reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_AutoResizeY()| reaper.ImGui_ChildFlags_AutoResizeX(), reaper.ImGui_WindowFlags_HorizontalScrollbar() | reaper.ImGui_WindowFlags_NoScrollWithMouse())
+                --local visible = ImGui.BeginChild(ctx, 'ModulatorsChilds', modulatorsW, modulatorsH, reaper.ImGui_ChildFlags_Borders() | reaper.ImGui_ChildFlags_AutoResizeY()| reaper.ImGui_ChildFlags_AutoResizeX(), reaper.ImGui_WindowFlags_HorizontalScrollbar() | reaper.ImGui_WindowFlags_NoScrollWithMouse())
                 --local visible = reaper.ImGui_BeginTable(ctx, 'ModulatorsChilds', settings.vertical and 1 or #modulatorNames,nil, modulatorsW)
                 --if visible then 
                     
@@ -16837,7 +16838,7 @@ local function loop()
                     end
                     
                     function getNameW()
-                        reaper.ImGui_PushFont(ctx, font2)
+                        reaper.ImGui_PushFont(ctx, font2,17)
                         local nameW = reaper.ImGui_CalcTextSize(ctx, name, 0,0) 
                         reaper.ImGui_PopFont(ctx)
                         return nameW
@@ -17399,7 +17400,7 @@ local function loop()
             
               
             --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(), settings.colors.backgroundWidgets)
-            --local visible = ImGui.BeginChild(ctx, 'ModulatorsChilds', nil, nil, reaper.ImGui_ChildFlags_Border(), reaper.ImGui_WindowFlags_HorizontalScrollbar() | reaper.ImGui_WindowFlags_NoScrollWithMouse())
+            --local visible = ImGui.BeginChild(ctx, 'ModulatorsChilds', nil, nil, reaper.ImGui_ChildFlags_Borders(), reaper.ImGui_WindowFlags_HorizontalScrollbar() | reaper.ImGui_WindowFlags_NoScrollWithMouse())
             --if visible then
               --reaper.ImGui_SetCursorPos(ctx, 0,0)
               
@@ -17887,7 +17888,7 @@ local function loop()
                     --reaper.ImGui_DrawList_AddRectFilled(draw_list, x - 2, y - 2, x + size + 3, y + size + 3, colorTextDimmed & 0xFFFFFF99, 0, nil)
                     --reaper.ImGui_DrawList_AddText(draw_list, x - 2, y - 2, colorText, textOnTop)
                     --reaper.ImGui_SetCursorPos(ctx, curPosX + relativePosX, curPosY + relativePosY)
-                    --reaper.ImGui_PushFont(ctx, font10)
+                    --reaper.ImGui_PushFont(ctx, font10,10)
                     --reaper.ImGui_Text(ctx, textOnTop)
                     --reaper.ImGui_PopFont(ctx)
                     --setToolTipFuncPos = {x = 
@@ -17976,7 +17977,7 @@ local function loop()
                 
                 --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 0)
                 --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorButtonsHover) 
-                reaper.ImGui_PushFont(ctx, font13)
+                reaper.ImGui_PushFont(ctx, font13,13)
                 
                 
                 local textOffset = 0
@@ -18003,7 +18004,7 @@ local function loop()
                 
                 
                 reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 0)
-                --reaper.ImGui_PushFont(ctx, font14)
+                --reaper.ImGui_PushFont(ctx, font14,14)
                 --centerText("Track Values", colorWhite, posXOffset, widthWithPadding,0, posY + 3)
                 --posYOffset = posYOffset + 14
                 --reaper.ImGui_PopFont(ctx)
@@ -18118,7 +18119,7 @@ local function loop()
                         
                         --buttonName = "hej"
                         
-                        reaper.ImGui_PushFont(ctx, font10)
+                        reaper.ImGui_PushFont(ctx, font10,10)
                         textW, textH = reaper.ImGui_CalcTextSize(ctx, buttonName, 0, 0)
                         reaper.ImGui_PopFont(ctx)
                         textW = panW
@@ -18294,7 +18295,7 @@ local function loop()
                 --[[
                 local _, trackname = reaper.GetTrackName(track)
                 local name = "Track Values - " .. trackname
-                reaper.ImGui_PushFont(ctx, font20)
+                reaper.ImGui_PushFont(ctx, font20,20)
                 textW, textH = reaper.ImGui_CalcTextSize(ctx, name, 0, 0)
                 reaper.ImGui_PopFont(ctx)
 
@@ -18781,7 +18782,7 @@ local function loop()
                     --reaper.ImGui_SetNextWindowSizeConstraints(ctx, 30, 0, width, scrollAreaHeight)
                     --if reaper.ImGui_BeginChild(ctx, "parametersForFocused", width, scrollAreaHeightFixed, childFlag, scrollFlags) then
                     
-                    reaper.ImGui_PushFont(ctx, font11)
+                    reaper.ImGui_PushFont(ctx, font11,11)
                     if scrollChildOfPanel(title .. "scroll", scrollAreaWidth, scrollAreaHeight, heightAutoAdjust) then
                         
                         if parameterLinks and reaper.ImGui_BeginTable(ctx, 'PluginsTable',columnAmount, pluginFlags, nil, not heightAutoAdjust and scrollAreaHeight or nil) then -- (offset and (height -  64) or 0)) then
@@ -19133,7 +19134,7 @@ local function loop()
                     reaper.ImGui_PopStyleColor(ctx,3)
                     
                     
-                    reaper.ImGui_PushFont(ctx, font60)
+                    reaper.ImGui_PushFont(ctx, font60,60)
                     local textW, textH = reaper.ImGui_CalcTextSize(ctx, name, 0,0)
                     local textX = minX + mainAreaW / 2 - ((vertical and textH or textW) / 2)
                     local textY = minY + mainAreaH / 2 - ((vertical and textW or textH) / 2)
@@ -19278,7 +19279,7 @@ local function loop()
                 end  
             end
             if m then 
-                --childFlags = reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_AutoResizeY()
+                --childFlags = reaper.ImGui_ChildFlags_Borders() | reaper.ImGui_ChildFlags_AutoResizeY()
                 local curStartY = reaper.ImGui_GetCursorPosY(ctx)
                 modulatorsWrapped(sizeW, sizeH, m, not showVar, true, showSettingsVar) 
                 local sizeModulatorH = reaper.ImGui_GetCursorPosY(ctx) - curStartY - 8
@@ -19408,7 +19409,7 @@ local function loop()
         reaper.ImGui_SetCursorPos(ctx, 3+40, 0)
         local posX = reaper.ImGui_GetCursorPosX(ctx)
         
-        reaper.ImGui_PushFont(ctx, font2)
+        reaper.ImGui_PushFont(ctx, font2,17)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorTransparent)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorTransparent)

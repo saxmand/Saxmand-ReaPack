@@ -1,5 +1,5 @@
 -- @noindex
---local os_separator = package.config:sub(1, 1)
+local os_separator = package.config:sub(1, 1)
 --package.path = debug.getinfo(1, "S").source:match [[^@?(.*[\/])[^\/]-$]] .. "?.lua;"  -- GET DIRECTORY FOR REQUIRE
 --require("Sexan_FX_Browser_ParserV7")
 
