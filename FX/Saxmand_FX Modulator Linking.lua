@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.4.5
+-- @version 1.4.6
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -17,12 +17,13 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + added some code for trying to fix crash on startup
---   + more work on track control panel (still in development)
+--   + sexan fx_parser_list only creates index files one user interaction
+--   + some bug fix for images
 
+local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.4.5"
+local version = "1.4.6"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -36,8 +37,10 @@ local json = require("json")
 local specialButtons = require("special_buttons")
 local getFXList = require("get_fx_list").getFXList
 
-local fx_parser_list = require("fx_parser_list")
+--reaper.ShowConsoleMsg(reaper.time_precise() - startTime .. " after getFXList\n")
 
+
+local fx_parser_list = require("fx_parser_list")
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local ImGui = require 'imgui' '0.9.3.3'
@@ -308,6 +311,25 @@ function exportAppSettings(settings)
     local filename = "FX-Modulator-Linking-Settings_" .. username .. "_" .. timestamp
     saveFile(data, filename, settingsFolderName) 
 end
+
+local images = {}
+local function imageFromCache(fn)
+  local img = images[fn]
+  if not img then
+    img = {}
+    images[fn] = img
+  end
+
+  if not ImGui.ValidatePtr(img.inst, 'ImGui_Image*') then
+    if img.inst then images[img.inst] = nil end
+    img.inst = reaper.ImGui_CreateImage(fn)
+    local prev = images[img.inst]
+    if prev and prev ~= img then prev.inst = nil end
+    images[img.inst] = img
+  end
+
+  return img.inst
+end
 -----------------------------------------
 -----------------------------------------
 -----------------------------------------
@@ -536,6 +558,9 @@ local defaultSettings = {
     
       -- Track Control
     showTrackControlPanel = true, 
+    trackControlHeight = 300, 
+    showTrackControlElementsOnSide = false,
+    trackControlUseImages = false,
     showTimebase = true,
     showMediaPlaybackOffset = true,
     showPanning = true,
@@ -2692,6 +2717,7 @@ function GetTrackGuid(track, doNotUseCatch)
 end
 
 function GetMediaTrackInfo_Value(track, parmname, doNotUseCatch)
+    if not track or not parmname then return end
     local tableStr = parmname .. "::GetMediaTrackInfo_Value"
     local catch = getParameterTableCatch(track, "track", tableStr)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
@@ -2724,6 +2750,7 @@ end
 
  
 function GetAutomation(track)
+    if not track then return 0 end
     local tableStr = "::GetAutomation"
     local catch = getParameterTableCatch(track, "track", tableStr)
     if settings.useParamCatch and not doNotUseCatch and catch ~= nil then 
@@ -13322,9 +13349,26 @@ function appSettingsWindow()
             end
             setToolTipFunc("Show or hide the matrix panel") 
             
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Use images##trackControl",settings.trackControlUseImages) 
+            if ret then 
+                settings.trackControlUseImages = val
+                saveSettings()
+            end
+            setToolTipFunc("Use images where possible. Only partly implemented") 
+            
+            sliderInMenu("Track control height", "trackControlHeight", menuSliderWidth, 100, 500, "Set the max height of the track control panel. ONLY used for vertical mode")  
+            
+            
             
             reaper.ImGui_TextColored(ctx, colorGrey, "Elements")
             reaper.ImGui_Indent(ctx)
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show elements on the side##trackControl",settings.showTrackControlElementsOnSide) 
+                if ret then 
+                    settings.showTrackControlElementsOnSide = val
+                    saveSettings()
+                end
+                setToolTipFunc("Show all elements to the right of the volume slider") 
+                
                 local ret, val = reaper.ImGui_Checkbox(ctx,"Show timebase##trackControl",settings.showTimebase) 
                 if ret then 
                     settings.showTimebase = val
@@ -15420,8 +15464,8 @@ local function loop()
     
     --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), padding, padding)
     
-    --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_WindowPadding(), 0.0, 0.0)
-    local varPush = 4--+1
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_WindowPadding(), padding, padding)
+    local varPush = 4+1
     
     
     --- COLOR STUFF
@@ -15462,8 +15506,8 @@ local function loop()
                 screenPosY = screenPosY - 8
             end
             
-            --reaper.ImGui_Dummy(ctx, 1,1)
-            --reaper.ImGui_SetCursorPos(ctx, x,y)
+            reaper.ImGui_Dummy(ctx, 1,1)
+            reaper.ImGui_SetCursorPos(ctx, x,y)
             
             mouseInsideAppWindow = mouse_pos_x_imgui >= winX and mouse_pos_x_imgui <= winX + winW and mouse_pos_y_imgui >= winY and mouse_pos_y_imgui <= winY + winH
             
@@ -17747,19 +17791,23 @@ local function loop()
             end
             
             function getTrackUIVal(track, parmName, envelopeName, doNotUseCatch)   
-                local envelope = reaper.GetTrackEnvelopeByName(track, envelopeName)
-                
-                local value --= getTrackUIValOld(track, parmName, envelopeName)--GetMediaTrackInfo_Value(track, parmName, true)
-                local retval, volume, pan = reaper.GetTrackUIVolPan( track )
-                if envelopeName == "Volume" then
-                    value = volume
+                if track then 
+                    local envelope = reaper.GetTrackEnvelopeByName(track, envelopeName)
+                    
+                    local value --= getTrackUIValOld(track, parmName, envelopeName)--GetMediaTrackInfo_Value(track, parmName, true)
+                    local retval, volume, pan = reaper.GetTrackUIVolPan( track )
+                    if envelopeName == "Volume" then
+                        value = volume
+                    end
+                    --aab = value
+                    local envelopePointCount, usesEnvelope, firstEnvelopeValue, envelopeValueAtPos, hasEnvelopePoints, singleEnvelopePointAtStart = getEnvelopeInformation(envelope)
+                    --aac = envelopeValueAtPos
+                    local currentValue = getCurrentValue(track, value, baseline, firstEnvelopeValue, envelopeValueAtPos, parameterModulationActive,usesEnvelope ) 
+                    --aad = currentValue
+                    return currentValue
+                else
+                    return 0
                 end
-                --aab = value
-                local envelopePointCount, usesEnvelope, firstEnvelopeValue, envelopeValueAtPos, hasEnvelopePoints, singleEnvelopePointAtStart = getEnvelopeInformation(envelope)
-                --aac = envelopeValueAtPos
-                local currentValue = getCurrentValue(track, value, baseline, firstEnvelopeValue, envelopeValueAtPos, parameterModulationActive,usesEnvelope ) 
-                --aad = currentValue
-                return currentValue
             end
             
             
@@ -17862,7 +17910,7 @@ local function loop()
             
 
             function drawTrackValuesElement(track, trackIndex, posX, posY, windowH)
-                
+                if not track then return end
                 
                 function setTrackValuesLink(parmName, exactValue, relativeValue, overwriteAbsolute, minAmount, maxAmount)
                     relativeValue = relativeValue and relativeValue or 0
@@ -17954,286 +18002,295 @@ local function loop()
                 colorsAutomationButton = settings.colorsAutomationButton
                 
                 
-                reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
+                reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 0)
                 --reaper.ImGui_PushFont(ctx, font14)
                 --centerText("Track Values", colorWhite, posXOffset, widthWithPadding,0, posY + 3)
                 --posYOffset = posYOffset + 14
                 --reaper.ImGui_PopFont(ctx)
                 
-                if showTimebase then
-                    --centerText("Timebase", colorLightGrey, posXOffset, widthWithPadding, 0, posYOffset) 
-                    --posYOffset = posYOffset + 16
-                    reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
-                    local timebaseStrings = {"Default", "Time", "Beats", "Beats Pos"}
-                    local timebase = GetMediaTrackInfo_Value(track, 'C_BEATATTACHMODE')
-                    local timebaseString = timebaseStrings[timebase+2]
-                    if timebase == -1 then
-                        local timebaseDefault = {"(T)", "(B)", "(BP)"}
-                        local projectTimeBase = reaper.SNM_GetIntConfigVar("itemprops_timemode", -1)
-                        if projectTimeBase > -1 then 
-                            timebaseString = timebaseString .." " .. timebaseDefault[projectTimeBase + 1]
-                        end
-                    end
-                        
-                    if reaper.ImGui_Button(ctx, timebaseString, widthWithPadding) then
-                        --reaper.ImGui_OpenPopup(ctx, "timebasePopup")
-                        local newValue = timebase + 1 < 3 and timebase + 1 or -1 
-                        setTrackValuesLink("C_BEATATTACHMODE", newValue, 0, true)
-                    end 
-                    
-                    --[[
-                    if reaper.ImGui_BeginPopup(ctx, 'timebasePopup') then 
-                        for i = 1, #timebaseStrings do
-                            
-                            local isSelected = timebase + 1 == i
-                            local color = isSelected and colorGrey or colorTransparent
-                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), color)
-                            
-                            if reaper.ImGui_Button(ctx, timebaseStrings[i]) then
-                                reaper.SetMediaTrackInfo_Value(track, 'C_BEATATTACHMODE', i - 2)
+                function trackControlElements(posXForElelments)
+                    if showTimebase then
+                        --centerText("Timebase", colorLightGrey, posXOffset, widthWithPadding, 0, posYOffset) 
+                        --posYOffset = posYOffset + 16
+                        reaper.ImGui_SetCursorPos(ctx,posXForElelments, posYOffset) 
+                        local timebaseStrings = {"Default", "Time", "Beats", "Beats Pos"}
+                        local timebase = GetMediaTrackInfo_Value(track, 'C_BEATATTACHMODE')
+                        local timebaseString = timebase and timebaseStrings[timebase+2] or "No timebase"
+                        if timebase == -1 then
+                            local timebaseDefault = {"(T)", "(B)", "(BP)"}
+                            local projectTimeBase = reaper.SNM_GetIntConfigVar("itemprops_timemode", -1)
+                            if projectTimeBase > -1 then 
+                                timebaseString = timebaseString .." " .. timebaseDefault[projectTimeBase + 1]
                             end
-                            reaper.ImGui_PopStyleColor(ctx)
                         end
-                        setWindowsToTop = false
-                        ImGui.EndPopup(ctx)
-                    end
-                    ]]
-                    posYOffset = posYOffset + 22
-                end
-                
-                if showMediaPlaybackOffset then
-                    --centerText("Playback offset", colorLightGrey, posXOffset, widthWithPadding, 0, posYOffset) 
-                    --posYOffset = posYOffset + 16
-                    reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
-                    
-                    
-                    local offsetFlagStrings = {"ms", "Off", "Smpl"}
-                    local offsetFlag = GetMediaTrackInfo_Value(track, 'I_PLAY_OFFSET_FLAG')
-                    if not offsetFlag then offsetFlag = 1 end
-                    local offsetAmount = GetMediaTrackInfo_Value(track, 'D_PLAY_OFFSET')
-                    reaper.ImGui_SetNextItemWidth(ctx, widthWithPadding / 2)
-                    offsetAmountOffset = offsetFlag == 0 and 1000 or 1
-                    if offsetFlag ~= 1 then
-                        local ret, value = reaper.ImGui_InputDouble(ctx, "##offsetAmount" .. tostring(track), offsetAmount * offsetAmountOffset,nil, nil,"%.f" ,reaper.ImGui_InputTextFlags_CharsDecimal())
-                        if ret and tonumber(value) then
-                            setTrackValuesLink("D_PLAY_OFFSET", value / offsetAmountOffset, 0, true)
+                            
+                        if reaper.ImGui_Button(ctx, timebaseString, widthWithPadding) then
+                            --reaper.ImGui_OpenPopup(ctx, "timebasePopup")
+                            local newValue = timebase + 1 < 3 and timebase + 1 or -1 
+                            setTrackValuesLink("C_BEATATTACHMODE", newValue, 0, true)
                         end 
-                    end
-                    
-                    reaper.ImGui_SetCursorPos(ctx,posXOffset + (offsetFlag == 1 and 0 or widthWithPadding / 2), posYOffset) 
-                    if reaper.ImGui_Button(ctx, offsetFlagStrings[offsetFlag + 1], widthWithPadding / (offsetFlag == 1 and 1 or 2)) then
-                        local newValue = offsetFlag == 1 and 0 or (offsetFlag == 2 and 1 or 2)
-                        local sampleRate = reaper.GetSetProjectInfo(0, "PROJECT_SRATE", 0, false )
-                        if newValue == 1 then    
-                            setTrackValuesLink("D_PLAY_OFFSET", offsetAmount / sampleRate,0, true)
-                        elseif newValue == 2 then    
-                            setTrackValuesLink("D_PLAY_OFFSET", offsetAmount * sampleRate,0, true)
+                        
+                        --[[
+                        if reaper.ImGui_BeginPopup(ctx, 'timebasePopup') then 
+                            for i = 1, #timebaseStrings do
+                                
+                                local isSelected = timebase + 1 == i
+                                local color = isSelected and colorGrey or colorTransparent
+                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), color)
+                                
+                                if reaper.ImGui_Button(ctx, timebaseStrings[i]) then
+                                    reaper.SetMediaTrackInfo_Value(track, 'C_BEATATTACHMODE', i - 2)
+                                end
+                                reaper.ImGui_PopStyleColor(ctx)
+                            end
+                            setWindowsToTop = false
+                            ImGui.EndPopup(ctx)
                         end
-                        setTrackValuesLink("I_PLAY_OFFSET_FLAG", newValue, 0, true) 
-                    end 
-                    posYOffset = posYOffset + 22
-                end
-                
-                
-                if showPanning then
-                    if not dragKnobParm then
-                        mouseDragStartX = mouse_pos_x
-                        mouseDragStartY = mouse_pos_y
+                        ]]
+                        posYOffset = posYOffset + 22
                     end
                     
-                    local panMode = math.floor(GetMediaTrackInfo_Value(track, 'I_PANMODE'))
-                    local panAmount = GetMediaTrackInfo_Value(track, 'D_PAN') 
-                    local panWidth = GetMediaTrackInfo_Value(track, 'D_WIDTH') 
-                    local panL = GetMediaTrackInfo_Value(track, 'D_DUALPANL') 
-                    local panR = GetMediaTrackInfo_Value(track, 'D_DUALPANR') 
-                    
-                    reaper.ImGui_SetCursorPos(ctx,posXOffset+panW, posYOffset) 
-                    
-                    local panModes = {[-1] = "Default", [3] = "Mono", [5] = "Stereo", [6] = "Dua l"}
-                    buttonName = panModes[panMode]
-                    --[[
-                    if reaper.ImGui_Button(ctx, "##panmode", hiddenPluginWidth - padding, panW) then
-                        --reaper.ImGui_OpenPopup(ctx, "timebasePopup")
-                        local newValue 
-                        if panMode == 6 then newValue = -1 end
-                        if panMode == 5 then newValue = 6 end
-                        if panMode == 3 then newValue = 5 end
-                        if panMode == -1 then newValue = 3 end
-                        reaper.SetMediaTrackInfo_Value(track, 'I_PANMODE', newValue)
-                        panMode = newValue
-                        reaper.TrackList_AdjustWindows(false)
-                    end 
-                    ]]
-                    
-                    --buttonName = "hej"
-                    
-                    reaper.ImGui_PushFont(ctx, font10)
-                    textW, textH = reaper.ImGui_CalcTextSize(ctx, buttonName, 0, 0)
-                    reaper.ImGui_PopFont(ctx)
-                    textW = panW
-                    
-                    
-                    reaper.ImGui_SetCursorPos(ctx, posXOffset, posYOffset + panW - textW)
-                    if verticalButtonStyle(buttonName, nil, textW, buttonName, true, 6.7, true, 18, textW) then
-                        --focusedFxName = fx.name_original
-                        local newValue 
-                        if panMode == 6 then newValue = -1 end
-                        if panMode == 5 then newValue = 6 end
-                        if panMode == 3 then newValue = 5 end
-                        if panMode == -1 then newValue = 3 end
-                        setTrackValuesLink("I_PANMODE", newValue, 0, true)
-                        reaper.TrackList_AdjustWindows(false)
-                    end 
-                    
-                    posXOffset = posXOffset + hiddenPluginWidth - padding
-                    reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset)  
-                    
-                    if panMode == -1 then
-                        panMode = reaper.SNM_GetIntConfigVar("panmode", -1)
-                    end
-                    local panAmountText, toolTipX, toolTipY, resetValue
-                    if panMode == 3 then
-                        panAmountText = math.floor(panAmount * 100 + 0.5) == 0 and "Pan: center" or ("Pan: " .. math.abs(math.floor(panAmount * 100 + 0.5)) .. "%" .. (panAmount > 0 and "R" or "L"))
-                        
-                        if drawKnob("D_PAN", 0, 0, panW, panAmount / 2 + 0.5, nil, nil, 2) then
-                            if not dragKnobParm then dragKnobParm = "D_PAN" end 
-                            if not dragKnob then dragKnob = "D_PAN" end 
-                            if isMouseDoubleClickImgui or super then resetValue = 0 end 
-                        end 
-                    elseif panMode == 5 then
-                        panAmountText = math.floor(panAmount * 100 + 0.5) == 0 and "Pan: center" or ("Pan: " .. math.abs(math.floor(panAmount * 100 + 0.5)) .. "%" .. (panAmount > 0 and "R" or "L"))
-                        panAmountText = panAmountText .. "\nWidth: " .. math.floor(panWidth * 100 + 0.5) .. "%"
-                        
-                        panAmountNormalize = panAmount / 2 + 0.5
-                        reaper.ImGui_SetNextItemAllowOverlap(ctx)
-                        local smallerSize = 10
-                        local color = panWidth > 0 and colorBlue or colorRedHidden
-                        if drawKnob("D_WIDTH", 0, 0, panW, math.abs(panWidth), nil, color, smallerSize, panAmountNormalize - 0.5) then
-                            if not dragKnobParm then dragKnobParm = "D_WIDTH" end
-                            if not dragKnob then dragKnob = "D_WIDTH" end
-                            if isMouseDoubleClickImgui or super then resetValue = 1 end
-                        end 
+                    if showMediaPlaybackOffset then
+                        --centerText("Playback offset", colorLightGrey, posXOffset, widthWithPadding, 0, posYOffset) 
+                        --posYOffset = posYOffset + 16
                         reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
-                        if drawKnob("D_PAN", smallerSize, smallerSize, panW - smallerSize * 2, panAmountNormalize, nil) then
-                            if not dragKnobParm then dragKnobParm = "D_PAN" end
-                            if not dragKnob then dragKnob = "D_PAN" end
-                            if isMouseDoubleClickImgui or super then resetValue = 0 end
-                        end 
-                        if isAdjustWidth then 
-                            if not dragKnobWasChagned then
-                                if dragKnobParm == "D_WIDTH" then dragKnobParm = "D_PAN"
-                                elseif dragKnobParm == "D_PAN" then dragKnobParm = "D_WIDTH" end
-                                dragKnob = dragKnobParm
-                                dragKnobWasChagned = true
-                            end 
-                        else
-                            if dragKnobWasChagned then
-                                if dragKnobParm == "D_WIDTH" then dragKnobParm = "D_PAN"
-                                elseif dragKnobParm == "D_PAN" then dragKnobParm = "D_WIDTH" end
-                                dragKnob = dragKnobParm
-                                dragKnobWasChagned = nil
+                        
+                        
+                        local offsetFlagStrings = {"ms", "Off", "Smpl"}
+                        local offsetFlag = GetMediaTrackInfo_Value(track, 'I_PLAY_OFFSET_FLAG')
+                        if not offsetFlag then offsetFlag = 1 end
+                        local offsetAmount = GetMediaTrackInfo_Value(track, 'D_PLAY_OFFSET')
+                        reaper.ImGui_SetNextItemWidth(ctx, widthWithPadding / 2)
+                        offsetAmountOffset = offsetFlag == 0 and 1000 or 1
+                        if offsetFlag ~= 1 then
+                            local ret, value = reaper.ImGui_InputDouble(ctx, "##offsetAmount" .. tostring(track), offsetAmount * offsetAmountOffset,nil, nil,"%.f" ,reaper.ImGui_InputTextFlags_CharsDecimal())
+                            if ret and tonumber(value) then
+                                setTrackValuesLink("D_PLAY_OFFSET", value / offsetAmountOffset, 0, true)
                             end 
                         end
-                    elseif panMode == 6 then
-                        panAmountText = "Pan(L): " .. math.abs(math.floor(panL * 100 + 0.5)) .. "%" .. (panL > 0 and "R" or "L")
-                        panAmountText = panAmountText .. "\nPan(R): " .. math.abs(math.floor(panR * 100 + 0.5)) .. "%" .. (panR > 0 and "R" or "L")
                         
-                        reaper.ImGui_SetNextItemAllowOverlap(ctx)
-                        local smallerSize = 10
-                        local color = panWidth > 0 and colorBlue or colorRedHidden
-                        if drawKnob("D_DUALPANL", 0, 0, panW, panL / 2 + 0.5, nil, colorRedHidden, smallerSize, nil , 0) then
-                            if not dragKnobParm then dragKnobParm = "D_DUALPANL" end
-                            if not dragKnob then dragKnob = "D_DUALPANL" end
-                            if isMouseDoubleClickImgui or super then resetValue = -1 end
+                        reaper.ImGui_SetCursorPos(ctx,posXOffset + (offsetFlag == 1 and 0 or widthWithPadding / 2), posYOffset) 
+                        if reaper.ImGui_Button(ctx, offsetFlagStrings[offsetFlag + 1], widthWithPadding / (offsetFlag == 1 and 1 or 2)) then
+                            local newValue = offsetFlag == 1 and 0 or (offsetFlag == 2 and 1 or 2)
+                            local sampleRate = reaper.GetSetProjectInfo(0, "PROJECT_SRATE", 0, false )
+                            if newValue == 1 then    
+                                setTrackValuesLink("D_PLAY_OFFSET", offsetAmount / sampleRate,0, true)
+                            elseif newValue == 2 then    
+                                setTrackValuesLink("D_PLAY_OFFSET", offsetAmount * sampleRate,0, true)
+                            end
+                            setTrackValuesLink("I_PLAY_OFFSET_FLAG", newValue, 0, true) 
                         end 
-                        reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
-                        if drawKnob("D_DUALPANR", smallerSize, smallerSize, panW - smallerSize * 2, panR / 2 + 0.5, nil , colorGreenFull, smallerSize, nil, 1) then
-                            if not dragKnobParm then dragKnobParm = "D_DUALPANR" end
-                            if not dragKnob then dragKnob = "D_DUALPANR" end
-                            if isMouseDoubleClickImgui or super then resetValue = 1 end
-                        end 
+                        posYOffset = posYOffset + 22
                     end
                     
-                    local screenPosX, screenPosY = reaper.ImGui_GetCursorScreenPos(ctx)
-                    local toolTipX = screenPosX - winX
-                    local toolTipY = screenPosY - winY
                     
-                    if dragKnobParm then
-                        if isMouseDown then 
-                            local relativeValue = ((mouse_pos_x - mouseDragStartX) + (mouse_pos_y - mouseDragStartY)) / 100
-                            setTrackValuesLink(dragKnobParm, resetValue and resetValue or nil, relativeValue, nil, -1, 1)
+                    if showPanning then
+                        if not dragKnobParm then
                             mouseDragStartX = mouse_pos_x
                             mouseDragStartY = mouse_pos_y
-                            setToolTip = {text = panAmountText, x = toolTipX, y = toolTipY}
-                            if settings.hideMouseOnDrag then
-                                reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
-                            end
-                        elseif isScrollValue then
-                            local relativeValue = -scrollVertical / (shift and 1000 or 100) 
-                            setTrackValuesLink(dragKnobParm, nil, relativeValue, nil, -1, 1) 
-                            setToolTip = dragKnob and {text = panAmountText, x = toolTipX, y = toolTipY} or false
-                        else
-                            dragKnobParm = nil
-                            setToolTip = nil
                         end
-                        --setToolTipFuncPopup(panAmountText)
-                        ignoreScrollHorizontal = true
                         
-                    end
-                    
-                    
-                    
-                    posYOffset = posYOffset + panW + 4
-                    posXOffset = posX --+ padding
-                end
-                
-                
-                if showAutomation then
-                    --centerText("Timebase", colorLightGrey, posXOffset, widthWithPadding, 0, posYOffset) 
-                    --posYOffset = posYOffset + 16
-                    reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
-                    local automationStrings = {"Trim/Read", "Read", "Touch", "Write", "Latch", "Latch Prevw"}
-                    local automationColors = {colorsAutomationButton and colorTrimRead or colorAlmostWhite, colorRead, colorTouch, colorWrite, colorLatch, colorLatchPreview}
-                    local automation = GetAutomation(track)
-                    local automationString = automationStrings[automation+1]
-                    local color = automationColors[automation+1]
-                    if colorsAutomationButton then
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), color)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), color)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), color)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorBlack)
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorsOnButtonsBorders and colorBlack or colorBlack)
-                    else 
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorsAutomationButtonText and color or colorText)
-                    end
-                    
-                    if reaper.ImGui_Button(ctx, automationString .. "##" .. tostring(track), widthWithPadding) then
-                        --reaper.ImGui_OpenPopup(ctx, "timebasePopup")
-                        local newValue = automation + 1 < #automationStrings and automation + 1 or 0
-                        setTrackValuesLink("I_AUTOMODE", newValue, 0, true)
-                    end 
-                    
-                    reaper.ImGui_PopStyleColor(ctx, colorsAutomationButton and 5 or 1)
-                    
-                    if reaper.ImGui_IsItemHovered(ctx) and isMouseRightDown then
-                        reaper.ImGui_OpenPopup(ctx, "automation")
-                    end
-                    
-                    if reaper.ImGui_BeginPopup(ctx, 'automation') then 
-                        if track == reaper.GetSelectedTrack(0,0) then 
-                            for i, name in ipairs(automationStrings) do 
-                                if reaper.ImGui_Button(ctx,name) then
-                                    setTrackValuesLink("I_AUTOMODE", i - 1, 0, true)
-                                end
-                            end
-                            shown = true
+                        local panMode = GetMediaTrackInfo_Value(track, 'I_PANMODE') or -1
+                        if not panMode then panMode = -1 end
+                        panMode = math.floor(panMode)
+                        local panAmount = GetMediaTrackInfo_Value(track, 'D_PAN') or 0
+                        local panWidth = GetMediaTrackInfo_Value(track, 'D_WIDTH') or 1
+                        local panL = GetMediaTrackInfo_Value(track, 'D_DUALPANL') or -1
+                        local panR = GetMediaTrackInfo_Value(track, 'D_DUALPANR') or 1
+                        
+                        reaper.ImGui_SetCursorPos(ctx,posXOffset+panW, posYOffset) 
+                        
+                        local panModes = {[-1] = "Default", [3] = "Mono", [5] = "Stereo", [6] = "Dua l"}
+                        buttonName = panModes[panMode]
+                        --[[
+                        if reaper.ImGui_Button(ctx, "##panmode", hiddenPluginWidth - padding, panW) then
+                            --reaper.ImGui_OpenPopup(ctx, "timebasePopup")
+                            local newValue 
+                            if panMode == 6 then newValue = -1 end
+                            if panMode == 5 then newValue = 6 end
+                            if panMode == 3 then newValue = 5 end
+                            if panMode == -1 then newValue = 3 end
+                            reaper.SetMediaTrackInfo_Value(track, 'I_PANMODE', newValue)
+                            panMode = newValue
+                            reaper.TrackList_AdjustWindows(false)
+                        end 
+                        ]]
+                        
+                        --buttonName = "hej"
+                        
+                        reaper.ImGui_PushFont(ctx, font10)
+                        textW, textH = reaper.ImGui_CalcTextSize(ctx, buttonName, 0, 0)
+                        reaper.ImGui_PopFont(ctx)
+                        textW = panW
+                        
+                        
+                        reaper.ImGui_SetCursorPos(ctx, posXOffset, posYOffset + panW - textW)
+                        if verticalButtonStyle(buttonName, nil, textW, buttonName, true, 6.7, true, 18, textW) then
+                            --focusedFxName = fx.name_original
+                            local newValue 
+                            if panMode == 6 then newValue = -1 end
+                            if panMode == 5 then newValue = 6 end
+                            if panMode == 3 then newValue = 5 end
+                            if panMode == -1 then newValue = 3 end
+                            setTrackValuesLink("I_PANMODE", newValue, 0, true)
+                            reaper.TrackList_AdjustWindows(false)
+                        end 
+                        
+                        posXOffset = posXForElelments + hiddenPluginWidth - padding
+                        reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset)  
+                        
+                        local screenPosX, screenPosY = reaper.ImGui_GetCursorScreenPos(ctx)
+                        if panMode == -1 then
+                            panMode = reaper.SNM_GetIntConfigVar("panmode", -1)
                         end
-                        --setWindowsToTop = false
-                        reaper.ImGui_EndPopup(ctx)
+                        local panAmountText, toolTipX, toolTipY, resetValue
+                        if panMode == 3 then
+                            panAmountText = math.floor(panAmount * 100 + 0.5) == 0 and "Pan: center" or ("Pan: " .. math.abs(math.floor(panAmount * 100 + 0.5)) .. "%" .. (panAmount > 0 and "R" or "L"))
+                            
+                            if drawKnob("D_PAN", 0, 0, panW, panAmount / 2 + 0.5, nil, nil, 2) then
+                                if not dragKnobParm then dragKnobParm = "D_PAN" end 
+                                if not dragKnob then dragKnob = "D_PAN" end 
+                                if isMouseDoubleClickImgui or super then resetValue = 0 end 
+                            end 
+                        elseif panMode == 5 then
+                            panAmountText = math.floor(panAmount * 100 + 0.5) == 0 and "Pan: center" or ("Pan: " .. math.abs(math.floor(panAmount * 100 + 0.5)) .. "%" .. (panAmount > 0 and "R" or "L"))
+                            panAmountText = panAmountText .. "\nWidth: " .. math.floor(panWidth * 100 + 0.5) .. "%"
+                            
+                            panAmountNormalize = panAmount / 2 + 0.5
+                            reaper.ImGui_SetNextItemAllowOverlap(ctx)
+                            local smallerSize = 10
+                            local color = panWidth > 0 and colorBlue or colorRedHidden
+                            if drawKnob("D_WIDTH", 0, 0, panW, math.abs(panWidth), nil, color, smallerSize, panAmountNormalize - 0.5) then
+                                if not dragKnobParm then dragKnobParm = "D_WIDTH" end
+                                if not dragKnob then dragKnob = "D_WIDTH" end
+                                if isMouseDoubleClickImgui or super then resetValue = 1 end
+                            end 
+                            reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
+                            if drawKnob("D_PAN", smallerSize, smallerSize, panW - smallerSize * 2, panAmountNormalize, nil) then
+                                if not dragKnobParm then dragKnobParm = "D_PAN" end
+                                if not dragKnob then dragKnob = "D_PAN" end
+                                if isMouseDoubleClickImgui or super then resetValue = 0 end
+                            end 
+                            if isAdjustWidth then 
+                                if not dragKnobWasChagned then
+                                    if dragKnobParm == "D_WIDTH" then dragKnobParm = "D_PAN"
+                                    elseif dragKnobParm == "D_PAN" then dragKnobParm = "D_WIDTH" end
+                                    dragKnob = dragKnobParm
+                                    dragKnobWasChagned = true
+                                end 
+                            else
+                                if dragKnobWasChagned then
+                                    if dragKnobParm == "D_WIDTH" then dragKnobParm = "D_PAN"
+                                    elseif dragKnobParm == "D_PAN" then dragKnobParm = "D_WIDTH" end
+                                    dragKnob = dragKnobParm
+                                    dragKnobWasChagned = nil
+                                end 
+                            end
+                        elseif panMode == 6 then
+                            panAmountText = "Pan(L): " .. math.abs(math.floor(panL * 100 + 0.5)) .. "%" .. (panL > 0 and "R" or "L")
+                            panAmountText = panAmountText .. "\nPan(R): " .. math.abs(math.floor(panR * 100 + 0.5)) .. "%" .. (panR > 0 and "R" or "L")
+                            
+                            reaper.ImGui_SetNextItemAllowOverlap(ctx)
+                            local smallerSize = 10
+                            local color = panWidth > 0 and colorBlue or colorRedHidden
+                            if drawKnob("D_DUALPANL", 0, 0, panW, panL / 2 + 0.5, nil, colorRedHidden, smallerSize, nil , 0) then
+                                if not dragKnobParm then dragKnobParm = "D_DUALPANL" end
+                                if not dragKnob then dragKnob = "D_DUALPANL" end
+                                if isMouseDoubleClickImgui or super then resetValue = -1 end
+                            end 
+                            reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
+                            if drawKnob("D_DUALPANR", smallerSize, smallerSize, panW - smallerSize * 2, panR / 2 + 0.5, nil , colorGreenFull, smallerSize, nil, 1) then
+                                if not dragKnobParm then dragKnobParm = "D_DUALPANR" end
+                                if not dragKnob then dragKnob = "D_DUALPANR" end
+                                if isMouseDoubleClickImgui or super then resetValue = 1 end
+                            end 
+                        end
+                        
+                        local toolTipX = screenPosX - winX
+                        local toolTipY = screenPosY - winY
+                        
+                        if dragKnobParm then
+                            if isMouseDown then 
+                                local relativeValue = ((mouse_pos_x - mouseDragStartX) + (mouse_pos_y - mouseDragStartY)) / 100
+                                setTrackValuesLink(dragKnobParm, resetValue and resetValue or nil, relativeValue, nil, -1, 1)
+                                mouseDragStartX = mouse_pos_x
+                                mouseDragStartY = mouse_pos_y
+                                setToolTip = {text = panAmountText, x = toolTipX, y = toolTipY}
+                                if settings.hideMouseOnDrag then
+                                    reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
+                                end
+                            elseif isScrollValue then
+                                local relativeValue = -scrollVertical / (shift and 1000 or 100) 
+                                setTrackValuesLink(dragKnobParm, nil, relativeValue, nil, -1, 1) 
+                                setToolTip = dragKnob and {text = panAmountText, x = toolTipX, y = toolTipY} or false
+                            else
+                                dragKnobParm = nil
+                                setToolTip = nil
+                            end
+                            --setToolTipFuncPopup(panAmountText)
+                            ignoreScrollHorizontal = true
+                            
+                        end
+                        
+                        
+                        
+                        posYOffset = posYOffset + panW + 4
+                        posXOffset = posXForElelments --+ padding
                     end
                     
-                    posYOffset = posYOffset + 22
+                    
+                    if showAutomation then
+                        --centerText("Timebase", colorLightGrey, posXOffset, widthWithPadding, 0, posYOffset) 
+                        --posYOffset = posYOffset + 16
+                        reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
+                        local automationStrings = {"Trim/Read", "Read", "Touch", "Write", "Latch", "Latch Prevw"}
+                        local automationColors = {colorsAutomationButton and colorTrimRead or colorAlmostWhite, colorRead, colorTouch, colorWrite, colorLatch, colorLatchPreview}
+                        local automation = GetAutomation(track)
+                        local automationString = automationStrings[automation+1]
+                        local color = automationColors[automation+1]
+                        if colorsAutomationButton then
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), color)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), color)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), color)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorBlack)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorsOnButtonsBorders and colorBlack or colorBlack)
+                        else 
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorsAutomationButtonText and color or colorText)
+                        end
+                        
+                        if reaper.ImGui_Button(ctx, automationString .. "##" .. tostring(track), widthWithPadding) then
+                            --reaper.ImGui_OpenPopup(ctx, "timebasePopup")
+                            local newValue = automation + 1 < #automationStrings and automation + 1 or 0
+                            setTrackValuesLink("I_AUTOMODE", newValue, 0, true)
+                        end 
+                        
+                        reaper.ImGui_PopStyleColor(ctx, colorsAutomationButton and 5 or 1)
+                        
+                        if reaper.ImGui_IsItemHovered(ctx) and isMouseRightDown then
+                            reaper.ImGui_OpenPopup(ctx, "automation")
+                        end
+                        
+                        if reaper.ImGui_BeginPopup(ctx, 'automation') then 
+                            if track == reaper.GetSelectedTrack(0,0) then 
+                                for i, name in ipairs(automationStrings) do 
+                                    if reaper.ImGui_Button(ctx,name) then
+                                        setTrackValuesLink("I_AUTOMODE", i - 1, 0, true)
+                                    end
+                                end
+                                shown = true
+                            end
+                            --setWindowsToTop = false
+                            reaper.ImGui_EndPopup(ctx)
+                        end
+                        
+                        posYOffset = posYOffset + 22
+                    end
                 end
+                
+                if not settings.showTrackControlElementsOnSide then
+                    trackControlElements(posXOffset)
+                end
+                
                 --[[
                 local _, trackname = reaper.GetTrackName(track)
                 local name = "Track Values - " .. trackname
@@ -18256,9 +18313,9 @@ local function loop()
                 
                 local slider_pos = db_to_slider(db) 
                 
-                local useImages = true
+                local useImages = settings.trackControlUseImages
                 if useImages and (not images[faderImagePath] or catchImagesAgain) then 
-                    local image = reaper.ImGui_CreateImage(faderImagePath) 
+                    local image = imageFromCache(faderImagePath)
                     local w, h = reaper.ImGui_Image_GetSize(image) 
                     
                     -- cropting
@@ -18278,7 +18335,7 @@ local function loop()
                 local new_db = slider_to_db(slider_pos)
                 if new_db <= DB_MIN then new_db = DB_INF end
                 
-                local text = string.format("%.1f dB", new_db == DB_INF and -math.huge or new_db)
+                local text = string.format("%.1fdB", new_db == DB_INF and -math.huge or new_db)
                 
                 
                 if useImages then 
@@ -18327,7 +18384,7 @@ local function loop()
                 reaper.ImGui_PopStyleColor(ctx,5)
                 ]]
                 -- area for slider
-                reaper.ImGui_InvisibleButton(ctx, "##volumeslider" .. trackIndex,volumeSliderW, volumeSliderH)
+                reaper.ImGui_InvisibleButton(ctx, "##volumeslider" .. tostring(trackIndex),volumeSliderW, volumeSliderH)
                 
                 local minX, minY = reaper.ImGui_GetItemRectMin(ctx)
                 local maxX, maxY = reaper.ImGui_GetItemRectMax(ctx)
@@ -18441,13 +18498,13 @@ local function loop()
                         end
                         --reaper.ImGui_DrawList_AddRectFilled(draw_list, posXStart, posYStart - (volumeSliderH * (peaks)), posXStart+peakWidth, posYStart, settings.colors.trackControlPeakMin) 
                     end
-                    if lastPeak[i] then
-                    
-                    end
                 end 
                 
                 -- slider line
                 reaper.ImGui_DrawList_AddLine(draw_list,minX + sliderW/2-1,minY,minX + sliderW/2-1,maxY,settings.colors.backgroundWidgets,4)
+                -- cross line at 0.0 db
+                local crossLineY = maxY - volumeSliderH *  db_to_slider(0) + heightUsed / 4 + 1
+                reaper.ImGui_DrawList_AddLine(draw_list,minX+9,crossLineY,maxX-10,crossLineY,settings.colors.backgroundWidgets,1)
                 
                 local colorOfVal = colorText & 0xFFFFFF77
                 local hideValIfLessThen = 360
@@ -18560,9 +18617,16 @@ local function loop()
                 --centerText(text, colorWhite, volumeSliderX, volumeSliderW, -4, posYOffset + volumeSliderH - padding * 2.4 - ((volumeSliderH - padding * 3) * new_slider_pos)) 
                 reaper.ImGui_SetCursorPos(ctx, volumeSliderX, sliderImageY)
                 if useImages then 
-                    reaper.ImGui_Image(ctx, images[faderImagePath].image, width, height, images[faderImagePath].x1, images[faderImagePath].y1, images[faderImagePath].x2, images[faderImagePath].y2)  
+                    reaper.ImGui_Image(ctx, imageFromCache(faderImagePath), width, height, images[faderImagePath].x1, images[faderImagePath].y1, images[faderImagePath].x2, images[faderImagePath].y2)  
                 else
                     reaper.ImGui_Button(ctx, text, volumeSliderW, height)
+                end
+                
+                
+                posXOffset = posXOffset + volumeSliderW + padding/2
+                
+                if settings.showTrackControlElementsOnSide then
+                    trackControlElements(posXOffset)
                 end
                 
                 
@@ -18591,7 +18655,6 @@ local function loop()
                 end
                 
                 
-                posXOffset = posXOffset + volumeSliderW + padding/2
                 if settings.showMuteButton then
                     reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
                     buttonWithColor("B_MUTE", "M", colorRedHidden)
@@ -18628,7 +18691,7 @@ local function loop()
             
             
             
-            function trackControlPanel(title, width, height, offset, vertical, heightAutoAdjust) 
+            function trackControlPanel() 
                 if settings.showTrackControlPanel then 
                     pushBackgroundModulesColors()
                     
@@ -18637,22 +18700,23 @@ local function loop()
                     
                     local isCollabsed = false
                     
-                    local width = vertical and elementsWidthInVertical or 28*3
+                    local width = vertical and elementsWidthInVertical or nil--28*3
                     -- make specific height for vertical mode
-                    local height = vertical and settings.matrixHeight or elementsHeightInHorizontal 
+                    local height = vertical and settings.trackControlHeight or elementsHeightInHorizontal 
                      
                     local title = "Track Control" 
-                
+                    
+                    local heightAutoAdjust = false --vertical and not isCollabsed
                     -- 789
                     --reaper.ImGui_SetNextWindowSizeConstraints(ctx, headerSizeW, headerSizeW, width, height)
                     --local visible = reaper.ImGui_BeginChild(ctx, 'PLUGINS', width, nil, childFlags, reaper.ImGui_WindowFlags_NoScrollWithMouse() | reaper.ImGui_WindowFlags_NoScrollbar() | scrollFlags)
                     --if visible then
-                    if topChildOfPanel(title, width, height, vertical and not isCollabsed, false) then 
+                    if topChildOfPanel(title, width, height, heightAutoAdjust, false) then 
                         
                         local posX, posY = reaper.ImGui_GetCursorPos(ctx)
                         
                         --local trackIndex = trackIndexTouched
-                        drawTrackValuesElement(track, trackIndex, 6, 6, height)
+                        drawTrackValuesElement(track, trackIndex, padding, padding, height)
             
                         reaper.ImGui_EndChild(ctx)                        
                     end 
@@ -18846,7 +18910,7 @@ local function loop()
                                 end
                                 
                             end
-                             
+                             --[[
                              reaper.ImGui_TableNextRow(ctx)
                              reaper.ImGui_TableNextColumn(ctx)
                              
@@ -18856,7 +18920,7 @@ local function loop()
                              reaper.ImGui_TableNextColumn(ctx)
                              reaper.ImGui_Selectable(ctx, '+##receiveadd', false)-- ,reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
                              reaper.ImGui_PopStyleVar(ctx)
-                            
+                              ]]
                             reaper.ImGui_EndTable(ctx)
                             
                             
@@ -19139,11 +19203,11 @@ local function loop()
                         
                         placingOfNextElement() 
                         
-                        if not settings.vertical then
+                        --if not settings.vertical then
                             trackControlPanel()
                         
                             placingOfNextElement() 
-                        end
+                        --end
                     end
                     
                     if disable then reaper.ImGui_EndDisabled(ctx) end
@@ -20086,6 +20150,7 @@ local function loop()
 end
 
 
+--reaper.ShowConsoleMsg(reaper.time_precise() - startTime .. " before defer\n")
 
 reaper.defer(loop)
 
