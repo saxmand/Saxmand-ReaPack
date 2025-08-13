@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.5.1
+-- @version 1.5.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,15 +18,14 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + remove peak clipping when clicking fader
---   + added custom clip color
---   + fixed track controls not getting mapping when being added
+--   + added individual color for scroll bar grabs 
+--   + fixed too wide plugin list in vertical mode
 
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.5.1"
+local version = "1.5.2"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -772,6 +771,10 @@ local defaultSettings = {
       buttonsActive = colorMidGrey,
       buttonsHover = colorGrey,
       buttonsBorder = colorLightGrey,
+       
+      scrollBarGrab = colorDarkGrey,
+      scrollBarGrabActive = colorMidGrey,
+      scrollBarGrabHover = colorGrey,
       
       buttonsSpecial = colorDarkGrey,
       buttonsSpecialActive = colorMidGrey,
@@ -15506,9 +15509,16 @@ local function loop()
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorButtonsHover)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Separator(), colorTextDimmed)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_MenuBarBg(), colorMenuBar)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrab(), colorButtons)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrabActive(), colorButtonsActive)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrabHovered(), colorButtonsHover)
+    
+    if lol then 
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrab(), colorButtons)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrabActive(), colorButtonsActive)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrabHovered(), colorButtonsHover)
+    else 
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrab(), settings.colors.scrollBarGrab)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrabActive(), settings.colors.scrollBarGrabActive)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrabHovered(), settings.colors.scrollBarGrabHover)
+    end
     
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), settings.colors.boxBackground)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(), settings.colors.boxBackgroundActive)
@@ -17064,7 +17074,7 @@ local function loop()
                         local width_child = elementsWidthInVertical - 14
                         local height_child = elementsHeightInHorizontal - 14
                         
-                        local pluginsListWidth = vertical and elementsWidthInVertical - 14 or settings.pluginsWidth
+                        local pluginsListWidth = vertical and elementsWidthInVertical - 14 - 12 or settings.pluginsWidth
                         local pluginsListHeight = vertical and settings.pluginsHeight or elementsHeightInHorizontal - 14
                         local heightAutoAdjust = not isCollabsed and not (not vertical or settings.alwaysUsePluginsHeight)
                         local childPosSize = 20
