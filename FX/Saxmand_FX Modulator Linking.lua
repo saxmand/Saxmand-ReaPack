@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.4.9
+-- @version 1.5.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,13 +18,16 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + adding guide to install dependency for fx_parser_list
---   + added privides for images, so they get installed too
+--   + Adding modulator with "+" will insert at the point of the +
+--   + Adding text sizing option
+--   + replacing non acsii characters for now to support other languages
+--   + fix to not crash on add link midi context menu (imgui update error)
+--   + fix to not catch input FX as focused fx
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.4.9"
+local version = "1.5.0"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -57,35 +60,11 @@ local imagesFolderPath = scriptPathSubfolder .. imagesFolderName .. seperator
 
 local ctx
 font = reaper.ImGui_CreateFont('Arial', 14)
-font1 = reaper.ImGui_CreateFont('Arial', 15)
-font2 = reaper.ImGui_CreateFont('Arial', 17)
-font8 = reaper.ImGui_CreateFont('Arial', 8)
-font9 = reaper.ImGui_CreateFont('Arial', 9)
-font10 = reaper.ImGui_CreateFont('Arial', 10)
-font11 = reaper.ImGui_CreateFont('Arial', 11)
-font12 = reaper.ImGui_CreateFont('Arial', 12)
-font13 = reaper.ImGui_CreateFont('Arial', 13)
-font14 = reaper.ImGui_CreateFont('Arial', 14)
-font15 = reaper.ImGui_CreateFont('Arial', 15)
-font16 = reaper.ImGui_CreateFont('Arial', 16)
-font60 = reaper.ImGui_CreateFont('Arial', 60)
 
 function initializeContext()
     ctx = ImGui.CreateContext(appName)
     -- imgui_font
     reaper.ImGui_Attach(ctx, font)
-    reaper.ImGui_Attach(ctx, font1)
-    reaper.ImGui_Attach(ctx, font2)
-    reaper.ImGui_Attach(ctx, font8)
-    reaper.ImGui_Attach(ctx, font9)
-    reaper.ImGui_Attach(ctx, font10)
-    reaper.ImGui_Attach(ctx, font11)
-    reaper.ImGui_Attach(ctx, font12)
-    reaper.ImGui_Attach(ctx, font13)
-    reaper.ImGui_Attach(ctx, font14)
-    reaper.ImGui_Attach(ctx, font15)
-    reaper.ImGui_Attach(ctx, font16)
-    reaper.ImGui_Attach(ctx, font60)
 end
 initializeContext()
 
@@ -665,7 +644,7 @@ local defaultSettings = {
       -- Modules 
     showModulatorsList = true, 
     modulesHeight = 250,
-    modulesPopupHeight = 250,
+    modulesPopupHeight = 450,
     modulesWidth = 188,
     modulatorsWidthContext = 188,
     
@@ -755,6 +734,7 @@ local defaultSettings = {
     --- ADVANCED FLOATING MAPPER
     initialMappedOverlaySize = 20, 
     
+    sizing = 90,
     --defaultDirection = 3,
     --defaultLFODirection = 2,
     
@@ -1887,6 +1867,51 @@ local char_shapes = {
     ["]"] = {{0.0, 1.25, 0.25, 1.25}, {0.25, 0.0}, {0.0, 0.0}},
 }
 
+-- Universal Latin-to-ASCII mapping
+local char_map = {
+    -- Portuguese / general accented vowels
+    ["á"]="a", ["à"]="a", ["ã"]="a", ["â"]="a", ["ä"]="a", ["å"]="a", ["æ"]="ae",
+    ["Á"]="A", ["À"]="A", ["Ã"]="A", ["Â"]="A", ["Ä"]="A", ["Å"]="A", ["Æ"]="AE",
+    ["é"]="e", ["è"]="e", ["ê"]="e", ["ë"]="e",
+    ["É"]="E", ["È"]="E", ["Ê"]="E", ["Ë"]="E",
+    ["í"]="i", ["ì"]="i", ["î"]="i", ["ï"]="i",
+    ["Í"]="I", ["Ì"]="I", ["Î"]="I", ["Ï"]="I",
+    ["ó"]="o", ["ò"]="o", ["õ"]="o", ["ô"]="o", ["ö"]="o", ["ø"]="o", ["œ"]="oe",
+    ["Ó"]="O", ["Ò"]="O", ["Õ"]="O", ["Ô"]="O", ["Ö"]="O", ["Ø"]="O", ["Œ"]="OE",
+    ["ú"]="u", ["ù"]="u", ["û"]="u", ["ü"]="u",
+    ["Ú"]="U", ["Ù"]="U", ["Û"]="U", ["Ü"]="U",
+    ["ç"]="c", ["Ç"]="C",
+
+    -- Spanish
+    ["ñ"]="n", ["Ñ"]="N",
+
+    -- German
+    ["ß"]="ss",
+
+    -- Icelandic / Old English
+    ["ð"]="d", ["Ð"]="D", ["þ"]="th", ["Þ"]="Th",
+
+    -- Czech / Slovak / Slovene / Croatian / Baltic
+    ["š"]="s", ["Š"]="S", ["ž"]="z", ["Ž"]="Z",
+    ["č"]="c", ["Č"]="C", ["ć"]="c", ["Ć"]="C",
+    ["đ"]="dj", ["Đ"]="Dj",
+
+    -- Polish
+    ["ł"]="l", ["Ł"]="L", ["ń"]="n", ["Ń"]="N",
+    ["ą"]="a", ["Ą"]="A", ["ę"]="e", ["Ę"]="E",
+
+    -- Slovak
+    ["ŕ"]="r", ["Ŕ"]="R",
+
+    -- Czech
+    ["ů"]="u", ["Ů"]="U",
+}
+
+local function latin_to_ascii(str)
+    return (str:gsub("[%z\1-\127\194-\244][\128-\191]*", char_map))
+end
+
+
 function threeDots()
     points, lastPos = textToPointsVertical("...", 0, 0, size, thickness)
 end
@@ -1903,7 +1928,9 @@ end
 function textToPointsVertical(text, x, y, size, thickness, maxSize)
     local textPoints = {} 
     local points = {}
+    size = size*(settings.sizing/100)/(90/100)
     
+    text = latin_to_ascii(text)
     local lastPos = 0
     for i = #text, 1, -1  do 
     --for i = 1, #text  do 
@@ -2961,7 +2988,7 @@ function toggleFxFloatAuto()
     reaper.SNM_SetIntConfigVar("fxfloat_focus", val + (isSet and -4 or 4))
 end    
 
-function setFxFloatAutoToTrue()
+function setFxFloatAutoToTrueConsiderFXWindow()
     local isFxOpen = track and getFXWindowOpen(track)
     
     if not getFxFloatAuto() and not isFxOpen then
@@ -2969,6 +2996,24 @@ function setFxFloatAutoToTrue()
         return false
     else
         return true
+    end
+end
+
+function setFxFloatAutoToFalse()
+    if getFxFloatAuto() then
+        toggleFxFloatAuto()
+        return true
+    else
+        return false
+    end
+end
+
+function setFxFloatAutoToTrue()
+    if getFxFloatAuto() then
+        toggleFxFloatAuto()
+        return true
+    else
+        return false
     end
 end
 
@@ -3239,15 +3284,26 @@ function getPathForNextFxIndex(track, fxIndex, notInsideContainer)
 end
 
 function moveFxIfNeeded(pathForNextIndex, oldIndex)
-    if pathForNextIndex and #pathForNextIndex > 1 then 
-        local newIndex = get_fx_id_from_container_path(track, table.unpack(pathForNextIndex)) 
-        moveFx(track, oldIndex, newIndex) 
-        return get_fx_id_from_container_path(track, table.unpack(pathForNextIndex)) 
+    if pathForNextIndex and #pathForNextIndex > 1 then
+        if #pathForNextIndex > 1 then 
+            local newIndex = get_fx_id_from_container_path(track, table.unpack(pathForNextIndex)) 
+            moveFx(track, oldIndex, newIndex) 
+            return get_fx_id_from_container_path(track, table.unpack(pathForNextIndex)) 
+        else
+            local newIndex = pathForNextIndex[1]-1
+            moveFx(track, oldIndex, newIndex) 
+            return newIndex
+        end
     else
         return oldIndex
     end
 end
 
+function moveFxIfNeededFxIndexBased(newIndex, oldIndex)
+    if newFxIndex ~= oldIndex then
+        moveFx(track, oldIndex, newIndex) 
+    end
+end
                         
 function addFxAslastFunc()
     local addAsLast
@@ -3259,10 +3315,12 @@ function addFxAslastFunc()
     return addAsLast
 end
 
+
+
 function addFxAfterSelection(track, fxIndex, fxName, notInsideContainer) 
     local pathForNextIndex = not addFxAslastFunc() and getPathForNextFxIndex(track, fxIndex, notInsideContainer) or false
     local addIndex = (pathForNextIndex and #pathForNextIndex < 2) and pathForNextIndex[1] or 999
-    local wasSetToFloatingAuto = setFxFloatAutoToTrue()
+    local wasSetToFloatingAuto = setFxFloatAutoToTrueConsiderFXWindow()
     local newFxIndex = reaper.TrackFX_AddByName( track, fxName, false, -1000 - addIndex) 
     newFxIndex = moveFxIfNeeded(pathForNextIndex, newFxIndex)
     if not wasSetToFloatingAuto then toggleFxFloatAuto() end
@@ -3274,7 +3332,7 @@ function addFxViaFxBrowserAfterSelection(track, fxIndex, colorTextDimmed)
     if fx_parser_list then
         local pathForNextIndex = not addFxAslastFunc() and getPathForNextFxIndex(track, fxIndex) or false
         local addIndex = (pathForNextIndex and #pathForNextIndex < 2) and pathForNextIndex[1] or 999
-        local wasSetToFloatingAuto = setFxFloatAutoToTrue() 
+        local wasSetToFloatingAuto = setFxFloatAutoToTrueConsiderFXWindow() 
         local newFxIndex = -1000 - addIndex
         fx_parser_list.Main(ctx, track, newFxIndex, colorTextDimmed)--reaper.TrackFX_AddByName( track, fxName, false, -1000 - addIndex) 
         newFxAmount = reaper.TrackFX_GetCount(track) - 1
@@ -3305,7 +3363,7 @@ function addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
         --modulatorsPos = GetByName( track, "Container", true )
         
         modulatorsPos = addFxAfterSelection(track, settings.addModulatorContainerToBeginningOfChain and -1 or 999, "Container", true)
-        
+        openCloseFx(track, modulatorsPos, false)
         --modulatorsPos = TrackFX_AddByName( track, "Container", modulatorsPos, -1 ) 
         rename = SetNamedConfigParm( track, modulatorsPos, 'renamed_name', "Modulators" )
         modulatorContainerExist = false
@@ -3417,6 +3475,7 @@ function insertContainerAddPluginAndRename(track, name, newName)
     reaper.Undo_BeginBlock() 
     local modulationContainerPos,modulationContainerExist = addContainerAndRenameToModulatorsOrGetModulatorsPos(track)
     local position_of_FX_in_container = tonumber(select(2, GetNamedConfigParm(track, modulationContainerPos, 'container_count', true)))
+    aa = modulationContainerPos
     --if position_of_FX_in_container == 0 then position_of_FX_in_container = 1 end
     local parent_FX_count = GetCount(track) + 1
     local position_of_container = modulationContainerPos + 1
@@ -3430,6 +3489,12 @@ function insertContainerAddPluginAndRename(track, name, newName)
     SetNamedConfigParm( track, insert_position, 'renamed_name', newName)--getModulatorModulesNameCount(track, modulationContainerPos, newName, true) )
     
     local fxAmount = tonumber(select(2, GetNamedConfigParm(track, modulationContainerPos, 'container_count', true)))
+    if insertFxOnFxIndexPath then
+        insert_position = moveFxIfNeeded(insertFxOnFxIndexPath, insert_position)
+        insertFxOnFxIndexPath = nil
+    end
+        
+        
     -- 
     --if fxAmount > 1 then
         renameModulatorNames(track, modulationContainerPos)
@@ -3707,7 +3772,7 @@ function deleteParameterFromContainer(track, modulationContainerPos, param)
 end
 
 function insertCurveForMapping(track, p)
-    local wasSetToFloatingAuto = setFxFloatAutoToTrue()
+    local wasSetToFloatingAuto = setFxFloatAutoToTrueConsiderFXWindow()
     
     local curveName = "Curve_" .. p.guid .."_" .. p.param
     -- insert curver
@@ -5026,7 +5091,7 @@ function titleButtonStyle(name, tooltipText, sizeW, bigText, background, sizeH)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(),background and settings.colors.menuBar or colorTransparent)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(),colorText)
     local clicked = false
-    if bigText then reaper.ImGui_PushFont(ctx, font2,17) end
+    if bigText then reaper.ImGui_PushFont(ctx, font,17*(settings.sizing/100)) end
     
     reaper.ImGui_PushStyleVar(ctx,reaper.ImGui_StyleVar_FrameRounding(),5)
     
@@ -5063,7 +5128,7 @@ function verticalButtonStyle(name, tooltipText, sizeW, verticalName, background,
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(),colorText)
     local clicked = false 
     
-    reaper.ImGui_PushFont(ctx, font2,17)
+    reaper.ImGui_PushFont(ctx, font,17*(settings.sizing/100))
     reaper.ImGui_PushStyleVar(ctx,reaper.ImGui_StyleVar_FrameRounding(),5)
     
     
@@ -5212,7 +5277,7 @@ function drawHeaderText(title, x, y, w, h, vertical, textMargin, color, align, t
     y = y + (vertical and 2 or textMargin)
     color = color and color or colorText
     
-    reaper.ImGui_PushFont(ctx, textSize and _G["font"..textSize] or font15, textSize and textSize or 15) 
+    reaper.ImGui_PushFont(ctx, textSize and _G["font"..textSize] or font, (textSize and textSize or 15)*(settings.sizing/100)) 
     local lastPos, points
     if vertical then 
         lastPos = reaper.ImGui_CalcTextSize(ctx, title, 0,0)  
@@ -5793,7 +5858,7 @@ function drawSortingIcon(x, y, size, isActive, toolTipText)
     local isHovered = mouseInsideArea(x,y,size,size) 
     local color = getColorForIcon(isActive, isHovered) 
     
-    reaper.ImGui_PushFont(ctx, font9, 9)
+    reaper.ImGui_PushFont(ctx, font, 9*(settings.sizing/100))
     reaper.ImGui_DrawList_AddText(draw_list, pad_x+2, pad_y + 2.5, color, "AZ")
     reaper.ImGui_PopFont(ctx)
     reaper.ImGui_DrawList_AddRect(draw_list, pad_x, pad_y, pad_x + pad_size, pad_y + pad_size - 1, color & 0xFFFFFF99 , 3)
@@ -5822,7 +5887,7 @@ function drawMapOnceIcon(x, y, size, isActive, toolTipText)
     reaper.ImGui_DrawList_PathArcTo(draw_list, pad_x + pad_size*0.5, pad_y + pad_size*0.5, pad_size*0.5, 3.141592 * 0.75, 3.141592 * 2.25)
     reaper.ImGui_DrawList_PathStroke(draw_list, color & 0xFFFFFF99, reaper.ImGui_DrawFlags_None(), 1)
     
-    reaper.ImGui_PushFont(ctx, font10,10)
+    reaper.ImGui_PushFont(ctx, font,10*(settings.sizing/100))
     reaper.ImGui_DrawList_AddText(draw_list, pad_x + pad_size /4, pad_y + pad_size / 5, color, "1")
     reaper.ImGui_PopFont(ctx)
     
@@ -6135,7 +6200,7 @@ function openCloseMappings(fx, fxIndex, mappings, floating)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(),settings.colors.buttonsSpecialActive)
     local tv = #mappings -- (isShowing and ">" or "^")
     
-    reaper.ImGui_PushFont(ctx, font11,11) 
+    reaper.ImGui_PushFont(ctx, font,11*(settings.sizing/100)) 
     local size = 15
     if reaper.ImGui_Button(ctx,  "##" .. fxIndex .. tostring(floating), size,size) then
        --[[ if floating then
@@ -7055,7 +7120,7 @@ function mappingsArea(mappingWidth, mappingHeight, m, vertical, floating, isColl
     local visible = reaper.ImGui_BeginChild(ctx, "mappings" .. name .. fxIndex, mappingWidth, mappingHeight, useFlags ,reaper.ImGui_WindowFlags_MenuBar() | reaper.ImGui_WindowFlags_HorizontalScrollbar())
     if visible then
         --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorDarkGrey)
-        reaper.ImGui_PushFont(ctx, font1,15)
+        reaper.ImGui_PushFont(ctx, font,15*(settings.sizing/100))
         --reaper.ImGui_TableSetupColumn(ctx, "< Mappings")
         
         --reaper.ImGui_TableSetupScrollFreeze(ctx,1,2) 
@@ -7913,7 +7978,7 @@ function xyPad(name, id, padSize, track, fxIndex, xParam, yParam,pX, pY, padSize
     reaper.ImGui_DrawList_AddRectFilled(draw_list, minX, minY, maxX, maxY, colorButtons, 0)
     reaper.ImGui_DrawList_AddRect(draw_list, minX, minY, maxX, maxY, colorTextDimmed, 0) 
     
-    reaper.ImGui_PushFont(ctx, font2,17)
+    reaper.ImGui_PushFont(ctx, font,17*(settings.sizing/100))
     local textW, textH = reaper.ImGui_CalcTextSize(ctx, name, 0, 0)
     reaper.ImGui_DrawList_AddText(draw_list, minX + w / 2 - textW/2, minY + h / 2 - textH / 2, colorTextDimmed, name)
     reaper.ImGui_PopFont(ctx)
@@ -9188,30 +9253,33 @@ function modulesPanel(ctx, addToParameter, id, width_from_parent, height_from_pa
         
         reaper.ImGui_Separator(ctx)
         
+        -- TODO: set focus back to original focused
         
         if currentFocus then 
             --reaper.ShowConsoleMsg(modulationContainerPos .. " - ".. insert_position .. "\n")
             --openCloseFx(track, insert_position, false)
             
-            fxIsShowing = GetOpen(track,insert_position)
-            fxIsFloating = GetFloatingWindow(track,insert_position)
-            if fxIsShowing then
-                showFX(track, insert_position, fxIsFloating and 2 or 0) 
+            fxIsShowing = GetOpen(track,insert_position, true)
+            fxIsFloating = GetFloatingWindow(track,insert_position, true)
+            if fxIsShowing and fxIsFloating then
+                showFX(track, insert_position, 2) 
             end
             
+            --[[
             if modulationContainerPos then
                 containerIsShowin = GetOpen(track,modulationContainerPos)
                 containerIsFloating = GetFloatingWindow(track,modulationContainerPos)
                 if containerIsShowin then
                     showFX(track, modulationContainerPos, containerIsFloating and 2 or 0) 
                 end
-            end
+            end]]
             
             --local newFocus = reaper.JS_Window_GetFocus() 
             --if newFocus ~= currentFocus and reaper.JS_Window_GetTitle(newFocus):match(nameOpened) ~= nil then 
              --   reaper.JS_Window_Show(newFocus, "HIDE") 
             --end
         end
+        
 
         ImGui.EndChild(ctx)
     end 
@@ -9289,7 +9357,7 @@ end
 function waitForClosingAddFXBrowser(pathForNextIndex, fx_before) 
     if browserHwnd and track and track == lastTrack then 
         if wasSetToFloatingAuto == nil then
-            wasSetToFloatingAuto = setFxFloatAutoToTrue()
+            wasSetToFloatingAuto = setFxFloatAutoToTrueConsiderFXWindow()
         end
         
         firstBrowserHwnd = firstBrowserHwnd and firstBrowserHwnd + 1 or 0 
@@ -9469,7 +9537,7 @@ end
 
 function titleTextStyle(name, tooltipText, sizeW, background)
     if background then
-        reaper.ImGui_PushFont(ctx, font2,17)
+        reaper.ImGui_PushFont(ctx, font,17*(settings.sizing/100))
     end
     local clicked = false
     if not sizeW then sizeW = reaper.ImGui_CalcTextSize(ctx,name, 0,0) end
@@ -9952,7 +10020,7 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
         if settings.useKnobs and settings.showSeperationLineBeforeMappingName then
             reaper.ImGui_DrawList_AddLine(draw_list, minX+2, maxY- 13, maxX-2,maxY-13, padColor & 0xFFFFFF33, 1)     
         end
-        reaper.ImGui_PushFont(ctx, font11,11)
+        reaper.ImGui_PushFont(ctx, font,11*(settings.sizing/100))
         
         ImGui.PushClipRect(ctx, minX, minY, maxX + ((useNarrow and not useKnobs) and 0 or spaceTaken), maxY, true) 
         local textW = reaper.ImGui_CalcTextSize(ctx, showMappingText)
@@ -11326,7 +11394,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                                         val = val .. " (" .. getNoteName(val, settings.midiNoteNamesMiddleC + 1) .. ")"
                                     end
                                     
-                                    if reaper.ImGui_Selectable(ctx, val,valIsSelected, reaper.ImGui_SelectableFlags_DontClosePopups() ) then
+                                    if reaper.ImGui_Selectable(ctx, val,valIsSelected, reaper.ImGui_SelectableFlags_NoAutoClosePopups() ) then
                                         if midiLearn then
                                            SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi1', typeSelectedMsg)
                                            SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi2', val)
@@ -11351,7 +11419,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                     end
                     drawLineAroundSelected(typeIsSelected) 
                 else
-                    if reaper.ImGui_Selectable(ctx, menuName, typeIsSelected, reaper.ImGui_SelectableFlags_DontClosePopups()) then
+                    if reaper.ImGui_Selectable(ctx, menuName, typeIsSelected, reaper.ImGui_SelectableFlags_NoAutoClosePopups()) then
                         if midiLearn then
                            SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi1', typeSelectedMsg)
                            SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi2', "0")
@@ -11372,7 +11440,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                 for i = 0, 16 do
                     if i == 0 then 
                         if not midiLearn then
-                            if reaper.ImGui_Selectable(ctx,"Omni", omniChan, reaper.ImGui_SelectableFlags_DontClosePopups()) then 
+                            if reaper.ImGui_Selectable(ctx,"Omni", omniChan, reaper.ImGui_SelectableFlags_NoAutoClosePopups()) then 
                                 --setPlinkEffect(track,fxIndex, param, -100)
                                 setPlinkMidiChan(track, fxIndex, param, i)
                             end 
@@ -11380,7 +11448,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                     else
                         local isSelected = not omniChan and msg1 and (msg1 & 0x0F) == (i - 1)
                         local buttonName = i
-                        if reaper.ImGui_Selectable(ctx, buttonName, isSelected, reaper.ImGui_SelectableFlags_DontClosePopups()) then
+                        if reaper.ImGui_Selectable(ctx, buttonName, isSelected, reaper.ImGui_SelectableFlags_NoAutoClosePopups()) then
                             if midiLearn then
                                 SetNamedConfigParm(track, fxIndex, 'param.'..param..'.learn.midi1', (msg1 & 0xF0) + i - 1)
                             else
@@ -11396,7 +11464,7 @@ function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingM
                 if reaper.ImGui_BeginMenu(ctx, "Bus" .. "##midi learn select menu") then  
                     for i = 0, 15 do 
                         local isSelected = midiBus == i 
-                        if reaper.ImGui_Selectable(ctx, i + 1, isSelected, reaper.ImGui_SelectableFlags_DontClosePopups()) then
+                        if reaper.ImGui_Selectable(ctx, i + 1, isSelected, reaper.ImGui_SelectableFlags_NoAutoClosePopups()) then
                             setPlinkMidiBus(track, fxIndex, param, i) 
                         end
                     end 
@@ -14382,6 +14450,10 @@ function appSettingsWindow()
         reaper.ImGui_TextColored(ctx, colorTextDimmed, "Developer settings (Use with causion)")
         
         reaper.ImGui_Indent(ctx)
+            
+            sliderInMenu("Size stuff in the script", "sizing", menuSliderWidth, 30, 200, "Set the text size in the script")
+            
+            reaper.ImGui_NewLine(ctx)
             if reaper.ImGui_Button(ctx, "Reset track settings") then
                 trackSettings = defaultTrackSettings
                 saveTrackSettings(tracK)
@@ -14601,7 +14673,7 @@ function addingAnyModuleWindow(hwnd, moveToModulatorContainer)
     end
     --reaper.ImGui_SetCursorPos(ctx, 0, h - 20)
     
-    reaper.ImGui_PushFont(ctx, font1,15)
+    reaper.ImGui_PushFont(ctx, font,15*(settings.sizing/100))
     local textW = reaper.ImGui_CalcTextSize(ctx, text, 0, 0)
     local windowW = textW  + 24
     --if isDocked then
@@ -14734,44 +14806,46 @@ function updateTouchedFX()
         end
         
         if parameterFound then 
-            if settings.useFloatingMapper then
-                showFloatingMapper = true
+            
+            local fxIsOnInputFX = (fxidx & 0x1000000) ~= 0
+            if not fxIsOnInputFX then
+                if settings.useFloatingMapper then
+                    showFloatingMapper = true
+                end
+                trackIndexTouched = trackidx
+                fxIndexTouched = fxidx
+                parameterTouched = param
+                trackTouched = trackTemp
+                fxnumber = fxIndexTouched
+                paramnumber = parameterTouched 
+                
+                if trackSettings.focusedParam then
+                    trackSettings.focusedParam[GetFXGUID(trackTemp, fxnumber)] = paramnumber
+                    saveTrackSettings(track)
+                end
+                
+                --scrollToParameter = true
+                
+                -- we always set these though they are only used when not in force mapping mode
+                lastParameterTouched = parameterTouched
+                lastFxIndexTouched = fxIndexTouched
+                lastTrackIndexTouched = trackIndexTouched
+                
+                if lastParameterTouchedMouse ~= lastParameterTouched or lastFxIndexTouchedMouse ~= lastFxIndexTouched or lastTrackIndexTouchedMouse ~= lastTrackIndexTouched then
+                    mousePosOnTouchedParam = {x = mouse_pos_x, y = mouse_pos_y_correct}
+                    lastParameterTouchedMouse = lastParameterTouched
+                    lastFxIndexTouchedMouse = lastFxIndexTouched 
+                    lastTrackIndexTouchedMouse = lastTrackIndexTouched
+                    -- maybe it needs to be outside this, but maybe we don't need to update it cunstantly. 
+                    updateMapping()
+                end
+                hwndWindowOnTouchParam = clickedHwnd
+                --hwndWindowOnTouchParam = reaper.JS_Window_GetFocus() 
+                --if fxWindowClicked then 
+                
+                --end
+                lastClickedHwnd = clickedHwnd
             end
-            
-            trackIndexTouched = trackidx
-            fxIndexTouched = fxidx
-            parameterTouched = param
-            trackTouched = trackTemp
-            fxnumber = fxIndexTouched
-            paramnumber = parameterTouched 
-            
-            if trackSettings.focusedParam then
-                trackSettings.focusedParam[GetFXGUID(trackTemp, fxnumber)] = paramnumber
-                saveTrackSettings(track)
-            end
-            
-            
-            --scrollToParameter = true
-            
-            -- we always set these though they are only used when not in force mapping mode
-            lastParameterTouched = parameterTouched
-            lastFxIndexTouched = fxIndexTouched
-            lastTrackIndexTouched = trackIndexTouched
-            
-            if lastParameterTouchedMouse ~= lastParameterTouched or lastFxIndexTouchedMouse ~= lastFxIndexTouched or lastTrackIndexTouchedMouse ~= lastTrackIndexTouched then
-                mousePosOnTouchedParam = {x = mouse_pos_x, y = mouse_pos_y_correct}
-                lastParameterTouchedMouse = lastParameterTouched
-                lastFxIndexTouchedMouse = lastFxIndexTouched 
-                lastTrackIndexTouchedMouse = lastTrackIndexTouched
-                -- maybe it needs to be outside this, but maybe we don't need to update it cunstantly. 
-                updateMapping()
-            end
-            hwndWindowOnTouchParam = clickedHwnd
-            --hwndWindowOnTouchParam = reaper.JS_Window_GetFocus() 
-            --if fxWindowClicked then 
-            
-            --end
-            lastClickedHwnd = clickedHwnd
         end
     end
     
@@ -15380,15 +15454,16 @@ local function loop()
     end
     
     
-    reaper.ImGui_PushFont(ctx, font, 14)
+    reaper.ImGui_PushFont(ctx, font, 14*(settings.sizing/100))
+    
     --[[
     partsWidth = settings.partsWidth
     if partsWidth >= 180 then
         reaper.ImGui_PushFont(ctx, font,14)
     elseif partsWidth < 180 and partsWidth >= 160 then
-        reaper.ImGui_PushFont(ctx, font13,13)
+        reaper.ImGui_PushFont(ctx, font,13)
     elseif partsWidth < 160 and partsWidth >= 140 then
-        reaper.ImGui_PushFont(ctx, font12,12)
+        reaper.ImGui_PushFont(ctx, font,12)
     end
     ]]
     
@@ -16834,13 +16909,14 @@ local function loop()
                     
                     if settings.showAddModulatorButtonBefore and (#modulatorNames > 0 or not settings.showAddModulatorButtonAfter) then
                         if titleButtonStyle("+##before", "Add new modulator", addNewModulatorWidth,true,false, addNewModulatorHeight ) then 
+                            insertFxOnFxIndexPath = modulationContainerPos and {modulationContainerPos+1, 1}-- getPathForNextFxIndex(track, modulatorNames[1].fxIndex)
                             reaper.ImGui_OpenPopup(ctx, 'Add new modulator')  
                         end
                         placingOfNextElement(1)
                     end
                     
                     function getNameW()
-                        reaper.ImGui_PushFont(ctx, font2,17)
+                        reaper.ImGui_PushFont(ctx, font,17*(settings.sizing/100))
                         local nameW = reaper.ImGui_CalcTextSize(ctx, name, 0,0) 
                         reaper.ImGui_PopFont(ctx)
                         return nameW
@@ -16887,8 +16963,8 @@ local function loop()
                                 if pos < #modulatorNames then
                                     if settings.showAddModulatorButton then 
                                         placingOfNextElement(1)
-                                        if titleButtonStyle("+##".. m.fxIndex, "Add new modulator", addNewModulatorWidth,true,false, addNewModulatorHeight ) then 
-                                            insertFxOnFxIndex = m.fxIndex
+                                        if titleButtonStyle("+##".. m.fxIndex, "Add new modulator", addNewModulatorWidth,true,false, addNewModulatorHeight ) then  
+                                            insertFxOnFxIndexPath = getPathForNextFxIndex(track, m.fxIndex)
                                             reaper.ImGui_OpenPopup(ctx, 'Add new modulator')  
                                         end
                                         placingOfNextElement(1)
@@ -16899,7 +16975,6 @@ local function loop()
                             end
                         end  
                     end
-                    
                     
                     placingOfNextElement(1)
                     
@@ -17298,7 +17373,7 @@ local function loop()
                     end
                     
                     if reaper.ImGui_BeginPopup(ctx, "add popup") then
-                        
+                    
                         local pathForNextIndex = getPathForNextFxIndex(track, fxnumber) or false 
                         local addAsLast = not pathForNextIndex
                         if pathForNextIndex then
@@ -17890,7 +17965,7 @@ local function loop()
                     --reaper.ImGui_DrawList_AddRectFilled(draw_list, x - 2, y - 2, x + size + 3, y + size + 3, colorTextDimmed & 0xFFFFFF99, 0, nil)
                     --reaper.ImGui_DrawList_AddText(draw_list, x - 2, y - 2, colorText, textOnTop)
                     --reaper.ImGui_SetCursorPos(ctx, curPosX + relativePosX, curPosY + relativePosY)
-                    --reaper.ImGui_PushFont(ctx, font10,10)
+                    --reaper.ImGui_PushFont(ctx, font,10)
                     --reaper.ImGui_Text(ctx, textOnTop)
                     --reaper.ImGui_PopFont(ctx)
                     --setToolTipFuncPos = {x = 
@@ -17979,7 +18054,7 @@ local function loop()
                 
                 --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 0)
                 --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorButtonsHover) 
-                reaper.ImGui_PushFont(ctx, font13,13)
+                reaper.ImGui_PushFont(ctx, font,13*(settings.sizing/100))
                 
                 
                 local textOffset = 0
@@ -18006,7 +18081,7 @@ local function loop()
                 
                 
                 reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 0)
-                --reaper.ImGui_PushFont(ctx, font14,14)
+                --reaper.ImGui_PushFont(ctx, font,14)
                 --centerText("Track Values", colorWhite, posXOffset, widthWithPadding,0, posY + 3)
                 --posYOffset = posYOffset + 14
                 --reaper.ImGui_PopFont(ctx)
@@ -18121,7 +18196,7 @@ local function loop()
                         
                         --buttonName = "hej"
                         
-                        reaper.ImGui_PushFont(ctx, font10,10)
+                        reaper.ImGui_PushFont(ctx, font,10*(settings.sizing/100))
                         textW, textH = reaper.ImGui_CalcTextSize(ctx, buttonName, 0, 0)
                         reaper.ImGui_PopFont(ctx)
                         textW = panW
@@ -18297,7 +18372,7 @@ local function loop()
                 --[[
                 local _, trackname = reaper.GetTrackName(track)
                 local name = "Track Values - " .. trackname
-                reaper.ImGui_PushFont(ctx, font20,20)
+                reaper.ImGui_PushFont(ctx, font,20)
                 textW, textH = reaper.ImGui_CalcTextSize(ctx, name, 0, 0)
                 reaper.ImGui_PopFont(ctx)
 
@@ -18358,7 +18433,7 @@ local function loop()
                 
                 local width = useImages and images[faderImagePath].width or volumeSliderW
                 local height = useImages and images[faderImagePath].height or 30
-                local heightUsed = useImages and height - 7 or height
+                local heightUsed = useImages and height - 5 or height
               
                 
                 reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
@@ -18784,7 +18859,7 @@ local function loop()
                     --reaper.ImGui_SetNextWindowSizeConstraints(ctx, 30, 0, width, scrollAreaHeight)
                     --if reaper.ImGui_BeginChild(ctx, "parametersForFocused", width, scrollAreaHeightFixed, childFlag, scrollFlags) then
                     
-                    reaper.ImGui_PushFont(ctx, font11,11)
+                    reaper.ImGui_PushFont(ctx, font,11*(settings.sizing/100))
                     if scrollChildOfPanel(title .. "scroll", scrollAreaWidth, scrollAreaHeight, heightAutoAdjust) then
                         
                         if parameterLinks and reaper.ImGui_BeginTable(ctx, 'PluginsTable',columnAmount, pluginFlags, nil, not heightAutoAdjust and scrollAreaHeight or nil) then -- (offset and (height -  64) or 0)) then
@@ -19136,7 +19211,7 @@ local function loop()
                     reaper.ImGui_PopStyleColor(ctx,3)
                     
                     
-                    reaper.ImGui_PushFont(ctx, font60,60)
+                    reaper.ImGui_PushFont(ctx, font,60*(settings.sizing/100))
                     local textW, textH = reaper.ImGui_CalcTextSize(ctx, name, 0,0)
                     local textX = minX + mainAreaW / 2 - ((vertical and textH or textW) / 2)
                     local textY = minY + mainAreaH / 2 - ((vertical and textW or textH) / 2)
@@ -19411,7 +19486,7 @@ local function loop()
         reaper.ImGui_SetCursorPos(ctx, 3+40, 0)
         local posX = reaper.ImGui_GetCursorPosX(ctx)
         
-        reaper.ImGui_PushFont(ctx, font2,17)
+        reaper.ImGui_PushFont(ctx, font,17*(settings.sizing/100))
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorTransparent)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorTransparent)
