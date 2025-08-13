@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.4.7
+-- @version 1.4.8
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -14,16 +14,17 @@
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/Curve (SNJUK2)/*.jsfx-inc
 --   [effect] ../FX Modulator Linking/Curve Mapped Modulation/*.jsfx
 --   [effect] ../FX Modulator Linking/Curve Mapped Modulation/*.jsfx-inc
+--   [effect] ../FX Modulator Linking/Images/*.png
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + updated to use imgui 0.10.0.0
---   + fixed issue with fx parser sub folders
+--   + adding guide to install dependency for fx_parser_list
+--   + added privides for images, so they get installed too
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.4.7"
+local version = "1.4.8"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -3289,6 +3290,7 @@ function addFxViaFxBrowserAfterSelection(track, fxIndex, colorTextDimmed)
         if reaper.ImGui_Button(ctx, "!! Sexan FX parser not installed !!") then
             --openWebpage("https://github.com/GoranKovac/ReaScripts/raw/master/index.xml")
             reaper.CF_SetClipboard("https://github.com/GoranKovac/ReaScripts/raw/master/index.xml")
+            reaper.ShowMessageBox("Repository link copied to clipboard.\n\nIn Reaper's menu bar click:\nExtension -> ReaPack -> Import repository...\n\nAdd the url from your clipboard and click ok\n\nAfter adding repository restart the script", "How to add dependency!", 0)
         end
         setToolTipFunc("To have a build-in fx browser here, please install Sexan's reapack.\nClick to add reapack link to you clipboard")
     end
@@ -18336,7 +18338,7 @@ local function loop()
                 local new_db = slider_to_db(slider_pos)
                 if new_db <= DB_MIN then new_db = DB_INF end
                 
-                local text = string.format("%.1fdB", new_db == DB_INF and -math.huge or new_db)
+                local text = new_db == DB_INF and "-inf dB" or string.format("%.1fdB", new_db)
                 
                 
                 if useImages then 
