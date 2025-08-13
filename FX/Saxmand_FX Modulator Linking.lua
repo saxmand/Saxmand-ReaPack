@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.5.0
+-- @version 1.5.1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,16 +18,15 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + Adding modulator with "+" will insert at the point of the +
---   + Adding text sizing option
---   + replacing non acsii characters for now to support other languages
---   + fix to not crash on add link midi context menu (imgui update error)
---   + fix to not catch input FX as focused fx
+--   + remove peak clipping when clicking fader
+--   + added custom clip color
+--   + fixed track controls not getting mapping when being added
+
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.5.0"
+local version = "1.5.1"
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -809,6 +808,7 @@ local defaultSettings = {
       containerLayer2 = colorTouch, 
       containerLayer3 = colorWrite,
       
+      trackControlPeakClip = colorRedHidden,
       trackControlPeakMax = colorRedHidden,
       trackControlPeakMin = colorGreen,
     },
@@ -8663,8 +8663,7 @@ function genericModulator(id, name, modulationContainerPos, fxIndex, fxInContain
 end
 
 
-function addVolumePanAndSendControlPlugin(track)
-    
+function addVolumePanAndSendControlPlugin(track) 
     local nameOpened = "Track controls" 
     local fxPosition = AddByNameFX( track, nameOpened, false, 1 )
     if fxPosition == -1 then
@@ -9224,11 +9223,6 @@ function modulesPanel(ctx, addToParameter, id, width_from_parent, height_from_pa
         menuHeader("Extra [" .. 2 .."]", "showExtra", "extra functions", widthForClippingText)
         if settings.showExtra then  
         
-            -- set realearn params on the run after the first one
-            if setTrackControlParamsOnIndex then
-                setVolumePanAndSendControlPluginParams(track, setTrackControlParamsOnIndex) 
-                setTrackControlParamsOnIndex = nil
-            end
             
             local tooltip = not isReaLearnInstalled and 'Install Helgobox to have ReaLearn installed first.\nClick to open webpage' or "Control you volume, pan and send with modulators.\n[This is not a modulator and have to be placed outside the modulator folder]"
             if not isReaLearnInstalled then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorGrey) end
@@ -15557,6 +15551,15 @@ local function loop()
     end
     --------
     
+    
+    -- set realearn params on the run after the first one
+    if setTrackControlParamsOnIndex then
+        setVolumePanAndSendControlPluginParams(track, setTrackControlParamsOnIndex) 
+        setTrackControlParamsOnIndex = nil
+    end
+    
+    
+    
     local mainFlags = reaper.ImGui_WindowFlags_TopMost() | reaper.ImGui_WindowFlags_NoScrollWithMouse()
     if not settings.allowCollapsingMainWindow then
         mainFlags = mainFlags | reaper.ImGui_WindowFlags_NoCollapse()
@@ -18438,6 +18441,11 @@ local function loop()
                 
                 reaper.ImGui_SetCursorPos(ctx,posXOffset, posYOffset) 
                 volumeSliderH = windowH - posYOffset - padding
+                local screenPosX, screenPosY = reaper.ImGui_GetCursorScreenPos(ctx)
+                --if mouseInsideArea( screenPosX, screenPosY,  screenPosX + volumeSliderW, screenPosY + 10) then
+                --    reaper.ShowConsoleMsg("hje\n")
+                --    peakPeaked = nil
+                --end
                 
                 if volumeSliderH <= 0 then volumeSliderH = 10 end
                 
@@ -18462,7 +18470,9 @@ local function loop()
                 reaper.ImGui_PopStyleColor(ctx,5)
                 ]]
                 -- area for slider
-                reaper.ImGui_InvisibleButton(ctx, "##volumeslider" .. tostring(trackIndex),volumeSliderW, volumeSliderH)
+                if reaper.ImGui_InvisibleButton(ctx, "##volumeslider" .. tostring(trackIndex),volumeSliderW, volumeSliderH) then
+                    peakPeaked = nil
+                end
                 
                 local minX, minY = reaper.ImGui_GetItemRectMin(ctx)
                 local maxX, maxY = reaper.ImGui_GetItemRectMax(ctx)
@@ -18536,7 +18546,6 @@ local function loop()
                     
                     --addValue(lastPeak[i], peak)
                     flattenPeak = slowRound(peak) --slowRound(average(lastPeak[i]))
-                    a1 = flattenPeak 
                     if not peakHold[i] or peakHold[i] < flattenPeak then 
                         peakHold[i] = flattenPeak 
                     else
@@ -18568,7 +18577,7 @@ local function loop()
                         reaper.ImGui_DrawList_AddRectFilledMultiColor(draw_list, posXStart, minY, posXStart+peakWidth, maxY, settings.colors.trackControlPeakMax,settings.colors.trackControlPeakMax, settings.colors.trackControlPeakMin, settings.colors.trackControlPeakMin) 
                         reaper.ImGui_DrawList_AddRectFilled(draw_list, posXStart, posYStart - peakHeight, posXStart+peakWidth, minY, settings.colors.backgroundModules) 
                         if peakPeaked[i] then 
-                            reaper.ImGui_DrawList_AddRectFilled(draw_list, posXStart, minY-3, posXStart+peakWidth, minY, settings.colors.trackControlPeakMax, 0) 
+                            reaper.ImGui_DrawList_AddRectFilled(draw_list, posXStart, minY-3, posXStart+peakWidth, minY, settings.colors.trackControlPeakClip, 0) 
                         end
                         
                         if peakHold[i] and peakHold[i] > 0 and peakHold[i] < 1 then 
