@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.5.4
+-- @version 1.5.5
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,13 +18,15 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fixed a bunch of things with track control and modifiers 
+--   + Added option to add fx when clicking empty space of plugin list
+--   + possible fix for mouse release issue
+--   + initial notes panel
  
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.5.4" 
+local version = "1.5.5" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -520,7 +522,11 @@ local defaultSettings = {
     allow = 200,
     alwaysUsePluginsHeight = true,
     showPluginsListGlobal = true,
-    showPluginsList = true,
+    showPluginsList = true, 
+    addFXWhenClickingEmptySpace = true,
+    addFXViaBrowserOnDoubleClick = false,
+    addEmptySpaceAtEndOfPluginList  = false,
+    useDoubleClickForEmptySpaceAtPluginList = false,
     
     
       -- Matrix 
@@ -533,6 +539,19 @@ local defaultSettings = {
     matrixPanelHeight = 600,
     alwaysUseMatrixHeight = true,
     showMatrixGlobal = true,
+    
+    
+      -- Notes 
+    showTrackNotesPanel = true,
+    showTrackNotes = true,
+    trackNotesHeight = 400,
+    trackNotesWidth = 200,
+    trackNotesPanelWidthFixedSize = false,
+    trackNotesPanelWidth = 600,
+    trackNotesPanelHeight = 600,
+    alwaysUseTrackNotesHeight = true,
+    showTrackNotesGlobal = true,
+    wrapNotesText = true,
     
       -- Track Control
     showTrackControlPanel = true, 
@@ -3291,13 +3310,13 @@ function getPathForNextFxIndex(track, fxIndex, notInsideContainer)
 end
 
 function moveFxIfNeeded(pathForNextIndex, oldIndex)
-    if pathForNextIndex and #pathForNextIndex > 1 then
+    if pathForNextIndex and oldIndex then
         if #pathForNextIndex > 1 then 
             local newIndex = get_fx_id_from_container_path(track, table.unpack(pathForNextIndex)) 
             moveFx(track, oldIndex, newIndex) 
             return get_fx_id_from_container_path(track, table.unpack(pathForNextIndex)) 
         else
-            local newIndex = pathForNextIndex[1]-1
+            local newIndex = pathForNextIndex[1]
             moveFx(track, oldIndex, newIndex) 
             return newIndex
         end
@@ -9356,7 +9375,7 @@ end
 
 
 function waitForClosingAddFXBrowser(pathForNextIndex, fx_before) 
-    if browserHwnd and track and track == lastTrack then 
+    if browserHwnd and track and track == lastTrack and fx_before then 
         if wasSetToFloatingAuto == nil then
             wasSetToFloatingAuto = setFxFloatAutoToTrueConsiderFXWindow()
         end
@@ -9380,26 +9399,33 @@ function waitForClosingAddFXBrowser(pathForNextIndex, fx_before)
             if settings.closeFxWindowAfterBeingAdded then
                 openCloseFx(track, addedFxIndex, false) 
             end
-            
+            local newFxIndex
             if moveToModulatorContainer then
                 SetNamedConfigParm( track, addedFxIndex, 'renamed_name', fxName:gsub("^[^:]+: ", "")) 
                 modulationContainerPos, insert_position = movePluginToContainer(track, addedFxIndex )
                 renameModulatorNames(track, modulationContainerPos)
             else
-                newFxIndex = addNewFXToEnd and addedFxIndex or moveFxIfNeeded(pathForNextIndex, addedFxIndex, addNewFXToEnd)
+                if addFxAslastFunc() then
+                    newFxIndex = addedFxIndex 
+                else
+                    newFxIndex = moveFxIfNeeded(pathForNextIndex, addedFxIndex)
+                end
             end
             browserHwnd = nil
+            pathForNextIndex = nil
+            fx_before = nil
             --reloadParameterLinkCatch = true
             --last_paramTableCatch = {}
             paramTableCatch = {}
+            lastFxAmount = nil
             
             --if not wasSetToFloatingAuto then toggleFxFloatAuto(); wasSetToFloatingAuto = nil end
             return newFxIndex
         end
          
          if isAddFXAsLast and (not last_isAddFXAsLast_time or time - last_isAddFXAsLast_time > 0.5) then
-            addNewFXToEnd = not addNewFXToEnd
-            last_isAddFXAsLast_time = time
+            --addNewFXToEnd = not addNewFXToEnd
+            --last_isAddFXAsLast_time = time
          end
         --if moveToModulatorContainer then
             if not addingAnyModuleWindow(browserHwnd, moveToModulatorContainer) then
@@ -10403,7 +10429,9 @@ function mouseCursorSettings()
         mouseDragStartY = mouse_pos_y_on_click; 
         mouse_pos_x = mouse_pos_x_on_click; 
         mouse_pos_y = mouse_pos_y_on_click; 
-        reaper.JS_Mouse_SetPosition(mouse_pos_x_on_click, mouse_pos_y_on_click);  
+        if mouse_pos_x_on_click then
+            reaper.JS_Mouse_SetPosition(mouse_pos_x_on_click, mouse_pos_y_on_click);  
+        end
     end 
 end
 
@@ -10635,7 +10663,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
         scrollTime = nil 
         
         
-        if settings.keepMouseAtClickPosition and isMouseWasReleased then 
+        if settings.keepMouseAtClickPosition and isMouseWasReleased and mouse_pos_x_on_click then 
             reaper.JS_Mouse_SetPosition(mouse_pos_x_on_click, mouse_pos_y_on_click)
         end
     end
@@ -12939,7 +12967,12 @@ function appSettingsWindow()
                 setToolTipFunc("Allow to scroll horizontal in the plugin list, when namas are too big for module") 
                 
                 
-                reaper.ImGui_TextColored(ctx, colorGrey, "Panel Controls")
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Close new FX window when added',settings.closeFxWindowAfterBeingAdded) 
+                if ret then 
+                    settings.closeFxWindowAfterBeingAdded = val
+                    saveSettings()
+                end
+                setToolTipFunc("Close the FX window's after FX was added, if open")  
                 
                 local ret, val = reaper.ImGui_Checkbox(ctx,"Open plugin when clicking name##",settings.openPluginWhenClickingName) 
                 if ret then 
@@ -12949,87 +12982,136 @@ function appSettingsWindow()
                 setToolTipFunc("Open plugin when clicking name, instead of focusing the plugin and needing doubleclick to open.\nIf enabled, clicking the plugin number will focus the plugin.\nIf the parameters area is not shown the plugins will always be open on single click")  
                 
                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show at top of panel##plugins",settings.showPluginOptionsOnTop) 
+                --reaper.ImGui_TextColored(ctx, colorGrey, "Panel Controls")
+                --reaper.ImGui_NewLine(ctx)
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,"Show panel buttons##",settings.showPanelButtons) 
                 if ret then 
-                    settings.showPluginOptionsOnTop = val
+                    settings.showPanelButtons = val
                     saveSettings()
                 end
-                setToolTipFunc("Show Open All and Add Track FX at the top of the plugins panel")  
+                setToolTipFunc("Open plugin when clicking name, instead of focusing the plugin and needing doubleclick to open.\nIf enabled, clicking the plugin number will focus the plugin.\nIf the parameters area is not shown the plugins will always be open on single click")  
+                 
+                reaper.ImGui_Indent(ctx)
+                    if not settings.showPanelButtons then reaper.ImGui_BeginDisabled(ctx) end
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show at top of panel##plugins",settings.showPluginOptionsOnTop) 
+                    if ret then 
+                        settings.showPluginOptionsOnTop = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show Open All and Add Track FX at the top of the plugins panel")  
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Open all" button',settings.showOpenAll) 
+                    if ret then 
+                        settings.showOpenAll = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show Open all button in plugins area")  
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add FX popup" button (+)',settings.showAddTrackFX) 
+                    if ret then 
+                        settings.showAddTrackFX = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show a button (+) that will allow to add track fx, fx chains and more through a popup, in the plugins panel")  
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add FX Directly" button',settings.showAddTrackFXDirectly) 
+                    if ret then 
+                        settings.showAddTrackFXDirectly = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show a button that will allow to add track fx (not a modulator) in the plugins panel")  
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add Container" button',settings.showAddContainer) 
+                    if ret then 
+                        settings.showAddContainer = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show a button that will add a contaniner to the FX list")  
+                    if not settings.showPanelButtons then reaper.ImGui_EndDisabled(ctx) end
+                    
+                
+                reaper.ImGui_Unindent(ctx)
                 
                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Open all" button',settings.showOpenAll) 
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Add FX when clicking empty space',settings.addFXWhenClickingEmptySpace) 
                 if ret then 
-                    settings.showOpenAll = val
+                    settings.addFXWhenClickingEmptySpace = val
                     saveSettings()
                 end
-                setToolTipFunc("Show Open all button in plugins area")  
+                setToolTipFunc("When enabled, clicking empty space of plugin list will add a FX")  
                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add FX popup" button (+)',settings.showAddTrackFX) 
-                if ret then 
-                    settings.showAddTrackFX = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show a button (+) that will allow to add track fx, fx chains and more through a popup, in the plugins panel")  
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add FX Directly" button',settings.showAddTrackFXDirectly) 
-                if ret then 
-                    settings.showAddTrackFXDirectly = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show a button that will allow to add track fx (not a modulator) in the plugins panel")  
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,'Show "Add Container" button',settings.showAddContainer) 
-                if ret then 
-                    settings.showAddContainer = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show a button that will add a contininer to the FX list")  
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,'Close new FX window when added',settings.closeFxWindowAfterBeingAdded) 
-                if ret then 
-                    settings.closeFxWindowAfterBeingAdded = val
-                    saveSettings()
-                end
-                setToolTipFunc("Close the FX window's after FX was added, if open")  
+                reaper.ImGui_Indent(ctx)
+                    if not settings.addFXWhenClickingEmptySpace then reaper.ImGui_BeginDisabled(ctx) end
+                    local ret, val = reaper.ImGui_Checkbox(ctx,'Use Native FX Browser directly',settings.addFXViaBrowserOnDoubleClick) 
+                    if ret then 
+                        settings.addFXViaBrowserOnDoubleClick = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("If enabled, this will directly add a FX via the reaper browser. Else it will open the add FX popup")  
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,'Add empty space at end of list',settings.addEmptySpaceAtEndOfPluginList) 
+                    if ret then 
+                        settings.addEmptySpaceAtEndOfPluginList = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("If the list has a scroll bar there will be an empty space added at the bottom, to making it possible to add a plugin")  
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,'Use double click to trigger add FX option',settings.useDoubleClickForEmptySpaceAtPluginList) 
+                    if ret then 
+                        settings.useDoubleClickForEmptySpaceAtPluginList = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Enable this if you only want to only add on double click") 
+                    
+                    if not settings.addFXWhenClickingEmptySpace then reaper.ImGui_EndDisabled(ctx) end
+                reaper.ImGui_Unindent(ctx)
                 
                 
                 reaper.ImGui_TextColored(ctx, colorGrey, "Containers")
                 
-                local ret, val = reaper.ImGui_Checkbox(ctx,"Show containers",settings.showContainers) 
-                if ret then 
-                    settings.showContainers = val
-                    saveSettings()
-                end
-                setToolTipFunc("Show FX container in the plugin list")  
-                
-                if settings.showContainers then
-                    local ret, val = reaper.ImGui_Checkbox(ctx,"Color container names",settings.colorContainers) 
+                reaper.ImGui_Indent(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Show containers",settings.showContainers) 
                     if ret then 
-                        settings.colorContainers = val
+                        settings.showContainers = val
                         saveSettings()
                     end
-                    setToolTipFunc("Color FX container grey in the plugin list")  
-                end
-                   
-                        
-                   
-                sliderInMenu("Indent size for containers", "indentsAmount", menuSliderWidth, 0, 8, "Set how large a visual indents size is shown for container content in the plugin list")
-                
-                
-                local ret, val = reaper.ImGui_Checkbox(ctx,'Indicate folder depth indents with "|"',settings.identsType) 
-                if ret then 
-                    settings.identsType = val
-                    saveSettings()
-                end
-                setToolTipFunc('Use "|" at root of every folder depth indent for easier visual decoding')
-                
-                
-                local ret, includeModulators = reaper.ImGui_Checkbox(ctx,"Include Modulators",settings.includeModulators) 
-                if ret then 
-                    settings.includeModulators = includeModulators
-                    saveSettings()
-                end
-                setToolTipFunc("Show Modulators container in the plugin list") 
+                    setToolTipFunc("Show FX container in the plugin list")  
+                    
+                    if settings.showContainers then
+                        local ret, val = reaper.ImGui_Checkbox(ctx,"Color container names",settings.colorContainers) 
+                        if ret then 
+                            settings.colorContainers = val
+                            saveSettings()
+                        end
+                        setToolTipFunc("Color FX container grey in the plugin list")  
+                    end
+                       
+                            
+                       
+                    sliderInMenu("Indent size for containers", "indentsAmount", menuSliderWidth, 0, 8, "Set how large a visual indents size is shown for container content in the plugin list")
+                    
+                    
+                    local ret, val = reaper.ImGui_Checkbox(ctx,'Indicate folder depth indents with "|"',settings.identsType) 
+                    if ret then 
+                        settings.identsType = val
+                        saveSettings()
+                    end
+                    setToolTipFunc('Use "|" at root of every folder depth indent for easier visual decoding')
+                    
+                    
+                    local ret, includeModulators = reaper.ImGui_Checkbox(ctx,"Include Modulators",settings.includeModulators) 
+                    if ret then 
+                        settings.includeModulators = includeModulators
+                        saveSettings()
+                    end
+                    setToolTipFunc("Show Modulators container in the plugin list") 
+                reaper.ImGui_Unindent(ctx)
             reaper.ImGui_Unindent(ctx)
             reaper.ImGui_EndGroup(ctx)
             
@@ -13560,6 +13642,64 @@ function appSettingsWindow()
             
         end 
         
+        
+        
+        function set.Notes()
+             
+            
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Show notes panel##tracknotes",settings.showTrackNotesPanel) 
+            if ret then 
+                settings.showTrackNotesPanel = val
+                saveSettings()
+            end
+            setToolTipFunc("Show or hide the track/take notes panel") 
+            
+            
+            --reaper.ImGui_BeginGroup(ctx)
+            
+            --reaper.ImGui_TextColored(ctx, colorGrey, "List view") 
+            
+                
+            
+            --reaper.ImGui_Indent(ctx)
+                local ret, val = reaper.ImGui_Checkbox(ctx,'"Show" setting is global##tracknotes',settings.showTrackNotesGlobal) 
+                if ret then 
+                    settings.showTrackNotesGlobal = val
+                    saveSettings()
+                end
+                setToolTipFunc("Enable this to make the last panel show setting global and not track based")  
+                
+                sliderInMenu("Notes width", "trackNotesWidth", menuSliderWidth, 100, 400, "Set the max width of the notes panel. ONLY used for horizontal and floating") 
+                
+                sliderInMenu("Notes height", "trackNotesHeight", menuSliderWidth, 100, 800, "Set the max height of the notes panel. ONLY used for vertical and floating")  
+                
+                
+                reaper.ImGui_Indent(ctx)
+                    local ret, val = reaper.ImGui_Checkbox(ctx,"Use fixed height for notes panel",settings.alwaysUseTrackNotesHeight) 
+                    if ret then 
+                        settings.alwaysUseTrackNotesHeight = val
+                        saveSettings()
+                    end
+                    setToolTipFunc("Enable this to keep the same size of the track/take notes panel all the time (Only in vertical mode).")  
+                reaper.ImGui_Unindent(ctx)
+                
+                
+                local ret, val = reaper.ImGui_Checkbox(ctx,'Wrap text when not editing',settings.wrapNotesText) 
+                if ret then 
+                    settings.wrapNotesText = val
+                    saveSettings()
+                end
+                setToolTipFunc("Enable this to make wrap the text if it's wider than the panel")  
+                
+                
+                --reaper.ImGui_NewLine(ctx)
+            
+            --reaper.ImGui_Unindent(ctx)
+            --reaper.ImGui_EndGroup(ctx)
+            
+            
+        end 
+        
         function set.FloatingMapper()
             floatingMapperSettings()
         end
@@ -13567,7 +13707,7 @@ function appSettingsWindow()
         local groups = {"General", "Plugins", "Modulators", "Floating Mapper" }
         --
         if settings.showDeveloperWidgets then
-            groups = {"General", "Plugins", "Modulators", "Matrix", "Track Control", "Floating Mapper" } 
+            groups = {"General", "Plugins", "Modulators", "Matrix", "Notes", "Track Control", "Floating Mapper" } 
         end
         
         
@@ -14657,7 +14797,19 @@ function smallAutomationButton(track, id, size)
     reaper.ImGui_PopStyleVar(ctx)
 end
 
-function addingAnyModuleWindow(hwnd, moveToModulatorContainer) 
+                    
+function getPathForNextText() 
+    local pathForNextIndex = getPathForNextFxIndex(track, fxnumber) or false 
+    local addAsLast = not pathForNextIndex
+    if pathForNextIndex then
+        addAsLast = addFxAslastFunc()
+    end
+    local addIndexText = pathForNextIndex and table.concat(pathForNextIndex, " -> ")
+    return addAsLast and "Add FX as last" or "Add FX at position: " .. addIndexText .. ""
+end
+
+
+function addingAnyModuleWindow(hwnd) 
     local ret, x, y = reaper.JS_Window_GetClientRect(hwnd)
     local ret, w, h = reaper.JS_Window_GetClientSize(hwnd)
     local _, avTop, _, avBottom = reaper.JS_Window_GetViewportFromRect(0, 0, 0, 0, false)
@@ -14675,7 +14827,7 @@ function addingAnyModuleWindow(hwnd, moveToModulatorContainer)
     if moveToModulatorContainer then
         text = "Adding FX to Modulator container - Click to stop"
     else
-        text = "Adding FX to at " .. (addNewFXToEnd and "end" or "position") .. ". - Click " .. convertModifierOptionToString(settings.modifierOptionFx.addFXAsLast) .. " to toggle position."
+        text = getPathForNextText() .. ". - Click " .. convertModifierOptionToString(settings.modifierOptionFx.addFXAsLast) .. " to toggle position."
         --text = "Adding FX to at " .. (addNewFXToEnd and "end" or "position") .. ". Toggle placement with " .. convertModifierOptionToString(settings.modifierOptionFx.addFXAsLast) .. " - Click to stop"
     end
     --reaper.ImGui_SetCursorPos(ctx, 0, h - 20)
@@ -16087,14 +16239,14 @@ local function loop()
                     local scrollAreaHeight = height - (offset and 42 or 12)
                     
                     local scrollAreaHeightFixed = (not vertical or settings.alwaysUsePluginsHeight) and scrollAreaHeight or nil
-                    local childFlag = (not vertical or settings.alwaysUsePluginsHeight) and reaper.ImGui_ChildFlags_None() or reaper.ImGui_ChildFlags_AutoResizeY()
+                    --local childFlag = nil--(not vertical or settings.alwaysUsePluginsHeight) and reaper.ImGui_ChildFlags_None() or reaper.ImGui_ChildFlags_AutoResizeY()
                     
                     --reaper.ImGui_SetNextWindowSizeConstraints(ctx, 30, 0, width, scrollAreaHeight)
                     --if reaper.ImGui_BeginChild(ctx, "parametersForFocused", width, scrollAreaHeightFixed, childFlag, scrollFlags) then
                     
-                    if scrollChildOfPanel(title .. "scroll", width - 12, scrollAreaHeight, heightAutoAdjust) then
-                        
-                        if reaper.ImGui_BeginTable(ctx, 'PluginsTable',columnAmount, pluginFlags, nil, not heightAutoAdjust and scrollAreaHeight or nil) then -- (offset and (height -  64) or 0)) then
+                    --if scrollChildOfPanel(title .. "scroll", width, scrollAreaHeight, heightAutoAdjust) then
+                        local outerSize = not heightAutoAdjust and scrollAreaHeight or nil
+                        if reaper.ImGui_BeginTable(ctx, 'PluginsTable',columnAmount, pluginFlags, nil, outerSize) then -- (offset and (height -  64) or 0)) then
                             
                             
                             --ImGui.TableHeadersRow(ctx)
@@ -16352,9 +16504,50 @@ local function loop()
                                     end
                                 end
                             end
-                             
+                            
+                            function addWhenClickingEmptySpace()
+                                if settings.addFXViaBrowserOnDoubleClick then
+                                    doNotMoveToModulatorContainer, browserHwnd, browserSearchFieldHwnd, insertAtFxIndex, fx_before = addFxViaBrowser(track, fxnumber)
+                                    pathForNextIndex = getPathForNextFxIndex(track, insertAtFxIndex)
+                                    addNewFXToEnd = addFxAslastFunc()
+                                    moveToModulatorContainer = false
+                                else 
+                                    openAddFXPopupWindow = true
+                                end
+                            end
+                                
+                            
+                            local extraSpace = 12
+                            local buttonSizeH = outerSize and outerSize - reaper.ImGui_GetCursorPosY(ctx) - 8 or extraSpace
+                            local hasScrollBar = buttonSizeH - (settings.addEmptySpaceAtEndOfPluginList and extraSpace or 0) < 0
+                            
+                            function clickAddButton(sizeW, buttonsSizeH, hasScrollBar)
+                                
+                                
+                                if settings.addFXWhenClickingEmptySpace and (not hasScrollBar or settings.addEmptySpaceAtEndOfPluginList) then
+                                    local buttonSizeW = sizeW and sizeW or width - reaper.ImGui_GetCursorPosX(ctx) - (hasScrollBar and 12 or 4)
+                                    local sizeH = not hasScrollBar and buttonSizeH or extraSpace
+                                    
+                                    reaper.ImGui_InvisibleButton(ctx, "addOnEmptySpace" .. (sizeW and sizeW or "big"),buttonSizeW , sizeH)
+                                    if reaper.ImGui_IsItemHovered(ctx) then
+                                        if (isMouseDoubleClickImgui and settings.useDoubleClickForEmptySpaceAtPluginList) or (not settings.useDoubleClickForEmptySpaceAtPluginList and isMouseClick) then
+                                            addWhenClickingEmptySpace()
+                                        end
+                                        setToolTipFunc((settings.useDoubleClickForEmptySpaceAtPluginList and "Double click" or "Click") .. " to add FX")
+                                    end
+                                end
+                            end
+                            
+                            if settings.addFXWhenClickingEmptySpace and (outerSize or settings.addEmptySpaceAtEndOfPluginList) then 
+                                reaper.ImGui_TableNextRow(ctx)
+                                reaper.ImGui_TableNextColumn(ctx)
+                                clickAddButton(20, buttonSizeH, hasScrollBar)
+                                reaper.ImGui_TableNextColumn(ctx) 
+                                clickAddButton(nil, buttonSizeH, hasScrollBar)
+                            end
                             
                             reaper.ImGui_EndTable(ctx)
+                            
                             
                             
                             if beginFxDragAndDrop and beginFxDragAndDropName then -- and beginDragAndDropFXIndex ~= f.fxIndex then
@@ -16363,6 +16556,8 @@ local function loop()
                                 reaper.ImGui_EndTooltip(ctx)
                                 --reaper.ShowConsoleMsg("drag\n")  
                             end
+                            
+                            
                         end
                         
                         reaper.ImGui_EndChild(ctx)
@@ -16385,9 +16580,9 @@ local function loop()
                         openAllAddTrackFX(width)
                     end
             
-                    reaper.ImGui_EndChild(ctx)
+                  --  reaper.ImGui_EndChild(ctx)
                 
-                end
+                --end
             end
             
             
@@ -17408,17 +17603,13 @@ local function loop()
                         openAddFXPopupWindow = false
                     end
                     
-                    if reaper.ImGui_BeginPopup(ctx, "add popup") then
                     
-                        local pathForNextIndex = getPathForNextFxIndex(track, fxnumber) or false 
-                        local addAsLast = not pathForNextIndex
-                        if pathForNextIndex then
-                            addAsLast = addFxAslastFunc()
-                        end
-                        local addIndex = pathForNextIndex and table.concat(pathForNextIndex, " -> ")
+                    if reaper.ImGui_BeginPopup(ctx, "add popup") then
+                        local addIndexText = "["..getPathForNextText() .."]"
+                        
                         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
                         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorTextDimmed)
-                        if reaper.ImGui_Button(ctx, addAsLast and "[Add FX as last]" or "[Add FX at position: " .. addIndex .. "]") then
+                        if reaper.ImGui_Button(ctx,addIndexText) then
                             if pathForNextIndex then
                                 settings.addFxAsLast = not settings.addFxAsLast
                                 saveSettings(ctx)
@@ -17473,7 +17664,7 @@ local function loop()
                         if reaper.ImGui_Selectable(ctx, "Add FX via browser", false) then 
                             doNotMoveToModulatorContainer, browserHwnd, browserSearchFieldHwnd, insertAtFxIndex, fx_before = addFxViaBrowser(track, fxnumber)
                             pathForNextIndex = getPathForNextFxIndex(track, insertAtFxIndex)
-                            addNewFXToEnd = isAddFXAsLast
+                            addNewFXToEnd = addFxAslastFunc()
                             moveToModulatorContainer = false
                         end
                         setToolTipFunc("Add new FX via the native Reaper FX Browser")
@@ -18677,7 +18868,7 @@ local function loop()
                 local toolTipY = screenPosY - winY + slider_pos
                 
                 if reaper.ImGui_IsItemHovered(ctx) then
-                    if not dragKnob then 
+                    if not dragKnob2 then 
                         dragKnob2 = "Volume"
                         dragKnob = "Volume"
                     end 
@@ -18697,7 +18888,7 @@ local function loop()
                         --if isInsideFaderArea then
                             faderStartPos = mouse_pos_y_imgui  
                         --end
-                        if settings.hideMouseOnDrag then
+                        if settings.hideMouseOnDrag and isFineAdjust then
                             reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
                         end
                         
@@ -19201,6 +19392,247 @@ local function loop()
                     
             end
             
+            
+            function trackNotesPanel() 
+                if settings.showTrackNotesPanel then 
+                    pushBackgroundModulesColors()
+                    
+                    local vertical = settings.vertical
+                     
+                    local showTrackNotes
+                    if settings.showTrackNotesGlobal then
+                        showTrackNotes = settings.showTrackNotes
+                    else
+                        showTrackNotes = trackSettings.showTrackNotes
+                    end
+                    
+                    
+                    local isCollabsed = not showTrackNotes
+                    
+                    local fixedSize = settings.alwaysUseTrackNotesHeight
+                    local width = vertical and elementsWidthInVertical or (isCollabsed and headerSizeW or settings.trackNotesWidth)
+                    local height = vertical and (isCollabsed and headerSizeW or settings.trackNotesHeight) or elementsHeightInHorizontal
+                    
+                    
+                    -- instead of -12 we use -14 so in case we do fixed size, it still works
+                    local width_child = elementsWidthInVertical - 14
+                    local height_child = elementsHeightInHorizontal - 14
+                    
+                    local pluginsListWidth = width--vertical and width_child or settings.matrixWidth
+                    local pluginsListHeight = height--vertical and settings.matrixHeight or height_child
+                    local heightAutoAdjust = not isCollabsed and not (not vertical or fixedSize)
+                    local childPosSize = 20
+                    local childPosMargin = 0
+                    local title = "Notes"
+                    click = false
+                    
+                    local screenPosX, screenPosY = reaper.ImGui_GetCursorScreenPos(ctx)
+                
+                    -- 789
+                    --reaper.ImGui_SetNextWindowSizeConstraints(ctx, headerSizeW, headerSizeW, width, height)
+                    --local visible = reaper.ImGui_BeginChild(ctx, 'PLUGINS', width, nil, childFlags, reaper.ImGui_WindowFlags_NoScrollWithMouse() | reaper.ImGui_WindowFlags_NoScrollbar() | scrollFlags)
+                    --if visible then
+                    if topChildOfPanel(title, width, height, vertical and not isCollabsed, fixedSize) then 
+                        
+                        
+                        local headerW = vertical and width or headerSizeW 
+                        local headerH = vertical and headerSizeW or height 
+                        
+                        local headerW = vertical and width or headerSizeW
+                        local headerH = vertical and headerSizeW or height  
+                        local headerAreaRemoveTop = 20
+                        local headerAreaRemoveBottom = 0 
+                        
+                        
+                        headerTextX, headerTextY, headerTextW, headerTextH, align, bgX, bgW = getAlignAndHeaderPlacementAndSize(title, vertical, screenPosX, screenPosY, headerAreaRemoveTop, headerAreaRemoveBottom, headerW, headerH)
+                        
+                        
+                        drawHeaderBackground(screenPosX, screenPosY, screenPosX + headerW, screenPosY + headerH, isCollabsed, vertical, settings.colors.backgroundModulesHeader, settings.colors.backgroundModulesBorder)
+                        
+                        local toolTip = "Click to minimize notes panel" -- "Right click for more options"
+                        if drawHeaderTextAndGetHover(title, headerTextX, headerTextY, headerTextW, headerTextH, isCollabsed, vertical, 0, toolTip, colorText & 0xFFFFFF88, align, bgX, bgW) then
+                            if isMouseClick then
+                                if settings.showTrackNotesGlobal then
+                                    settings.showTrackNotes = not settings.showTrackNotes
+                                    saveSettings()
+                                else
+                                    trackSettings.showTrackNotes = not trackSettings.showTrackNotes
+                                    saveTrackSettings(track) 
+                                end 
+                            end
+                        end 
+                        
+                        
+                        -- most right 
+                        local posX, posY = getIconPosToTheRight(vertical, 20, screenPosX, screenPosY, width)
+                        
+                        local hwnd = reaper.JS_Window_Find("Notes", true)
+                        local isOpen = hwnd-- track and getFXWindowOpen(track)
+                        if drawOpenFXWindow(posX, posY, 20, isOpen, "notes window") then
+                            reaper.Main_OnCommand(reaper.NamedCommandLookup("_S&M_TRACKNOTES"), 0) --SWS/S&M: Open/close Notes window (track notes)
+                        end
+                        
+                        --[[
+                        -- Most left
+                        local posX, posY = getIconPosToTheLeft(vertical, 20, screenPosX, screenPosY, height)
+                        if drawListArrayIcon(posX, posY, 20, showMatrix, "Show matrix") then
+                            if settings.showMatrixGlobal then
+                                settings.showMatrix = not settings.showMatrix
+                                saveSettings()
+                            else
+                                trackSettings.showMatrix = not trackSettings.showMatrix
+                                saveTrackSettings(track) 
+                            end 
+                        end
+                        ]]
+                        
+                        --pushBackgroundWidgetsColors()
+                        
+                        
+                        if not isCollabsed and showTrackNotes then
+                            childPosSize = 20
+                            
+                            local notesWidth = (vertical and elementsWidthInVertical - 4 or width - 10 - 12) - 4-- childPosSize
+                            local notesHeight = not vertical and (elementsHeightInHorizontal -1) - 8 or height - 12 - 16
+                            if bodyChildOfPanel(title .. "body", childPosSize, 6, vertical) then
+                            --if bodyChildOfPanel(title .. "body", childPosSize, 4, vertical, nil, heightAutoAdjust, notesWidth, notesHeight) then
+                            if scrollChildOfPanel(title .. "body", notesWidth, notesHeight, heightAutoAdjust) then
+                            local posX, posY = reaper.ImGui_GetCursorPos(ctx)
+                            
+                                local trackNotes = reaper.NF_GetSWSTrackNotes( track )
+                                
+                                
+                                local useWrapNotesText = not isEditingText and settings.wrapNotesText
+                                
+                                if isEditingText or not settings.wrapNotesText then
+                                    if not editText then
+                                        reaper.ImGui_SetKeyboardFocusHere(ctx)
+                                        editText = true
+                                        --reaper.ShowConsoleMsg("hej1\n")
+                                    else
+                                        --stopEditing = false
+                                    end
+                                        
+                                    reaper.ImGui_SetCursorPos(ctx, posX-4, posY-2)
+                                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), colorTransparent)
+                                    if not isEditingText then
+                                        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorTransparent)
+                                    end
+                                    local textW, textH = reaper.ImGui_CalcTextSize(ctx, trackNotes, 0,0)
+                                    local ret, buf = reaper.ImGui_InputTextMultiline(ctx,"##notesarea", trackNotes, notesWidth, not heightAutoAdjust and  notesHeight or textH)
+                                    ignoreKeypress = false
+                                    if ret then 
+                                        if not isEscapeKey then
+                                            reaper.NF_SetSWSTrackNotes( track, buf )
+                                        else
+                                            stopEditing = true
+                                        end
+                                    end
+                                    if not isEditingText then
+                                       -- reaper.ImGui_PopStyleColor(ctx)
+                                    end
+                                    if reaper.ImGui_IsItemClicked(ctx, 0) then
+                                        isEditingText = true
+                                    end
+                                    
+                                    if reaper.ImGui_IsItemFocused(ctx) then
+                                        --isEditingText = true
+                                    end
+                                    
+                                    if not stopEditing then
+                                        --isEditingText = reaper.ImGui_IsItemFocused(ctx)
+                                        --reaper.ShowConsoleMsg(tostring(isEditingText) .. "   hej3\n")
+                                    end
+                                    reaper.ImGui_PopStyleColor(ctx)
+                                end
+                                --[[
+                                if not reaper.ImGui_IsItemFocused(ctx) then
+                                    if not editText then
+                                        editText = true
+                                    else
+                                        isEditingText = false
+                                        --editText = false
+                                    end
+                                end
+                                ]]
+                                
+                                
+                                if stopEditing then stopEditing = false end
+                                if isEditingText then
+                                    
+                                    --ignoreKeypress = true
+                                    ignoreKeypress = true
+                                    --if editText then
+                                      if isEscapeKey then
+                                          isEditingText = false
+                                          stopEditing = true
+                                          --reaper.ImGui_SetKeyboardFocusHere(ctx, 5)
+                                          --reaper.NF_SetSWSTrackNotes( track, tempBuf )
+                                      end
+                                    --end
+                                    
+                                    if not reaper.ImGui_IsItemFocused(ctx) then
+                                        
+                                        isEditingText = false
+                                        --[[
+                                        if not editText or editText < 2 then
+                                            if not editText then editText = 0 end
+                                            editText = editText + 1
+                                            reaper.ShowConsoleMsg("hej1\n")
+                                        else
+                                            isEditingText = false
+                                            stopEditing = true
+                                            editText = 0
+                                            reaper.ShowConsoleMsg("hej2\n")
+                                        end
+                                        ]]
+                                    end
+                                end
+                                
+                                if useWrapNotesText then 
+                                    reaper.ImGui_SetCursorPos(ctx, posX, posY)
+                                    if settings.wrapNotesText then
+                                        reaper.ImGui_PushTextWrapPos(ctx, notesWidth-8)
+                                    end
+                                    if isEditingText then
+                                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorTransparent)
+                                    end
+                                    
+                                    reaper.ImGui_Text(ctx,trackNotes)
+                                    
+                                    
+                                    if isEditingText then
+                                        reaper.ImGui_PopStyleColor(ctx)
+                                    end
+                                    --reaper.ImGui_DrawList_AddText(draw_list, posX, posY, colorText, trackNotes)
+                                    if reaper.ImGui_IsItemClicked(ctx) then
+                                        isEditingText = true
+                                    end
+                                    if settings.wrapNotesText then
+                                        reaper.ImGui_PopTextWrapPos(ctx)
+                                    end
+                                end
+                                
+                                
+                                reaper.ImGui_EndChild(ctx)
+                            end    
+                               reaper.ImGui_EndChild(ctx); end
+                        end
+                        
+                        --reaper.ImGui_PopStyleColor(ctx, 3) 
+                        
+                        
+                        reaper.ImGui_EndChild(ctx)
+                        
+                    end 
+                     
+                    
+                    -- pop modules background colors
+                    reaper.ImGui_PopStyleColor(ctx, 3) 
+                end
+                    
+            end
+            
             function insertOptionsTables(mainAreaW, mainAreaH)
                 newTrack = true --reaper.CountSelectedTracks(0) == 0
                 local topSpace = 10
@@ -19339,6 +19771,11 @@ local function loop()
                     
                     if settings.showDeveloperWidgets then
                         matrixPanel() 
+                        
+                        placingOfNextElement() 
+                        
+                        
+                        trackNotesPanel()
                         
                         placingOfNextElement() 
                         
