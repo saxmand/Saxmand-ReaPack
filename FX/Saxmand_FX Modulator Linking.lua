@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.5.5
+-- @version 1.5.6
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,15 +18,14 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + Added option to add fx when clicking empty space of plugin list
---   + possible fix for mouse release issue
---   + initial notes panel
+--   + Fix direction of pan drag
+--   + Fix issue with volume not changing
  
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.5.5" 
+local version = "1.5.6" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -18516,7 +18515,8 @@ local function loop()
                         
                         if dragKnobParm then
                             if isMouseDown then 
-                                local relativeValue = ((mouse_pos_x - mouseDragStartX) + (mouse_pos_y - mouseDragStartY)) / 100
+                                --local relativeValue = ((mouse_pos_x - mouseDragStartX) + (mouse_pos_y - mouseDragStartY)) / 100
+                                local relativeValue = ((settings.changeKnobValueOnHorizontalDrag and (mouse_pos_x - mouseDragStartX) or 0) - (settings.changeKnobValueOnVerticalDrag and mouse_pos_y - mouseDragStartY or 0) * (isApple and -1 or 1)) / 100
                                 setTrackValuesLink(dragKnobParm, resetValue and resetValue or nil, relativeValue, nil, -1, 1)
                                 mouseDragStartX = mouse_pos_x
                                 mouseDragStartY = mouse_pos_y
@@ -18530,7 +18530,7 @@ local function loop()
                                 setToolTip = dragKnob and {text = panAmountText, x = toolTipX, y = toolTipY} or false
                                 
                                 if settings.hideMouseOnScroll then
-                                    reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
+                                    --reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
                                 end
                             else
                                 dragKnobParm = nil
@@ -18888,7 +18888,7 @@ local function loop()
                         --if isInsideFaderArea then
                             faderStartPos = mouse_pos_y_imgui  
                         --end
-                        if settings.hideMouseOnDrag and isFineAdjust then
+                        if settings.hideMouseOnDrag then
                             reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
                         end
                         
@@ -18909,7 +18909,7 @@ local function loop()
                             setToolTip = {text = text, x = toolTipX, y = toolTipY}
                         end
                         if settings.hideMouseOnScroll then
-                            reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
+                            --reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
                         end
                     else
                         dragKnob2 = nil
