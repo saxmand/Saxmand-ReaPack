@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.5.7
+-- @version 1.5.8
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,13 +18,13 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + Fixed some scrolling behavior
+--   + invert scroll value has been unified
 
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.5.7" 
+local version = "1.5.8" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -10451,7 +10451,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
             
             mouseCursorSettings()
         elseif isScrollValue and scrollVertical and scrollVertical ~= 0 then
-            local scrollVal = settings.scrollValueInverted and -scrollVertical or scrollVertical
+            local scrollVal = scrollVertical--settings.scrollValueInverted and -scrollVertical or scrollVertical
             amount = p.width - ((scrollVal * ((settings.scrollValueSpeed+50)/100)) / grains) --* (scrollVal > 0 and 1 or -1)
         else
             --dragKnob = nil
@@ -10570,7 +10570,7 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
                 mouseCursorSettings()
                 
             elseif isScrollValue and scrollVertical and scrollVertical ~= 0 then
-                local scrollVal = settings.scrollValueInverted and -scrollVertical or scrollVertical
+                local scrollVal = scrollVertical--settings.scrollValueInverted and -scrollVertical or scrollVertical
                 
                 -- fix for lfo speed being inverted. Could be done some where else maybe
                 if native and p.paramName == "lfo.speed" then
@@ -15390,6 +15390,8 @@ local function loop()
     end
     
     scrollVertical, scrollHorizontal = reaper.ImGui_GetMouseWheel(ctx)
+    
+    scrollVertical = settings.scrollValueInverted and -scrollVertical or scrollVertical
 
     -- Add a scroll modifier to bypass isScrollValue and allow scrolling windows 
     local isScrollValueNoModifiers = isMatchExact(settings.modifierOptionsParameter.scrollValue, noModifiersTable)
@@ -18897,6 +18899,7 @@ local function loop()
                         changed = true
                     elseif isScrollValue then 
                         --if scrollVertical ~= 0 then
+                          
                             new_slider_pos = new_slider_pos - (scrollVertical / grains)
                             if new_slider_pos > 1 then new_slider_pos = 1
                             elseif new_slider_pos < 0 then new_slider_pos = 0 end
