@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.5.6
+-- @version 1.5.7
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,14 +18,13 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + Fix direction of pan drag
---   + Fix issue with volume not changing
- 
+--   + Fixed some scrolling behavior
+
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.5.6" 
+local version = "1.5.7" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -19731,8 +19730,13 @@ local function loop()
             local mainAreaW = winW - reaper.ImGui_GetCursorPosX(ctx) - 8
             local mainAreaH = winH - reaper.ImGui_GetCursorPosY(ctx) - 8
             
+            local flags = reaper.ImGui_WindowFlags_HorizontalScrollbar()
+            if isScrollValue or (isScrollValueNoModifiers and dragKnob) then
+                flags = flags | reaper.ImGui_WindowFlags_NoScrollWithMouse()
+            end
+            
             if track or not settings.showInsertOptionsWhenNoTrackIsSelected then
-                if reaper.ImGui_BeginChild(ctx, "mainArea", mainAreaW, mainAreaH , nil, reaper.ImGui_WindowFlags_HorizontalScrollbar()) then
+                if reaper.ImGui_BeginChild(ctx, "mainArea", mainAreaW, mainAreaH , nil, flags) then
                     
                     -- Dummy to not create error.
                     reaper.ImGui_Dummy(ctx, 1,1)
