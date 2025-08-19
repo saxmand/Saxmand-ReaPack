@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.6.1
+-- @version 1.6.2
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,13 +18,14 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fixed clap plugins not catching touched parameter correctly
+--   + fix "old" commands from within the script that have super in it should run now
+--   + added some mouse debuggin
 
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.6.1" 
+local version = "1.6.2" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -14142,6 +14143,28 @@ function appSettingsWindow()
         
         function set.ModifierSettings()
             reaper.ImGui_TextColored(ctx, colorTextDimmed, "Mouse modifier settings") 
+             
+             if modifierStr ~= "" then
+                reaper.ImGui_SameLine(ctx)
+                reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Modifier pressed: " .. modifierStr .. ")")
+             end
+             if isMouseClick then
+                mouseWasClicked = true
+             end
+             if mouseWasClicked then 
+                reaper.ImGui_SameLine(ctx)
+                reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse was clicked)")
+             end
+             if isMouseDown then 
+                reaper.ImGui_SameLine(ctx)
+                reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse is down)")
+             end
+             if isMouseReleased then
+                mouseWasClicked = false
+                reaper.ImGui_SameLine(ctx)
+                reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse is released)")
+             end
+             
             if reaper.ImGui_BeginTable(ctx, "modifierTable", 2,  reaper.ImGui_TableFlags_SizingFixedFit() | reaper.ImGui_TableFlags_NoHostExtendX()) then
                 
                 reaper.ImGui_TableNextRow(ctx)
@@ -14278,9 +14301,6 @@ function appSettingsWindow()
             end
             
             
-            if modifierStr ~= "" then
-               -- reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Modifier pressed: " .. modifierStr .. ")")
-            end
         end
         
         
@@ -20631,6 +20651,7 @@ local function loop()
             for _, info in ipairs(keyCommandSettings) do 
                 local name = info.name
                 for _, command in ipairs(info.commands) do
+                    command = command:gsub("Super", "Cmd")
                     if command == newKeyPressed or command == altKeyPressed then
                     --reaper.ShowConsoleMsg("hej\n")
                         alreadyUsed = true
