@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.5.8
+-- @version 1.5.9
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,13 +18,13 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + invert scroll value has been unified
+--   + fixed mapping error with modulators that have multiple outputs
 
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.5.8" 
+local version = "1.5.9" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -4488,9 +4488,10 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                                 
                                 findSettingsIfCurver(modulationContainerPos, parameterLinkFXIndex,parameterLinkParam, parameterLinkName)
                                 
+                                local originalName = getOriginalFxName( track, parameterLinkFXIndex )
                                 local outputsForLinkedModulator = getOutputArrayForModulator(track, originalName, parameterLinkFXIndex, modulationContainerPos)
-                                
                                 parameterLinkName = simplifyParameterNameName(parameterLinkName, #outputsForLinkedModulator)
+                                
                             end
                         end
                         --local mappings = (parameterLinks and parameterLinks[fxIndex]) and parameterLinks[fxIndex] or {}
@@ -8624,6 +8625,7 @@ function getOutputArrayForModulator(track, fxName, fxIndex, modulationContainerP
     local output
     for _, mod in ipairs(factoryModules) do
         if fxName and (fxName == mod.insertName or fxName:match(mod.insertName) ~= nil) then
+        
             return mod.output 
         end
     end
@@ -15722,6 +15724,11 @@ local function loop()
     --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), padding, padding)
     
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_WindowPadding(), padding, padding)
+    
+    
+    reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigFlags_NavEnableKeyboard(), 0)
+    
+    
     local varPush = 4+1
     
     
@@ -20570,6 +20577,10 @@ local function loop()
        -- open = false
     end
     
+    if reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Enter(),false) then
+        ignoreKeypress = true
+    end
+    
     if reaper.ImGui_IsKeyPressed(ctx,reaper.ImGui_Key_Escape(),false) then
        if mapActiveFxIndex then 
           mapActiveFxIndex = false
@@ -20589,6 +20600,7 @@ local function loop()
         lastTrack = track
     end
     --------------- KEY COMMANDS ----------------
+    
     
     if not ignoreKeypress then
         local time = reaper.time_precise()
