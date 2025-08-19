@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.6.3
+-- @version 1.6.4
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,13 +18,15 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + added more mouse debuggin, moved to performce pane
+--   + added option to delay start
+--   + fixed multi monitor support dragging
 
 
 local startTime = reaper.time_precise()
+local reaperStartupTime
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.6.3" 
+local version = "1.6.4" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -56,16 +58,20 @@ local imagesFolderName = "Images"
 local imagesFolderPath = scriptPathSubfolder .. imagesFolderName .. seperator
 
 local ctx
-font = reaper.ImGui_CreateFont('Arial', 14)
 
 function initializeContext()
-    ctx = ImGui.CreateContext(appName)
-    -- imgui_font
-    reaper.ImGui_Attach(ctx, font)
+    if not ctx then
+        ctx = reaper.ImGui_CreateContext(appName)
+        
+        font = reaper.ImGui_CreateFont('Arial', 14)
+        -- imgui_font
+        reaper.ImGui_Attach(ctx, font)
+        
+        reaper.ImGui_SetConfigVar(ctx,reaper.ImGui_ConfigVar_MacOSXBehaviors(),0)
+    end
 end
-initializeContext()
 
-reaper.ImGui_SetConfigVar(ctx,reaper.ImGui_ConfigVar_MacOSXBehaviors(),0)
+
 local isApple = reaper.GetOS():match("mac")
 local isWin= reaper.GetOS():lower():match("win")
 
@@ -711,6 +717,7 @@ local defaultSettings = {
     filterParamterThatAreMostLikelyNotWanted = true,
     buildParamterFilterDataBase = true,
     limitParameterLinkLoading = true,
+    minimumTimeToPassBeforeScriptStart = 0,
     
     -- floating mapper
       useFloatingMapper = false,
@@ -924,6 +931,8 @@ settings.filterParamterThatAreMostLikelyNotWanted = true
 settings.buildParamterFilterDataBase = true
 --settings.limitParameterLinkLoading = true
 settings.maxParametersShown = 0
+
+settings.showInsertOptionsWhenNoTrackIsSelected = false
 
 -- for safety, as it was in there earlier as a table. Can remove at some point
 if type(settings.onlyMapped) == "table" then
@@ -5404,8 +5413,10 @@ function getIconPosToTheRight(vertical, pos, screenPosX, screenPosY, width)
     return posX, posY
 end
 
-function mouseInsideArea(x,y,w,h)
-    if mouse_pos_x_imgui >= x and mouse_pos_x_imgui <= x + w and mouse_pos_y_imgui >= y and mouse_pos_y_imgui <= y + h then
+function mouseInsideArea(x,y,w,h, posX, posY)
+    if not posX then posX = mouse_pos_x_imgui end
+    if not posY then posY = mouse_pos_y_imgui end
+    if posX >= x and posX <= x + w and posY >= y and posY <= y + h then
         return true
     end
 end
@@ -10425,6 +10436,8 @@ function mouseCursorSettings()
     
     -- reset mouse if it hits screen edge
     if settings.resetMouseWhenReachingWindowEdge and (mouse_pos_x <= screenLeft or mouse_pos_x >= screenRight or mouse_pos_y_correct <= screenTop or mouse_pos_y_correct >= screenBottom) then 
+        --reaper.ShowConsoleMsg("T" .. screenLeft .. " <" .. mouse_pos_x .. " > " .. screenRight .. "\n" .. screenTop .. " <" .. mouse_pos_y_correct .. " > " .. screenBottom .. "\n\n")
+        
         mouseDragStartX = mouse_pos_x_on_click; 
         mouseDragStartY = mouse_pos_y_on_click; 
         mouse_pos_x = mouse_pos_x_on_click; 
@@ -10572,6 +10585,9 @@ function setParameterValuesViaMouse(track, buttonId, moduleId, p, range, min, cu
                 mouseCursorSettings()
                 
             elseif isScrollValue and scrollVertical and scrollVertical ~= 0 then
+                if settings.hideMouseOnScroll then
+                    --reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_None())
+                end
                 local scrollVal = scrollVertical--settings.scrollValueInverted and -scrollVertical or scrollVertical
                 
                 -- fix for lfo speed being inverted. Could be done some where else maybe
@@ -12556,14 +12572,14 @@ function appSettingsWindow()
                   
                 sliderInMenu("Width between widgets", "widthBetweenWidgets", menuSliderWidth, 1, 20, "Set the width between widgets") 
                 
-                
+                --[[
                 local ret, val = reaper.ImGui_Checkbox(ctx,"Show insert options when no track is selected",settings.showInsertOptionsWhenNoTrackIsSelected) 
                 if ret then 
                     settings.showInsertOptionsWhenNoTrackIsSelected = val
                     saveSettings()
                 end
                 setToolTipFunc("When no track is selected show add fx, preset or template tables") 
-                
+                ]]
             reaper.ImGui_Unindent(ctx)
             
             
@@ -12832,12 +12848,15 @@ function appSettingsWindow()
                     end
                     setToolTipFunc("Enable to hide the mouse course on drag")  
                     
+                    --[[
                     local ret, val = reaper.ImGui_Checkbox(ctx,"Hide mouse cursor on scroll##",settings.hideMouseOnScroll) 
                     if ret then 
                         settings.hideMouseOnScroll = val
                         saveSettings()
                     end
                     setToolTipFunc("Enable to hide the mouse course when scrolling values")  
+                    ]]
+                    
                     
                     local ret, val = reaper.ImGui_Checkbox(ctx,"Reset mouse cursor on window edge##",settings.resetMouseWhenReachingWindowEdge) 
                     if ret then 
@@ -14518,47 +14537,6 @@ function appSettingsWindow()
             end
             setToolTipFunc("Show script performance")  
              
-            local ret, val = reaper.ImGui_Checkbox(ctx,"Mouse debuggin text",settings.showMouseDebugginText) 
-            if ret then 
-                settings.showMouseDebugginText = val
-                saveSettings()
-            end
-            setToolTipFunc("With this enabled you can scroll the modulators area horizontally with vertical mouse scroll")   
-            
-            if settings.showMouseDebugginText then
-                
-                reaper.ImGui_SameLine(ctx)
-                if modifierStr ~= "" then
-                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Modifier pressed: " .. modifierStr .. ")") 
-                   reaper.ImGui_SameLine(ctx)
-                end
-                if isMouseClick then
-                   mouseWasClicked = true
-                end
-                if mouseWasClicked then 
-                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse was clicked)")
-                   reaper.ImGui_SameLine(ctx)
-                end
-                if isMouseDown then 
-                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse is down)")
-                   reaper.ImGui_SameLine(ctx)
-                end
-                if isMouseReleased then
-                   mouseWasClicked = false
-                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse is released)")
-                   reaper.ImGui_SameLine(ctx)
-                end
-                if mouseDragStartX then 
-                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse drag pos: " .. tostring(mouseDragStartX) .. "," .. tostring(mouseDragStartY) .. ")") 
-                   reaper.ImGui_SameLine(ctx)
-                end 
-                if mouse_pos_x_on_click then 
-                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse pos on click: " .. tostring(mouse_pos_x_on_click) .. "," .. tostring(mouse_pos_y_on_click) .. ")") 
-                   reaper.ImGui_SameLine(ctx)
-                end
-                
-                reaper.ImGui_NewLine(ctx)
-            end
             
             if settings.showScriptPerformance then
                 reaper.ImGui_Indent(ctx)
@@ -14633,6 +14611,58 @@ function appSettingsWindow()
                 saveSettings()
             end
             setToolTipFunc("This will limit how often we look for modulation parameter links, as this is a more static value") 
+            
+            sliderInMenu("Minimum time to pass before script starts", "minimumTimeToPassBeforeScriptStart", menuSliderWidth, 0, 20, "Set the amount of seconds that should have passed after reaper startup, before script itself")
+            
+            
+        reaper.ImGui_Unindent(ctx)
+        reaper.ImGui_NewLine(ctx)
+        reaper.ImGui_TextColored(ctx, colorTextDimmed, "Debugging")
+        
+        reaper.ImGui_Indent(ctx)
+        
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Mouse debuggin text",settings.showMouseDebugginText) 
+            if ret then 
+                settings.showMouseDebugginText = val
+                saveSettings()
+            end
+            setToolTipFunc("With this enabled you can scroll the modulators area horizontally with vertical mouse scroll")   
+            
+            if settings.showMouseDebugginText then
+                
+                reaper.ImGui_SameLine(ctx)
+                if modifierStr ~= "" then
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Modifier pressed: " .. modifierStr .. ")") 
+                   reaper.ImGui_SameLine(ctx)
+                end
+                if isMouseClick then
+                   mouseWasClicked = true
+                end
+                if mouseWasClicked then 
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse was clicked)")
+                   reaper.ImGui_SameLine(ctx)
+                end
+                if isMouseDown then 
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse is down)")
+                   reaper.ImGui_SameLine(ctx)
+                end
+                if isMouseReleased then
+                   mouseWasClicked = false
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse is released)")
+                   reaper.ImGui_SameLine(ctx)
+                end
+                if mouseDragStartX then 
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse drag pos: " .. tostring(mouseDragStartX) .. "," .. tostring(mouseDragStartY) .. ")") 
+                   reaper.ImGui_SameLine(ctx)
+                end 
+                if mouse_pos_x_on_click then 
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse pos on click: " .. tostring(mouse_pos_x_on_click) .. "," .. tostring(mouse_pos_y_on_click) .. ")") 
+                   reaper.ImGui_SameLine(ctx)
+                end
+                
+                reaper.ImGui_NewLine(ctx)
+            end
+        
         reaper.ImGui_Unindent(ctx)
         
         reaper.ImGui_NewLine(ctx)
@@ -15266,24 +15296,43 @@ end
 
 
 customPluginSettings = getCustomPluginSettings() 
-            
-screenLeft, screenHeight, screenWidth, screenBottom = reaper.JS_Window_GetViewportFromRect( 0, 0, 1, 1, false)
-if isApple then
-    screenTop = screenBottom
-    screenBottom = screenHeight
-else
-    screenTop = screenHeight
+
+function getScreenPosAndSize(x1, y1, x2, y2)
+    local screenLeft, screenTopTemp, screenWidth, screenBottom = reaper.JS_Window_GetViewportFromRect( x1, y1, x2, y2, false)
+    --reaper.ShowConsoleMsg(screenLeft .. ", " .. screenTopTemp .. ", " .. screenWidth .. ", " .. screenBottom .. "\n\n")
+    if isApple then
+        screenTop = screenBottom
+        screenBottom = screenTopTemp 
+    else
+        screenTop = screenTopTemp
+    end 
+    local screenRight = screenWidth
+    screenHeight = math.abs(screenBottom - screenTop)
+    screenWidth = math.abs(screenRight - screenLeft)
+    if isApple and screenTop < 0 then
+        local main_screenLeft, main_screenTopTemp, main_screenWidth, main_screenBottom = reaper.JS_Window_GetViewportFromRect( 0, 0, 1, 1, false)
+        screenTop = screenTop + main_screenTopTemp 
+        local main_screenLeft, main_screenTopTemp, main_screenWidth, main_screenBottom = reaper.JS_Window_GetViewportFromRect( 0, 0, 1, 1, true)
+        screenBottom = screenBottom + main_screenTopTemp
+    end
+    --reaper.ShowConsoleMsg(screenLeft .. ", " .. screenRight .. ", " .. screenHeight .. ", " .. screenWidth .. ", " .. screenTop .. ", " .. screenBottom .. "\n\n")
+    
+    return screenLeft, screenRight, screenWidth, screenHeight, screenTop, screenBottom
 end
 
-screenRight = screenWidth
+screenLeft, screenRight, screenWidth, screenHeight, screenTop, screenBottom = getScreenPosAndSize(0,0,1,1)
 
 local dock_id, is_docked
 local runs = -1
-            
-local function loop() 
+
+local function loop()  
+    initializeContext()
+    time = reaper.time_precise() 
+    
     playPos = reaper.GetPlayPosition() 
     playPos2 = reaper.GetPlayPosition2()  
     playState = reaper.GetPlayState()
+    
     runs = runs + 1
     popupAlreadyOpen = false
     ignoreKeypress = false
@@ -15417,15 +15466,25 @@ local function loop()
     
     mouse_pos_x, mouse_pos_y = reaper.GetMousePosition()
     
+    
+    
     mouse_pos_y_correct = mouse_pos_y
     if isApple then
         --local _, screenHeight = reaper.JS_Window_ScreenToClient()  -- Gets main screen size (not always perfect for multi-monitor setups)
        mouse_pos_y_correct = screenHeight - mouse_pos_y_correct
+       --reaper.ShowConsoleMsg(mouse_pos_y .. " - " .. mouse_pos_y_correct .. "\n")
     end
     
-    if isMouseClick then
+    if isMouseClick then 
+        
+        if mouse_pos_x_imgui > -1000000 and not mouseInsideArea(screenLeft, screenTop, screenWidth, screenHeight, mouse_pos_x, mouse_pos_y_correct) then 
+            --resetMouseWhenReachingWindowEdge
+            screenLeft, screenRight, screenWidth, screenHeight, screenTop, screenBottom = getScreenPosAndSize(mouse_pos_x,mouse_pos_y,mouse_pos_x+1,mouse_pos_y+1) 
+            --reaper.ShowConsoleMsg(screenLeft .. " <" .. mouse_pos_x .. " > " .. screenLeft + screenWidth .. "\n" .. screenTop .. " <" .. mouse_pos_y .. " > " .. screenTop + screenHeight .. "\n\n") 
+        end
         mouse_pos_x_on_click = mouse_pos_x
         mouse_pos_y_on_click = mouse_pos_y
+        
     end
     
     wasMouseClickedAndNowReleasedAtSamePoint = isMouseReleased and mouse_pos_x == mouse_pos_x_on_click and mouse_pos_y == mouse_pos_y_on_click 
@@ -15454,7 +15513,6 @@ local function loop()
     
     
     
-    time = reaper.time_precise() 
     
     -- for catching parameters and stats on time run
     last_paramTableCatch = paramTableCatch
@@ -15812,6 +15870,7 @@ local function loop()
         
         local winW, winH = reaper.ImGui_GetWindowSize(ctx)
         local winX, winY = reaper.ImGui_GetWindowPos(ctx) 
+        
         
         if winW then 
             local x,y = reaper.ImGui_GetCursorPos(ctx) 
@@ -20801,8 +20860,28 @@ local function loop()
     
 end
 
+function delay()
+    local time = reaper.time_precise() 
+    if settings.minimumTimeToPassBeforeScriptStart > time - reaperStartupTime then  
+        reaper.defer(delay)
+    else 
+        reaper.defer(loop)
+    end
+end
 
+--reaper.DeleteExtState(stateName, "RanFromStartup", false)
+
+if settings.minimumTimeToPassBeforeScriptStart > 0 and not reaper.HasExtState(stateName, "RanFromStartup") then
+    reaperStartupTime = startTime
+    reaper.SetExtState(stateName, "RanFromStartup", "true", false) -- store without persistence
+    reaper.defer(delay)
+else
+    reaper.defer(loop)
+end
+
+
+
+
+  
 --reaper.ShowConsoleMsg(reaper.time_precise() - startTime .. " before defer\n")
-
-reaper.defer(loop)
 
