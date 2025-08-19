@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.6.0
+-- @version 1.6.1
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,13 +18,13 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + made it possible to add text in the notes panel on tracks with no track notes already
+--   + fixed clap plugins not catching touched parameter correctly
 
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.6.0" 
+local version = "1.6.1" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -10701,6 +10701,7 @@ function convertModifierOptionToString(option)
 end
 
 function pluginParameterSlider(moduleId, p, doNotSetFocus, excludeName, showingMappings, nameOnSide, width, resetValue, valueAsString, genericModulatorOutput, parametersWindow, formatString, useKnobs, useNarrow, visualIndex,parameterColumnAmount, specialSetting)
+    if not p then return end
     local parameterLinkActive = p.parameterLinkActive
     --reaper.ShowConsoleMsg(p.fxName .. " - " .. p.name .. " - " .. tostring(parameterLinkActive) .. "\n")
     local parameterModulationActive = p.parameterModulationActive
@@ -14932,7 +14933,7 @@ function isFXWindowUnderMouse()
     local hwnd = reaper.JS_Window_FromPoint(x, y)
     while hwnd ~= nil and reaper.JS_Window_IsWindow(hwnd) do
         local title = reaper.JS_Window_GetTitle(hwnd)
-        if title and (title:match("FX:") ~= nil or title:match("VST") ~= nil or title:match("JS:") ~= nil or title:match("Clap:") ~= nil or title:match("AU:") ~= nil or title:match("AU") ~= nil) then
+        if title and (title:match("FX:") ~= nil or title:match("VST") ~= nil or title:match("JS:") ~= nil or title:match("CLAP:") ~= nil or title:match("AU:") ~= nil or title:match("AU") ~= nil) then
         --if title and title:match(" - Track") ~= nil then
           clickedHwnd = hwnd
           --lastClickedHwnd = hwnd
@@ -14968,6 +14969,7 @@ function updateTouchedFX()
             
             local fxIsOnInputFX = (fxidx & 0x1000000) ~= 0
             if not fxIsOnInputFX then
+                
                 if settings.useFloatingMapper then
                     showFloatingMapper = true
                 end
