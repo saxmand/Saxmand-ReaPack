@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.6.2
+-- @version 1.6.3
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,14 +18,13 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fix "old" commands from within the script that have super in it should run now
---   + added some mouse debuggin
+--   + added more mouse debuggin, moved to performce pane
 
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.6.2" 
+local version = "1.6.3" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -14142,28 +14141,9 @@ function appSettingsWindow()
         end
         
         function set.ModifierSettings()
-            reaper.ImGui_TextColored(ctx, colorTextDimmed, "Mouse modifier settings") 
+            reaper.ImGui_TextColored(ctx, colorTextDimmed, "Mouse modifier settings")  
+            
              
-             if modifierStr ~= "" then
-                reaper.ImGui_SameLine(ctx)
-                reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Modifier pressed: " .. modifierStr .. ")")
-             end
-             if isMouseClick then
-                mouseWasClicked = true
-             end
-             if mouseWasClicked then 
-                reaper.ImGui_SameLine(ctx)
-                reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse was clicked)")
-             end
-             if isMouseDown then 
-                reaper.ImGui_SameLine(ctx)
-                reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse is down)")
-             end
-             if isMouseReleased then
-                mouseWasClicked = false
-                reaper.ImGui_SameLine(ctx)
-                reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse is released)")
-             end
              
             if reaper.ImGui_BeginTable(ctx, "modifierTable", 2,  reaper.ImGui_TableFlags_SizingFixedFit() | reaper.ImGui_TableFlags_NoHostExtendX()) then
                 
@@ -14538,6 +14518,47 @@ function appSettingsWindow()
             end
             setToolTipFunc("Show script performance")  
              
+            local ret, val = reaper.ImGui_Checkbox(ctx,"Mouse debuggin text",settings.showMouseDebugginText) 
+            if ret then 
+                settings.showMouseDebugginText = val
+                saveSettings()
+            end
+            setToolTipFunc("With this enabled you can scroll the modulators area horizontally with vertical mouse scroll")   
+            
+            if settings.showMouseDebugginText then
+                
+                reaper.ImGui_SameLine(ctx)
+                if modifierStr ~= "" then
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Modifier pressed: " .. modifierStr .. ")") 
+                   reaper.ImGui_SameLine(ctx)
+                end
+                if isMouseClick then
+                   mouseWasClicked = true
+                end
+                if mouseWasClicked then 
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse was clicked)")
+                   reaper.ImGui_SameLine(ctx)
+                end
+                if isMouseDown then 
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse is down)")
+                   reaper.ImGui_SameLine(ctx)
+                end
+                if isMouseReleased then
+                   mouseWasClicked = false
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse is released)")
+                   reaper.ImGui_SameLine(ctx)
+                end
+                if mouseDragStartX then 
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse drag pos: " .. tostring(mouseDragStartX) .. "," .. tostring(mouseDragStartY) .. ")") 
+                   reaper.ImGui_SameLine(ctx)
+                end 
+                if mouse_pos_x_on_click then 
+                   reaper.ImGui_TextColored(ctx, colorTextDimmed, "(Mouse pos on click: " .. tostring(mouse_pos_x_on_click) .. "," .. tostring(mouse_pos_y_on_click) .. ")") 
+                   reaper.ImGui_SameLine(ctx)
+                end
+                
+                reaper.ImGui_NewLine(ctx)
+            end
             
             if settings.showScriptPerformance then
                 reaper.ImGui_Indent(ctx)
