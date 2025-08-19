@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.5.9
+-- @version 1.6.0
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,13 +18,13 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fixed mapping error with modulators that have multiple outputs
+--   + made it possible to add text in the notes panel on tracks with no track notes already
 
 
 local startTime = reaper.time_precise()
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.5.9" 
+local version = "1.6.0" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -19506,18 +19506,29 @@ local function loop()
                             if bodyChildOfPanel(title .. "body", childPosSize, 6, vertical) then
                             --if bodyChildOfPanel(title .. "body", childPosSize, 4, vertical, nil, heightAutoAdjust, notesWidth, notesHeight) then
                             if scrollChildOfPanel(title .. "body", notesWidth, notesHeight, heightAutoAdjust) then
-                            local posX, posY = reaper.ImGui_GetCursorPos(ctx)
-                            
+                                local posX, posY = reaper.ImGui_GetCursorPos(ctx)
+                                local posXScreen, posYScreen = reaper.ImGui_GetCursorScreenPos(ctx)
+                                
+                                
+                                if mouseInsideArea(posXScreen, posYScreen, notesWidth, notesHeight) then
+                                    if isMouseClick then
+                                        local anyPopupOpen = reaper.ImGui_IsPopupOpen(ctx, "", reaper.ImGui_PopupFlags_AnyPopup())
+                                        if not anyPopupOpen then 
+                                            isEditingText = true
+                                        end
+                                        --reaper.ImGui_SetKeyboardFocusHere(ctx)
+                                    end 
+                                end
+                                
                                 local trackNotes = reaper.NF_GetSWSTrackNotes( track )
                                 
+                                local wrapNotesText = trackNotes ~= "" and settings.wrapNotesText or false 
+                                local useWrapNotesText = not isEditingText and wrapNotesText
                                 
-                                local useWrapNotesText = not isEditingText and settings.wrapNotesText
-                                
-                                if isEditingText or not settings.wrapNotesText then
-                                    if not editText then
+                                if isEditingText then
+                                    if not editText or not textInputHasBeenFocusedOnce then
                                         reaper.ImGui_SetKeyboardFocusHere(ctx)
                                         editText = true
-                                        --reaper.ShowConsoleMsg("hej1\n")
                                     else
                                         --stopEditing = false
                                     end
@@ -19546,6 +19557,7 @@ local function loop()
                                     
                                     if reaper.ImGui_IsItemFocused(ctx) then
                                         --isEditingText = true
+                                        textInputHasBeenFocusedOnce = true
                                     end
                                     
                                     if not stopEditing then
@@ -19580,9 +19592,10 @@ local function loop()
                                       end
                                     --end
                                     
-                                    if not reaper.ImGui_IsItemFocused(ctx) then
+                                    if textInputHasBeenFocusedOnce and not reaper.ImGui_IsItemFocused(ctx) then
                                         
                                         isEditingText = false
+                                        textInputHasBeenFocusedOnce = false
                                         --[[
                                         if not editText or editText < 2 then
                                             if not editText then editText = 0 end
@@ -19600,7 +19613,7 @@ local function loop()
                                 
                                 if useWrapNotesText then 
                                     reaper.ImGui_SetCursorPos(ctx, posX, posY)
-                                    if settings.wrapNotesText then
+                                    if wrapNotesText then
                                         reaper.ImGui_PushTextWrapPos(ctx, notesWidth-8)
                                     end
                                     if isEditingText then
@@ -19615,15 +19628,16 @@ local function loop()
                                     end
                                     --reaper.ImGui_DrawList_AddText(draw_list, posX, posY, colorText, trackNotes)
                                     if reaper.ImGui_IsItemClicked(ctx) then
-                                        isEditingText = true
+                                       -- isEditingText = true
                                     end
-                                    if settings.wrapNotesText then
+                                    if wrapNotesText then
                                         reaper.ImGui_PopTextWrapPos(ctx)
                                     end
                                 end
                                 
                                 
                                 reaper.ImGui_EndChild(ctx)
+                                
                             end    
                                reaper.ImGui_EndChild(ctx); end
                         end
