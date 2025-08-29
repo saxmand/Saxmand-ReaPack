@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.6.5
+-- @version 1.6.6
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,15 +18,14 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + Attempt to unify mapping names across panels
---   + did some minor work to matrix, but still in dev
+--   + fix unified parameter naming issue from https://forum.cockos.com/showpost.php?p=2887211&postcount=996
 
 
 local startTime = reaper.time_precise()
 local reaperStartupTime
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.6.5" 
+local version = "1.6.6" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -4312,7 +4311,7 @@ function getParameterLinkName(track, modulationContainerPos, fxIndex, param, onl
         end
         parameterLinkName = parameterLinkName .. ": " .. paramName 
     end]]
-    parameterLinkName, hasMoreOutputs = getOutputAndMappingNames(track, fxName, originalFxName, fxIndex, modulationContainerPos, doNotUseCatch, param, onlyParamName)
+    local parameterLinkName, hasMoreOutputs = getOutputAndMappingNames(track, fxName, originalFxName, fxIndex, modulationContainerPos, doNotUseCatch, param, onlyParamName)
     return parameterLinkName, hasMoreOutputs
 
  end
@@ -4488,7 +4487,7 @@ local function getAllDataFromParameter(track,fxIndex,param, ignoreFilter)
                         if parameterLinkFXIndex then
                             
                             -- overwrite the parameter to be the parameter that's within the modulation container
-                            parameterLinkParam = getPlinkParamInContainer(track,modulationContainerPos,parameterLinkParam) 
+                            parameterLinkParam = getPlinkParamInContainer(track,modulationContainerPos, parameterLinkFXIndex,parameterLinkParam) 
                             if parameterLinkParam then
                                 
                                 findSettingsIfCurver(modulationContainerPos, parameterLinkFXIndex,parameterLinkParam, parameterLinkName)
