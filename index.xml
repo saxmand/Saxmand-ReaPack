@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="e259857ba87ec3b92a0ae3daf37e7ad8c51e09ab" name="Saxmand ReaPack">
+<index version="1" commit="ef6b07350f7e457eca0ed6d177ead1976e103292" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_Close all open FX windows.lua" type="script" desc="Close all open FX windows">
       <version name="1.0.0" author="Saxmand" time="2025-07-18T21:03:27Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/19307145145e35ceb759861bd5ced1ce7627d38f/FX/Saxmand_Close%20all%20open%20FX%20windows.lua</source>
+      </version>
+      <version name="1.0.1" author="Saxmand" time="2025-11-04T11:46:35Z">
+        <changelog><![CDATA[+ works on all open tabs]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/ef6b07350f7e457eca0ed6d177ead1976e103292/FX/Saxmand_Close%20all%20open%20FX%20windows.lua</source>
       </version>
     </reapack>
     <reapack name="Saxmand_FX Modulator Linking.lua" type="script" desc="FX Modulator Linking">
@@ -5860,6 +5864,11 @@
       </version>
       <version name="1.0.2" author="saxmand" time="2025-04-22T17:13:07Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/c9f7c09b05a0b5a55a9a0910782cceb1f913e98e/Video/Saxmand_Add%20subtitles%20to%20video%20from%20srt%20file%20using%20video%20processor.lua</source>
+      </version>
+      <version name="1.0.3" author="saxmand" time="2025-11-04T11:46:35Z">
+        <changelog><![CDATA[+ made new srt decoder
++ no popup when offset is 0]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/ef6b07350f7e457eca0ed6d177ead1976e103292/Video/Saxmand_Add%20subtitles%20to%20video%20from%20srt%20file%20using%20video%20processor.lua</source>
       </version>
     </reapack>
   </category>
