@@ -1,10 +1,14 @@
 -- @description Add subtitles to video from srt file using video processor
 -- @author saxmand
--- @version 1.0.2
+-- @version 1.0.3
+-- @changelog
+--   + made new srt decoder
+--   + no popup when offset is 0
+
 
 function getTimecodeInputOffsetInFrames(fps)
     -- Labels for each timecode component
-    local title = "Enter timecode offset for video"
+    local title = "Timecode offset for video/session"
     local num_fields = 4
     local fields = "Hours,Minutes,Seconds,Frames"
     local lastValues = reaper.HasExtState("AddSubtitleOverlayToVideoPlugin","Offset") and reaper.GetExtState("AddSubtitleOverlayToVideoPlugin","Offset") or "00,00,00,00"  -- values for each component
@@ -42,7 +46,7 @@ local function timecodeToFrames(timecode, fps)
 end
 
 -- Function to read the SRT file and create an array
-local function parseSRT(filePath)
+local function parseSRT_old(filePath)
     local srtArray = {}
     local file = io.open(filePath, "r")
 
@@ -82,6 +86,47 @@ local function parseSRT(filePath)
 
     file:close()
     return srtArray
+end
+
+-- Function to parse subtitle timecode like "00:01:23,456" into seconds
+local function parse_timecode(timecode)
+    local h, m, s, ms = timecode:match("(%d+):(%d+):(%d+),(%d+)")
+    if not h then return 0 end
+    return tonumber(h) * 3600 + tonumber(m) * 60 + tonumber(s) + tonumber(ms) / 1000
+end
+
+-- Function to decode an SRT file
+local function parseSRT(file_path)
+    local file = io.open(file_path, "r")
+    if not file then
+        error("Could not open file: " .. tostring(file_path))
+    end
+
+    local content = file:read("*all")
+    file:close()
+
+    local subtitles = {}
+    
+    
+    --local fps = 0
+    local fps = reaper.TimeMap_curFrameRate(-1)  -- Pass 0 to get the FPS of the current project
+    -- Pattern matches each subtitle block
+    for num, start_time, end_time, text in content:gmatch("(%d+)%s*\n([%d:,]+)%s*%-%-%>%s*([%d:,]+)%s*\n(.-)\n\n") do
+        
+        local startFrame = timecodeToFrames(start_time, fps)
+        local endFrame = timecodeToFrames(end_time, fps)
+        
+        table.insert(subtitles, {
+            number = tonumber(num),
+            startFrame = startFrame,
+            endFrame = endFrame,
+            start_time = start_time,
+            end_time = end_time,
+            text = text--:gsub("\n", " ") -- Replace line breaks with spaces
+        })
+    end
+
+    return subtitles
 end
 
 local function pluginText()
@@ -125,7 +170,13 @@ local function main(srtFilePath)
     local fps = reaper.TimeMap_curFrameRate(-1)  -- Pass 0 to get the FPS of the current project
     local timecodeOffsetInFrames = getTimecodeInputOffsetInFrames(fps)
     
-    local bakeTimecode = reaper.ShowMessageBox("Have offset as seperate value", "Add Subtitle to video",3)
+    local bakeTimecode
+    
+    if timecodeOffsetInFrames == 0 then 
+        bakeTimecode = 6
+    else
+        bakeTimecode = reaper.ShowMessageBox("Have offset as seperate value", "Add Subtitle to video",3)
+    end
     -- Set the path to your SRT file
     --local srtFilePath = "/Volumes/Projects/Humanlike/Misc/HUMANLIKE 0-30 min.srt" -- reaper.GetOS():match("Windows") and "C:\\path\\to\\your\\file.srt" or "/path/to/your/file.srt"
     local srtArray = parseSRT(srtFilePath)
@@ -143,10 +194,10 @@ local function main(srtFilePath)
         if  srtArray then
             for _, entry in ipairs(srtArray) do
                 counter = (lastEndFrame and lastEndFrame >= entry.startFrame) and #textArray or #textArray + 1
-                textArray[counter] = "messages[" .. entry.startFrame + offset ..'] = "' .. entry.text .. '";'
+                textArray[counter] = "messages[" .. entry.startFrame + offset ..'] = "' .. entry.text .. '";' .. " // " .. entry.start_time.. " --> " .. entry.end_time
                 -- stop subtitle, make sure it stays at least minimumSubtitleSeconds
                 lastEndFrame = (entry.endFrame - entry.startFrame < mimumumSuttitleInFrames and entry.startFrame + mimumumSuttitleInFrames or entry.endFrame)
-                textArray[counter+1] = "messages[" .. lastEndFrame + offset  ..'] = "";'
+                textArray[counter+1] = "messages[" .. lastEndFrame + offset  ..'] = "";' 
             end
         end
         text = table.concat(textArray, "\n")
