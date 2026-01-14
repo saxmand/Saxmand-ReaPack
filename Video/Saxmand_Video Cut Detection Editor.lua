@@ -1,8 +1,11 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.0.1
+-- @version 0.0.2
+-- @provides
+--   Saxmand_FX Modulator Linking/Helpers/*.lua
 -- @changelog
---   + initial beta-release
+--   + clean up generated images
+--   + added dependecy of json
 
 
 --------IDEAS TODO
@@ -763,6 +766,12 @@ local old_cut_data = {}
 local cut_data = {}
 local cuts_making_threashold = {}
 local minSizeW = 800
+
+local function exit()
+    -- clean up generated images
+    os.remove(pngPathA)
+    os.remove(pngPathB)
+end
 
 local function loop()
     if lastPosY and (winH and lastPosY ~= winH or winW < minSizeW) then
@@ -1984,10 +1993,13 @@ local function loop()
     reaper.ImGui_PopStyleVar(ctx, varCount)
     
     if open then
-      reaper.defer(loop)
+        reaper.defer(loop)
+    else 
+        reaper.atexit(exit)
     end
 
     
 end
+
 
 reaper.defer(loop)
