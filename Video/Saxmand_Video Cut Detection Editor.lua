@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.0.2
+-- @version 0.0.3
 -- @provides
 --   Helpers/*.lua
 -- @changelog
