@@ -1,9 +1,8 @@
 -- @description Add subtitles to video from srt file using video processor
 -- @author saxmand
--- @version 1.0.4
+-- @version 1.0.5
 -- @changelog
---   + corrected some spelling
---   + added fallback to old srt decoding method
+--   + added fallback if srt is not recognized at all throw error
 
 
 function getTimecodeInputOffsetInFrames(fps)
@@ -168,8 +167,23 @@ end
 
 -- Main function
 local function main(srtFilePath) 
+    
+    -- Set the path to your SRT file
+    --local srtFilePath = "/Volumes/Projects/Humanlike/Misc/HUMANLIKE 0-30 min.srt" -- reaper.GetOS():match("Windows") and "C:\\path\\to\\your\\file.srt" or "/path/to/your/file.srt"
+    local srtArray = parseSRT(srtFilePath)
+    if #srtArray == 0 then
+        srtArray = parseSRT_old(srtFilePath)
+    end
+    if #srtArray == 0 then
+        reaper.ShowMessageBox("The srt file was not recognized or is a different format. Contact saxmand for help", "Error", 0)
+        return
+    end
+    
     local fps = reaper.TimeMap_curFrameRate(-1)  -- Pass 0 to get the FPS of the current project
     local timecodeOffsetInFrames = getTimecodeInputOffsetInFrames(fps)
+    
+    
+    
     
     local bakeTimecode
     
@@ -179,12 +193,6 @@ local function main(srtFilePath)
         bakeTimecode = reaper.ShowMessageBox("Have offset as seperate value", "Add Subtitle to video",3)
     end
     
-    -- Set the path to your SRT file
-    --local srtFilePath = "/Volumes/Projects/Humanlike/Misc/HUMANLIKE 0-30 min.srt" -- reaper.GetOS():match("Windows") and "C:\\path\\to\\your\\file.srt" or "/path/to/your/file.srt"
-    local srtArray = parseSRT(srtFilePath)
-    if #srtArray == 0 then
-        srtArray = parseSRT_old(srtFilePath)
-    end
     
     local minimumSubtitleSeconds = 3
     local mimumumSuttitleInFrames = math.floor(minimumSubtitleSeconds * fps)
