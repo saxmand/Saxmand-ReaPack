@@ -2,7 +2,7 @@
 -- @author saxmand
 -- @version 0.0.2
 -- @provides
---   Saxmand_FX Modulator Linking/Helpers/*.lua
+--   Helpers/*.lua
 -- @changelog
 --   + clean up generated images
 --   + added dependecy of json
