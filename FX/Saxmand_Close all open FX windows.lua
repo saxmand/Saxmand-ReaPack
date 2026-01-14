@@ -73,12 +73,13 @@ function close_all_fx_windows()
       end
   end
   -- Also ensure main floating chain window is closed (safe fallback)
-  
+  reaper.Main_OnCommand(reaper.NamedCommandLookup("_S&M_HIDEFXCHAIN"), 0) --SWS/S&M: Hide FX chain windows for selected tracks
   --reaper.Main_OnCommand(reaper.NamedCommandLookup("_S&M_WNCLS4"), 0) --SWS/S&M: Close all FX chain windows
 end
 
 reaper.Undo_BeginBlock()
 close_all_fx_windows()
+
 reaper.Undo_EndBlock("Close all FX windows (Track and Takes)", -1)
 
 

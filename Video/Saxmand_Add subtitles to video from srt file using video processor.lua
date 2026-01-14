@@ -1,9 +1,9 @@
 -- @description Add subtitles to video from srt file using video processor
 -- @author saxmand
--- @version 1.0.3
+-- @version 1.0.4
 -- @changelog
---   + made new srt decoder
---   + no popup when offset is 0
+--   + corrected some spelling
+--   + added fallback to old srt decoding method
 
 
 function getTimecodeInputOffsetInFrames(fps)
@@ -66,13 +66,14 @@ local function parseSRT_old(filePath)
         if line and line ~= "" then
             -- Check for timecode lines (the second line of each block)
             if index == 2 then
-                local startTime, endTime = line:match("(%d+:%d+:%d+,%d+)%s+-->%s+(%d+:%d+:%d+,%d+)")
-                if startTime and endTime then
-                    local startFrame = timecodeToFrames(startTime, fps)
-                    local endFrame = timecodeToFrames(endTime, fps)
+                local start_time, end_time = line:match("(%d+:%d+:%d+,%d+)%s+-->%s+(%d+:%d+:%d+,%d+)")
+                if start_time and end_time then
+                
+                    local startFrame = timecodeToFrames(start_time, fps)
+                    local endFrame = timecodeToFrames(end_time, fps)
 
                     -- Add to array
-                    table.insert(srtArray, {startFrame = startFrame, endFrame = endFrame, text = ""})
+                    table.insert(srtArray, {startFrame = startFrame, endFrame = endFrame, text = "", start_time = start_time, end_time = end_time})
                 end
             elseif index == 3 then
                 -- This line contains the text
@@ -177,9 +178,14 @@ local function main(srtFilePath)
     else
         bakeTimecode = reaper.ShowMessageBox("Have offset as seperate value", "Add Subtitle to video",3)
     end
+    
     -- Set the path to your SRT file
     --local srtFilePath = "/Volumes/Projects/Humanlike/Misc/HUMANLIKE 0-30 min.srt" -- reaper.GetOS():match("Windows") and "C:\\path\\to\\your\\file.srt" or "/path/to/your/file.srt"
     local srtArray = parseSRT(srtFilePath)
+    if #srtArray == 0 then
+        srtArray = parseSRT_old(srtFilePath)
+    end
+    
     local minimumSubtitleSeconds = 3
     local mimumumSuttitleInFrames = math.floor(minimumSubtitleSeconds * fps)
 
@@ -194,18 +200,19 @@ local function main(srtFilePath)
         if  srtArray then
             for _, entry in ipairs(srtArray) do
                 counter = (lastEndFrame and lastEndFrame >= entry.startFrame) and #textArray or #textArray + 1
+                reaper.ShowConsoleMsg(entry.start_time .. "\n")
                 textArray[counter] = "messages[" .. entry.startFrame + offset ..'] = "' .. entry.text .. '";' .. " // " .. entry.start_time.. " --> " .. entry.end_time
                 -- stop subtitle, make sure it stays at least minimumSubtitleSeconds
                 lastEndFrame = (entry.endFrame - entry.startFrame < mimumumSuttitleInFrames and entry.startFrame + mimumumSuttitleInFrames or entry.endFrame)
                 textArray[counter+1] = "messages[" .. lastEndFrame + offset  ..'] = "";' 
             end
         end
+        --reaper.ShowConsoleMsg(table.concat(textArray, "\n") .. "\n")
         text = table.concat(textArray, "\n")
-        
         text = text .. pluginText()
         reaper.CF_SetClipboard(text)
         
-        reaper.ShowMessageBox("Plugin is in the clipboard.\n\nCreate a video processor on your the top most video track and paste the plugin","Create Subtitles Plugin",0)
+        reaper.ShowMessageBox("Plugin is in the clipboard.\n\nCreate a video processor on the top most video track and paste the plugin","Create Subtitles Plugin",0)
     end
 end
 
