@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="94188f1424fe0ba3a0089a0a82de16d854fa955c" name="Saxmand ReaPack">
+<index version="1" commit="ca2d60f97dc05642afb693b45036545c86aca1b2" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_Close all open FX windows.lua" type="script" desc="Close all open FX windows">
       <version name="1.0.0" author="Saxmand" time="2025-07-18T21:03:27Z">
@@ -5896,6 +5896,13 @@
 + added dependecy of json]]></changelog>
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/94188f1424fe0ba3a0089a0a82de16d854fa955c/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/94188f1424fe0ba3a0089a0a82de16d854fa955c/Video/Helpers/json.lua</source>
+      </version>
+      <version name="0.0.4" author="saxmand" time="2026-01-15T12:50:12Z">
+        <changelog><![CDATA[+ new layout based on Iachinhan modification
++ shortcuts work without cmd when textfield is not selected
++ worked on analyze bar, to resemble length better]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/ca2d60f97dc05642afb693b45036545c86aca1b2/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/ca2d60f97dc05642afb693b45036545c86aca1b2/Video/Helpers/json.lua</source>
       </version>
     </reapack>
   </category>
