@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="ca2d60f97dc05642afb693b45036545c86aca1b2" name="Saxmand ReaPack">
+<index version="1" commit="2efc61ab9f5acfd5ddbca70374fefd30246f7eb7" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_Close all open FX windows.lua" type="script" desc="Close all open FX windows">
       <version name="1.0.0" author="Saxmand" time="2025-07-18T21:03:27Z">
@@ -5903,6 +5903,14 @@
 + worked on analyze bar, to resemble length better]]></changelog>
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/ca2d60f97dc05642afb693b45036545c86aca1b2/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/ca2d60f97dc05642afb693b45036545c86aca1b2/Video/Helpers/json.lua</source>
+      </version>
+      <version name="0.1.0" author="saxmand" time="2026-01-20T17:11:43Z">
+        <changelog><![CDATA[+ analyzing progrss bar is calculated from local calculation time. So works after the first analysis
++ Option to generate thumbnails
++ new thumbnail generation that's crossplatform
++ fixed spacebar so it plays on windows]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/2efc61ab9f5acfd5ddbca70374fefd30246f7eb7/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/2efc61ab9f5acfd5ddbca70374fefd30246f7eb7/Video/Helpers/json.lua</source>
       </version>
     </reapack>
   </category>
