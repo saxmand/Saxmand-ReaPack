@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="2efc61ab9f5acfd5ddbca70374fefd30246f7eb7" name="Saxmand ReaPack">
+<index version="1" commit="93023c6b0797ee885a0369a42529d8a6933e503e" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_Close all open FX windows.lua" type="script" desc="Close all open FX windows">
       <version name="1.0.0" author="Saxmand" time="2025-07-18T21:03:27Z">
@@ -5911,6 +5911,11 @@
 + fixed spacebar so it plays on windows]]></changelog>
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/2efc61ab9f5acfd5ddbca70374fefd30246f7eb7/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/2efc61ab9f5acfd5ddbca70374fefd30246f7eb7/Video/Helpers/json.lua</source>
+      </version>
+      <version name="0.1.1" author="saxmand" time="2026-01-21T12:25:23Z">
+        <changelog><![CDATA[+ windows does not show popup exec window now when navigating cuts, but makes it a bit slower. It does however on analyzing and thumbnails generation. This can be disabled, but it will look like it freezes the app. ]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/93023c6b0797ee885a0369a42529d8a6933e503e/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/93023c6b0797ee885a0369a42529d8a6933e503e/Video/Helpers/json.lua</source>
       </version>
     </reapack>
   </category>
