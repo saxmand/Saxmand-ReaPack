@@ -1,14 +1,10 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.1.0
+-- @version 0.1.1
 -- @provides
 --   Helpers/*.lua
 -- @changelog
---   + analyzing progrss bar is calculated from local calculation time. So works after the first analysis
---   + Option to generate thumbnails
---   + new thumbnail generation that's crossplatform
---   + fixed spacebar so it plays on windows
-
+--   + windows does not show popup exec window now when navigating cuts, but makes it a bit slower. It does however on analyzing and thumbnails generation. This can be disabled, but it will look like it freezes the app. 
 
 -------- Possible IDEAS TODO
 -- add option to keep old cut information (eg. color and name)
@@ -24,6 +20,7 @@ local script_path = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
 package.path = package.path .. ";" .. script_path .. "Helpers/?.lua"
 local json = require("json")
 
+local is_windows = package.config:sub(1, 1) == "\\"
 seperator = package.config:sub(1, 1) -- path separator: '/' on Unix, '\\' on Windows
 
 
@@ -159,7 +156,8 @@ local defaultSettings = {
     cursorFollowSelectedCut = false,
 
     timecodeRelativeToSession = false, -- not implemented
-    useOldMacMethod = true
+    useOldMacMethod = true,
+    showAnalyzeBar = true,
     
 }
 
@@ -536,6 +534,53 @@ local function sanitize_path_for_ffmpeg_filter(path)
     return path
 end
 
+
+function cmdWindowsWrapper(cmd_ffmpeg)
+    --local cmd_ffmpeg = cmd .. ' > "' .. log_path .. '" 2>&1'
+    local cmd_wrapper = 'cmd.exe /C "' .. cmd_ffmpeg .. '"'
+    
+    -- Use the script directory (upvalue script_path should be available)
+    -- If script_path is nil (safeguard), fall back to a local relative path or Temp
+    local vbs_dir = script_path
+    if not vbs_dir then
+        vbs_dir = os.getenv("TEMP") or "."
+    end
+    local vbs_path = vbs_dir .. "hosi_exec_hidden.vbs"
+    
+    local f = io.open(vbs_path, "w")
+    if f then
+        -- Escape double quotes for VBScript (" -> "")
+        local vbs_cmd = cmd_wrapper:gsub('"', '""')
+    
+        f:write('Dim WshShell\n')
+        f:write('Set WshShell = CreateObject("WScript.Shell")\n')
+        -- Run hidden (0) and wait (True)
+        f:write('WshShell.Run "' .. vbs_cmd .. '", 0, True\n')
+        f:close()
+    
+        -- Execute VBS
+        reaper.ExecProcess('wscript.exe "' .. vbs_path .. '"', -1)
+    
+        -- Do NOT delete the VBS file immediately to avoid race conditions.
+        -- It's small and reusable.
+    else
+        -- Fallback if cannot write to script dir
+        local cmd_direct = '"' .. ffmpeg_path .. '" ' .. table.concat(args, " ")
+        reaper.ExecProcess(cmd_direct, -1)
+    end
+end
+
+
+function runExecProcess(command, forceAsync) 
+    local is_windows = package.config:sub(1, 1) == "\\"
+    if is_windows and not forceAsync then
+        reaper.ExecProcess(command, 0)
+    else 
+        reaper.ExecProcess(command, -1)
+    end 
+end
+
+
 function get_cut_information(file_path, cutTextFilePath, start_time, length, detection_threshold)
     detection_threshold = detection_threshold or 0.1
     os.remove(cutTextFilePath)
@@ -560,9 +605,11 @@ function get_cut_information(file_path, cutTextFilePath, start_time, length, det
     table.insert(args, "-f null -")
 
     local command = table.concat(args, " ")
-    reaper.CF_SetClipboard(command .. "\n")
-    local result = reaper.ExecProcess(command, -1)
-    return result
+    --reaper.CF_SetClipboard(command .. "\n")
+    
+    runExecProcess(command, settings.showAnalyzeBar)
+    
+    return true
 end
 
 
@@ -684,7 +731,7 @@ local function createThumbnails_new_slower_all_platforms(filePath, pngPath, item
     end
 end
 
-local function createThumbnails_mac(filePath, pngPath, itemStart, overwrite, background)
+local function createThumbnails_mac(filePath, pngPath, itemStart, overwrite, background, forceAsync)
   --local pngName = pngName(filePath,itemStart)
   --local pngPath = join_paths(filePath, pngName)
   if overwrite or not reaper.file_exists(pngPath) then 
@@ -703,9 +750,13 @@ local function createThumbnails_mac(filePath, pngPath, itemStart, overwrite, bac
     
     if background then table.insert(args, "-f null -") end
     
-    local cmd = table.concat(args, " ")
+    local command = table.concat(args, " ")
     
-    reaper.ExecProcess(cmd, -1)
+    --reaper.ExecProcess(cmd, 0)
+    --reaper.ExecProcess(cmd, 200)
+    --reaper.ExecProcess(cmd, -1)
+    
+    runExecProcess(command, forceAsync)
     --return io.popen(cmd, "r")
   end
 end
@@ -718,10 +769,10 @@ local function createThumbnails_windows(filePath, pngPath, itemStart, overwrite)
   end
 end
 
-local function createThumbnails(filePath, pngPath, itemStart, overwrite) 
+local function createThumbnails(filePath, pngPath, itemStart, overwrite, background, forceAsync) 
     local is_windows = seperator == "\\"
     --if settings.useOldMacMethod and not is_windows then
-        createThumbnails_mac(filePath, pngPath, itemStart, overwrite)
+        createThumbnails_mac(filePath, pngPath, itemStart, overwrite, background, forceAsync)
     --else
     --    createThumbnails_windows(filePath, pngPath, itemStart, overwrite)
     --end
@@ -745,8 +796,8 @@ function generateThumbnailsForCuts(cut_data, cuts_making_threashold, directory, 
             cut = cut_data[c.index]
             if cut then 
                 --pngPath = directory .. itemProperties.fileName .. "_Cut" .. c.index .. "_" .. math.floor(c.time * 1000 + 0.5) .. "ms.png" 
-                createThumbnails(itemProperties.filePath, cut.pngPath, cut.time, nil, true)
-                createThumbnails(itemProperties.filePath, cut.pngPath_frame_before, cut.time_frame_before, nil, true)
+                createThumbnails(itemProperties.filePath, cut.pngPath, cut.time, nil, true, settings.showAnalyzeBar)
+                createThumbnails(itemProperties.filePath, cut.pngPath_frame_before, cut.time_frame_before, nil, true, settings.showAnalyzeBar)
                 --reaper.ShowConsoleMsg(pngPath .. "\n")
             end
         end
@@ -1166,6 +1217,8 @@ local function loop()
         isShiftDown = ImGui.IsKeyDown(ctx, ImGui.Mod_Shift)
         isCtrlDown = ImGui.IsKeyDown(ctx, ImGui.Mod_Super)
         isSuperDown = ImGui.IsKeyDown(ctx, ImGui.Mod_Ctrl)
+        isLeftArrowReleased = reaper.ImGui_IsKeyPressed(ctx, ImGui.Key_LeftArrow, false)
+        isRightArrowReleased = reaper.ImGui_IsKeyPressed(ctx, ImGui.Key_RightArrow, false)
         
         local alphabet = {"Space", "Backspace", "Escape", "Enter", "Tab", "LeftArrow", "RightArrow", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "Y", "Z", "X", "KeypadAdd", "KeypadSubtract"}
         for _, letter in ipairs(alphabet) do
@@ -1366,7 +1419,6 @@ local function loop()
                     local count = 0
                     local filePath = reaper.EnumerateFiles(thumbnailPath,count)
                     while filePath do
-                        reaper.ShowConsoleMsg(filePath .. "\n")
                         os.remove(thumbnailPath .. filePath)
                         count = count + 1
                         filePath = reaper.EnumerateFiles(thumbnailPath,count)
@@ -1381,6 +1433,13 @@ local function loop()
                 end
                 setToolTipFunc("Click to remove generated thumbnails and the thumbnail folder.")
                 
+                if is_windows then 
+                    ret, settings.showAnalyzeBar = reaper.ImGui_Checkbox(ctx, "Show analyze bar", settings.showAnalyzeBar)
+                    if ret then 
+                        saveSettings()
+                    end
+                    setToolTipFunc("Windows only. In order to show the analyze bar we need to show the popup exec window, to make the process async") 
+                end
                 
                 if reaper.ImGui_Button(ctx, "Reset analyze speed") then
                     settings.analyzeSpeed = nil
@@ -2495,7 +2554,7 @@ local function loop()
 
         
         reaper.ImGui_SameLine(ctx, winW / 2 - 62)
-        if reaper.ImGui_Button(ctx, "l<", buttonSize, buttonSize) or (not markerNameIsFocused and isLeftArrow and not isShiftDown) then
+        if reaper.ImGui_Button(ctx, "l<", buttonSize, buttonSize) or (not markerNameIsFocused and isLeftArrowReleased and not isShiftDown) then
             if not findPreviousCut() then
                 cur_pos = overview_start_in_item
                 moveCursorToPos(cur_pos)
@@ -2504,19 +2563,19 @@ local function loop()
         setToolTipFunc("Select previous cut.\n- press left arrow to set with keyboard")
         
         reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, "<", buttonSize, buttonSize) or (not markerNameIsFocused and isLeftArrow and isShiftDown) then
+        if reaper.ImGui_Button(ctx, "<", buttonSize, buttonSize) or (not markerNameIsFocused and isLeftArrowReleased and isShiftDown) then
             move_cursor_by_frames(-1)
         end
         setToolTipFunc("Move 1 frame left.\n- press shift+left arrow to set with keyboard")
         
         reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, ">", buttonSize, buttonSize) or (not markerNameIsFocused and isRightArrow and isShiftDown) then
+        if reaper.ImGui_Button(ctx, ">", buttonSize, buttonSize) or (not markerNameIsFocused and isRightArrowReleased and isShiftDown) then
             move_cursor_by_frames(1)
         end
         setToolTipFunc("Move 1 frame right.\n- press shift+right arrow to set with keyboard")
         
         reaper.ImGui_SameLine(ctx) 
-        if reaper.ImGui_Button(ctx, ">l", buttonSize, buttonSize) or (not markerNameIsFocused and isRightArrow and not isShiftDown) then
+        if reaper.ImGui_Button(ctx, ">l", buttonSize, buttonSize) or (not markerNameIsFocused and isRightArrowReleased and not isShiftDown) then
             if not findNextCut() then
                 cur_pos = findNextSpecialEnd(cur_pos_in_item) + item_pos - item_offset
                 moveCursorToPos(cur_pos)
