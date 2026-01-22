@@ -1,10 +1,11 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.1.2
+-- @version 0.1.3
 -- @provides
 --   Helpers/*.lua
+--   Helpers/hosi_exec_hidden.vbs
 -- @changelog
---   + implemnting Iachinhan win support attempt 1
+--   + implemnting Iachinhan win support attempt 2
 
 -------- Possible IDEAS TODO
 -- add option to keep old cut information (eg. color and name)
