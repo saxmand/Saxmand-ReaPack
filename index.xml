@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="ea5d4e4a03f4deb0d193b14bb8cf0756a1351225" name="Saxmand ReaPack">
+<index version="1" commit="41be076eca93736fd7912172f8aabd979f35e00e" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_Close all open FX windows.lua" type="script" desc="Close all open FX windows">
       <version name="1.0.0" author="Saxmand" time="2025-07-18T21:03:27Z">
@@ -5921,6 +5921,12 @@
         <changelog><![CDATA[+ implemnting Iachinhan win support attempt 1]]></changelog>
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/ea5d4e4a03f4deb0d193b14bb8cf0756a1351225/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/ea5d4e4a03f4deb0d193b14bb8cf0756a1351225/Video/Helpers/json.lua</source>
+      </version>
+      <version name="0.1.3" author="saxmand" time="2026-01-22T10:52:44Z">
+        <changelog><![CDATA[+ implemnting Iachinhan win support attempt 2]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/41be076eca93736fd7912172f8aabd979f35e00e/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/41be076eca93736fd7912172f8aabd979f35e00e/Video/Helpers/json.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/41be076eca93736fd7912172f8aabd979f35e00e/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
