@@ -1,0 +1,3 @@
+Dim WshShell
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "cmd.exe /C """"C:\Users\PC\AppData\Roaming\REAPER\UserPlugins\ffmpeg.exe"" -hide_banner -ss 0.000000 -t 1015.553000 -i ""F:/Recording Voice Projects/Inter-Voices Studio/Vlad New Channel/2026/T01/Audio/159ShortestWoman_Preview.mp4"" -vf ""select=gt(scene\,0.100000),metadata=print:file='F\:/Recording Voice Projects/Inter-Voices Studio/Vlad New Channel/2026/T01/Audio/159ShortestWoman_Preview_cutsRaw.txt'"" -f null - > ""F:/Recording Voice Projects/Inter-Voices Studio/Vlad New Channel/2026/T01/Audio/159ShortestWoman_Preview_ffmpeg_log.txt"" 2>&1""", 0, True

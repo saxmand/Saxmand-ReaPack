@@ -1,10 +1,10 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.1.1
+-- @version 0.1.2
 -- @provides
 --   Helpers/*.lua
 -- @changelog
---   + windows does not show popup exec window now when navigating cuts, but makes it a bit slower. It does however on analyzing and thumbnails generation. This can be disabled, but it will look like it freezes the app. 
+--   + implemnting Iachinhan win support attempt 1
 
 -------- Possible IDEAS TODO
 -- add option to keep old cut information (eg. color and name)
@@ -157,7 +157,6 @@ local defaultSettings = {
 
     timecodeRelativeToSession = false, -- not implemented
     useOldMacMethod = true,
-    showAnalyzeBar = true,
     
 }
 
@@ -293,7 +292,7 @@ function Get_FFMpeg_Path()
     else
         local retval = reaper.MB("FFMpeg is required for this action. Find the path to your FFmpeg executable now or click Cancel.", "Detect Cuts", 1)
         if retval == 1 then
-            retval, path = reaper.GetUserFileNameForRead(is_windows and "" or "/usr/local/bin/", "Find FFMpeg executable", "ffmpeg.exe")
+            retval, path = reaper.GetUserFileNameForRead(is_windows and "" or "/usr/local/bin/", "Find FFMpeg executable", is_windows and "ffmpeg.exe" or "")
             if retval then
                 reaper.SetExtState(stateName, FFmpegPathKey, path, true)
                 return Get_FFMpeg_Path()
@@ -481,11 +480,14 @@ function get_cut_information_Iachinhan(
 
         -- Use the script directory (upvalue script_path should be available)
         -- If script_path is nil (safeguard), fall back to a local relative path or Temp
+        --[[
         local vbs_dir = script_path
         if not vbs_dir then
             vbs_dir = os.getenv("TEMP") or "."
         end
         local vbs_path = vbs_dir .. "hosi_exec_hidden.vbs"
+        ]]
+        local vbs_path = script_path .. seperator .. "Helpers" .. seperator .. "hosi_exec_hidden.vbs"
 
         local f = io.open(vbs_path, "w")
         if f then
@@ -535,58 +537,10 @@ local function sanitize_path_for_ffmpeg_filter(path)
 end
 
 
-function cmdWindowsWrapper(cmd_ffmpeg)
-    --local cmd_ffmpeg = cmd .. ' > "' .. log_path .. '" 2>&1'
-    local cmd_wrapper = 'cmd.exe /C "' .. cmd_ffmpeg .. '"'
-    
-    -- Use the script directory (upvalue script_path should be available)
-    -- If script_path is nil (safeguard), fall back to a local relative path or Temp
-    local vbs_dir = script_path
-    if not vbs_dir then
-        vbs_dir = os.getenv("TEMP") or "."
-    end
-    local vbs_path = vbs_dir .. "hosi_exec_hidden.vbs"
-    
-    local f = io.open(vbs_path, "w")
-    if f then
-        -- Escape double quotes for VBScript (" -> "")
-        local vbs_cmd = cmd_wrapper:gsub('"', '""')
-    
-        f:write('Dim WshShell\n')
-        f:write('Set WshShell = CreateObject("WScript.Shell")\n')
-        -- Run hidden (0) and wait (True)
-        f:write('WshShell.Run "' .. vbs_cmd .. '", 0, True\n')
-        f:close()
-    
-        -- Execute VBS
-        reaper.ExecProcess('wscript.exe "' .. vbs_path .. '"', -1)
-    
-        -- Do NOT delete the VBS file immediately to avoid race conditions.
-        -- It's small and reusable.
-    else
-        -- Fallback if cannot write to script dir
-        local cmd_direct = '"' .. ffmpeg_path .. '" ' .. table.concat(args, " ")
-        reaper.ExecProcess(cmd_direct, -1)
-    end
-end
 
-
-function runExecProcess(command, forceAsync) 
-    local is_windows = package.config:sub(1, 1) == "\\"
-    if is_windows and not forceAsync then
-        reaper.ExecProcess(command, 0)
-    else 
-        reaper.ExecProcess(command, -1)
-    end 
-end
-
-
-function get_cut_information(file_path, cutTextFilePath, start_time, length, detection_threshold)
+function get_cut_information_mac(file_path, cutTextFilePath, start_time, length, detection_threshold)
     detection_threshold = detection_threshold or 0.1
     os.remove(cutTextFilePath)
-
-    -- Исправление путей для фильтра
-    local safe_cut_path = sanitize_path_for_ffmpeg_filter(cutTextFilePath)
     
     -- Build FFmpeg arguments
     local args = {}
@@ -601,48 +555,164 @@ function get_cut_information(file_path, cutTextFilePath, start_time, length, det
     
     -- ВАЖНО: Путь safe_cut_path содержит экранированное двоеточие (C\:)
     -- И мы оборачиваем его в одинарные кавычки
-    table.insert(args, '-vf "select=gt(scene\\,' .. string.format("%.6f", detection_threshold) .. ")" ..  ',metadata=print:file=\'' .. safe_cut_path .. '\'"' )
+    table.insert(args, '-vf "select=gt(scene\\,' .. string.format("%.6f", detection_threshold) .. ")" ..  ',metadata=print:file=\'' .. cutTextFilePath .. '\'"' )
     table.insert(args, "-f null -")
 
     local command = table.concat(args, " ")
     --reaper.CF_SetClipboard(command .. "\n")
     
-    runExecProcess(command, settings.showAnalyzeBar)
+    reaper.ExecProcess(command, -1)
     
     return true
 end
 
 
-function extract_cut_data(cutTextFilePathRaw, start_time)
+function get_cut_information_win(file_path, cutTextFilePath, start_time, length, detection_threshold)
+    detection_threshold = detection_threshold or 0.1
+    local is_windows = package.config:sub(1,1) == "\\"
+
+    -- Remove previous output
+    os.remove(cutTextFilePath)
+
+    -- Build FFmpeg arguments
+    local args = {}
+
+    table.insert(args, "-hide_banner")
+
+    if start_time then
+        table.insert(args, "-ss " .. string.format("%.6f", start_time))
+    end
+
+    if length then
+        table.insert(args, "-t " .. string.format("%.6f", length))
+    end
+
+    if is_windows then
+       -- Normalize paths to forward slashes to avoid escaping issues in filter strings
+       file_path = file_path:gsub("\\", "/")
+       cutTextFilePath = cutTextFilePath:gsub("\\", "/")
+    end
+
+    table.insert(args, '-i "' .. file_path .. '"')
+
+    -- Escape colon for filter path on Windows
+    local filter_out_path = cutTextFilePath
+    if is_windows then
+        filter_out_path = filter_out_path:gsub(":", "\\:")
+    end
+
+    table.insert(args,
+        '-vf "select=gt(scene\\,' ..
+        string.format("%.6f", detection_threshold) .. ")" .. 
+        ',metadata=print:file=\'' .. filter_out_path .. '\'"'
+    )
+
+    -- FFMPEG logging
+    local log_path = cutTextFilePath:gsub("_cutsRaw.txt", "_ffmpeg_log.txt")
+    
+    table.insert(args, "-f null -")
+
+    -- Sanitize ffmpeg_path
+    ffmpeg_path = ffmpeg_path:gsub('"', '')
+
+    if is_windows then
+        -- Use WScript.Shell via a stable VBS file in the script directory
+        -- This guarantees hidden execution without Temp file issues
+        
+        local cmd_ffmpeg = '"' .. ffmpeg_path .. '" ' .. table.concat(args, " ") .. ' > "' .. log_path .. '" 2>&1'
+        local cmd_wrapper = 'cmd.exe /C "' .. cmd_ffmpeg .. '"'
+        
+        -- Use the script directory (upvalue script_path should be available)
+        -- If script_path is nil (safeguard), fall back to a local relative path or Temp
+        local vbs_dir = script_path
+        if not vbs_dir then 
+            vbs_dir = os.getenv("TEMP") or "." 
+        end
+        local vbs_path = vbs_dir .. "hosi_exec_hidden.vbs"
+        
+        local f = io.open(vbs_path, "w")
+        if f then
+            -- Escape double quotes for VBScript (" -> "")
+            local vbs_cmd = cmd_wrapper:gsub('"', '""')
+            
+            f:write('Dim WshShell\n')
+            f:write('Set WshShell = CreateObject("WScript.Shell")\n')
+            -- Run hidden (0) and wait (True)
+            f:write('WshShell.Run "' .. vbs_cmd .. '", 0, True\n') 
+            f:close()
+            
+            -- Execute VBS
+            reaper.ExecProcess('wscript.exe "' .. vbs_path .. '"', -1)
+            
+            -- Do NOT delete the VBS file immediately to avoid race conditions.
+            -- It's small and reusable.
+        else
+            -- Fallback if cannot write to script dir
+            local cmd_direct = '"' .. ffmpeg_path .. '" ' .. table.concat(args, " ") 
+            reaper.ExecProcess(cmd_direct, -1)
+        end
+    else
+        -- Unix/Mac
+        local cmd_content = '"' .. ffmpeg_path .. '" ' .. table.concat(args, " ") .. ' 2> "' .. log_path .. '"'
+        reaper.ExecProcess(cmd_content, -1)
+    end
+    
+    -- Debug logs processing (optional, mainly for dev)
+    -- local f = io.open(log_path, "r")
+    -- if f then f:close() end
+    
+    -- Return based on file existence/size? Logic outside handles this.
+    return true
+end
+
+function get_cut_information(file_path, cutTextFilePath, start_time, length, detection_threshold)
+    local is_windows = package.config:sub(1, 1) == "\\"
+    if is_windows then
+        get_cut_information_win(file_path, cutTextFilePath, start_time, length, detection_threshold)
+    else
+        get_cut_information_mac(file_path, cutTextFilePath, start_time, length, detection_threshold)
+    end
+end
+
+function extract_cut_data(cutTextFilePathRaw, start_time)  
     local f = io.open(cutTextFilePathRaw)
     if not f then return nil, "Could not open file" end
     local results = {}
-
+    
     local entry = {}
-
+  
     for line in f:lines() do
-
-        local time = line:match("pts_time:(%S+)")
-        if time then
-            entry.time = tonumber(time) + start_time
-            --reaper.ShowConsoleMsg(time .."\n")
-        end
-
-        local score = line:match("lavfi%.scene_score=(%S+)")
-        if score then
-            entry.score = 100 - tonumber(score) * 100
-        end
-
-        -- Once we have all three, store and reset
-        if entry.score and entry.time then
-            entry.color = settings.defaultColor
-            table.insert(results, entry)
-            entry = {}
-        end
+      local frame, pts, time = line:match(
+          "frame:(%d+)%s+pts:(%d+)%s+pts_time:([%d%.]+)"
+      )
+      if frame and pts and time then
+          entry.frame = tonumber(frame)
+          entry.pts   = tonumber(pts)
+          entry.time  = tonumber(time) + start_time
+      end
+      
+      local time = line:match("pts_time:(%S+)")
+      if time then
+          entry.time = tonumber(time) + start_time
+          --reaper.ShowConsoleMsg(time .."\n")
+      end
+  
+      local score = line:match("lavfi%.scene_score=(%S+)")
+      
+      if score then
+        entry.score = 100 - tonumber(score) * 100
+      end 
+  
+      -- Once we have all three, store and reset
+      if entry.score and entry.time then
+        entry.color = settings.defaultColor
+        table.insert(results, entry)
+        entry = {}
+      end
     end
-
+  
     f:close()
-
+    
     return results
 end
 
@@ -667,69 +737,69 @@ end
 -- Global throttling variable
 local last_thumb_time = 0
 
-local function createThumbnails_new_slower_all_platforms(filePath, pngPath, itemStart, overwrite)
-    -- Throttling to prevent potential load spam
-    local now = reaper.time_precise()
-    --if now - last_thumb_time < 0.2 then return false end
-    last_thumb_time = now
+local function createThumbnails_win(filePath, pngPath, itemStart, overwrite)
+  -- Throttling to prevent potential load spam
+  local now = reaper.time_precise()
+  --if now - last_thumb_time < 0.2 then return false end
+  last_thumb_time = now
 
-    local is_windows = seperator == "\\"
-
-    if overwrite or not reaper.file_exists(pngPath) then
-        local ffmpeg_exec = ffmpeg_path:gsub('"', '') -- sanitize path
-        local command = ""
-
-        if is_windows then
-            -- CD Strategy for Thumbnails (proven to fix FFMPEG path issues on Windows)
-            -- Using ExecProcess (Hidden) instead of os.execute to prevent flickering
-
-            -- Path normalization for CMD
-            filePath = filePath:gsub("/", "\\")
-            pngPath = pngPath:gsub("/", "\\")
-
-            -- Extract folder and filename to CD into
-            local work_dir, out_file = pngPath:match("(.*/)(.*)") -- this match needs forward slashes? No, we just converted.
-            -- Regex for backslash is tricky. Let's use the one that worked before conversion or handle both.
-            -- Actually, we just converted to backslashes.
-            work_dir, out_file = pngPath:match("(.*\\)(.*)")
-
-            if not work_dir then
-                work_dir = ".\\"
-                out_file = pngPath
-            end
-
-            -- Construct command: cmd /Q /C "cd /d "dir" & "ffmpeg" ... "outfile""
-            local args = ' -ss ' .. string.format("%.6f", itemStart) .. ' -y -i "' .. filePath .. '" -frames:v 1 "' .. out_file .. '"'
-            command = 'cmd.exe /Q /C "cd /d "' .. work_dir .. '" & "' .. ffmpeg_exec .. '"' .. args .. '" 2>&1'
-        else
-            -- Unix
-            local args = ' -ss ' .. string.format("%.6f", itemStart) .. ' -y -i "' .. filePath .. '" -frames:v 1 "' .. pngPath .. '"'
-            command = '"' .. ffmpeg_exec .. '"' .. args --.. -' 2>&1' 
-        end
-
-        -- ExecProcess returns exit code (integer) and output (string).
-        local ret_code, ret_output = reaper.ExecProcess(command, 0) -- Timeout 0 to avoid UI freeze. FFMPEG is fast.
-
-        -- We can't immediately check file_exists if timeout is 0 (async-ish).
-        -- But if we don't wait, the loop will retry.
-        -- Let's give it a tiny budget? 100ms?
-        -- Or just rely on the next loop iteration to pick it up.
-        -- If we use timeout 0, ret_output might be empty.
-        -- Let's try 200ms constant wait. Ideally shouldn't lag much.
-        ret_code, ret_output = reaper.ExecProcess(command, 200)
-
-        if not reaper.file_exists(pngPath) then
-            -- reaper.ShowConsoleMsg("\n--- THUMBNAIL ERROR ---\n")
-            -- reaper.ShowConsoleMsg("CMD: " .. command .. "\n")
-            -- reaper.ShowConsoleMsg("OUTPUT:\n" .. tostring(ret_output) .. "\n")
-
-            -- Fallback to os.execute (visible) just to see if it works as a backup?
-            -- No, let's just debug direct first.
-        end
-
-        return ret_code
+  local is_windows = package.config:sub(1,1) == "\\"
+  
+  if overwrite or not reaper.file_exists(pngPath) then
+    
+    local ffmpeg_exec = ffmpeg_path:gsub('"', '') -- sanitize path
+    local command = ""
+    
+    if is_windows then
+        -- CD Strategy for Thumbnails (proven to fix FFMPEG path issues on Windows)
+        -- Using ExecProcess (Hidden) instead of os.execute to prevent flickering
+        
+        -- Path normalization for CMD
+        filePath = filePath:gsub("/", "\\")
+        pngPath = pngPath:gsub("/", "\\")
+        
+        -- Extract folder and filename to CD into
+        -- local work_dir, out_file = pngPath:match("(.*/)(.*)") -- this match needs forward slashes? No, we just converted.
+        -- Regex for backslash is tricky. Let's use the one that worked before conversion or handle both.
+        -- Actually, we just converted to backslashes. 
+        local work_dir, out_file = pngPath:match("(.*\\)(.*)")
+        
+        if not work_dir then work_dir = ".\\" out_file = pngPath end
+        
+        -- Construct command: cmd /Q /C "cd /d "dir" & "ffmpeg" ... "outfile""
+        local args =  ' -ss ' .. string.format("%.6f", itemStart) .. ' -y -i "'..filePath..'" -frames:v 1 "'..out_file ..'"'
+        command = 'cmd.exe /Q /C "cd /d "' .. work_dir .. '" & "' .. ffmpeg_exec .. '"' .. args .. '" 2>&1'
+        
+    else
+        -- Unix
+        local args =  ' -ss ' .. string.format("%.6f", itemStart) .. ' -y -i "'..filePath..'" -frames:v 1 "'..pngPath ..'"' 
+        command = '"' .. ffmpeg_exec .. '"' .. args .. ' 2>&1'
     end
+    
+    -- ExecProcess returns exit code (integer) and output (string).
+    local ret_code, ret_output = reaper.ExecProcess(command, 0) -- Timeout 0 to avoid UI freeze. FFMPEG is fast.
+    
+    -- We can't immediately check file_exists if timeout is 0 (async-ish).
+    -- But if we don't wait, the loop will retry.
+    -- Let's give it a tiny budget? 100ms? 
+    -- Or just rely on the next loop iteration to pick it up.
+    -- If we use timeout 0, ret_output might be empty.
+    -- Let's try 200ms constant wait. Ideally shouldn't lag much.
+    ret_code, ret_output = reaper.ExecProcess(command, 200)
+    
+    if not reaper.file_exists(pngPath) then
+        -- reaper.ShowConsoleMsg("\n--- THUMBNAIL ERROR ---\n")
+        -- reaper.ShowConsoleMsg("CMD: " .. command .. "\n")
+        -- reaper.ShowConsoleMsg("OUTPUT:\n" .. tostring(ret_output) .. "\n")
+        
+        -- Fallback to os.execute (visible) just to see if it works as a backup? 
+        -- No, let's just debug direct first.
+    end
+    
+    return ret_code
+  end
 end
+
 
 local function createThumbnails_mac(filePath, pngPath, itemStart, overwrite, background, forceAsync)
   --local pngName = pngName(filePath,itemStart)
@@ -754,9 +824,7 @@ local function createThumbnails_mac(filePath, pngPath, itemStart, overwrite, bac
     
     --reaper.ExecProcess(cmd, 0)
     --reaper.ExecProcess(cmd, 200)
-    --reaper.ExecProcess(cmd, -1)
-    
-    runExecProcess(command, forceAsync)
+    reaper.ExecProcess(command, -1) 
     --return io.popen(cmd, "r")
   end
 end
@@ -771,57 +839,75 @@ end
 
 local function createThumbnails(filePath, pngPath, itemStart, overwrite, background, forceAsync) 
     local is_windows = seperator == "\\"
-    --if settings.useOldMacMethod and not is_windows then
-        createThumbnails_mac(filePath, pngPath, itemStart, overwrite, background, forceAsync)
-    --else
-    --    createThumbnails_windows(filePath, pngPath, itemStart, overwrite)
-    --end
+    if settings.useOldMacMethod and not is_windows then
+        createThumbnails_mac(filePath, pngPath, itemStart, overwrite)
+    else
+        createThumbnails_win(filePath, pngPath, itemStart, overwrite)
+    end
 end
 
-function extract_thumbnail(video_path, time_seconds, output_path)
-    local timecode = string.format("%02d:%02d:%04.1f",
-        math.floor(time_seconds / 3600),
-        math.floor((time_seconds % 3600) / 60),
-        time_seconds % 60)
-
-    local cmd = string.format(ffmpeg_path .. ' -ss %s -i "%s" -frames:v 1 -q:v 2 "%s"', timecode, video_path, output_path)
-end
 
 function generateThumbnailsForCuts(cut_data, cuts_making_threashold, directory, itemProperties)
+    if not directory or not itemProperties or not itemProperties.fileName then
+        reaper.ShowMessageBox("Cannot generate thumbnails: Missing file information (Save the project or select a valid video item).", "Error", 0)
+        return
+    end
+
     if not reaper.file_exists(directory) then
         reaper.RecursiveCreateDirectory(directory,0)
     end
+    
+    generationQueue = {} -- Clear previous queue
+    
     for _, c in ipairs(cuts_making_threashold) do 
-        if not c.exclude then 
-            cut = cut_data[c.index]
-            if cut then 
-                --pngPath = directory .. itemProperties.fileName .. "_Cut" .. c.index .. "_" .. math.floor(c.time * 1000 + 0.5) .. "ms.png" 
-                createThumbnails(itemProperties.filePath, cut.pngPath, cut.time, nil, true, settings.showAnalyzeBar)
-                createThumbnails(itemProperties.filePath, cut.pngPath_frame_before, cut.time_frame_before, nil, true, settings.showAnalyzeBar)
-                --reaper.ShowConsoleMsg(pngPath .. "\n")
-            end
-        end
+         if not c.exclude then 
+             cut = cut_data[c.index]
+             if cut then 
+                 if not cut.pngPath then
+                      local time_seconds_rounded = roundToFrame(cut.time)
+                      cut.pngPath = directory .. itemProperties.fileName .. "_" .. math.floor(time_seconds_rounded * 1000 + 0.5) .. "ms.png" 
+                 end
+                 if not cut.pngPath_frame_before then
+                      local time_seconds_rounded = roundToFrame(cut.time)
+                      local oneFrameEarlier = time_seconds_rounded - (1 / frames_per_second)
+                      cut.pngPath_frame_before = directory .. itemProperties.fileName .. "_" .. math.floor(oneFrameEarlier * 1000 + 0.5) .. "ms.png"
+                      cut.time_frame_before = oneFrameEarlier
+                 end
+                 
+                 -- Add tasks to queue instead of processing immediately
+                 table.insert(generationQueue, {
+                    filePath = itemProperties.filePath, 
+                    pngPath = cut.pngPath, 
+                    time = cut.time, 
+                    overwrite = true
+                 })
+                 table.insert(generationQueue, {
+                    filePath = itemProperties.filePath, 
+                    pngPath = cut.pngPath_frame_before, 
+                    time = cut.time_frame_before, 
+                    overwrite = true
+                 })
+             end
+         end
     end
+    totalGenerationCount = #generationQueue
     genratingThumbNails = true
 end
 
-function checkForGenerateThumbnails(cut_data, cuts_making_threashold) 
-    local countGeneratedThumbNails = 0
-    for _, c in ipairs(cuts_making_threashold) do 
-        if not c.exclude then 
-            cut = cut_data[c.index]
-            if cut then  
-                if reaper.file_exists(cut.pngPath) and reaper.file_exists(cut.pngPath_frame_before) then
-                    countGeneratedThumbNails = countGeneratedThumbNails + 1
-                end
-            end
+function processGenerationQueue()
+    if #generationQueue > 0 then
+        local task = table.remove(generationQueue, 1)
+        createThumbnails(task.filePath, task.pngPath, task.time, task.overwrite)
+        return true -- Processed something
+    else
+        if genratingThumbNails then
+            genratingThumbNails = false
+            -- Optional: Show completion message?
         end
+        return false -- Nothing to process
     end
-    if countGeneratedThumbNails == #cuts_making_threashold then 
-        genratingThumbNails = false
-    end
-    return countGeneratedThumbNails
 end
+
 
 
 local function GetDirectoryFromPath(path)
@@ -1355,8 +1441,7 @@ local function loop()
                     cut_data = {}
                     analyseStartTime = time
                     if fast then
-                        get_cut_information_fast(filePath, cutTextFilePathRaw, item_area_to_analyze_start,
-                            item_area_to_analyze_length)
+                        get_cut_information_fast(filePath, cutTextFilePathRaw, item_area_to_analyze_start, item_area_to_analyze_length)
                     else
                         get_cut_information(filePath, cutTextFilePathRaw, item_area_to_analyze_start, item_area_to_analyze_length)
                     end
@@ -1378,8 +1463,8 @@ local function loop()
             local generateName = "Generate Thumbnails"
             local nameW = reaper.ImGui_CalcTextSize(ctx, generateName, 0, 0) 
             if genratingThumbNails then  
-                countGeneratedThumbNails = checkForGenerateThumbnails(cut_data, cuts_making_threashold)
-                generateName = "Generating: " .. countGeneratedThumbNails .. "/" .. #cuts_making_threashold
+                local processed = totalGenerationCount - #generationQueue
+                generateName = "Generating: " .. processed .. "/" .. totalGenerationCount
             end
              
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), generatingColor) 
@@ -1388,6 +1473,7 @@ local function loop()
             reaper.ImGui_SameLine(ctx)
             local posX = reaper.ImGui_GetCursorPosX(ctx)
             if reaper.ImGui_Button(ctx, generateName) then
+                reaper.ImGui_OpenPopup(ctx, "Generating Thumbnails")
                 generateThumbnailsForCuts(cut_data, cuts_making_threashold, thumbnailPath, itemProperties)
             end
             setToolTipFunc("Click to generate cut thumbnails to get instant navigation")
@@ -1441,11 +1527,19 @@ local function loop()
                     setToolTipFunc("Windows only. In order to show the analyze bar we need to show the popup exec window, to make the process async") 
                 end
                 
+                local isDisabled = not settings.analyzeSpeed
+                if isDisabled then reaper.ImGui_BeginDisabled(ctx) end
                 if reaper.ImGui_Button(ctx, "Reset analyze speed") then
                     settings.analyzeSpeed = nil
                     saveSettings()
                 end
                 setToolTipFunc("Click to reset the analyze speed. " .. (settings.analyzeSpeed and ("The current speed is: " ..  string.format("%.4f", settings.analyzeSpeed)) or "No speed measured. Analyze to set this"))
+                if isDisabled  then reaper.ImGui_EndDisabled(ctx) end
+                
+                if reaper.ImGui_Button(ctx, "Open FFMPEG Path") then
+                    reaper.CF_ShellExecute(GetDirectoryFromPath(ffmpeg_path)) 
+                end
+                
                 
                 if reaper.ImGui_Button(ctx, "Reset FFMPEG Path") then
                     reaper.DeleteExtState(stateName, FFmpegPathKey, true)
@@ -2151,8 +2245,11 @@ local function loop()
         if analysing and analysingAmount then
             analysingX = minX + analysingAmount * w
             reaper.ImGui_DrawList_AddRectFilled(draw_list, minX, minY, analysingX, maxY, analysingColor, 0)
-            local analystingText = math.floor(analysingAmount * 100) .. "%"
+            local analystingText = settings.analyzeSpeed and (math.floor(analysingAmount * 100) .. "%") or "This is the first time analyzing. Analyze speed not available"
             local textW, textH = reaper.ImGui_CalcTextSize(ctx, analystingText)
+            if not settings.analyzeSpeed then 
+                analysingX = minX + w / 2 - textW / 2 + textW + 4
+            end
             reaper.ImGui_DrawList_AddText(draw_list, analysingX - textW - 4, minY + (maxY - minY) / 2 - textH / 2, colorWhite, analystingText)
         else
             -- LOOP AREA
@@ -2583,6 +2680,31 @@ local function loop()
         end
         setToolTipFunc("Select next cut.\n- press right arrow to set with keyboard")
         
+        
+        -- Process one thumbnail per frame
+        if genratingThumbNails then
+            processGenerationQueue()
+            
+            -- Modal Notification
+            local processed = totalGenerationCount - #generationQueue
+            local progress = totalGenerationCount > 0 and (processed / totalGenerationCount) or 0
+            
+            
+            -- Always center this window when appearing
+            local center_x, center_y = reaper.ImGui_Viewport_GetCenter(reaper.ImGui_GetWindowViewport(ctx))
+            reaper.ImGui_SetNextWindowPos(ctx, center_x, center_y, reaper.ImGui_Cond_Appearing(), 0.5, 0.5)
+            
+            if reaper.ImGui_BeginPopupModal(ctx, 'Generating Thumbnails', nil, reaper.ImGui_WindowFlags_AlwaysAutoResize()) then
+                reaper.ImGui_Text(ctx, string.format("Generating: %d / %d", processed, totalGenerationCount))
+                reaper.ImGui_ProgressBar(ctx, progress, 300, 0, string.format("%d%%", math.floor(progress * 100)))
+                
+                if reaper.ImGui_Button(ctx, 'Cancel', 120, 0) or isEscape then 
+                    generationQueue = {}
+                    reaper.ImGui_CloseCurrentPopup(ctx) 
+                end
+                reaper.ImGui_EndPopup(ctx)
+            end
+        end
         
         
         function undoRedo()
