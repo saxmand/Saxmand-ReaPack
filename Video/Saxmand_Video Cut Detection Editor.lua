@@ -1,43 +1,49 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.1.3
+-- @version 0.1.5
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
 -- @changelog
---   + implemnting Iachinhan win support attempt 2
+--   + Fixed selection follows playhead 
+--   + Fixed video files being cropped
+--   + Fixed navigation at end of video
+--   + Added focused video name as button
+--   + Added play button
+--   + Added that selected video media item is used as focused video. If non is selected the playhead controls it
+--   + Allow repeat key for navigation cuts, starts after 0.5 sec
+
 
 -------- Possible IDEAS TODO
 -- add option to keep old cut information (eg. color and name)
 -- add waveform
 -- randomize all colors
 -- have multiple videos for cross reference (idea by soundfield)
--- option to only show thumbnails on cuts (work sterted, but did not work properly)
+-- Compare two videos
+    -- cut timeline depending on video changes for you :) 
+-- option to only show thumbnails on cuts (work sterted, but did not work properly), was an idea for windows speed, maybe not needed
 
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local ImGui = require 'imgui' '0.10'
 local script_path = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
 package.path = package.path .. ";" .. script_path .. "Helpers/?.lua"
+
 local json = require("json")
+local ffmpeg = require("ffmpeg")
+local undo_redo = require("undo_redo")
 
 local is_windows = package.config:sub(1, 1) == "\\"
 seperator = package.config:sub(1, 1) -- path separator: '/' on Unix, '\\' on Windows
 
 
 local ctx -- = ImGui.CreateContext('Video cut detection editor')
-
-font = ImGui.CreateFont('Arial', 14)
-font1 = ImGui.CreateFont('Arial', 15)
-font2 = ImGui.CreateFont('Arial', 17)
-font10 = ImGui.CreateFont('Arial', 10)
-font11 = ImGui.CreateFont('Arial', 11)
-font12 = ImGui.CreateFont('Arial', 12)
-font13 = ImGui.CreateFont('Arial', 13)
+--font = ImGui.CreateFont('Arial', 14)
 stateName = "Saxmand_VideoCutDetectionEditor"
-FFmpegPathKey = "FFMPEG_PATH"
 
-
+--------------------------------------------------------
+------------------COLOURS-------------------------------
+--------------------------------------------------------
 -- MODERN THEME PALETTE
 local theme                = {
     bg            = reaper.ImGui_ColorConvertDouble4ToU32(0.12, 0.12, 0.14, 1.00),  -- Very dark grey (VSCode-like)
@@ -91,6 +97,9 @@ colorIndigo                = 0xC678DDFF
 colorViolet                = 0xBE5046FF
 colorPink                  = 0xD55FDEFF
 
+-- color play button
+colorIsPlaying             = reaper.ImGui_ColorConvertDouble4ToU32(0.1, 0.6, 0.2, 1)
+
 
 function GetTextColorForBackground(u32_color)
     -- Extract 8-bit R, G, B from U32 (ImGui format: 0xAABBGGRR)
@@ -107,13 +116,20 @@ function GetTextColorForBackground(u32_color)
     end
 end
 
-local markerColors = { colorRed, colorOrange, colorYellow, colorGreen, colorCyan, colorBlue, colorIndigo, colorViolet,
-    colorPink, colorGrey }
+function pulsatingColor(colorIn, speed)
+    local time = reaper.time_precise() * (speed and speed or 6)
+    local pulsate = (math.sin(time * 2) + 1) / 2 -- range: 0 to 1
+    local alpha = math.floor(0x55 + (0xFF - 0x55) * pulsate)
+    return colorIn & (0xFFFFFF00 + alpha)        -- combine alpha and RGB
+end
+
+
+local markerColors = { colorRed, colorOrange, colorYellow, colorGreen, colorCyan, colorBlue, colorIndigo, colorViolet, colorPink, colorGrey }
 
 --------------------------------------------------------
 ------------------SETTINGS------------------------------
 --------------------------------------------------------
-function deepcopy(orig, copies)
+function deep_copy(orig, copies)
     copies = copies or {}
     if type(orig) ~= 'table' then
         return orig
@@ -124,9 +140,9 @@ function deepcopy(orig, copies)
     local copy = {}
     copies[orig] = copy
     for k, v in next, orig, nil do
-        copy[deepcopy(k, copies)] = deepcopy(v, copies)
+        copy[deep_copy(k, copies)] = deep_copy(v, copies)
     end
-    setmetatable(copy, deepcopy(getmetatable(orig), copies))
+    setmetatable(copy, deep_copy(getmetatable(orig), copies))
     return copy
 end
 
@@ -172,7 +188,7 @@ if reaper.HasExtState(stateName, "settings") then
     local settingsStr = reaper.GetExtState(stateName, "settings")
     settings = json.decodeFromJson(settingsStr)
 else
-    settings = deepcopy(defaultSettings)
+    settings = deep_copy(defaultSettings)
     saveSettings()
 end
 
@@ -200,145 +216,143 @@ end
 -----------------HELPERS--------------------------------
 --------------------------------------------------------
 
+local function GetDirectoryFromPath(path)
+  return path:match("^(.*)[/\\]")
+end
 
-function setToolTipFunc(text, color)
-    if settings.showToolTip and text and #tostring(text) > 0 then
-        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorGrey)
-        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(), color and color or colorWhite)
-        ImGui.SetItemTooltip(ctx, text)
-        reaper.ImGui_PopStyleColor(ctx, 2)
+local function GetFilenameFromPath(path)
+  if not path or path == "" then return nil end
+  return path:match("([^/\\]+)$")
+end
+
+local function GetFilenameNoExt(path)
+  local filename = GetFilenameFromPath(path)
+  if not filename then return nil end
+  return filename:match("^(.*)%.")
+end
+
+local function file_exists(path)
+    local f = io.open(path, "r")
+    if f then
+        f:close()
+        return true
     end
 end
 
-function pulsatingColor(colorIn, speed)
-    local time = reaper.time_precise() * (speed and speed or 6)
-    local pulsate = (math.sin(time * 2) + 1) / 2 -- range: 0 to 1
-    local alpha = math.floor(0x55 + (0xFF - 0x55) * pulsate)
-    return colorIn & (0xFFFFFF00 + alpha)        -- combine alpha and RGB
+
+local function join_paths(path1, path2)
+    local sep = package.config:sub(1, 1)
+    -- Normalize mixed slashes to system separator
+    if sep == "\\" then
+        path1 = path1:gsub("/", "\\")
+        path2 = path2:gsub("/", "\\")
+    else
+        path1 = path1:gsub("\\", "/")
+        path2 = path2:gsub("\\", "/")
+    end
+
+    if path1:sub(-1) ~= sep then
+        path1 = path1 .. sep
+    end
+    return path1 .. path2
 end
 
---------------------------------------------------------
---------------------------------------------------------
---------------------------------------------------------
+
+local function file_exists_check(path)
+    local f = io.open(path, "rb")
+    if f then
+        local size = f:seek("end")
+        f:close()
+
+        return size and size > 0
+    end
+    return false
+end
+
+local function DirectoryExists(path)
+  if not path or path == "" then return false end
+
+  -- Try to enumerate subdirectories
+  local subdir = reaper.EnumerateSubdirectories(path, 0)
+  if subdir then return true end
+
+  -- Try to enumerate files
+  local file = reaper.EnumerateFiles(path, 0)
+  if file then return true end
+
+  return false
+end
 
 
+local function saveFile(filePath, data)
+    -- Make sure subfolder exists (cross-platform)
+    --os.execute( (seperator == "/" and "mkdir -p \"" or "mkdir \"" ) .. filePath .. "\"")
+    -- Save a file
+    local file = io.open(filePath, "w")
+    if file then
+        file:write(data)
+        file:close()
+    end
+end
 
+local function readFile(filePath)
+    local file = io.open(filePath, "r") -- "r" for read mode
+    if not file then
+        return nil
+    end
 
+    local content = file:read("*a") -- read entire file
+    file:close()
+    -- remove possible no index
+    return content
+end
 
+-- APP SPECIFIC
 
-function getPngName(itemStart, name)
+local function getPngName(itemStart, name)
     name = name and (name .. ".png") or ('thumbnail' .. math.floor(itemStart * 1000000) .. '.png')
     return name
 end
 
-function Get_FFMpeg_Path_Iachinhan()
-    local is_windows = package.config:sub(1, 1) == "\\"
-
-    local function test_ffmpeg(test_path)
-        local cmd
-        if is_windows then
-            -- Windows hack: Wrap the entire command in extra quotes to satisfy cmd /c parsing with multiple quotes
-            cmd = '""' .. test_path .. '" -t 1.0 -f lavfi -i "color=black" -filter:v "scdet=t=3.0" -f null NUL"'
-        else
-            cmd = test_path .. " -t 1.0 -f lavfi -i 'color=black' -filter:v 'scdet=t=3.0' -f null /dev/null"
-        end
-
-        return os.execute(cmd)
+local function compareWithMargin(a, b, marg)
+    marg = marg or 100000000
+    difference = (math.abs(a * marg - b * marg))
+    if difference < 1 then
+        --reaper.ShowConsoleMsg(difference .. " diff\n")
     end
-
-    local path = nil
-    if reaper.HasExtState(stateName, FFmpegPathKey) then
-        -- path = reaper.GetExtState(stateName, FFmpegPathKey) -- Let's re-read cleanly
-        path = reaper.GetExtState(stateName, FFmpegPathKey)
-    else
-        local retval = reaper.MB(
-        "FFMpeg is required for this action, find the path to your FFmpeg executable now or click Cancel.", "Detect Cuts",
-            1)
-        if retval == 1 then
-            retval, path = reaper.GetUserFileNameForRead(is_windows and "" or "/usr/local/bin/", "Find FFMpeg executable", "")
-            if retval then
-                reaper.SetExtState(stateName, FFmpegPathKey, path, true)
-                return Get_FFMpeg_Path() -- tail call
-            end
-        else
-            return nil
-        end
-    end
-
-    if test_ffmpeg(path) then
-        return path
-    else
-        reaper.MB("Working FFMpeg could not be found at " .. path .. ".", "Detect Cuts Error", 0)
-        reaper.DeleteExtState(stateName, FFmpegPathKey, true)
-        return Get_FFMpeg_Path() -- tail call
-    end
+    return difference < 1
 end
 
-function Get_FFMpeg_Path()
-    local is_windows = package.config:sub(1, 1) == "\\"
 
-    local function test_ffmpeg(test_path)
-        if not test_path then return false end
-        local cmd = string.format('"%s" -version', test_path)
-        local result = reaper.ExecProcess(cmd, 1000)
-        if result and (result:find("ffmpeg version") or result:find("configuration:")) then
-            return true
-        end
-        return false
-    end
+function roundToFrame(time_pos_seconds, frames_per_second)
+    -- Get the current project's time base (frames per second)
+    frames_per_second = frames_per_second and frames_per_second or reaper.TimeMap_curFrameRate(0)
 
-    local path = nil
-    if reaper.HasExtState(stateName, FFmpegPathKey) then
-        path = reaper.GetExtState(stateName, FFmpegPathKey)
-    else
-        local retval = reaper.MB("FFMpeg is required for this action. Find the path to your FFmpeg executable now or click Cancel.", "Detect Cuts", 1)
-        if retval == 1 then
-            retval, path = reaper.GetUserFileNameForRead(is_windows and "" or "/usr/local/bin/", "Find FFMpeg executable", is_windows and "ffmpeg.exe" or "")
-            if retval then
-                reaper.SetExtState(stateName, FFmpegPathKey, path, true)
-                return Get_FFMpeg_Path()
-            end
-        else
-            return nil
-        end
-    end
+    -- Convert the time position to frames
+    local time_pos_frames = time_pos_seconds * frames_per_second
 
-    if test_ffmpeg(path) then
-        return path
-    else
-        reaper.MB("FFmpeg check failed.\nThe file at:\n" .. tostring(path) .. "\n\ndid not respond to '-version' command correctly.\nPlease check if the file is valid.", "Detect Cuts Error", 0)
-        reaper.DeleteExtState(stateName, FFmpegPathKey, true)
-        return Get_FFMpeg_Path()
-    end
+    -- Round the frame value
+    local rounded_frame = math.floor(time_pos_frames + 0.5)
+
+    -- Convert the rounded frame value back to seconds
+    local rounded_time_pos_seconds = rounded_frame / frames_per_second
+    return rounded_time_pos_seconds
 end
+--------------------------------------------------------
+--------------------------------------------------------
+--------------------------------------------------------
 
-local ffmpeg_path = Get_FFMpeg_Path()
+
+
+
+local ffmpeg_path = ffmpeg.Get_Path()
 if ffmpeg_path == nil then return else ffmpeg_path = ffmpeg_path end
 
 -- Initialize ImGui Context AFTER blocking calls (Get_FFMpeg_Path) to avoid context invalidation error
 ctx = ImGui.CreateContext('Video cut detection editor')
 
-function extract_cut_data_manual(cutTextFilePathRaw, start_time)
-    local f = io.open(cutTextFilePathRaw)
-    local file_lines = {}
-    local i = 1
-    start = false
-    for line in f:lines() do
-        if line:find("%[scdet") then
-            -- Extract the values using pattern matching
-            local score = tonumber(line:match("lavfi%.scd%.score: ([%d%.]+)"))
-            local time = tonumber(line:match("lavfi%.scd%.time: ([%d%.]+)"))
 
-            -- If both values are found, store them in the table
-            if score and time then
-                table.insert(file_lines, { score = score, time = time, color = settings.defaultColor })
-            end
-        end
-    end
-    f:close()
-
-    return file_lines
-end
+fast = false
 
 function extract_cut_data_fast(cutTextFilePathRaw, start_time)
     local f = io.open(cutTextFilePathRaw)
@@ -374,8 +388,6 @@ function extract_cut_data_fast(cutTextFilePathRaw, start_time)
 
     return results
 end
-
-fast = false
 
 function get_cut_information_fast(file_path, cutTextFilePath, start_time, length) --, start_offset, length )
     local args = " "
@@ -418,124 +430,6 @@ function get_cut_information_fast(file_path, cutTextFilePath, start_time, length
     --end
 end
 
-function get_cut_information_Iachinhan(
-    file_path,
-    cutTextFilePath,
-    start_time,
-    length,
-    detection_threshold
-)
-    detection_threshold = detection_threshold or 0.1
-    local is_windows = package.config:sub(1, 1) == "\\"
-
-    -- Remove previous output
-    os.remove(cutTextFilePath)
-
-    -- Build FFmpeg arguments
-    local args = {}
-
-    table.insert(args, "-hide_banner")
-
-    if start_time then
-        table.insert(args, "-ss " .. string.format("%.6f", start_time))
-    end
-
-    if length then
-        table.insert(args, "-t " .. string.format("%.6f", length))
-    end
-
-    if is_windows then
-        -- Normalize paths to forward slashes to avoid escaping issues in filter strings
-        file_path = file_path:gsub("\\", "/")
-        cutTextFilePath = cutTextFilePath:gsub("\\", "/")
-    end
-
-    table.insert(args, '-i "' .. file_path .. '"')
-
-    -- Escape colon for filter path on Windows
-    local filter_out_path = cutTextFilePath
-    if is_windows then
-        filter_out_path = filter_out_path:gsub(":", "\\:")
-    end
-
-    table.insert(args,
-        '-vf "select=gt(scene\\,' ..
-        string.format("%.6f", detection_threshold) .. ")" ..
-        ',metadata=print:file=\'' .. filter_out_path .. '\'"'
-    )
-
-    -- FFMPEG logging
-    local log_path = cutTextFilePath:gsub("_cutsRaw.txt", "_ffmpeg_log.txt")
-
-    table.insert(args, "-f null -")
-
-    -- Sanitize ffmpeg_path
-    ffmpeg_path = ffmpeg_path:gsub('"', '')
-
-    if is_windows then
-        -- Use WScript.Shell via a stable VBS file in the script directory
-        -- This guarantees hidden execution without Temp file issues
-
-        local cmd_ffmpeg = '"' .. ffmpeg_path .. '" ' .. table.concat(args, " ") .. ' > "' .. log_path .. '" 2>&1'
-        local cmd_wrapper = 'cmd.exe /C "' .. cmd_ffmpeg .. '"'
-
-        -- Use the script directory (upvalue script_path should be available)
-        -- If script_path is nil (safeguard), fall back to a local relative path or Temp
-        --[[
-        local vbs_dir = script_path
-        if not vbs_dir then
-            vbs_dir = os.getenv("TEMP") or "."
-        end
-        local vbs_path = vbs_dir .. "hosi_exec_hidden.vbs"
-        ]]
-        local vbs_path = script_path .. seperator .. "Helpers" .. seperator .. "hosi_exec_hidden.vbs"
-
-        local f = io.open(vbs_path, "w")
-        if f then
-            -- Escape double quotes for VBScript (" -> "")
-            local vbs_cmd = cmd_wrapper:gsub('"', '""')
-
-            f:write('Dim WshShell\n')
-            f:write('Set WshShell = CreateObject("WScript.Shell")\n')
-            -- Run hidden (0) and wait (True)
-            f:write('WshShell.Run "' .. vbs_cmd .. '", 0, True\n')
-            f:close()
-
-            -- Execute VBS
-            reaper.ExecProcess('wscript.exe "' .. vbs_path .. '"', -1)
-
-            -- Do NOT delete the VBS file immediately to avoid race conditions.
-            -- It's small and reusable.
-        else
-            -- Fallback if cannot write to script dir
-            local cmd_direct = '"' .. ffmpeg_path .. '" ' .. table.concat(args, " ")
-            reaper.ExecProcess(cmd_direct, -1)
-        end
-    else
-        -- Unix/Mac
-        local cmd_content = '"' .. ffmpeg_path .. '" ' .. table.concat(args, " ") --.. ' 2> "' .. log_path .. '"'
-        --reaper.CF_SetClipboard(cmd_content .. "\n")
-        reaper.ExecProcess(cmd_content, -1)
-    end
-
-    -- Debug logs processing (optional, mainly for dev)
-    -- local f = io.open(log_path, "r")
-    -- if f then f:close() end
-
-    -- Return based on file existence/size? Logic outside handles this.
-    return true
-end
-
-local function sanitize_path_for_ffmpeg_filter(path)
-    if not path then return "" end
-    -- 1. Меняем обратные слеши на прямые
-    path = path:gsub("\\", "/")
-    -- 2. Экранируем двоеточие (C: становится C\:)
-    -- В Lua 'gsub' символ % используется для экранирования, а не \.
-    -- Строка заменяется на \:
-    path = path:gsub(":", "\\:")
-    return path
-end
 
 
 
@@ -717,24 +611,6 @@ function extract_cut_data(cutTextFilePathRaw, start_time)
     return results
 end
 
-local function join_paths(path1, path2)
-    local sep = package.config:sub(1, 1)
-    -- Normalize mixed slashes to system separator
-    if sep == "\\" then
-        path1 = path1:gsub("/", "\\")
-        path2 = path2:gsub("/", "\\")
-    else
-        path1 = path1:gsub("\\", "/")
-        path2 = path2:gsub("\\", "/")
-    end
-
-    if path1:sub(-1) ~= sep then
-        path1 = path1 .. sep
-    end
-    return path1 .. path2
-end
-
-
 -- Global throttling variable
 local last_thumb_time = 0
 
@@ -848,7 +724,7 @@ local function createThumbnails(filePath, pngPath, itemStart, overwrite, backgro
 end
 
 
-function generateThumbnailsForCuts(cut_data, cuts_making_threashold, directory, itemProperties)
+function generateThumbnailsForCuts(cut_data, cuts_making_threashold, directory, itemProperties, onlySpecific)
     if not directory or not itemProperties or not itemProperties.fileName then
         reaper.ShowMessageBox("Cannot generate thumbnails: Missing file information (Save the project or select a valid video item).", "Error", 0)
         return
@@ -865,34 +741,44 @@ function generateThumbnailsForCuts(cut_data, cuts_making_threashold, directory, 
              cut = cut_data[c.index]
              if cut then 
                  if not cut.pngPath then
-                      local time_seconds_rounded = roundToFrame(cut.time)
+                      local time_seconds_rounded = roundToFrame(cut.time, frames_per_second)
                       cut.pngPath = directory .. itemProperties.fileName .. "_" .. math.floor(time_seconds_rounded * 1000 + 0.5) .. "ms.png" 
                  end
                  if not cut.pngPath_frame_before then
-                      local time_seconds_rounded = roundToFrame(cut.time)
+                      local time_seconds_rounded = roundToFrame(cut.time, frames_per_second)
                       local oneFrameEarlier = time_seconds_rounded - (1 / frames_per_second)
                       cut.pngPath_frame_before = directory .. itemProperties.fileName .. "_" .. math.floor(oneFrameEarlier * 1000 + 0.5) .. "ms.png"
                       cut.time_frame_before = oneFrameEarlier
                  end
                  
-                 -- Add tasks to queue instead of processing immediately
-                 table.insert(generationQueue, {
-                    filePath = itemProperties.filePath, 
-                    pngPath = cut.pngPath, 
-                    time = cut.time, 
-                    overwrite = true
-                 })
-                 table.insert(generationQueue, {
-                    filePath = itemProperties.filePath, 
-                    pngPath = cut.pngPath_frame_before, 
-                    time = cut.time_frame_before, 
-                    overwrite = true
-                 })
+                 if not reaper.file_exists(cut.pngPath) then 
+                     -- Add tasks to queue instead of processing immediately
+                     table.insert(generationQueue, {
+                        filePath = itemProperties.filePath, 
+                        pngPath = cut.pngPath, 
+                        time = cut.time, 
+                        overwrite = true
+                     })
+                 end
+                 
+                 if not onlySpecific then 
+                    
+                    if not reaper.file_exists(cut.pngPath_frame_before) then 
+                       table.insert(generationQueue, {
+                          filePath = itemProperties.filePath, 
+                          pngPath = cut.pngPath_frame_before, 
+                          time = cut.time_frame_before, 
+                          overwrite = true
+                       })
+                    end
+                end
              end
          end
     end
     totalGenerationCount = #generationQueue
     genratingThumbNails = true
+    
+    
 end
 
 function processGenerationQueue()
@@ -910,20 +796,10 @@ function processGenerationQueue()
 end
 
 
+--------------------------------------------------------
+-----------------REAPER HELPERS-------------------------
+--------------------------------------------------------
 
-local function GetDirectoryFromPath(path)
-  return path:match("^(.*)[/\\]")
-end
-
-function GetFilenameFromPath(path)
-  if not path or path == "" then return nil end
-  return path:match("([^/\\]+)$")
-end
-function GetFilenameNoExt(path)
-  local filename = GetFilenameFromPath(path)
-  if not filename then return nil end
-  return filename:match("^(.*)%.")
-end
 
 function getVideoItemFilePath(item)
     if item then
@@ -931,10 +807,12 @@ function getVideoItemFilePath(item)
         if take then
             local source = reaper.GetMediaItemTake_Source(take)
             local source_type = reaper.GetMediaSourceType(source, "")
-
             if source_type == "VIDEO" then
                 local filename = reaper.GetMediaSourceFileName(source, "")
-                return filename
+                -- we make sure to not match png files
+                if filename:match(".png") == nil then 
+                    return filename
+                end
             else
                 return nil
             end
@@ -943,6 +821,7 @@ function getVideoItemFilePath(item)
         return nil
     end
 end
+
 
 function getItemProperties(item)
     -- Get selected media item
@@ -953,6 +832,7 @@ function getItemProperties(item)
 
     -- Get item position in project
     local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+    local item_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
 
     -- Get active take
     local take = reaper.GetActiveTake(item)
@@ -969,7 +849,7 @@ function getItemProperties(item)
             local src = reaper.GetMediaItemTake_Source(take)
             local src_len = reaper.GetMediaSourceLength(source)
 
-            return { filePath = filePath, directory = directory,fileName = fileName, item_pos = item_pos, take_offset = take_offset, item_length = src_len }
+            return { filePath = filePath, directory = directory, fileName = fileName, item_pos = item_pos, take_offset = take_offset, item_length = item_len, item_source_length = src_len }
         else
             return {}
         end
@@ -980,15 +860,39 @@ end
 
 function getSelectedVideoFile()
     local item = reaper.GetSelectedMediaItem(0, 0)
-end
-
-function file_exists(path)
-    local f = io.open(path, "r")
-    if f then
-        f:close()
-        return true
+    if getVideoItemFilePath(item) then
+        return item
     end
 end
+
+
+function move_cursor_by_frames(frames)
+    --local fps = reaper.TimeMap_curFrameRate(0)
+
+    local tc_start = reaper.GetProjectTimeOffset(0, false)
+
+    local time = reaper.GetCursorPosition()
+    local current_frame = math.floor((time - tc_start) * frames_per_second + 0.5)
+    local new_frame = current_frame + frames
+    local new_time = tc_start + new_frame / frames_per_second
+
+    reaper.SetEditCurPos(new_time, true, false)
+end
+--------------------------------------------------------
+-----------------IMGUI HELPERS--------------------------
+--------------------------------------------------------
+
+
+function setToolTipFunc(text, color)
+    if settings.showToolTip and text and #tostring(text) > 0 and not isMouseDown then
+        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorGrey)
+        ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(), color and color or colorWhite)
+        ImGui.SetItemTooltip(ctx, text)
+        reaper.ImGui_PopStyleColor(ctx, 2)
+    end
+end
+
+
 
 local images = {}
 local function imageFromCache(fn)
@@ -1009,135 +913,7 @@ local function imageFromCache(fn)
     return img.inst
 end
 
-function file_exists_check(path)
-    local f = io.open(path, "rb")
-    if f then
-        local size = f:seek("end")
-        f:close()
 
-        return size and size > 0
-    end
-    return false
-end
-
-function DirectoryExists(path)
-  if not path or path == "" then return false end
-
-  -- Try to enumerate subdirectories
-  local subdir = reaper.EnumerateSubdirectories(path, 0)
-  if subdir then return true end
-
-  -- Try to enumerate files
-  local file = reaper.EnumerateFiles(path, 0)
-  if file then return true end
-
-  return false
-end
-
-function compareWithMargin(a, b, marg)
-    marg = marg or 100000000
-    difference = (math.abs(a * marg - b * marg))
-    if difference < 1 then
-        --reaper.ShowConsoleMsg(difference .. " diff\n")
-    end
-    return difference < 1
-end
-
-function roundToFrame(time_pos_seconds)
-    -- Get the project time position in seconds
-
-    -- Get the current project's time base (frames per second)
-    --frames_per_second = reaper.TimeMap_curFrameRate(0)
-
-    -- Convert the time position to frames
-    time_pos_frames = time_pos_seconds * frames_per_second
-
-    -- Round the frame value
-    rounded_frame = math.floor(time_pos_frames + 0.5)
-
-    -- Convert the rounded frame value back to seconds
-    local rounded_time_pos_seconds = rounded_frame / frames_per_second
-    return rounded_time_pos_seconds
-end
-
-function move_cursor_by_frames(frames)
-    --local fps = reaper.TimeMap_curFrameRate(0)
-
-    local tc_start = reaper.GetProjectTimeOffset(0, false)
-
-    local time = reaper.GetCursorPosition()
-    local current_frame = math.floor((time - tc_start) * frames_per_second + 0.5)
-    local new_frame = current_frame + frames
-    local new_time = tc_start + new_frame / frames_per_second
-
-    reaper.SetEditCurPos(new_time, true, false)
-end
-
-local function saveFile(filePath, data)
-    -- Make sure subfolder exists (cross-platform)
-    --os.execute( (seperator == "/" and "mkdir -p \"" or "mkdir \"" ) .. filePath .. "\"")
-    -- Save a file
-    local file = io.open(filePath, "w")
-    if file then
-        file:write(data)
-        file:close()
-    end
-end
-
-function readFile(filePath)
-    local file = io.open(filePath, "r") -- "r" for read mode
-    if not file then
-        return nil
-    end
-
-    local content = file:read("*a") -- read entire file
-    file:close()
-    -- remove possible no index
-    return content
-end
-
-------------------------------------------------------------
-----------------------UNDO REDO-----------------------------
-------------------------------------------------------------
-local undo_stack = {}
-local redo_stack = {}
-function deep_copy(orig)
-    local orig_type = type(orig)
-    local copy
-    if orig_type == "table" then
-        copy = {}
-        for key, value in next, orig, nil do
-            copy[deep_copy(key)] = deep_copy(value)
-        end
-        setmetatable(copy, deep_copy(getmetatable(orig)))
-    else
-        copy = orig
-    end
-    return copy
-end
-
-function save_undo(data)
-    table.insert(undo_stack, deep_copy(data))
-    redo_stack = {} -- clear redo stack on new change
-end
-
-function undo(data)
-    if #undo_stack > 0 then
-        table.insert(redo_stack, deep_copy(data))
-        local prev = table.remove(undo_stack)
-        return deep_copy(prev)
-    end
-    return data -- no change
-end
-
-function redo(data)
-    if #redo_stack > 0 then
-        table.insert(undo_stack, deep_copy(data))
-        local next_state = table.remove(redo_stack)
-        return deep_copy(next_state)
-    end
-    return data
-end
 
 ------------------------------------------------------------
 ------------------------------------------------------------
@@ -1276,10 +1052,11 @@ local function loop()
     ImGui.PushStyleColor(ctx, ImGui.Col_HeaderHovered, theme.accent_hover)
     ImGui.PushStyleColor(ctx, ImGui.Col_HeaderActive, theme.accent_active)
     
+    reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigVar_KeyRepeatDelay(), 0.5)
+    
     local buttonSize = 25
 
-    colCount = 1
-    varCount = 1
+    local colCount = 1
 
     -- ImGui.PushFont(ctx, font2)
     local visible, open = ImGui.Begin(ctx, 'Video Cut Detection Editor', true)
@@ -1304,8 +1081,9 @@ local function loop()
         isShiftDown = ImGui.IsKeyDown(ctx, ImGui.Mod_Shift)
         isCtrlDown = ImGui.IsKeyDown(ctx, ImGui.Mod_Super)
         isSuperDown = ImGui.IsKeyDown(ctx, ImGui.Mod_Ctrl)
-        isLeftArrowReleased = reaper.ImGui_IsKeyPressed(ctx, ImGui.Key_LeftArrow, false)
-        isRightArrowReleased = reaper.ImGui_IsKeyPressed(ctx, ImGui.Key_RightArrow, false)
+        
+        isLeftArrowReleased = reaper.ImGui_IsKeyPressed(ctx, ImGui.Key_LeftArrow, true)
+        isRightArrowReleased = reaper.ImGui_IsKeyPressed(ctx, ImGui.Key_RightArrow, true)
         
         local alphabet = {"Space", "Backspace", "Escape", "Enter", "Tab", "LeftArrow", "RightArrow", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "Y", "Z", "X", "KeypadAdd", "KeypadSubtract"}
         for _, letter in ipairs(alphabet) do
@@ -1321,16 +1099,17 @@ local function loop()
 
         scrollVertical, scrollHorizontal = ImGui.GetMouseWheel(ctx)
 
-        if not markerNameIsFocused then
-            if isSpace then 
-                local saxmandPlay = reaper.NamedCommandLookup("_RS63a69d4a35c6351d50b130cb5f9285c582ea5089")
-                if saxmandPlay ~= 0 then 
-                    reaper.Main_OnCommand(reaper.NamedCommandLookup("_RS63a69d4a35c6351d50b130cb5f9285c582ea5089"), 0) --Script: Saxmand, Transport Play:Stop (Return cursor to start point).lua
-                else
-                    reaper.Main_OnCommand(40328, 0) --Transport: Play/stop (move edit cursor on stop)
-                end
+        function playStopReaper()
+            local saxmandPlay = reaper.NamedCommandLookup("_RS63a69d4a35c6351d50b130cb5f9285c582ea5089")
+            if saxmandPlay ~= 0 then 
+                reaper.Main_OnCommand(reaper.NamedCommandLookup("_RS63a69d4a35c6351d50b130cb5f9285c582ea5089"), 0) --Script: Saxmand, Transport Play:Stop (Return cursor to start point).lua
+            else
+                reaper.Main_OnCommand(40328, 0) --Transport: Play/stop (move edit cursor on stop)
             end
         end
+        
+
+        
 
 
 
@@ -1340,16 +1119,13 @@ local function loop()
 
         playState = reaper.GetPlayState()
         isPlaying = playState ~= 0
+        
         if not isPlaying then
             timeline_cur_pos = reaper.GetCursorPosition()
-            if not last_timeline_cur_pos_edit or last_timeline_cur_pos_edit ~= timeline_cur_pos then
-                last_cur_pos = nil
-            end
-            last_timeline_cur_pos_edit = timeline_cur_pos
         else
             timeline_cur_pos = reaper.GetPlayPosition()
         end
-
+        
         if not last_cur_pos then --or settings.cursorFollowSelectedCut then
             cur_pos = timeline_cur_pos
         end
@@ -1357,8 +1133,11 @@ local function loop()
         local start_time_sel, end_time_sel = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
 
         run = run + 1
-        local item = GetFirstVisibleVideoItemUnder(settings.analyseOnlyBetweenMarkers and
-        (start_time_sel + (end_time_sel - start_time_sel) / 2) or cur_pos)   --reaper.GetSelectedMediaItem(0, 0)
+        
+        local item = getSelectedVideoFile()
+        if not item then 
+            item = GetFirstVisibleVideoItemUnder(settings.analyseOnlyBetweenMarkers and (start_time_sel + (end_time_sel - start_time_sel) / 2) or cur_pos)   --reaper.GetSelectedMediaItem(0, 0)
+        end
         if not item then
             -- item = {}
             last_cur_pos = nil
@@ -1394,7 +1173,7 @@ local function loop()
         local start_time_in_item = start_time_sel - item_pos + item_offset
         local end_time_in_item = end_time_sel - item_pos + item_offset
 
-        overview_start_in_item = 0
+        overview_start_in_item =item_offset
         overview_length_in_item = item_length
         if settings.analyseOnlyBetweenMarkers then
             overview_start_in_item = start_time_in_item
@@ -1412,11 +1191,9 @@ local function loop()
 
         timeline_cur_pos_in_item = (item_pos and timeline_cur_pos - item_pos + item_offset or 0)   --+ overview_start_in_item
 
-        outsideBoundries = cur_pos_in_item > overview_start_in_item + overview_length_in_item or
-        cur_pos_in_item < overview_start_in_item
+        outsideBoundries = cur_pos_in_item > overview_start_in_item + overview_length_in_item or cur_pos_in_item < overview_start_in_item
 
-        outsideBoundries = cur_pos_in_item > overview_start_in_item + overview_length_in_item or
-        cur_pos_in_item < overview_start_in_item
+        outsideBoundries = cur_pos_in_item > overview_start_in_item + overview_length_in_item or cur_pos_in_item < overview_start_in_item
 
         function updateCutDataFile(cutTextFilePath, cut_data)
             saveFile(cutTextFilePath, json.encodeToJson(cut_data))
@@ -1429,13 +1206,14 @@ local function loop()
         
         
         function appButtons()
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), analysingColor)
+            --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), analysingColor)
             
-            if reaper.ImGui_Button(ctx, reaper.file_exists(cutTextFilePath) and (analysing and "Analyzing video, please wait. Click to cancel" or "Re-analyze video") or "Analyze video") then
+            if reaper.ImGui_Button(ctx, reaper.file_exists(cutTextFilePath) and ("Re-analyse video") or "Analyse video") then
+                
                 if analysing then
                     os.remove(cutTextFilePathRaw)
                 else
-                    os.remove(cutTextFilePath)
+                    --os.remove(cutTextFilePath)
                     if not isSuperDown and cut_data and #cut_data > 0 then
                         old_cut_data = deep_copy(cut_data)
                     end
@@ -1451,15 +1229,13 @@ local function loop()
                     --    updateCutDataFile(cutTextFilePath, cut_data)
                     --end
                 end
+                
+                reaper.ImGui_OpenPopup(ctx, "Analysing Video")
             end
-            reaper.ImGui_PopStyleColor(ctx)
+            --reaper.ImGui_PopStyleColor(ctx)
 
             setToolTipFunc("Click to analyze cut. Press escape on keyboard to stop analyzing")
 
-            if analysing and isEscape then
-                os.remove(cutTextFilePathRaw)
-                analyseStartTime = nil
-            end
             
             local generateName = "Generate Thumbnails"
             local nameW = reaper.ImGui_CalcTextSize(ctx, generateName, 0, 0) 
@@ -1468,7 +1244,7 @@ local function loop()
                 generateName = "Generating: " .. processed .. "/" .. totalGenerationCount
             end
              
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), generatingColor) 
+            --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), generatingColor) 
             --reaper.ImGui_SameLine(ctx)
             
             reaper.ImGui_SameLine(ctx)
@@ -1479,7 +1255,7 @@ local function loop()
             end
             setToolTipFunc("Click to generate cut thumbnails to get instant navigation")
              
-            reaper.ImGui_PopStyleColor(ctx)
+            --reaper.ImGui_PopStyleColor(ctx)
             
             
             --reaper.ImGui_SameLine(ctx, posX + nameW + 24)
@@ -1528,6 +1304,9 @@ local function loop()
                     setToolTipFunc("Windows only. In order to show the analyze bar we need to show the popup exec window, to make the process async") 
                 end
                 
+                reaper.ImGui_TextColored(ctx, colorGrey, "Settings")
+                
+                
                 local isDisabled = not settings.analyzeSpeed
                 if isDisabled then reaper.ImGui_BeginDisabled(ctx) end
                 if reaper.ImGui_Button(ctx, "Reset analyze speed") then
@@ -1543,7 +1322,7 @@ local function loop()
                 
                 
                 if reaper.ImGui_Button(ctx, "Reset FFMPEG Path") then
-                    reaper.DeleteExtState(stateName, FFmpegPathKey, true)
+                    ffmpeg.ResetPath()
                     reaper.MB("FFMPEG path has been reset. Please restart the script to select a new path.", "Reset Path", 0)
                 end
                 setToolTipFunc("Click to reset FFMPEG path if you selected the wrong one or moved the file.")
@@ -1552,7 +1331,6 @@ local function loop()
             end
         end
         
-        appButtons()
         
         function settingsCheckBoxes()
             --if start_time_sel ~= end_time_sel and start_time_sel < end_time_sel then
@@ -1645,8 +1423,7 @@ local function loop()
 
 
             reaper.ImGui_SameLine(ctx, posX4)
-            ret, settings.navigationFollowsPlayhead = reaper.ImGui_Checkbox(ctx, "selection follows playhead",
-                settings.navigationFollowsPlayhead)
+            ret, settings.navigationFollowsPlayhead = reaper.ImGui_Checkbox(ctx, "selection follows playhead", settings.navigationFollowsPlayhead)
             if ret then
                 saveSettings()
             end
@@ -1657,40 +1434,34 @@ local function loop()
                 saveSettings()
             end
 
-
-
-
-            if analysing and analyseEndTime and analyseStartTime then
-                -- 0.025 is a magic number. We could possibly get real analyze progress by saving progress from FFMPEG
-                local analyzeSpeed = settings.analyzeSpeed and settings.analyzeSpeed or 0.1
-                analysingAmount = (analyseEndTime - analyseStartTime) / item_area_to_analyze_length / analyzeSpeed 
-                if analysingAmount > 1 then analysingAmount = 1 end
-            end
-
-
             --reaper.ImGui_SameLine(ctx)
             
         end
         
         
+        appButtons()
+        
         reaper.ImGui_Separator(ctx)
         
         settingsCheckBoxes()
+        
+        function getCutData()
+            if fast then
+                cut_data = extract_cut_data_fast(cutTextFilePathRaw, item_area_to_analyze_start)
+            else
+                cut_data = extract_cut_data(cutTextFilePathRaw, item_area_to_analyze_start)
+            end
+        end
 
 
         analyseRaw = reaper.file_exists(cutTextFilePathRaw)
         analysing = false
         if analyseRaw then
             if not cut_data or #cut_data == 0 then
-                if fast then
-                    cut_data = extract_cut_data_fast(cutTextFilePathRaw, item_area_to_analyze_start)
-                else
-                    cut_data = extract_cut_data(cutTextFilePathRaw, item_area_to_analyze_start)
-                end
+                getCutData()
                 analysing = true
                 analyseEndTime = time
-                --
-                --
+                
                 if #cut_data > 0 then
                     analysing = false
                     os.remove(cutTextFilePathRaw)
@@ -1757,16 +1528,19 @@ local function loop()
                 end
             end
         end
+        
+        
+        -- store analyze
         analysisMade = reaper.file_exists(cutTextFilePath)
         if not cut_data and not analysing then
             if analysisMade then
-                cut_data = json.decodeFromJson(readFile(cutTextFilePath))
-                
+                cut_data = json.decodeFromJson(readFile(cutTextFilePath)) 
             else
                 cut_data = {}
             end
         end
         
+        -- store analyze speed
         if cut_data and #cut_data > 0 then 
             if analyseEndTime and analyseStartTime then 
                 analyzeSpeed = (analyseEndTime - analyseStartTime) / item_area_to_analyze_length
@@ -1788,8 +1562,7 @@ local function loop()
                     reaper.ImGui_SameLine(ctx, reaper.ImGui_GetCursorPosX(ctx) - 6)
                 end
 
-                colSelected = currentSelectedCut and
-                (cut_data[currentSelectedCut].color and cut_data[currentSelectedCut].color or colorGrey) or nil
+                colSelected = (cut_data and currentSelectedCut and cut_data[currentSelectedCut]) and (cut_data[currentSelectedCut].color and cut_data[currentSelectedCut].color or colorGrey) or nil
                 local colIsSelected = col == colSelected
 
                 colButton = not colIsSelected and col & 0xFFFFFFFF55 or col
@@ -1803,7 +1576,7 @@ local function loop()
                 local key = reaper["ImGui_Key_" .. keyNumber]
                 if reaper.ImGui_Button(ctx, "##markerColor" .. i, buttonSize, buttonSize) or (currentSelectedCut and (not markerNameIsFocused or isSuperDown) and reaper.ImGui_IsKeyPressed(ctx, key())) then
                     if isShiftDown or not currentSelectedCut then
-                        save_undo(cut_data)
+                        undo_redo.save_undo(cut_data)
                         for _, c in ipairs(cuts_making_threashold) do
                             cut_data[c.index].color = col
                         end
@@ -1812,7 +1585,7 @@ local function loop()
                         saveSettings()
                     else
                         if not cut_data[currentSelectedCut].color or cut_data[currentSelectedCut].color ~= col then
-                            save_undo(cut_data)
+                            undo_redo.save_undo(cut_data)
                             cut_data[currentSelectedCut].color = col
                             updateCutDataFile(cutTextFilePath, cut_data)
                         end
@@ -1848,18 +1621,18 @@ local function loop()
 
             if reaper.ImGui_Button(ctx, "C", buttonSize, buttonSize) or (currentSelectedCut and (not markerNameIsFocused or isSuperDown) and isC) then
                 if isShiftDown or not currentSelectedCut then
-                    save_undo(cut_data)
                     for i, c in ipairs(cuts_making_threashold) do
                         cut_data[c.index].color = markerColors[((i - 1) % (#markerColors - 1)) + 1]
                     end
                     updateCutDataFile(cutTextFilePath, cut_data)
                     --settings.defaultColor = col
-                    saveSettings()
+                    saveSettings() 
+                    undo_redo.save_undo(cut_data)
                 else
                     if not cut_data[currentSelectedCut].color or cut_data[currentSelectedCut].color ~= col then
-                        save_undo(cut_data)
                         cut_data[currentSelectedCut].color = getNextColor(cut_data[currentSelectedCut].color)
                         updateCutDataFile(cutTextFilePath, cut_data)
+                        undo_redo.save_undo(cut_data)
                     end
                 end
             end
@@ -1867,26 +1640,13 @@ local function loop()
             "Set cut to next color.\n- press cmd/ctrl+c to set with keyboard\n- hold shift to set all markers")
         end
 
-        if analysing then reaper.ImGui_BeginDisabled(ctx) end
         if not analysisMade then reaper.ImGui_BeginDisabled(ctx) end
-
-        --if item then
-        if not last_cur_pos then
-            updateThumbnails = true
-        else
-            updateThumbnails = not last_cur_pos or last_cur_pos == cur_pos
-            updateThumbnails = updateThumbnails and (not last_item_pos or last_item_pos == item_pos)
-            updateThumbnails = updateThumbnails and (not last_item_offset or last_item_offset == item_offset)
-        end
-        last_item_pos = item_pos
-        last_cur_pos = cur_pos
-        last_item_offset = item_offset
 
         
         cut_data_time_pos = {} 
-        --if thumbnailPath_exist then 
+        if thumbnailPath_exist then 
             for i, cutInfo in pairs(cut_data) do
-                local time_seconds_rounded = roundToFrame(cutInfo.time)
+                local time_seconds_rounded = roundToFrame(cutInfo.time, frames_per_second)
                 local pngPath = thumbnailPath .. itemProperties.fileName .. "_" .. math.floor(time_seconds_rounded * 1000 + 0.5) .. "ms.png" 
                 cut_data[i].pngPath = pngPath
                 
@@ -1898,69 +1658,48 @@ local function loop()
                 cut_data_time_pos[time_seconds_rounded] = pngPath
                 cut_data_time_pos[oneFrameEarlier] = pngPath_frame_before
             end
-        --end
+        end
 
-
+        
+        cuts_within_selection = {}
         cuts_making_threashold = {}
         for i, cutInfo in pairs(cut_data) do
             --local cut = {}
             -- reaper.SetEditCurPos(time+position, false, false)
             -- reaper.Main_OnCommandEx(40012,0,0)
             -- SPLIT: 40012
-            if settings.alwaysShowCutsWithEditedName and cutInfo.name or (not settings.onlyShowCutsWithEditedName and cutInfo.score and cutInfo.score <= settings.threshold and cutInfo.time >= overview_start_in_item and cutInfo.time <= overview_start_in_item + overview_length_in_item) or (settings.onlyShowCutsWithEditedName and cutInfo.name) then
-                time = cutInfo.time
-
-                --itemEnd = roundToFrame(time + videoStart)
-
-                --if default_insideTime == 0 or itemStart >= start_time_sel and itemStart < end_time_sel then
-                local exclude = cutInfo.exclude and cutInfo.exclude or false 
-                table.insert(cuts_making_threashold, { index = i, time = time, exclude = exclude, pngPath = pngPath }) --,itemEnd=itemEnd, videoStartOffset = videoStartOffset})
-                --if default_createThumbnails == 1 then
-                -- createThumbnails(videoStartOffset)
-                --end
-                --reaper.AddProjectMarker(0, false, time + position, 0., "Cut: " .. line, n)
-                --itemStart = itemEnd
-                --videoStartOffset = roundToFrame(time + start_offset)
-                --end
+            time = cutInfo.time 
+            local exclude = cutInfo.exclude and cutInfo.exclude or false 
+            if time >= item_offset and time < item_length + item_offset and not cutInfo.special then 
+                table.insert(cuts_within_selection, { index = i, time = time, exclude = exclude })
+                
+                if settings.alwaysShowCutsWithEditedName and cutInfo.name or (not settings.onlyShowCutsWithEditedName and cutInfo.score and cutInfo.score <= settings.threshold and cutInfo.time >= overview_start_in_item and cutInfo.time <= overview_start_in_item + overview_length_in_item) or (settings.onlyShowCutsWithEditedName and cutInfo.name) then
+                    
+    
+                    --itemEnd = roundToFrame(time + videoStart, frames_per_second)
+    
+                    --if default_insideTime == 0 or itemStart >= start_time_sel and itemStart < end_time_sel then
+                    table.insert(cuts_making_threashold, { index = i, time = time, exclude = exclude }) --,itemEnd=itemEnd, videoStartOffset = videoStartOffset})
+                    --if default_createThumbnails == 1 then
+                    -- createThumbnails(videoStartOffset)
+                    --end
+                    --reaper.AddProjectMarker(0, false, time + position, 0., "Cut: " .. line, n)
+                    --itemStart = itemEnd
+                    --videoStartOffset = roundToFrame(time + start_offset, frames_per_second)
+                    --end
+                end
             end
         end
 
         --currentSelectedCut = currentSelectedCut and currentSelectedCut or lastSelectedCut
-        --currentSelectedCutInThreshold = currentSelectedCutInThreshold and currentSelectedCutInThreshold or lastSelectedCutInThreshold
-        local currentSelectedCut
-        local currentSelectedCutInThreshold
-
-        if not settings.navigationFollowsPlayhead or not isPlaying then
-            for i, c in ipairs(cuts_making_threashold) do
-                --reaper.ShowConsoleMsg(cur_pos_to_check
-                if compareWithMargin(c.time, cur_pos_in_item) then
-                    currentSelectedCut = c.index
-                    currentSelectedCutInThreshold = i
-                    break;
-                end
-            end
-        end
-
-
-        if settings.navigationFollowsPlayhead and isPlaying then
-            local fpsMargin = (10 / frames_per_second)
-            currentSelectedCut = currentSelectedCut and currentSelectedCut or lastSelectedCut
-            currentSelectedCutInThreshold = currentSelectedCutInThreshold and currentSelectedCutInThreshold or lastSelectedCutInThreshold
-            for i, c in ipairs(cuts_making_threashold) do
-                if c.time - fpsMargin / frames_per_second < timeline_cur_pos_in_item and c.time + fpsMargin / frames_per_second > timeline_cur_pos_in_item then
-                    currentSelectedCut = c.index
-                    currentSelectedCutInThreshold = i
-                    cur_pos_in_item = c.time
-                    last_cur_pos = cur_pos_in_item - item_pos + item_offset
-                    --cur_pos = cur_pos_in_item - item_pos + item_offset
-                    cur_pos = cur_pos_in_item + item_pos - item_offset
-
-                    lastSelectedCut = currentSelectedCut
-                    lastSelectedCutInThreshold = currentSelectedCutInThreshold
-                    break;
-                end
-            end
-        end
+        --local currentSelectedCut
+          
+          
+          --if item then
+          
+          
+          
+        
         --end
 
         --[[
@@ -1990,12 +1729,10 @@ local function loop()
                       move_cursor_by_frames(-1)
                       --cur_pos_in_item = timeline_cur_pos_in_item
                       --currentSelectedCut = nil
-                      --currentSelectedCutInThreshold = nil
                   elseif isRightArrow then
                       move_cursor_by_frames(1)
                       --cur_pos_in_item = timeline_cur_pos_in_item
                       --currentSelectedCut = nil
-                      --currentSelectedCutInThreshold = nil
                   end
               end
               ]]
@@ -2005,11 +1742,9 @@ local function loop()
 
         
         
-        if not analysisMade then reaper.ImGui_BeginDisabled(ctx) end
         
-        --reaper.ImGui_AlignTextToFramePadding(ctx)
-        --reaper.ImGui_Text(ctx, "Sensitivity:")
-        --reaper.ImGui_SameLine(ctx)
+        
+        
         reaper.ImGui_SetNextItemWidth(ctx, 120)
         ret, val = reaper.ImGui_SliderInt(ctx, "##Cut threshold", settings.threshold, 1, 100, nil,
             reaper.ImGui_SliderFlags_NoInput())
@@ -2018,6 +1753,10 @@ local function loop()
             saveSettings()
         end
         setToolTipFunc("Set the sensitivity for how likely there is a cut.\n- press cmd/ctrl+keypad plus or keypad minus to set with keyboard")
+        
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_AlignTextToFramePadding(ctx)
+        reaper.ImGui_Text(ctx, "Sensitivity")
         
         if isKeypadAdd then
             local newVal = settings.threshold + 1
@@ -2033,15 +1772,8 @@ local function loop()
             saveSettings()
         end
         
-        if not analysing then 
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_TextColored(ctx, colorGrey, "(" .. #cuts_making_threashold .. " cuts shown out of " .. #cut_data - 2 .. " detected)")
-        end
         
-        if not analysisMade then reaper.ImGui_EndDisabled(ctx) end
-        
-        
-        reaper.ImGui_SameLine(ctx, posX3)
+        reaper.ImGui_SameLine(ctx, posX2)
         ret, settings.onlyShowCutsWithEditedName = reaper.ImGui_Checkbox(ctx, "only show cuts with edited name", settings.onlyShowCutsWithEditedName)
         if ret then
             setArrangeviewArea()
@@ -2055,7 +1787,7 @@ local function loop()
         end
 
 
-        reaper.ImGui_SameLine(ctx, posX4)
+        reaper.ImGui_SameLine(ctx, posX3)
         ret, settings.alwaysShowCutsWithEditedName = reaper.ImGui_Checkbox(ctx, "always show cuts with edited name", settings.alwaysShowCutsWithEditedName)
         if ret then
             setArrangeviewArea()
@@ -2072,56 +1804,89 @@ local function loop()
         reaper.ImGui_Separator(ctx)
 
         --reaper.ImGui_SameLine(ctx)
-
+        
+        reaper.ImGui_AlignTextToFramePadding(ctx)
+        --reaper.ImGui_TextColored(ctx, colorGrey, "Video:")
+        --reaper.ImGui_SameLine(ctx)
+        local fileName = (itemProperties and itemProperties.fileName) and itemProperties.fileName or "No video selected"
+        if reaper.ImGui_Button(ctx,  fileName) then
+            reaper.Main_OnCommand(40289, 0) --Item: Unselect (clear selection of) all items 
+            reaper.SetMediaItemSelected(item, true)
+            reaper.UpdateArrange()
+        end
+        setToolTipFunc("Video loaded in editor. Click to select Media Item in timeline")
+        
+        
+        if not analysing then 
+            reaper.ImGui_SameLine(ctx)
+            local cutInfoText = analysisMade and ("" .. #cuts_making_threashold .. " cuts shown out of " .. #cuts_within_selection .. " detected in selected video area") or "Video has not been analysed"
+            reaper.ImGui_TextColored(ctx, colorGrey, cutInfoText)
+        end
+        
+        
+        --reaper.ImGui_SetCursorPosX(ctx, winW / 2 - itemNameW / 2)
+        
         if not currentSelectedCut then reaper.ImGui_BeginDisabled(ctx) end
+        
         
         local addRemoveMarkerButtonWidth = currentSelectedCut and 64 or 86
         cutColors(currentSelectedCut)
         
-            reaper.ImGui_SameLine(ctx)
-            local markerName = currentSelectedCut and (cut_data[currentSelectedCut].name and cut_data[currentSelectedCut].name or "Cut " .. currentSelectedCutInThreshold) or ""
-
-
-            --reaper.ImGui_AlignTextToFramePadding(ctx)
-            --reaper.ImGui_Text(ctx, "Name:")
-            --reaper.ImGui_SameLine(ctx)
-
-
-            reaper.ImGui_SetNextItemWidth(ctx, posX4 - reaper.ImGui_GetCursorPosX(ctx) - 4 - addRemoveMarkerButtonWidth)
-            if isEnter and not markerNameIsFocused then
-                reaper.ImGui_SetKeyboardFocusHere(ctx)
-            end
-            colSelected = currentSelectedCut and (cut_data[currentSelectedCut].color and cut_data[currentSelectedCut].color or colorGrey) or colorBlue
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), colSelected)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), GetTextColorForBackground(colSelected))
-            ret, markerTextInput = reaper.ImGui_InputText(ctx, "##Marker name", markerName,
-                reaper.ImGui_InputTextFlags_EnterReturnsTrue() | reaper.ImGui_InputTextFlags_AutoSelectAll() |
-                reaper.ImGui_InputTextFlags_NoUndoRedo())
-            local newName = false
-
-            reaper.ImGui_PopStyleColor(ctx, 2)
-
-            markerNameIsFocused = reaper.ImGui_IsItemFocused(ctx)
-
-            setToolTipFunc("Set marker name.\n- press enter to focus area, press enter again to select next marker")
-
-            if ret and isEnter then
-                if markerTextInput ~= markerName then
-                    save_undo(cut_data)
-                    cut_data[currentSelectedCut].name = markerTextInput
-                    updateCutDataFile(cutTextFilePath, cut_data)
+        reaper.ImGui_SameLine(ctx)
+        
+        local markerName = ""
+        if currentSelectedCut and cut_data and cut_data[currentSelectedCut] then 
+            if not cut_data[currentSelectedCut].name then 
+                for i, c in ipairs(cuts_making_threashold) do 
+                    if currentSelectedCut == c.index then
+                        markerName = "Cut " .. i
+                        break
+                    end
                 end
-                if isSuperDown then
-                    reaper.ImGui_SetKeyboardFocusHere(ctx, -1)
-                else
-                    focusNavigation = true
-                end
-                findNextCut()
+            else
+                markerName = cut_data[currentSelectedCut].name
             end
+        end
+        
 
-            if markerNameIsFocused and (isTab or isEscape) then
+        --reaper.ImGui_AlignTextToFramePadding(ctx)
+        --reaper.ImGui_Text(ctx, "Name:")
+        --reaper.ImGui_SameLine(ctx)
+
+
+        reaper.ImGui_SetNextItemWidth(ctx, posX4 - reaper.ImGui_GetCursorPosX(ctx) - 4 - addRemoveMarkerButtonWidth)
+        if isEnter and not markerNameIsFocused then
+            reaper.ImGui_SetKeyboardFocusHere(ctx)
+        end
+        colSelected = (currentSelectedCut and cut_data and cut_data[currentSelectedCut]) and (cut_data[currentSelectedCut].color and cut_data[currentSelectedCut].color or colorGrey) or colorBlue
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), colSelected)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), GetTextColorForBackground(colSelected))
+        ret, markerTextInput = reaper.ImGui_InputText(ctx, "##Marker name", markerName, reaper.ImGui_InputTextFlags_EnterReturnsTrue() | reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_NoUndoRedo())
+        local newName = false
+
+        reaper.ImGui_PopStyleColor(ctx, 2)
+
+        markerNameIsFocused = reaper.ImGui_IsItemFocused(ctx)
+
+        setToolTipFunc("Set marker name.\n- press enter to focus area, press enter again to select next marker")
+
+        if ret and isEnter then
+            if markerTextInput ~= markerName then
+                undo_redo.save_undo(cut_data)
+                cut_data[currentSelectedCut].name = markerTextInput
+                updateCutDataFile(cutTextFilePath, cut_data)
+            end
+            if isSuperDown then
+                reaper.ImGui_SetKeyboardFocusHere(ctx, -1)
+            else
                 focusNavigation = true
             end
+            findNextCut()
+        end
+
+        if markerNameIsFocused and (isTab or isEscape) then
+            focusNavigation = true
+        end
             
         if not currentSelectedCut then reaper.ImGui_EndDisabled(ctx) end
 
@@ -2129,7 +1894,7 @@ local function loop()
         if currentSelectedCut then
             reaper.ImGui_SameLine(ctx, posX4 -addRemoveMarkerButtonWidth)
             if reaper.ImGui_Button(ctx, "Remove") or ((not markerNameIsFocused or isSuperDown) and isR) then
-                save_undo(cut_data)
+                undo_redo.save_undo(cut_data)
                 table.remove(cut_data, currentSelectedCut)
                 updateCutDataFile(cutTextFilePath, cut_data)
                 findNextCut()
@@ -2147,23 +1912,23 @@ local function loop()
                             break
                         end
                     end
-                    save_undo(cut_data)
+                    undo_redo.save_undo(cut_data)
                     table.insert(cut_data, markerIndex, { score = 1, time = cur_pos_in_item })
                     updateCutDataFile(cutTextFilePath, cut_data)
                 end
 
                 setToolTipFunc("Add a cut to the timeline.\n- press cmd/ctrl+m to set with keyboard")
             else
-                last_cur_pos = nil
+                --last_cur_pos = nil
             end
         end
         
         
         if not currentSelectedCut then reaper.ImGui_BeginDisabled(ctx) end
         reaper.ImGui_SameLine(ctx, posX4)
-        local isNotSelected = currentSelectedCut and cut_data[currentSelectedCut].exclude
+        local isNotSelected = currentSelectedCut and cut_data and cut_data[currentSelectedCut] and cut_data[currentSelectedCut].exclude
         if reaper.ImGui_Checkbox(ctx, "Include", not isNotSelected) or (currentSelectedCut and (not markerNameIsFocused or isSuperDown) and isI) then
-            save_undo(cut_data)
+            undo_redo.save_undo(cut_data)
             cut_data[currentSelectedCut].exclude = not cut_data[currentSelectedCut].exclude
             updateCutDataFile(cutTextFilePath, cut_data)
         end
@@ -2183,24 +1948,52 @@ local function loop()
             focusNavigation = false
         end
 
-        function findPreviousCut()
+        function findPreviousCut() 
+            local newIndex
             for i = #cuts_making_threashold, 1, -1 do
-                c = cuts_making_threashold[i]
-                if c.time + 0.1 / frames_per_second < cur_pos_in_item then
-                    cur_pos = c.time + item_pos - item_offset
-                    moveCursorToPos(cur_pos)
-                    return true
+                local c = cuts_making_threashold[i]
+                if currentSelectedCut then 
+                    if c.index == currentSelectedCut then
+                        newIndex = cuts_making_threashold[i - 1]
+                        break
+                    end
+                else
+                    if c.time + 0.1 / frames_per_second < cur_pos_in_item then
+                        newIndex = c
+                        break 
+                    end
                 end
+            end
+            if newIndex then 
+                cur_pos = newIndex.time + item_pos - item_offset
+                currentSelectedCut = newIndex.index
+                moveCursorToPos(cur_pos)
+                return true
             end
         end
         
         function findNextCut()
-            for _, c in ipairs(cuts_making_threashold) do
-                if c.time - 0.1 / frames_per_second > cur_pos_in_item then
-                    cur_pos = c.time + item_pos - item_offset
-                    moveCursorToPos(cur_pos)
-                    return true
+            local newIndex
+            for i, c in ipairs(cuts_making_threashold) do 
+                if currentSelectedCut then 
+                    if c.index == currentSelectedCut then
+                        newIndex = cuts_making_threashold[i + 1]
+                        break
+                    end
+                else
+                    if c.time - 0.1 / frames_per_second > cur_pos_in_item then
+                        newIndex = c
+                        break 
+                    end
                 end
+                
+            end
+            
+            if newIndex then 
+                cur_pos = newIndex.time + item_pos - item_offset
+                currentSelectedCut = newIndex.index
+                moveCursorToPos(cur_pos)
+                return true
             end
         end
         
@@ -2240,310 +2033,280 @@ local function loop()
         maxY = maxY - margin
         w = w - 3
 
+        
+        -- LOOP AREA
+        if not settings.analyseOnlyBetweenMarkers and start_time_sel ~= end_time_sel and start_time_sel < end_time_sel
+            and start_time_sel < item_end and end_time_sel > item_pos
+        then
+            posX = start_time_in_item
+            blockOutXStart = ((start_time_in_item - overview_start_in_item) / overview_length_in_item) * w + minX
+            blockOutXStart = blockOutXStart > minX and blockOutXStart or minX
+            blockOutXEnd = ((end_time_in_item - overview_start_in_item) / overview_length_in_item) * w + minX
+            blockOutXEnd = blockOutXEnd < maxX and blockOutXEnd or maxX
+
+            reaper.ImGui_DrawList_AddRectFilled(draw_list, blockOutXStart, minY - 2, blockOutXEnd, minY, colorGreen, 0)
+        end
 
 
-        -- analysing bar
-        if analysing and analysingAmount then
-            analysingX = minX + analysingAmount * w
-            reaper.ImGui_DrawList_AddRectFilled(draw_list, minX, minY, analysingX, maxY, analysingColor, 0)
-            local analystingText = settings.analyzeSpeed and (math.floor(analysingAmount * 100) .. "%") or "This is the first time analyzing. Analyze speed not available"
-            local textW, textH = reaper.ImGui_CalcTextSize(ctx, analystingText)
-            if not settings.analyzeSpeed then 
-                analysingX = minX + w / 2 - textW / 2 + textW + 4
-            end
-            reaper.ImGui_DrawList_AddText(draw_list, analysingX - textW - 4, minY + (maxY - minY) / 2 - textH / 2, colorWhite, analystingText)
-        else
-            -- LOOP AREA
-            if not settings.analyseOnlyBetweenMarkers and start_time_sel ~= end_time_sel and start_time_sel < end_time_sel
-                and start_time_sel < item_end and end_time_sel > item_pos
-            then
-                posX = start_time_in_item
-                blockOutXStart = ((start_time_in_item - overview_start_in_item) / overview_length_in_item) * w + minX
-                blockOutXStart = blockOutXStart > minX and blockOutXStart or minX
-                blockOutXEnd = ((end_time_in_item - overview_start_in_item) / overview_length_in_item) * w + minX
-                blockOutXEnd = blockOutXEnd < maxX and blockOutXEnd or maxX
+        local mouseOutsideAnalysedAreaStart = false
+        local mouseOutsideAnalysedAreaEnd = false
+        cursorOutsideArea = false
+        local mouseInsideUnanalysedArea = false
 
-                reaper.ImGui_DrawList_AddRectFilled(draw_list, blockOutXStart, minY - 2, blockOutXEnd, minY, colorGreen, 0)
-            end
+        local blockOutStartX = overview_start_in_item
+        local blockOutEndX = overview_start_in_item + overview_length_in_item
+        local showBlockOutAtEnd = false
+        local hoverUnanalyzedBlock = false
 
-
-            local mouseOutsideAnalysedAreaStart = false
-            local mouseOutsideAnalysedAreaEnd = false
-            cursorOutsideArea = false
-            local mouseInsideUnanalysedArea = false
-
-            local blockOutStartX = overview_start_in_item
-            local blockOutEndX = overview_start_in_item + overview_length_in_item
-            local showBlockOutAtEnd = false
-            local hoverUnanalyzedBlock = false
-
-            -- NOT ANALYSED BLOCKS
-            for _, c in ipairs(cut_data) do
-                if c.special == "start" and c.time and c.time > blockOutStartX and c.time < blockOutEndX then
-                    blockOutXStart = ((blockOutStartX - overview_start_in_item) / overview_length_in_item) * w + minX
-                    blockOutXStart = blockOutXStart > minX and blockOutXStart or minX
-                    blockOutXEnd = ((c.time - overview_start_in_item) / overview_length_in_item) * w + minX
-                    blockOutXEnd = blockOutXEnd < maxX and blockOutXEnd or maxX
-                    if mouse_pos_x > blockOutXStart and mouse_pos_x <= blockOutXEnd and mouse_pos_y >= minY and mouse_pos_y <= maxY then
-                        mouseInsideUnanalysedArea = true
-                        hoverUnanalyzedBlock = true
-                    end
-                    reaper.ImGui_DrawList_AddRectFilled(draw_list, blockOutXStart, minY, blockOutXEnd, maxY,
-                        hoverUnanalyzedBlock and colorDarkGrey or colorDarkGreyTransparent, 0)
-
-                    showBlockOutAtEnd = false
-                end
-                if c.special == "end" and c.time and c.time < overview_start_in_item + overview_length_in_item then  --and c.time < overview_start_in_item + overview_length_in_item then
-                    blockOutStartX = c.time
-                    showBlockOutAtEnd = true
-                    hoverUnanalyzedBlock = false
-                end
-            end
-
-            if showBlockOutAtEnd then
+        -- NOT ANALYSED BLOCKS
+        for _, c in ipairs(cut_data) do
+            if c.special == "start" and c.time and c.time > blockOutStartX and c.time < blockOutEndX then
                 blockOutXStart = ((blockOutStartX - overview_start_in_item) / overview_length_in_item) * w + minX
                 blockOutXStart = blockOutXStart > minX and blockOutXStart or minX
-                if mouse_pos_x > blockOutXStart and mouse_pos_x <= maxX and mouse_pos_y >= minY and mouse_pos_y <= maxY then
+                blockOutXEnd = ((c.time - overview_start_in_item) / overview_length_in_item) * w + minX
+                blockOutXEnd = blockOutXEnd < maxX and blockOutXEnd or maxX
+                if mouse_pos_x > blockOutXStart and mouse_pos_x <= blockOutXEnd and mouse_pos_y >= minY and mouse_pos_y <= maxY then
                     mouseInsideUnanalysedArea = true
                     hoverUnanalyzedBlock = true
                 end
-                reaper.ImGui_DrawList_AddRectFilled(draw_list, blockOutXStart, minY, maxX, maxY,
+                reaper.ImGui_DrawList_AddRectFilled(draw_list, blockOutXStart, minY, blockOutXEnd, maxY,
                     hoverUnanalyzedBlock and colorDarkGrey or colorDarkGreyTransparent, 0)
+
+                showBlockOutAtEnd = false
             end
-
-
-
-            local timeX, hoverName, betweenCut, hoverIndex
-            if reaper.ImGui_IsItemHovered(ctx) then
-                local mouse_cursor_pos_in_item = ((mouse_pos_x - minX) / w * overview_length_in_item) + overview_start_in_item
-                local mousePosRelativeInOverviewArea = math.floor((mouse_pos_x - minX) / w * 10 + 0.5) / 10
-
-                if isShiftDown or #cuts_making_threashold == 0 then
-                    posX = mouse_cursor_pos_in_item
-                    betweenCut = true
-                else
-                    --if settings.cursorFollowSelectedCut then
-                    local closest = math.huge
-                    local use_cut
-                    for i, c in ipairs(cuts_making_threashold) do
-                        local dif = math.abs(mouse_cursor_pos_in_item - c.time)
-                        if dif < closest then
-                            use_cut = c
-                            closest = dif
-                            hoverName = cut_data[c.index] and cut_data[c.index].name and cut_data[c.index].name or
-                            "Cut " .. i
-                            hoverIndex = c.index
-                        end
-                    end
-                    posX = use_cut.time
-                    --else
-                    --   posX = posX
-                    --   reaper.ShowConsoleMsg("hej\n")
-                    --end
-                end
-
-
-                -- cursor
-                if not mouseInsideUnanalysedArea then
-                    if posX and posX >= overview_start_in_item and posX <= overview_start_in_item + overview_length_in_item then
-                        timeX = ((posX - overview_start_in_item) / overview_length_in_item) * w + minX
-                        if betweenCut then
-                            reaper.ImGui_DrawList_AddLine(draw_list, timeX, minY, timeX, maxY, colorWhite, 1)
-                        end
-                        local timeXInSeconds = ((timeX / w) * overview_length_in_item + overview_start_in_item)
-
-                        setToolTipFunc((hoverName and (hoverName .. " | ") or "") ..
-                        reaper.format_timestr_pos(timeXInSeconds, "", 5))
-                    end
-                else
-                    setToolTipFunc("Area not analysed")
-                end
-
-                if isMouseClick then
-                    if not last_cur_pos_in_item or posX ~= last_cur_pos_in_item then
-                        cur_pos = posX + item_pos - item_offset
-                        --cur_pos_in_item = posX
-                        --aa = posX
-                        --ab = cur_pos
-                    end
-                    moveCursorToPos(cur_pos)
-                end
-
-
-                if (scrollVertical ~= 0 or scrollHorizontal ~= 0) then
-                    local scrollPrecision = 2
-                    local left, right
-                    if scrollVertical ~= 0 then
-                        local scrollIn = scrollVertical > 0
-                        left = start_time_sel -
-                        (scrollVertical / scrollPrecision) *
-                        (scrollIn and mousePosRelativeInOverviewArea or 1 - mousePosRelativeInOverviewArea)  --(scrollVertical > 0 and 0 or -1))
-                        right = end_time_sel -
-                        (scrollVertical / scrollPrecision) *
-                        (scrollIn and (mousePosRelativeInOverviewArea - 1) or -mousePosRelativeInOverviewArea)
-                    elseif scrollHorizontal ~= 0 then
-                        left = start_time_sel - scrollHorizontal / scrollPrecision
-
-                        right = end_time_sel - scrollHorizontal / scrollPrecision
-                    end
-                    if left < 0 then left = 0 end
-
-                    reaper.GetSet_LoopTimeRange(true, true, left, right, false)
-                    if settings.arrangeviewFollowsOverview then
-                        setArrangeviewArea()
-                    end
-                end
+            if c.special == "end" and c.time and c.time < overview_start_in_item + overview_length_in_item then  --and c.time < overview_start_in_item + overview_length_in_item then
+                blockOutStartX = c.time
+                showBlockOutAtEnd = true
+                hoverUnanalyzedBlock = false
             end
+        end
 
-            -- play cursor pos
-            if not settings.cursorFollowSelectedCut and cur_pos_in_item >= overview_start_in_item and cur_pos_in_item <= overview_start_in_item + overview_length_in_item then
-                local timeX = (cur_pos_in_item - overview_start_in_item) / overview_length_in_item * w + minX
-                --if (settings.cursorFollowSelectedCut and not currentSelectedCut) or not settings.cursorFollowSelectedCut then
-                reaper.ImGui_DrawList_AddLine(draw_list, timeX, minY - 5 + h / 2, timeX, maxY + 4, colorWhite, 1)       --currentSelectedCut and colorMapLight or colorMap, 1)
-                --end
+        if showBlockOutAtEnd then
+            blockOutXStart = ((blockOutStartX - overview_start_in_item) / overview_length_in_item) * w + minX
+            blockOutXStart = blockOutXStart > minX and blockOutXStart or minX
+            if mouse_pos_x > blockOutXStart and mouse_pos_x <= maxX and mouse_pos_y >= minY and mouse_pos_y <= maxY then
+                mouseInsideUnanalysedArea = true
+                hoverUnanalyzedBlock = true
             end
+            reaper.ImGui_DrawList_AddRectFilled(draw_list, blockOutXStart, minY, maxX, maxY,
+                hoverUnanalyzedBlock and colorDarkGrey or colorDarkGreyTransparent, 0)
+        end
 
-            if timeline_cur_pos_in_item >= overview_start_in_item and timeline_cur_pos_in_item <= overview_start_in_item + overview_length_in_item then
-                local timeX = (timeline_cur_pos_in_item - overview_start_in_item) / overview_length_in_item * w + minX
-                --if (settings.cursorFollowSelectedCut and not currentSelectedCut) or not settings.cursorFollowSelectedCut then
-                reaper.ImGui_DrawList_AddLine(draw_list, timeX, minY - 5, timeX,
-                    maxY + 4 - (not settings.cursorFollowSelectedCut and h / 2 or 0), colorWhite, 1)  --currentSelectedCut and colorMapLight or colorMap, 1)
-                --end
+
+
+        local timeX, hoverName, betweenCut, hoverIndex
+        if reaper.ImGui_IsItemHovered(ctx) then
+            local mouse_cursor_pos_in_item = ((mouse_pos_x - minX) / w * overview_length_in_item) + overview_start_in_item
+            local mousePosRelativeInOverviewArea = math.floor((mouse_pos_x - minX) / w * 10 + 0.5) / 10
+          
+            if isShiftDown or #cuts_making_threashold == 0 then
+                posX = mouse_cursor_pos_in_item
+                betweenCut = true 
             else
-                cursorOutsideArea = true
+                --if settings.cursorFollowSelectedCut then
+                local closest = math.huge
+                local use_cut
+                for i, c in ipairs(cuts_making_threashold) do
+                    local dif = math.abs(mouse_cursor_pos_in_item - c.time)
+                    if dif < closest then
+                        use_cut = c
+                        closest = dif
+                        hoverName = cut_data[c.index] and cut_data[c.index].name and cut_data[c.index].name or "Cut " .. i
+                        hoverIndex = c.index
+                    end
+                end
+                posX = use_cut.time
+                --else
+                --   posX = posX
+                --   reaper.ShowConsoleMsg("hej\n")
+                --end
             end
 
-            -- draw cuts
-            for _, c in ipairs(cuts_making_threashold) do
-                if c.time >= overview_start_in_item and c.time <= overview_start_in_item + overview_length_in_item then
-                    local timeX = ((c.time - overview_start_in_item) / overview_length_in_item) * w + minX
-                    --local col = c.exclude and colorGrey or (cut_data[c.index].color and  cut_data[c.index].color or colorBlue)
-                    local col = hoverIndex == c.index and colorWhite or
-                    (cut_data[c.index] and cut_data[c.index].color and cut_data[c.index].color or colorGrey)
-                    reaper.ImGui_DrawList_AddLine(draw_list, timeX,
-                        minY - (c.index == currentSelectedCut and 5 or -2) + (c.exclude and 10 or 0), timeX,
-                        maxY + (c.index == currentSelectedCut and 4 or 0), col, c.index == currentSelectedCut and 4 or 1)
+
+            -- cursor
+            if not mouseInsideUnanalysedArea then
+                if posX and posX >= overview_start_in_item and posX <= overview_start_in_item + overview_length_in_item then
+                    timeX = ((posX - overview_start_in_item) / overview_length_in_item) * w + minX
+                    if betweenCut then
+                        reaper.ImGui_DrawList_AddLine(draw_list, timeX, minY, timeX, maxY, colorWhite, 1)
+                    end
+                    local timeXInSeconds = ((timeX / w) * overview_length_in_item + overview_start_in_item)
+                    -- TODO: Timex not correctly calculated. Fix this before showing it
+                    --setToolTipFunc((hoverName and (hoverName .. " | ") or "") .. reaper.format_timestr_pos(timeXInSeconds, "", 5))
+                    setToolTipFunc(hoverName and hoverName or "Click to select point")
+                end
+            else
+                setToolTipFunc("Area not analysed")
+            end
+
+            if isMouseClick then
+                if not last_cur_pos_in_item or posX ~= last_cur_pos_in_item then
+                    cur_pos = posX + item_pos - item_offset
+                    --cur_pos_in_item = posX
+                    --aa = posX
+                    --ab = cur_pos
+                end
+                moveCursorToPos(cur_pos)
+                currentSelectedCut = not isShiftDown and hoverIndex or nil
+            end
+
+
+            if (scrollVertical ~= 0 or scrollHorizontal ~= 0) then
+                local scrollPrecision = 2
+                local left, right
+                if scrollVertical ~= 0 then
+                    local scrollIn = scrollVertical > 0
+                    left = start_time_sel -
+                    (scrollVertical / scrollPrecision) *
+                    (scrollIn and mousePosRelativeInOverviewArea or 1 - mousePosRelativeInOverviewArea)  --(scrollVertical > 0 and 0 or -1))
+                    right = end_time_sel -
+                    (scrollVertical / scrollPrecision) *
+                    (scrollIn and (mousePosRelativeInOverviewArea - 1) or -mousePosRelativeInOverviewArea)
+                elseif scrollHorizontal ~= 0 then
+                    left = start_time_sel - scrollHorizontal / scrollPrecision
+
+                    right = end_time_sel - scrollHorizontal / scrollPrecision
+                end
+                if left < 0 then left = 0 end
+
+                reaper.GetSet_LoopTimeRange(true, true, left, right, false)
+                if settings.arrangeviewFollowsOverview then
+                    setArrangeviewArea()
                 end
             end
         end
 
+        -- play cursor pos
+        if not settings.cursorFollowSelectedCut and cur_pos_in_item >= overview_start_in_item and cur_pos_in_item <= overview_start_in_item + overview_length_in_item then
+            local timeX = (cur_pos_in_item - overview_start_in_item) / overview_length_in_item * w + minX
+            --if (settings.cursorFollowSelectedCut and not currentSelectedCut) or not settings.cursorFollowSelectedCut then
+            reaper.ImGui_DrawList_AddLine(draw_list, timeX, minY - 5 + h / 2, timeX, maxY + 4, colorWhite, 1)       --currentSelectedCut and colorMapLight or colorMap, 1)
+            --end
+        end
+
+        if timeline_cur_pos_in_item >= overview_start_in_item and timeline_cur_pos_in_item <= overview_start_in_item + overview_length_in_item then
+            local timeX = (timeline_cur_pos_in_item - overview_start_in_item) / overview_length_in_item * w + minX
+            --if (settings.cursorFollowSelectedCut and not currentSelectedCut) or not settings.cursorFollowSelectedCut then
+            reaper.ImGui_DrawList_AddLine(draw_list, timeX, minY - 5, timeX, maxY + 4 - (not settings.cursorFollowSelectedCut and h / 2 or 0), colorWhite, 1)  --currentSelectedCut and colorMapLight or colorMap, 1)
+            --end
+        else
+            cursorOutsideArea = true
+        end
+
+        -- draw cuts
+        for _, c in ipairs(cuts_making_threashold) do
+            if c.time >= overview_start_in_item and c.time <= overview_start_in_item + overview_length_in_item then
+                local timeX = ((c.time - overview_start_in_item) / overview_length_in_item) * w + minX
+                --local col = c.exclude and colorGrey or (cut_data[c.index].color and  cut_data[c.index].color or colorBlue)
+                local col = hoverIndex == c.index and colorWhite or
+                (cut_data[c.index] and cut_data[c.index].color and cut_data[c.index].color or colorGrey)
+                reaper.ImGui_DrawList_AddLine(draw_list, timeX,
+                    minY - (c.index == currentSelectedCut and 5 or -2) + (c.exclude and 10 or 0), timeX,
+                    maxY + (c.index == currentSelectedCut and 4 or 0), col, c.index == currentSelectedCut and 4 or 1)
+            end
+        end
+        
+        --[[
+        if not isPlaying then
+            if settings.navigationFollowsPlayhead and (not last_timeline_cur_pos_edit or last_timeline_cur_pos_edit ~= timeline_cur_pos) then
+                if not last_isPlaying then 
+                    last_cur_pos = nil
+                end
+            end
+            last_timeline_cur_pos_edit = timeline_cur_pos
+        end
+        last_isPlaying = isPlaying
+        ]]
+        
 
         -- PREVIEW SECTION
-        isLastImage = cur_pos_in_item == item_length
+        isFirstImage = cur_pos_in_item == 0
+        isLastImage = compareWithMargin(cur_pos_in_item, item_length)
         
+          
+        if not isPlaying then
+            --[[
+            if not settings.navigationFollowsPlayhead then 
+                for i, c in ipairs(cuts_making_threashold) do
+                    --reaper.ShowConsoleMsg(cur_pos_to_check
+                    if compareWithMargin(c.time, cur_pos_in_item) then
+                        currentSelectedCut = c.index
+                        break;
+                    end
+                end
+            end
+            ]]
+        end
+        
+        
+        if settings.navigationFollowsPlayhead and isPlaying then
+            for i, c in ipairs(cuts_making_threashold) do
+                if last_timeline_cur_pos_in_item and c.time > last_timeline_cur_pos_in_item and c.time <= timeline_cur_pos_in_item then
+                    currentSelectedCut = c.index
+                    cur_pos_in_item = c.time
+                    last_cur_pos = cur_pos_in_item - item_pos + item_offset
+                    cur_pos = cur_pos_in_item + item_pos - item_offset
+        
+                    --lastSelectedCut = currentSelectedCut
+                    break;
+                end
+            end
+        end 
+        last_timeline_cur_pos_in_item = timeline_cur_pos_in_item
+        
+        updateThumbnails = false
+        if currentSelectedCut then
+            if currentSelectedCut ~= last_currentSelectedCut then 
+                updateThumbnails = true
+                cur_pos_in_item = (item_pos and cur_pos - item_pos + item_offset or 0) 
+            end
+        else
+        
+            if isPlaying then
+            
+            else
+                for i, c in ipairs(cuts_making_threashold) do
+                    --reaper.ShowConsoleMsg(cur_pos_to_check
+                    if compareWithMargin(c.time, cur_pos_in_item) then
+                        currentSelectedCut = c.index
+                        break;
+                    end
+                end
+                if last_cur_pos_in_item ~= cur_pos_in_item then
+                    updateThumbnails = true
+                end
+            end
+        end
+        last_currentSelectedCut = currentSelectedCut 
+        last_cur_pos_in_item = cur_pos_in_item
+        
+        --last_item_pos = item_pos
+        --last_cur_pos = cur_pos
+        --last_item_offset = item_offset
         
         --updateThumbnails = true
         -- Check if we have our video file.
         -- Update to auto get it
         --if not settings.cursorFollowSelectedCut or playState == 0 then
-        if filePath and updateThumbnails and not wait then
-            
-            
-            oneFrameEarlier = last_cur_pos_in_item and compareWithMargin(cur_pos_in_item, last_cur_pos_in_item - (1 / frames_per_second))
-            oneFrameLater = last_cur_pos_in_item and compareWithMargin(cur_pos_in_item, last_cur_pos_in_item + (1 / frames_per_second))
-            cur_pos_rounded_to_frame = roundToFrame(cur_pos_in_item)
-            cur_pos_rounded_to_frame_one_frame_ealier = cur_pos_rounded_to_frame - (1 / frames_per_second)
-            
-            
-            
-            --pngPath = directory .. itemProperties.fileName .. "_Cut" .. c.index .. "_" .. math.floor(c.time * 1000 + 0.5) .. "ms.png" 
-
-            -- only update images if we change the position.
-            -- make option to have session follow or not
-            if not last_cur_pos_in_item or last_cur_pos_in_item ~= cur_pos_in_item then
-                --if not settings.onlyShowThumbnailsForCuts or (settings.onlyShowThumbnailsForCuts and currentSelectedCut) then 
-                    if not last_cur_pos_in_item then last_cur_pos_in_item = cur_pos_in_item end
-                    
-                    
-                    if oneFrameLater then 
-                        imageA = file_exists_check(pngPathB) and imageB
-                        --reaper.ShowConsoleMsg("later\n")
-                        if not imageA then oneFrameLater = false end
-                    end
-                    if oneFrameEarlier then
-                        imageB = file_exists_check(pngPathA) and imageA
-                        --reaper.ShowConsoleMsg("earlier\n")
-                        if not imageB then oneFrameEarlier = false end
-                    end
-                    
-                    
-                    -- for stored thumbnails
-                    if currentSelectedCut and thumbnailPath_exist then
-                        if reaper.file_exists(cut_data_time_pos[cur_pos_rounded_to_frame]) then 
-                            pngPathB = cut_data_time_pos[cur_pos_rounded_to_frame]
-                            oneFrameLater = true
-                            imageB = nil
-                        end
-                        if reaper.file_exists(cut_data_time_pos[cur_pos_rounded_to_frame_one_frame_ealier]) then 
-                            pngPathA = cut_data_time_pos[cur_pos_rounded_to_frame_one_frame_ealier]
-                            oneFrameEarlier = true
-                            imageA = nil
-                        end
-                    end
-                    
-                    
-    
-                    if not oneFrameLater then
-                        --reaper.ShowConsoleMsg(cur_pos_in_item - (last_cur_pos_in_item - (1/fps)) .. " - " .. run .."\n")
-                        pngPathA = join_paths(script_path, "tempA.png")
-                        os.remove(pngPathA)
-                        imageCreatedA = createThumbnails(filePath, pngPathA, cur_pos_in_item - (1 / frames_per_second), true)
-                        imageA = nil
-                        --reaper.ShowConsoleMsg("load A\n")
-                    end
-    
-                    if not oneFrameEarlier then
-                        pngPathB = join_paths(script_path, "tempB.png")
-                        os.remove(pngPathB)
-                        imageCreatedB = createThumbnails(filePath, pngPathB, cur_pos_in_item, true)
-                        imageB = nil
-                        --reaper.ShowConsoleMsg("load B\n")
-                    end
-                    last_cur_pos_in_item = cur_pos_in_item
-                --end
-            end
-        else
-            if not wait then wait = 0 end
-            wait = wait + 1
-            -- set higher in case of "premature end of file"
-            if wait > 8 then
-                wait = nil
-            end
-
-            --reaper.ShowConsoleMsg("WAIT\n")
-        end
-        --end
-
-        -- generate images
-        -- Ensure images are valid, otherwise reset to nil so they can be re-created
-        if imageA and not ImGui.ValidatePtr(imageA, 'ImGui_Image*') then imageA = nil end
-        if imageB and not ImGui.ValidatePtr(imageB, 'ImGui_Image*') then imageB = nil end
-
-        if not imageA and pngPathA and reaper.file_exists(pngPathA) then
-            imageA = reaper.ImGui_CreateImage(pngPathA, reaper.ImGui_ImageFlags_NoErrors())
-            --imageA = imageFromCache(pngPathA)
-        end
-        if imageA and not imageB and pngPathB and reaper.file_exists(pngPathB) then
-            imageB = reaper.ImGui_CreateImage(pngPathB, reaper.ImGui_ImageFlags_NoErrors())
-            --imageB = imageFromCache(pngPathB)
-        end
-
+        
+        
+        
         -- Helper function to draw image centered in a slot
         local function DrawImageCentered(image, slotW, slotH, label)
             local p = { reaper.ImGui_GetCursorScreenPos(ctx) }
-
+        
             -- Draw background slot
-            reaper.ImGui_Button(ctx, label, slotW, slotH)       -- Invisible button as background/placeholder?
+            reaper.ImGui_InvisibleButton(ctx, label, slotW, slotH)       -- Invisible button as background/placeholder?
             -- actually Button draws a frame. We want a black box?
             -- The button serves as the "Loading" placeholder usually.
             -- But if we have an image, we want the image ON TOP of the slot area.
             -- Using Button establishes the layout space.
-
+        
             if image and ImGui.ValidatePtr(image, 'ImGui_Image*') then
                 local w, h = reaper.ImGui_Image_GetSize(image)
                 local aspect = w / h
                 local slotAspect = slotW / slotH
-
+        
                 local drawW, drawH
                 if aspect > slotAspect then
                     -- Image is wider (relative to slot), fit to width
@@ -2554,34 +2317,153 @@ local function loop()
                     drawH = slotH
                     drawW = drawH * aspect
                 end
-
+        
                 -- Center image
                 local offX = (slotW - drawW) / 2
                 local offY = (slotH - drawH) / 2
-
+        
                 -- We need to draw the image at specific coordinates
                 -- Since we already advanced cursor with Button, we use DrawList or SetCursor?
                 -- Using DrawList is smoother for overlays.
                 local dl = reaper.ImGui_GetWindowDrawList(ctx)
-                reaper.ImGui_DrawList_AddImage(dl, image, p[1] + offX, p[2] + offY, p[1] + offX + drawW,
-                    p[2] + offY + drawH)
+                reaper.ImGui_DrawList_AddImage(dl, image, p[1] + offX, p[2] + offY, p[1] + offX + drawW, p[2] + offY + drawH)
             else
                 -- If no image (and not loading?), Button already shows label/loading text.
             end
         end
-
-        -- Calculate Slot Dimensions (Half Width, 16:9)
-        -- Make sure we match the logic used for imageW variable (which is Height)
-        local slotW = (winW - 8 * 3) / 2
-        local slotH = slotW * (9 / 16)
-        -- Note: original imageW variable was Height. Let's use our new vars.
-
-        local imageText = (isPlaying or outsideBoundries or settings.onlyShowCutsWithEditedName) and " " or "Loading image"
-
-        DrawImageCentered(imageA, slotW, slotH, imageText .. "##1")
-
-        setToolTipFunc("Image before cut selection")
-
+        
+        function thumbnails(updateThumbnails, filePath, cut_data_time_pos, cut_data_time_pos, cur_pos_in_item, last_cur_pos_in_item) 
+        
+            if updateThumbnails and filePath then -- and not wait then
+                local oneFrameEarlier = last_cur_pos_in_item and compareWithMargin(cur_pos_in_item, last_cur_pos_in_item - (1 / frames_per_second))
+                local oneFrameLater = last_cur_pos_in_item and compareWithMargin(cur_pos_in_item, last_cur_pos_in_item + (1 / frames_per_second))
+                local cur_pos_rounded_to_frame = roundToFrame(cur_pos_in_item, frames_per_second)
+                local cur_pos_rounded_to_frame_one_frame_ealier = cur_pos_rounded_to_frame - (1 / frames_per_second)
+                
+                
+                
+                --pngPath = directory .. itemProperties.fileName .. "_Cut" .. c.index .. "_" .. math.floor(c.time * 1000 + 0.5) .. "ms.png" 
+    
+                -- only update images if we change the position.
+                -- make option to have session follow or not
+                --if not currentSelectedCut or currentSelectedCut ~= lastSelectedCut then 
+                    --if not last_cur_pos_in_item or last_cur_pos_in_item ~= cur_pos_in_item then
+                    --if not settings.onlyShowThumbnailsForCuts or (settings.onlyShowThumbnailsForCuts and currentSelectedCut) then 
+                        --if not last_cur_pos_in_item then last_cur_pos_in_item = cur_pos_in_item end
+                        
+                        
+                        if oneFrameLater then 
+                            imageA = file_exists_check(pngPathB) and imageB
+                            --reaper.ShowConsoleMsg("later\n")
+                            if not imageA then oneFrameLater = false end
+                        end
+                        if oneFrameEarlier then
+                            imageB = file_exists_check(pngPathA) and imageA
+                            --reaper.ShowConsoleMsg("earlier\n")
+                            if not imageB then oneFrameEarlier = false end
+                        end
+                        
+                        
+                        -- for stored thumbnails
+                        if currentSelectedCut and thumbnailPath_exist then
+                            if cut_data_time_pos and cut_data_time_pos[cur_pos_rounded_to_frame] and reaper.file_exists(cut_data_time_pos[cur_pos_rounded_to_frame]) then 
+                                pngPathB = cut_data_time_pos[cur_pos_rounded_to_frame]
+                                oneFrameLater = true
+                                imageB = nil
+                            end
+                            if cut_data_time_pos and cut_data_time_pos[cur_pos_rounded_to_frame_one_frame_ealier] and reaper.file_exists(cut_data_time_pos[cur_pos_rounded_to_frame_one_frame_ealier]) then 
+                                pngPathA = cut_data_time_pos[cur_pos_rounded_to_frame_one_frame_ealier]
+                                oneFrameEarlier = true
+                                imageA = nil
+                            end
+                        end
+                        
+                        
+        
+                        if not oneFrameLater then
+                            --reaper.ShowConsoleMsg(cur_pos_in_item - (last_cur_pos_in_item - (1/fps)) .. " - " .. run .."\n")
+                            pngPathA = join_paths(script_path, "tempA.png")
+                            os.remove(pngPathA)
+                            imageCreatedA = createThumbnails(filePath, pngPathA, cur_pos_in_item - (1 / frames_per_second), true)
+                            imageA = nil
+                            --reaper.ShowConsoleMsg("load A\n")
+                        end
+        
+                        if not oneFrameEarlier then
+                            os.remove(pngPathB)
+                            imageCreatedB = createThumbnails(filePath, pngPathB, cur_pos_in_item, true)
+                            imageB = nil
+                            --reaper.ShowConsoleMsg("load B\n")
+                        end
+                        last_cur_pos_in_item = cur_pos_in_item
+                        
+                    --end
+                --end
+            else
+                if not wait then wait = 0 end
+                wait = wait + 1
+                -- set higher in case of "premature end of file"
+                if wait > 8 then
+                    wait = nil
+                end
+    
+                --reaper.ShowConsoleMsg("WAIT\n")
+            end
+            --end
+    
+            -- generate images
+            -- Ensure images are valid, otherwise reset to nil so they can be re-created
+            if imageA and not reaper.ImGui_ValidatePtr(imageA, 'ImGui_Image*') then imageA = nil end
+            if imageB and not reaper.ImGui_ValidatePtr(imageB, 'ImGui_Image*') then imageB = nil end
+    
+            if not imageA and pngPathA and reaper.file_exists(pngPathA) then
+                imageA = reaper.ImGui_CreateImage(pngPathA, reaper.ImGui_ImageFlags_NoErrors())
+                --imageA = imageFromCache(pngPathA)
+            end
+            if imageA and not imageB and pngPathB and reaper.file_exists(pngPathB) then
+                imageB = reaper.ImGui_CreateImage(pngPathB, reaper.ImGui_ImageFlags_NoErrors())
+                --imageB = imageFromCache(pngPathB)
+            end
+    
+            -- Calculate Slot Dimensions (Half Width, 16:9)
+            -- Make sure we match the logic used for imageW variable (which is Height)
+            local slotW = (winW - 8 * 3) / 2
+            local slotH = slotW * (9 / 16)
+            -- Note: original imageW variable was Height. Let's use our new vars.
+    
+            local imageText = (isPlaying or outsideBoundries or settings.onlyShowCutsWithEditedName) and " " or "Loading image"
+            
+            imageAText = imageText
+            imageBText = imageText
+            imageATip = "Image before cut selection"
+            imageBTip = "Image before cut selection"
+            
+            if isFirstImage then 
+                imageA = nil
+                imageAText = ""
+                imageATip = ""
+            end
+            if isLastImage then
+                imageB = nil
+                imageBText = ""
+                imageBTip = ""
+            end
+            
+            DrawImageCentered(imageA, slotW, slotH, imageAText .. "##1") 
+            setToolTipFunc(imageATip)
+    
+            
+            
+            reaper.ImGui_SameLine(ctx)
+            local imageBText = isLastImage and "" or imageText
+            DrawImageCentered(imageB, slotW, slotH, imageBText .. "##2")
+            
+            if not isLastImage then
+                setToolTipFunc("Image on cut selection")
+            end
+        end
+        
+        -- NOT USED
         function textOverlay()
             local imageMinX, imageMinY = reaper.ImGui_GetItemRectMin(ctx)
             local imageWidth, imageHeight = reaper.ImGui_GetItemRectSize(ctx)
@@ -2595,91 +2477,163 @@ local function loop()
                 reaper.ImGui_DrawList_AddText(draw_list, midX - textW / 2, midY - textH / 2, colorWhite, textOverlayText)
             end
         end
+        --textOverlay()
 
-        if not isLastImage then
+        
+        function addButtons()
+            --if #cuts_making_threashold > 0 then
+            --reaper.ImGui_AlignTextToFramePadding(ctx)
+            --reaper.ImGui_TextColored(ctx, colorGrey, "Add:")
+            --reaper.ImGui_SameLine(ctx)
+            
+            function insertMediaItem(track, pos, length, name, col, image_path)
+                local newItem = reaper.AddMediaItemToTrack(track)
+                
+                -- Position and length
+                reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", pos)
+                reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", length)
+                reaper.SetMediaItemInfo_Value(newItem, "I_CUSTOMCOLOR", (col >> 8) |16777216)
+                
+                -- Create video source from image
+                local source = reaper.PCM_Source_CreateFromFile(image_path)
+                if not source then
+                  reaper.ShowMessageBox("Failed to load image.", "Error", 0)
+                  return
+                end
+                
+                -- Assign source to item
+                local newTake = reaper.AddTakeToMediaItem(newItem)
+                reaper.SetMediaItemTake_Source(newTake, source)
+                reaper.GetSetMediaItemTakeInfo_String( newTake, "P_NAME", name, true )
+            
+            end
+            
+    
+            if reaper.ImGui_Button(ctx, "Markers") then
+                reaper.Undo_BeginBlock()
+                for i, c in ipairs(cuts_making_threashold) do
+                    if not c.exclude then
+                        local name = cut_data[c.index].name and cut_data[c.index].name or "Cut " .. i
+                        local col = cut_data[c.index].color and cut_data[c.index].color or 0
+                        reaper.AddProjectMarker2(0, false, c.time + item_pos - item_offset, 0, name, -1, (col >> 8) |
+                        16777216)
+                    end
+                end
+                reaper.Undo_EndBlock("Insert markers from video cut detection", -1)
+            end
             reaper.ImGui_SameLine(ctx)
-            DrawImageCentered(imageB, slotW, slotH, imageText .. "##2")
-            setToolTipFunc("Image on cut selection")
+    
+            if reaper.ImGui_Button(ctx, "Regions") then
+                reaper.Undo_BeginBlock()
+                for i, c in ipairs(cuts_making_threashold) do
+                    if not c.exclude then
+                        local name = cut_data[c.index].name and cut_data[c.index].name or "Cut " .. i
+                        local endPos = i < #cuts_making_threashold and cuts_making_threashold[i + 1].time or findNextSpecialEnd(c.time)
+                        local col = cut_data[c.index].color and cut_data[c.index].color or 0
+                        reaper.AddProjectMarker2(0, true, c.time + item_pos - item_offset, endPos + item_pos - item_offset, name, -1, (col >> 8) |16777216)
+                    end
+                end
+                reaper.Undo_EndBlock("Insert markers from video cut detection", -1)
+            end
+            reaper.ImGui_SameLine(ctx)
+    
+            if reaper.ImGui_Button(ctx, "Take markers") then
+                reaper.Undo_BeginBlock()
+                for i, c in ipairs(cuts_making_threashold) do
+                    if not c.exclude then
+                        local name = cut_data[c.index].name and cut_data[c.index].name or "Cut " .. i
+                        local col = cut_data[c.index].color and cut_data[c.index].color or 0
+                        reaper.SetTakeMarker(reaper.GetActiveTake(item), -1, name, c.time, (col >> 8) |16777216)
+                    end
+                end
+                reaper.Undo_EndBlock("Insert markers from video cut detection", -1)
+            end 
+            
+            
+            reaper.ImGui_SameLine(ctx)
+            if reaper.ImGui_Button(ctx, "Thumbnails") or waitingForThumbnailsToBeCreated then
+                
+                if not waitingForThumbnailsToBeCreated then 
+                    generateThumbnailsForCuts(cut_data, cuts_making_threashold, thumbnailPath, itemProperties, true)
+                end
+                
+                if generationQueue and #generationQueue > 0 then 
+                    reaper.ImGui_OpenPopup(ctx, "Generating Thumbnails")
+                    waitingForThumbnailsToBeCreated = true
+                else
+                    local track = reaper.GetMediaItemTrack(item)
+                    reaper.Undo_BeginBlock()
+                    for i, c in ipairs(cuts_making_threashold) do
+                        if not c.exclude then
+                            local c_data = cut_data[c.index]
+                            local pos = c_data.time + item_pos - item_offset
+                            local endPos = (i < #cuts_making_threashold and cuts_making_threashold[i + 1].time or findNextSpecialEnd(c.time)) + item_pos - item_offset
+                            local len = endPos - pos
+                            local name = c_data.name and cut_data[c.index].name or "Cut " .. i
+                            local col = c_data.color and cut_data[c.index].color or 0
+                            local pngPath = c_data.pngPath 
+                            
+                            insertMediaItem(track, pos, len, name, col, pngPath)
+                        end
+                    end
+                    waitingForThumbnailsToBeCreated = nil
+                    reaper.UpdateArrange()
+                end
+                reaper.Undo_EndBlock("Insert markers from video cut detection", -1)
+            end
         end
-        --textOverlay()
-        --textOverlay()
 
 
-        --if #cuts_making_threashold > 0 then
-
-        if reaper.ImGui_Button(ctx, "Add markers") then
-            reaper.Undo_BeginBlock()
-            for i, c in ipairs(cuts_making_threashold) do
-                if not c.exclude then
-                    local name = cut_data[c.index].name and cut_data[c.index].name or "Cut " .. i
-                    local col = cut_data[c.index].color and cut_data[c.index].color or 0
-                    reaper.AddProjectMarker2(0, false, c.time + item_pos - item_offset, 0, name, -1, (col >> 8) |
-                    16777216)
+        function navigationButtons()
+            if reaper.ImGui_Button(ctx, "l<", buttonSize, buttonSize) or (not markerNameIsFocused and isLeftArrowReleased and not isShiftDown) then
+                if not findPreviousCut() then
+                    cur_pos = item_pos
+                    moveCursorToPos(cur_pos)
+                    currentSelectedCut = nil
                 end
             end
-            reaper.Undo_EndBlock("Insert markers from video cut detection", -1)
-        end
-        reaper.ImGui_SameLine(ctx)
-
-        if reaper.ImGui_Button(ctx, "Add regions") then
-            reaper.Undo_BeginBlock()
-            for i, c in ipairs(cuts_making_threashold) do
-                if not c.exclude then
-                    local name = cut_data[c.index].name and cut_data[c.index].name or "Cut " .. i
-                    local endPos = i < #cuts_making_threashold and cuts_making_threashold[i + 1].time or
-                    findNextSpecialEnd(c.time)
-                    local col = cut_data[c.index].color and cut_data[c.index].color or 0
-                    reaper.AddProjectMarker2(0, true, c.time + item_pos - item_offset, endPos + item_pos - item_offset,
-                        name, -1, (col >> 8) |16777216)
+            setToolTipFunc("Select previous cut.\n- press left arrow to set with keyboard")
+            
+            reaper.ImGui_SameLine(ctx)
+            if reaper.ImGui_Button(ctx, "<", buttonSize, buttonSize) or (not markerNameIsFocused and isLeftArrowReleased and isShiftDown) then
+                move_cursor_by_frames(-1)
+                currentSelectedCut = nil
+            end
+            setToolTipFunc("Move 1 frame left.\n- press shift+left arrow to set with keyboard")
+            
+                
+            
+            reaper.ImGui_SameLine(ctx)
+            if reaper.ImGui_Button(ctx, "##play", buttonSize, buttonSize) or (not markerNameIsFocused and isSpace) then
+                playStopReaper()
+            end
+            setToolTipFunc("Move 1 frame right.\n- press shift+right arrow to set with keyboard")
+            local posX, posY = reaper.ImGui_GetItemRectMin(ctx)
+            local sizeW, sizeH = reaper.ImGui_GetItemRectSize(ctx)
+            reaper.ImGui_DrawList_AddRectFilled(draw_list,posX, posY, posX + sizeW, posY + sizeH, isPlaying and colorIsPlaying or theme.button, 6) 
+            reaper.ImGui_DrawList_AddCircleFilled(draw_list,posX + sizeW / 2- 1, posY + sizeH/2, sizeW/3, isPlaying and colorWhite or colorTransparent, 3) 
+            reaper.ImGui_DrawList_AddCircle(draw_list,posX + sizeW / 2 - 1, posY + sizeH/2, sizeW/3, colorWhite, 3,1) 
+            
+            
+            reaper.ImGui_SameLine(ctx)
+            if reaper.ImGui_Button(ctx, ">", buttonSize, buttonSize) or (not markerNameIsFocused and isRightArrowReleased and isShiftDown) then
+                move_cursor_by_frames(1)
+                currentSelectedCut = nil
+            end
+            setToolTipFunc("Move 1 frame right.\n- press shift+right arrow to set with keyboard") 
+            
+            reaper.ImGui_SameLine(ctx) 
+            if reaper.ImGui_Button(ctx, ">l", buttonSize, buttonSize) or (not markerNameIsFocused and isRightArrowReleased and not isShiftDown) then
+                if not findNextCut() then
+                    cur_pos = findNextSpecialEnd(cur_pos_in_item) + item_pos - item_offset
+                    moveCursorToPos(cur_pos)
+                    currentSelectedCut = nil
                 end
             end
-            reaper.Undo_EndBlock("Insert markers from video cut detection", -1)
+            setToolTipFunc("Select next cut.\n- press right arrow to set with keyboard")
         end
-        reaper.ImGui_SameLine(ctx)
-
-        if reaper.ImGui_Button(ctx, "Add take markers") then
-            reaper.Undo_BeginBlock()
-            for i, c in ipairs(cuts_making_threashold) do
-                if not c.exclude then
-                    local name = cut_data[c.index].name and cut_data[c.index].name or "Cut " .. i
-                    local col = cut_data[c.index].color and cut_data[c.index].color or 0
-                    reaper.SetTakeMarker(reaper.GetActiveTake(item), -1, name, c.time, (col >> 8) |16777216)
-                end
-            end
-            reaper.Undo_EndBlock("Insert markers from video cut detection", -1)
-        end
-        --end
-
         
-        reaper.ImGui_SameLine(ctx, winW / 2 - 62)
-        if reaper.ImGui_Button(ctx, "l<", buttonSize, buttonSize) or (not markerNameIsFocused and isLeftArrowReleased and not isShiftDown) then
-            if not findPreviousCut() then
-                cur_pos = overview_start_in_item
-                moveCursorToPos(cur_pos)
-            end
-        end
-        setToolTipFunc("Select previous cut.\n- press left arrow to set with keyboard")
-        
-        reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, "<", buttonSize, buttonSize) or (not markerNameIsFocused and isLeftArrowReleased and isShiftDown) then
-            move_cursor_by_frames(-1)
-        end
-        setToolTipFunc("Move 1 frame left.\n- press shift+left arrow to set with keyboard")
-        
-        reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, ">", buttonSize, buttonSize) or (not markerNameIsFocused and isRightArrowReleased and isShiftDown) then
-            move_cursor_by_frames(1)
-        end
-        setToolTipFunc("Move 1 frame right.\n- press shift+right arrow to set with keyboard")
-        
-        reaper.ImGui_SameLine(ctx) 
-        if reaper.ImGui_Button(ctx, ">l", buttonSize, buttonSize) or (not markerNameIsFocused and isRightArrowReleased and not isShiftDown) then
-            if not findNextCut() then
-                cur_pos = findNextSpecialEnd(cur_pos_in_item) + item_pos - item_offset
-                moveCursorToPos(cur_pos)
-            end
-        end
-        setToolTipFunc("Select next cut.\n- press right arrow to set with keyboard")
+        -- POPUPS
         
         
         -- Process one thumbnail per frame
@@ -2707,28 +2661,81 @@ local function loop()
             end
         end
         
+        -- Process one thumbnail per frame
+        if analysing then
+           
+             
+             
+             if analyseEndTime and analyseStartTime then
+                 -- 0.025 is a magic number. We could possibly get real analyze progress by saving progress from FFMPEG
+                 local analyzeSpeed = settings.analyzeSpeed and settings.analyzeSpeed or 0.1
+                 analysingAmount = (analyseEndTime - analyseStartTime) / item_area_to_analyze_length / analyzeSpeed 
+                 if analysingAmount > 1 then analysingAmount = 1 end
+             end
+             --[[
+             -- analysing bar
+             if analysingAmount then
+                 analysingX = minX + analysingAmount * w
+                 reaper.ImGui_DrawList_AddRectFilled(draw_list, minX, minY, analysingX, maxY, analysingColor, 0)
+                 local analystingText = settings.analyzeSpeed and (math.floor(analysingAmount * 100) .. "%") or "This is the first time analyzing. Analyze speed not available"
+                 local textW, textH = reaper.ImGui_CalcTextSize(ctx, analystingText)
+                 if not settings.analyzeSpeed then 
+                     analysingX = minX + w / 2 - textW / 2 + textW + 4
+                 end
+                 reaper.ImGui_DrawList_AddText(draw_list, analysingX - textW - 4, minY + (maxY - minY) / 2 - textH / 2, colorWhite, analystingText)
+             end
+             ]]
+            -- Always center this window when appearing
+            local center_x, center_y = reaper.ImGui_Viewport_GetCenter(reaper.ImGui_GetWindowViewport(ctx))
+            reaper.ImGui_SetNextWindowPos(ctx, center_x, center_y, reaper.ImGui_Cond_Appearing(), 0.5, 0.5)
+            
+            if reaper.ImGui_BeginPopupModal(ctx, 'Analysing Video', nil, reaper.ImGui_WindowFlags_AlwaysAutoResize()) then
+                local analystingText = settings.analyzeSpeed and (math.floor(analysingAmount * 100) .. "%") or "This is the first time analyzing. Analyze speed not available"  
+                reaper.ImGui_ProgressBar(ctx, analysingAmount, 300, 0, string.format("%d%%", math.floor(analysingAmount * 100)))
+                
+                if reaper.ImGui_Button(ctx, 'Cancel', 120, 0) or isEscape then  
+                    os.remove(cutTextFilePathRaw)
+                    analyseStartTime = nil
+                    analysing = false
+                    cut_data = nil
+                end
+                reaper.ImGui_EndPopup(ctx)
+            end
+        end
         
-        function undoRedo()
+        function undoRedoButtons()
             local hasUndo = #undo_stack > 0
             if not hasUndo then reaper.ImGui_BeginDisabled(ctx) end
-            if reaper.ImGui_Button(ctx, "Undo") or (isSuperDown and isZ) then
-                cut_data = undo(cut_data)
+            if reaper.ImGui_Button(ctx, "Undo") or (isSuperDown and not isShiftDown and isZ) then
+                cut_data = undo_redo.undo(cut_data)
             end
             if not hasUndo then reaper.ImGui_EndDisabled(ctx) end
         
             reaper.ImGui_SameLine(ctx)
+            aa = redo_stack
             local hasRedo = #redo_stack > 0
             if not hasRedo then reaper.ImGui_BeginDisabled(ctx) end
             if reaper.ImGui_Button(ctx, "Redo") or (isShiftDown and isSuperDown and isZ) then
-                cut_data = redo(cut_data)
+                cut_data = undo_redo.redo(cut_data)
             end
             if not hasRedo then reaper.ImGui_EndDisabled(ctx) end
         end
         
+        
+        
+        
+        thumbnails(updateThumbnails, filePath, cut_data_time_pos, cut_data_time_pos, cur_pos_in_item, last_cur_pos_in_item)
+        
+        addButtons()
+        
+        reaper.ImGui_SameLine(ctx, winW / 2 - math.floor(31*2.5))
+        
+        navigationButtons() 
+        
         reaper.ImGui_SameLine(ctx, winW - 104) 
-        undoRedo()
+        undoRedoButtons()
 
-        if analysing then reaper.ImGui_EndDisabled(ctx) end
+        
 
         lastPosY = reaper.ImGui_GetCursorPosY(ctx) + 4
 
@@ -2740,19 +2747,20 @@ local function loop()
     --[[
           if isSuperDown and isZ then
               if isShiftDown then
-                  cut_data = redo(cut_data)
+                  cut_data = undo_redo.redo(cut_data)
               else
-                  cut_data = undo(cut_data)
+                  cut_data = undo_redo.undo(cut_data)
               end
           end]]
 
 
     --end
+    
     -- reaper.ImGui_PopFont(ctx)
     -- Pop Style Vars (6 vars added) and Colors (12 colors added)
     ImGui.PopStyleVar(ctx, 6)
     ImGui.PopStyleColor(ctx, 12)
-
+    
     if open then
         reaper.defer(loop)
     else
