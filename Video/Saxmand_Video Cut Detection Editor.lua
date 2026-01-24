@@ -1,20 +1,11 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.1.6
+-- @version 0.1.7
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
 -- @changelog
---   + Fixed selection follows playhead 
---   + Fixed video files being cropped
---   + Fixed navigation at end of video
---   + Made navigation more stable, also when removing cuts
---   + Added focused video name as button
---   + Added play button
---   + Added split item option
---   + Added thumbnails option
---   + Added that selected video media item is used as focused video. If non is selected the playhead controls it
---   + Allow repeat key for navigation cuts, starts after 0.5 sec
+--   + removed a console log
 
 
 -------- Possible IDEAS TODO
@@ -2646,7 +2637,6 @@ local function loop()
                 
                 if currentSelectedCut ~= last_currentSelectedCut then 
                     updateThumbnails = true
-                    reaper.ShowConsoleMsg(currentSelectedCut .. "\n")
                     cur_pos_in_item = (item_pos and (cur_pos - item_pos + item_offset) or 0) 
                 end
             else
