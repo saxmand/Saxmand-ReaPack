@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="0b426123d04ad1559346c908c399b0e19f8c1156" name="Saxmand ReaPack">
+<index version="1" commit="57862d7cc90a8b86f771065dc87c149f152a6057" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_Close all open FX windows.lua" type="script" desc="Close all open FX windows">
       <version name="1.0.0" author="Saxmand" time="2025-07-18T21:03:27Z">
@@ -5958,6 +5958,14 @@
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/0b426123d04ad1559346c908c399b0e19f8c1156/Video/Helpers/json.lua</source>
         <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/0b426123d04ad1559346c908c399b0e19f8c1156/Video/Helpers/undo_redo.lua</source>
         <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/0b426123d04ad1559346c908c399b0e19f8c1156/Video/Helpers/hosi_exec_hidden.vbs</source>
+      </version>
+      <version name="0.1.7" author="saxmand" time="2026-01-24T17:06:10Z">
+        <changelog><![CDATA[+ removed a console log]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/57862d7cc90a8b86f771065dc87c149f152a6057/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/ffmpeg.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/57862d7cc90a8b86f771065dc87c149f152a6057/Video/Helpers/ffmpeg.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/57862d7cc90a8b86f771065dc87c149f152a6057/Video/Helpers/json.lua</source>
+        <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/57862d7cc90a8b86f771065dc87c149f152a6057/Video/Helpers/undo_redo.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/57862d7cc90a8b86f771065dc87c149f152a6057/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
