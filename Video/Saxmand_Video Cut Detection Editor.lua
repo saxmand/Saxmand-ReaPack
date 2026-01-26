@@ -1,15 +1,12 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.2.0
+-- @version 0.2.1
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
 -- @changelog
---   + Huge reconform
---   + fixed link overview to arrange view
---   + added subproject support
---   + initial Compare videos support
---   + added tabs for future expansion
+--   + fixed some undo redo issue. More work needed
+--   + added extreme cut detection mode
 
 
 
@@ -458,7 +455,7 @@ function extract_cut_data_fast(cutTextFilePathRaw, start_time)
 
         local score = line:match("lavfi%.scd%.score=(%S+)")
         if score then
-            entry.score = tonumber(score)
+            entry.score = tonumber(score) / 30 * 100
         end
 
         local time = line:match("lavfi%.scd%.time=(%S+)")
@@ -467,7 +464,8 @@ function extract_cut_data_fast(cutTextFilePathRaw, start_time)
         end
         -- Once we have all three, store and reset
         if entry.mafd and entry.score and entry.time then
-            entry.color = settings.defaultColor
+            
+            --entry.color = settings.defaultColor
             table.insert(results, entry)
             entry = {}
         end
@@ -477,6 +475,8 @@ function extract_cut_data_fast(cutTextFilePathRaw, start_time)
 
     return results
 end
+
+
 
 function get_cut_information_fast(file_path, cutTextFilePath, start_time, length) --, start_offset, length ) 
     local args = " "
@@ -505,7 +505,7 @@ function get_cut_information_fast(file_path, cutTextFilePath, start_time, length
     args = args .. ' -ss ' .. start_time .. ' -t ' .. length
     --end
     args = args .. ' -i "' .. file_path ..
-        '" -filter:v "scdet=t=1.000000:s=1,metadata=print:file=' .. cutTextFilePath .. '" -f null -'
+        '" -filter:v "scdet=t='..string.format("%f", detection_threshold) ..':s=1,metadata=print:file=' .. cutTextFilePath .. '" -f null -'
 
     -- Define a temporary file path
 
@@ -518,7 +518,6 @@ function get_cut_information_fast(file_path, cutTextFilePath, start_time, length
     --end
     
 end
-
 
 
 
@@ -539,7 +538,8 @@ function get_cut_information_mac(file_path, cutTextFilePath, start_time, length,
     
     -- ВАЖНО: Путь safe_cut_path содержит экранированное двоеточие (C\:)
     -- И мы оборачиваем его в одинарные кавычки
-    table.insert(args, '-vf "select=gt(scene\\,' .. string.format("%.6f", detection_threshold) .. ")" ..  ',metadata=print:file=\'' .. cutTextFilePath .. '\'"' )
+    table.insert(args, '-vf "select=gt(scene\\,' .. string.format("%.6f", detection_threshold) .. ")" ..  
+    ',metadata=print:file=\'' .. cutTextFilePath .. '\'"' )
     table.insert(args, "-f null -")
 
     local command = table.concat(args, " ")
@@ -655,6 +655,8 @@ function get_cut_information(IP, detection_threshold)
     local start_time = IP.item_area_to_analyze_start
     local length = IP.item_area_to_analyze_length
     
+    detection_threshold = detection_threshold and detection_threshold or (settings.extremeCutDetection and 0.01 or 0.1)
+    
     local is_windows = package.config:sub(1, 1) == "\\"
     if is_windows then
         get_cut_information_win(file_path, cutTextFilePath, start_time, length, detection_threshold)
@@ -698,7 +700,7 @@ function extract_cut_data(cutTextFilePathRaw, start_time)
   
       -- Once we have all three, store and reset
       if entry.score and entry.time then
-        entry.color = settings.defaultColor
+        --entry.color = settings.defaultColor
         table.insert(results, entry)
         entry = {}
       end
@@ -1226,8 +1228,8 @@ function moveCursorToPos(pos)
 end
 
 
-function updateCutDataFile(cutTextFilePath, cut_data)
-    saveFile(cutTextFilePath, json.encodeToJson(cut_data))
+function updateCutDataFile(IP)
+    saveFile(IP.cutTextFilePath, json.encodeToJson(IP.cut_data))
 end
 
 
@@ -1315,7 +1317,7 @@ function find_cut_data(IP)
                     end
                 end
 
-                updateCutDataFile(IP.cutTextFilePath, IP.cut_data)
+                updateCutDataFile(IP)
             end
         end
     end
@@ -1376,7 +1378,7 @@ function find_cut_data(IP)
         if time >= IP.item_offset and time < IP.item_length + IP.item_offset and not cutInfo.special then 
             table.insert(IP.cuts_within_selection, { index = i, time = time, exclude = exclude })
             
-            if settings.alwaysShowCutsWithEditedName and cutInfo.name or (not settings.onlyShowCutsWithEditedName and cutInfo.score and cutInfo.score <= settings.threshold and cutInfo.time >= IP.overview_start_in_item and cutInfo.time <= IP.overview_start_in_item + IP.overview_length_in_item) or (settings.onlyShowCutsWithEditedName and cutInfo.name) then
+            if settings.alwaysShowCutsWithEditedName and (cutInfo.name or cutInfo.color or (not settings.onlyShowCutsWithEditedName and cutInfo.score and cutInfo.score <= settings.threshold and cutInfo.time >= IP.overview_start_in_item and cutInfo.time <= IP.overview_start_in_item + IP.overview_length_in_item) or (settings.onlyShowCutsWithEditedName and (cutInfo.name or cutInfo.color))) then
                 
 
                 --itemEnd = roundToFrame(time + videoStart, frames_per_second)
@@ -1511,8 +1513,12 @@ end
 function cutShowingSettings(IP)
 
     reaper.ImGui_SetNextItemWidth(ctx, 120)
-    ret, val = reaper.ImGui_SliderInt(ctx, "##Cut threshold", settings.threshold, 1, 100, nil,
-        reaper.ImGui_SliderFlags_NoInput())
+    if settings.extremeCutDetection then
+        ret, val = reaper.ImGui_SliderDouble(ctx, "##Cut threshold", settings.threshold, 1, 100, nil, reaper.ImGui_SliderFlags_NoInput())
+    else
+        ret, val = reaper.ImGui_SliderInt(ctx, "##Cut threshold", math.floor(settings.threshold + 0.5), 1, 100, nil, reaper.ImGui_SliderFlags_NoInput())
+    end
+    
     if ret then
         settings.threshold = val
         saveSettings()
@@ -1525,7 +1531,7 @@ function cutShowingSettings(IP)
     reaper.ImGui_Text(ctx, "Sensitivity")
     
     if isKeypadAdd then
-        local newVal = settings.threshold + 1
+        local newVal = settings.threshold + (isSuperDown and 0.01 or 1)
         if newVal > 100 then newVal = 100 end
         settings.threshold = newVal
         saveSettings()
@@ -1533,7 +1539,7 @@ function cutShowingSettings(IP)
     end
     
     if isKeypadSubtract then
-        local newVal = settings.threshold - 1
+        local newVal = settings.threshold -(isSuperDown and 0.01 or 1)
         if newVal < 1 then newVal = 1 end
         settings.threshold = newVal
         saveSettings()
@@ -1542,7 +1548,7 @@ function cutShowingSettings(IP)
     
     
     reaper.ImGui_SameLine(ctx, posX2)
-    ret, settings.onlyShowCutsWithEditedName = reaper.ImGui_Checkbox(ctx, "only show cuts with edited name", settings.onlyShowCutsWithEditedName)
+    ret, settings.onlyShowCutsWithEditedName = reaper.ImGui_Checkbox(ctx, "only show edited cuts", settings.onlyShowCutsWithEditedName)
     if ret then
         setArrangeviewArea()
         saveSettings()
@@ -1558,7 +1564,7 @@ function cutShowingSettings(IP)
 
 
     reaper.ImGui_SameLine(ctx, posX3)
-    ret, settings.alwaysShowCutsWithEditedName = reaper.ImGui_Checkbox(ctx, "never hide cuts with edited name", settings.alwaysShowCutsWithEditedName)
+    ret, settings.alwaysShowCutsWithEditedName = reaper.ImGui_Checkbox(ctx, "never hide edited cuts", settings.alwaysShowCutsWithEditedName)
     if ret then
         setArrangeviewArea()
         saveSettings()
@@ -1605,14 +1611,14 @@ function cutColors(IP)
                 for _, c in ipairs(IP.cuts_making_threashold) do
                     IP.cut_data[c.index].color = col
                 end
-                updateCutDataFile(IP.cutTextFilePath, IP.cut_data)
+                updateCutDataFile(IP)
                 --settings.defaultColor = col
                 saveSettings()
             else
                 if not IP.cut_data[IP.currentSelectedCut].color or IP.cut_data[IP.currentSelectedCut].color ~= col then
                     undo_redo.save_undo(IP.cut_data)
                     IP.cut_data[IP.currentSelectedCut].color = col
-                    updateCutDataFile(IP.cutTextFilePath, IP.cut_data)
+                    updateCutDataFile(IP)
                 end
             end
         end
@@ -1649,14 +1655,14 @@ function cutColors(IP)
             for i, c in ipairs(IP.cuts_making_threashold) do
                 IP.cut_data[c.index].color = markerColors[((i - 1) % (#markerColors - 1)) + 1]
             end
-            updateCutDataFile(IP.cutTextFilePath, IP.cut_data)
+            updateCutDataFile(IP)
             --settings.defaultColor = col
             saveSettings() 
             undo_redo.save_undo(IP.cut_data)
         else
             if not IP.cut_data[IP.currentSelectedCut].color or IP.cut_data[IP.currentSelectedCut].color ~= col then
                 IP.cut_data[IP.currentSelectedCut].color = getNextColor(IP.cut_data[IP.currentSelectedCut].color)
-                updateCutDataFile(IP.cutTextFilePath, IP.cut_data)
+                updateCutDataFile(IP)
                 undo_redo.save_undo(IP.cut_data)
             end
         end
@@ -1867,7 +1873,7 @@ function selectedCutInfoArea(IP)
             if markerTextInput ~= markerName then
                 undo_redo.save_undo(IP.cut_data)
                 IP.cut_data[IP.currentSelectedCut].name = markerTextInput
-                updateCutDataFile(IP.cutTextFilePath, IP.cut_data)
+                updateCutDataFile(IP)
             end
             if isShiftDown then
                 reaper.ImGui_SetKeyboardFocusHere(ctx, -1)
@@ -1892,7 +1898,7 @@ function selectedCutInfoArea(IP)
             if reaper.ImGui_Checkbox(ctx, "Include", not isNotSelected) or (IP.currentSelectedCut and (not markerNameIsFocused or isSuperDown) and isI) then
                 undo_redo.save_undo(IP.cut_data)
                 IP.cut_data[IP.currentSelectedCut].exclude = not IP.cut_data[IP.currentSelectedCut].exclude
-                updateCutDataFile(IP.cutTextFilePath, IP.cut_data) 
+                updateCutDataFile(IP) 
                 find_cut_data(IP)
             end
             
@@ -1912,7 +1918,7 @@ function selectedCutInfoArea(IP)
                 end
                 
                 table.remove(IP.cut_data, IP.currentSelectedCut)
-                updateCutDataFile(IP.cutTextFilePath, IP.cut_data)
+                updateCutDataFile(IP)
                 -- update cut_data and cut_data_threshold 
                 find_cut_data(IP)
                 
@@ -1935,7 +1941,7 @@ function selectedCutInfoArea(IP)
                     end
                     undo_redo.save_undo(IP.cut_data)
                     table.insert(IP.cut_data, markerIndex, { score = 1, time = IP.cur_pos_in_item + subProj_item_pos })
-                    updateCutDataFile(IP.cutTextFilePath, IP.cut_data)
+                    updateCutDataFile(IP)
                     
                     find_cut_data(IP)
                 end
@@ -2856,6 +2862,9 @@ function undoRedoButtons(IP)
             reaper.Main_OnCommand(40029, 0) --Edit: Undo
         else
             IP.cut_data = undoData
+            --update_cut_data = true
+            updateCutDataFile(IP)
+            find_cut_data(IP)
         end 
     end 
     setToolTipFunc("Undo last change to a cut", "super+z") 
@@ -2872,6 +2881,10 @@ function undoRedoButtons(IP)
             reaper.Main_OnCommand(40030, 0) --Edit: Redo
         else
             IP.cut_data = undoData
+            
+            --update_cut_data = true
+            updateCutDataFile(IP)
+            find_cut_data(IP)
         end 
     end
     setToolTipFunc("Redo last undone change to a cut", "super+shift+z") 
@@ -2909,7 +2922,14 @@ function settingButtons(IP)
         reaper.MB("FFMPEG path has been reset. Please restart the script to select a new path.", "Reset Path", 0)
     end
     setToolTipFunc("Click to reset FFMPEG path if you selected the wrong one or moved the file.")
+    
+    ret, settings.extremeCutDetection = reaper.ImGui_Checkbox(ctx, "Extreme cut detection", settings.extremeCutDetection)
+    if ret then 
+        saveSettings()
+    end
+    setToolTipFunc("This will make a lot more cuts detected, and maybe not be useful, as a lot of falls cut might apear.\nYou can hold down super while pressing keypad minus or plus for more gradual sensitivity")
     reaper.ImGui_EndGroup(ctx)
+    
     
     reaper.ImGui_SameLine(ctx, posX2)
     
@@ -3158,8 +3178,13 @@ local function loop()
             "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "Y", "Z", "X", 
             "KeypadAdd", "KeypadSubtract", 
             "1", "2","3","4","5","6","7","8","9","0"}
+            
+        local repeatKeys = {
+            ["KeypadAdd"] = true, 
+            ["KeypadSubtract"] = true
+            }
         for _, letter in ipairs(alphabet) do
-            _G["is" .. letter] = ImGui.IsKeyPressed(ctx, ImGui["Key_" .. letter], false)
+            _G["is" .. letter] = ImGui.IsKeyPressed(ctx, ImGui["Key_" .. letter], repeatKeys[letter])
         end
         
         
@@ -3256,16 +3281,19 @@ local function loop()
             or update_cut_data
             ) then
             
-            update_cut_data = false
-            last_cur_pos = nil
-            --IP.last_cur_pos_in_item = nil
-            wait = false
-            last_item = item
-            last_is_a_subproject = is_a_subproject
-            --IP.cut_data = nil
-            undo_stack = {}
-            redo_stack = {}
             
+            if not update_cut_data then 
+                last_cur_pos = nil
+                --IP.last_cur_pos_in_item = nil
+                wait = false
+                last_item = item
+                last_is_a_subproject = is_a_subproject
+                --IP.cut_data = nil
+                undo_stack = {}
+                redo_stack = {}
+            end
+            
+            update_cut_data = false
             
             if compareVideos and not item2 then 
                 item = nil
