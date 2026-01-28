@@ -1,12 +1,15 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.2.1
+-- @version 0.2.2
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
 -- @changelog
---   + fixed some undo redo issue. More work needed
---   + added extreme cut detection mode
+--   + fixed a whole bunch of things regarding layout and wrong calculations
+--   + filtering when a frame is detected right after another detected frame as this seems like a problem with the algorithm.
+--   + added Empty Items option.
+--   + added option to use dedicated track for empty items or thumbnails.
+--   + added key commands for action buttons.
 
 
 
@@ -80,6 +83,7 @@ colorBlueTransparent       = (theme.accent & 0xFFFFFF00) | 0x80
 colorLightBlue             = (theme.accent & 0xFFFFFF00) | 0x40 -- Semi-transparent
 
 colorBlack                 = reaper.ImGui_ColorConvertDouble4ToU32(0, 0, 0, 1)
+colorReallyBlack           = reaper.ImGui_ColorConvertDouble4ToU32(0.07, 0.07, 0.1, 1)
 colorAlmostBlack           = theme.bg
 colorDarkGrey              = theme.panel_bg
 colorDarkGreyTransparent   = (theme.panel_bg & 0xFFFFFF00) | 0x80
@@ -102,7 +106,6 @@ colorPink                  = 0xD55FDEFF
 
 -- color play button
 colorIsPlaying             = reaper.ImGui_ColorConvertDouble4ToU32(0.1, 0.6, 0.2, 1)
-
 
 --local cut_data
 local old_cut_data = {}
@@ -174,22 +177,28 @@ local defaultSettings = {
     windowSize = 200,
     threshold = 100,
     showToolTip = true,
-    analyseOnlyBetweenMarkers = false,
-    overviewFollowsLoopSelection = true,
-    arrangeviewFollowsOverview = false,
+    --analyseOnlyBetweenMarkers = false,
+    --overviewFollowsLoopSelection = true,
+    
     defaultColor = colorBlue,
     onlyShowCutsWithEditedName = false,
-    alwaysShowCutsWithEditedName = false,
+    alwaysShowCutsWithEditedName = true,
+    navigationFollowsPlayhead = true,
 
-    cursorFollowSelectedCut = false,
+    cursorFollowSelectedCut = true,
 
     timecodeRelativeToSession = false, -- not implemented
-    useOldMacMethod = true,
     showSettingsBoxes = true,
     tabSelection = 1,
     
+    arrangeviewFollowsOverview = true,
+    displayTimeSelection = true,
+    selectionType = "Video item",
     useTypeForSingleInsert = "Markers",
-    useTypeForSingleInsertSubproject = "Markers"
+    useTypeForSingleInsertSubproject = "Markers",
+    
+    setNameOnSplitItems = true, 
+    setColorOnSplitItems = true,
 }
 
 local function saveSettings()
@@ -201,8 +210,12 @@ end
 
 if reaper.HasExtState(stateName, "settings") then
     local settingsStr = reaper.GetExtState(stateName, "settings")
-    settings = json.decodeFromJson(settingsStr)
-else
+    settings, errorMsg = json.decodeFromJson(settingsStr)
+    if not settings then
+        reaper.ShowConsoleMsg("There was an error loading ext state: "..errorMsg.."\n")
+    end
+end
+if not settings then
     settings = deep_copy(defaultSettings)
     saveSettings()
 end
@@ -359,6 +372,63 @@ end
 --------------------------------------------------------
 --------------------------------------------------------
 
+------------------------------------------------------------
+-- Find first track with an exact name match
+------------------------------------------------------------
+function FindTrackByName(track_name)
+  local track_count = reaper.CountTracks(0)
+
+  for i = 0, track_count - 1 do
+    local track = reaper.GetTrack(0, i)
+    local _, name = reaper.GetTrackName(track)
+    if name == track_name then
+      return track
+    end
+  end
+
+  return nil
+end
+
+------------------------------------------------------------
+-- Get 0-based track index
+------------------------------------------------------------
+function GetTrackIndex(track)
+  return reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") - 1
+end
+
+------------------------------------------------------------
+-- Create a track directly below another track
+------------------------------------------------------------
+function CreateTrackBelowTrack(reference_track, new_track_name)
+  local ref_index = GetTrackIndex(reference_track)
+
+  -- Insert new track below reference
+  reaper.InsertTrackAtIndex(ref_index + 1, true)
+
+  local new_track = reaper.GetTrack(0, ref_index + 1)
+  reaper.GetSetMediaTrackInfo_String(
+    new_track,
+    "P_NAME",
+    new_track_name,
+    true
+  )
+
+  return new_track
+end
+
+------------------------------------------------------------
+-- Get existing track by name OR create it below reference
+------------------------------------------------------------
+function GetOrCreateTrackBelow(reference_track, track_name)
+  -- Try to find existing track
+  local track = FindTrackByName(track_name)
+  if track then
+    return track
+  end
+
+  -- Create if not found
+  return CreateTrackBelowTrack(reference_track, track_name)
+end
 
 function getSubprojectFromItem(selectedItem)
     if selectedItem then
@@ -422,14 +492,7 @@ local function get_subproject_length()
     
     if end_marker_pos then
         return end_marker_pos - start_marker_pos
-    end
-    
-    -- Check if the time selection matches the marker positions
-    if loop_start == start_marker_pos and loop_end == end_marker_pos then
-        return true
-    else
-        return false
-    end
+    end 
 end
 
 
@@ -440,7 +503,9 @@ if ffmpeg_path == nil then return else ffmpeg_path = ffmpeg_path end
 ctx = ImGui.CreateContext('Video cut detection editor')
 
 
-function extract_cut_data_fast(cutTextFilePathRaw, start_time)
+function extract_cut_data_fast(IP)
+    local cutTextFilePathRaw = IP.cutTextFilePathRaw 
+    local start_time = IP.item_area_to_analyze_start
     local f = io.open(cutTextFilePathRaw)
     if not f then return nil, "Could not open file" end
     local results = {}
@@ -669,7 +734,9 @@ function get_cut_information(IP, detection_threshold)
     end
 end
 
-function extract_cut_data(cutTextFilePathRaw, start_time)  
+function extract_cut_data(IP)  
+    local cutTextFilePathRaw = IP.cutTextFilePathRaw 
+    local start_time = IP.item_area_to_analyze_start
     local f = io.open(cutTextFilePathRaw)
     if not f then return nil, "Could not open file" end
     local results = {}
@@ -708,7 +775,18 @@ function extract_cut_data(cutTextFilePathRaw, start_time)
   
     f:close()
     
-    return results
+    -- filter for frames that are right after another frame
+    local filter_results = {}
+    for i, e in ipairs(results) do
+        local time = e.time --roundToFrame(e.time, frames_per_second)
+        
+        if not last_time or time - last_time > (1.1 / frames_per_second) then -- compareWithMargin(e.time, last_time, (1 / frames_per_second)) do
+             table.insert(filter_results, e)
+        end
+        last_time = time
+    end
+    
+    return filter_results
 end
 
 -- Global throttling variable
@@ -816,7 +894,7 @@ end
 
 local function createThumbnails(filePath, pngPath, itemStart, overwrite, background, forceAsync) 
     local is_windows = seperator == "\\"
-    if settings.useOldMacMethod and not is_windows then
+    if not is_windows then
         createThumbnails_mac(filePath, pngPath, itemStart, overwrite)
     else
         createThumbnails_win(filePath, pngPath, itemStart, overwrite)
@@ -932,32 +1010,78 @@ function getItemRealtimeInfo(IP, proj)
     
     -- Get item position in project
     if IP.item and reaper.ValidatePtr2(proj, IP.item, 'MediaItem*') then 
+        local last_item_pos = IP.item_pos
+        local last_item_length = IP.item_length
+        local last_item_offset = IP.item_offset
+    
         local item_pos = reaper.GetMediaItemInfo_Value(IP.item, "D_POSITION")
         local item_length = reaper.GetMediaItemInfo_Value(IP.item, "D_LENGTH")
         local item_offset = reaper.GetMediaItemTakeInfo_Value(IP.take, "D_STARTOFFS")
         local item_end = item_pos + item_length
          
-        local start_time_in_item = start_time_sel - item_pos + item_offset
-        local end_time_in_item = end_time_sel - item_pos + item_offset
+        local start_time_in_item = start_time_sel - item_pos-- + item_offset
+        local end_time_in_item = end_time_sel - item_pos --+ item_offset
         
-        local overview_start_in_item = item_offset
-        local overview_length_in_item = item_length
-        if settings.analyseOnlyBetweenMarkers then
-            overview_start_in_item = start_time_in_item
-            overview_length_in_item = end_time_in_item - start_time_in_item
-        elseif settings.overviewFollowsArrangeview then
-            local start_time, end_time = reaper.GetSet_ArrangeView2(proj, false, 0, 0, 0, 0)
-            overview_start_in_item = start_time - item_pos + item_offset
-            overview_length_in_item = (end_time - start_time)
+        local overview_start_in_item
+        local overview_length_in_item
+        local overview_end_in_item 
+        
+        local item_area_to_analyze_start
+        local item_area_to_analyze_length
+        
+        local overview_start_time
+        local overview_length_time
+        
+        if settings.selectionType == "Video item" then 
+            overview_start_in_item = item_offset
+            overview_start_in_item_offset = item_offset
+            overview_length_in_item = item_length
+            
+            item_area_to_analyze_start = overview_start_in_item
+            item_area_to_analyze_length = item_length
+            
+            overview_start_time = item_pos
+            overview_length_time = item_area_to_analyze_length
+        elseif settings.selectionType == "Time selection" then 
+            overview_start_in_item = start_time_sel - item_pos
+            overview_start_in_item_offset = start_time_sel - item_pos + item_offset
+            overview_length_in_item = item_end < end_time_sel and item_end - item_pos - overview_start_in_item or end_time_sel - item_pos - overview_start_in_item
+            
+            item_area_to_analyze_start = overview_start_in_item < 0 and item_offset or overview_start_in_item + item_offset
+            item_area_to_analyze_length = overview_length_in_item + (overview_start_in_item < 0 and overview_start_in_item or 0) 
+            
+            overview_start_time = start_time_sel
+            overview_length_time = length_time_sel
+        elseif settings.selectionType == "Arrange view" then
+            overview_start_in_item = start_time_arr - item_pos
+            overview_start_in_item_offset = start_time_arr - item_pos + item_offset
+            overview_length_in_item = item_end < end_time_arr and item_end - item_pos - overview_start_in_item or end_time_arr - item_pos - overview_start_in_item
+            
+            item_area_to_analyze_start = overview_start_in_item < 0 and item_offset or overview_start_in_item + item_offset
+            item_area_to_analyze_length = overview_length_in_item + (overview_start_in_item < 0 and overview_start_in_item or 0)
+            
+            overview_start_time = start_time_arr
+            overview_length_time = length_time_arr
         end
         
         if is_a_subproject then
             overview_start_in_item = subProj_item_pos
+            overview_start_in_item_offset = subProj_item_pos
             overview_length_in_item = get_subproject_length()
-        end
+            
+            
+            
+            item_area_to_analyze_start = overview_start_in_item < 0 and item_offset or overview_start_in_item + item_offset
+            item_area_to_analyze_length = overview_length_in_item + (overview_start_in_item < 0 and overview_start_in_item or 0)
+            
+            overview_start_time = overview_start_in_item
+            overview_length_time = overview_length_in_item
+        end  
         
-        local item_area_to_analyze_start = overview_start_in_item < 0 and 0 or overview_start_in_item
-        local item_area_to_analyze_length = overview_length_in_item > item_length and item_length or overview_length_in_item
+        overview_end_in_item = overview_start_in_item + overview_length_in_item
+        
+        --local item_area_to_analyze_start = overview_start_in_item < 0 and 0 or overview_start_in_item
+        --local item_area_to_analyze_length = overview_length_in_item > item_length and item_length or overview_length_in_item
         
         local cur_pos_in_item = (item_pos and cur_pos - item_pos + item_offset or 0)                     --+ IP.overview_start_in_item
         
@@ -976,16 +1100,29 @@ function getItemRealtimeInfo(IP, proj)
         IP.item_offset = item_offset
         IP.item_length = item_length
         IP.item_end = item_end
+        IP.item_pos_offset = item_pos --+ item_offset
         
         IP.item_area_to_analyze_start = item_area_to_analyze_start
         IP.item_area_to_analyze_length = item_area_to_analyze_length
         IP.cur_pos_in_item = cur_pos_in_item
         IP.timeline_cur_pos_in_item = timeline_cur_pos_in_item
         IP.outsideBoundries = outsideBoundries
+        
         IP.overview_start_in_item = overview_start_in_item
+        IP.overview_start_in_item_offset = overview_start_in_item_offset
         IP.overview_length_in_item = overview_length_in_item
+        IP.overview_end_in_item = overview_end_in_item
         IP.start_time_in_item = start_time_in_item
         IP.end_time_in_item = end_time_in_item
+        
+        IP.overview_start_time = overview_start_time
+        IP.overview_length_time = overview_length_time
+        
+        if (last_item_length and last_item_length ~= IP.item_length) or
+          (last_item_pos and last_item_pos ~= IP.item_pos) or
+          (last_item_offset and last_item_offset ~= IP.item_offset) then 
+          find_cut_data(IP)
+        end
         
     end
     
@@ -1101,7 +1238,7 @@ function setToolTipFunc(text, shortcut, color)
         ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorGrey)
         ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(), color and color or colorWhite)
         if shortcut then
-            text = text .. ".\n- press ".. shortcut .. " to set with keyboard"
+            text = text .. ".\n - press ".. shortcut .. " to set with keyboard"
         end
         ImGui.SetItemTooltip(ctx, text)
         reaper.ImGui_PopStyleColor(ctx, 2)
@@ -1189,7 +1326,7 @@ end
 --- APP SPECIFIC FUNCTION
 function setArrangeviewArea()
     if settings.arrangeviewFollowsOverview then
-        if settings.analyseOnlyBetweenMarkers then
+        if settings.selectionType == "Time selection" then
             reaper.Main_OnCommand(40031, 0) --View: Zoom time selection
         else
             local item = GetFirstVisibleVideoItemUnder(cur_pos)
@@ -1236,13 +1373,20 @@ end
 
 function getCutData(IP)
     if fast then
-        IP.cut_data = extract_cut_data_fast(IP.cutTextFilePathRaw, IP.item_area_to_analyze_start)
+        IP.cut_data = extract_cut_data_fast(IP)
     else
-        IP.cut_data = extract_cut_data(IP.cutTextFilePathRaw, IP.item_area_to_analyze_start)
+        IP.cut_data = extract_cut_data(IP)
+    end
+end
+
+function update_cut_data_on_all_items(IPS)
+    for _ , IP in ipairs(IPS) do
+        find_cut_data(IP)
     end
 end
 
 function find_cut_data(IP)
+    if not IP then return end
     analyseRaw = IP.cutTextFilePathRaw and reaper.file_exists(IP.cutTextFilePathRaw)
     analysing = false
     if analyseRaw then
@@ -1337,8 +1481,11 @@ function find_cut_data(IP)
     if IP.cut_data and #IP.cut_data > 0 then 
         if analyseEndTime and analyseStartTime and analyseEndTime > analyseStartTime then 
             local analyseSpeed = (analyseEndTime - analyseStartTime) / IP.item_area_to_analyze_length
-            settings.analyseSpeed = ((settings.analyseSpeed and settings.analyseSpeed or analyseSpeed) + analyseSpeed) / 2
-            saveSettings()
+            if analyseSpeed > 0 then 
+                analyseSpeed = math.floor(analyseSpeed * 1000) / 1000
+                settings.analyseSpeed = ((settings.analyseSpeed and settings.analyseSpeed or analyseSpeed) + analyseSpeed) / 2 
+                saveSettings() 
+            end
             analyseStartTime = nil
             analyseEndTime = nil
         end
@@ -1378,7 +1525,13 @@ function find_cut_data(IP)
         if time >= IP.item_offset and time < IP.item_length + IP.item_offset and not cutInfo.special then 
             table.insert(IP.cuts_within_selection, { index = i, time = time, exclude = exclude })
             
-            if settings.alwaysShowCutsWithEditedName and (cutInfo.name or cutInfo.color or (not settings.onlyShowCutsWithEditedName and cutInfo.score and cutInfo.score <= settings.threshold and cutInfo.time >= IP.overview_start_in_item and cutInfo.time <= IP.overview_start_in_item + IP.overview_length_in_item) or (settings.onlyShowCutsWithEditedName and (cutInfo.name or cutInfo.color))) then
+            if settings.alwaysShowCutsWithEditedName and 
+                (cutInfo.name or 
+                cutInfo.color or 
+                (not settings.onlyShowCutsWithEditedName and 
+                    cutInfo.score and cutInfo.score <= settings.threshold and 
+                    cutInfo.time >= IP.item_area_to_analyze_start and cutInfo.time <= IP.item_area_to_analyze_start + IP.item_area_to_analyze_length) or 
+                (settings.onlyShowCutsWithEditedName and (cutInfo.name or cutInfo.color))) then
                 
 
                 --itemEnd = roundToFrame(time + videoStart, frames_per_second)
@@ -1400,7 +1553,173 @@ end
 
 
 
-function settingsCheckBoxes()
+function settingsCheckBoxes(IP, IP2)
+    --if start_time_sel ~= end_time_sel and start_time_sel < end_time_sel then
+    --reaper.ImGui_SameLine(ctx)
+    reaper.ImGui_AlignTextToFramePadding(ctx)
+    reaper.ImGui_Text(ctx, "Overview area from:")
+    reaper.ImGui_SameLine(ctx)
+    
+    local selectionTypes = {"Video item", "Time selection", "Arrange view"}
+    local selectionTypesShortcut = {isV, isT, isA}
+    local selectionTypesShortcutText = {"v", "t", "a"}
+    
+    if is_a_subproject then  
+        reaper.ImGui_Text(ctx, "Subproject")
+    else
+        for i, s in ipairs(selectionTypes) do
+            if reaper.ImGui_RadioButton(ctx, s, settings.selectionType == s) or ((not markerNameIsFocused or isSuperDown) and selectionTypesShortcut[i]) then
+                settings.selectionType = s
+                saveSettings()
+                update_cut_data_after_selectionType_change = true
+            end
+            setToolTipFunc("Use " .. s .. " for what the script overview should show", selectionTypesShortcutText[i])
+            reaper.ImGui_SameLine(ctx)
+            
+            --reaper.ImGui_SameLine(ctx, _G["posX" .. i + 1])
+        end 
+        
+        
+        if (not markerNameIsFocused or isSuperDown) and isU then
+            local found
+            for i, s in ipairs(selectionTypes) do
+                if settings.selectionType == s then
+                    if isShiftDown then 
+                        settings.selectionType = i == 1 and selectionTypes[#selectionTypes] or selectionTypes[i - 1]
+                    else
+                        settings.selectionType = i == #selectionTypes and selectionTypes[1] or selectionTypes[i + 1]
+                    end
+                    saveSettings()
+                    update_cut_data_after_selectionType_change = true
+                    break
+                end
+            end 
+            --settings.analyseOnlyBetweenMarkers = not settings.analyseOnlyBetweenMarkers
+            --setArrangeviewArea()
+            --saveSettings()
+            --update_cut_data = true
+        end
+    end
+    
+    
+    if settings.selectionType == "Arrange view" then reaper.ImGui_BeginDisabled(ctx) end
+    reaper.ImGui_SameLine(ctx, posX3)
+    ret, settings.arrangeviewFollowsOverview = reaper.ImGui_Checkbox(ctx, "link arrange view", settings.arrangeviewFollowsOverview)
+    if ret then
+        setArrangeviewArea()
+        saveSettings()
+    end
+    setToolTipFunc("Link arrange view to width of selection", "l")
+    
+    if (not markerNameIsFocused or isSuperDown) and isL then
+        settings.arrangeviewFollowsOverview = not settings.arrangeviewFollowsOverview
+        saveSettings()
+        if settings.arrangeviewFollowsOverview then 
+            setArrangeviewArea() 
+        end
+        --update_cut_data = true
+        
+        find_cut_data(IP)
+        find_cut_data(IP2)
+    end
+    if settings.selectionType == "Arrange view" then reaper.ImGui_EndDisabled(ctx) end
+    
+    
+    --[[
+    if (not markerNameIsFocused or isSuperDown) and isL then
+        settings.overviewFollowsArrangeview = not settings.overviewFollowsArrangeview
+        saveSettings()
+        --update_cut_data = true
+        --setArrangeviewArea()
+        
+        find_cut_data(IP)
+        find_cut_data(IP2)
+    end
+
+
+    reaper.ImGui_SameLine(ctx, posX2)
+    if settings.analyseOnlyBetweenMarkers then
+        ret, settings.arrangeviewFollowsOverview = reaper.ImGui_Checkbox(ctx, "link arrange view to overview",
+            settings.arrangeviewFollowsOverview)
+        if ret then
+            setArrangeviewArea()
+            saveSettings() 
+            --update_cut_data = true
+            
+            find_cut_data(IP)
+            find_cut_data(IP2)
+        end
+        setToolTipFunc("Link arrange view with the editor view", "l")
+
+        if (not markerNameIsFocused or isSuperDown) and isL then
+            settings.arrangeviewFollowsOverview = not settings.arrangeviewFollowsOverview
+            saveSettings()
+            setArrangeviewArea() 
+            --update_cut_data = true
+            
+            find_cut_data(IP)
+            find_cut_data(IP2)
+        end
+    else
+        
+    end
+    
+    ]]
+    
+    
+
+    --reaper.ImGui_SameLine(ctx, posX3)
+    ret, settings.cursorFollowSelectedCut = reaper.ImGui_Checkbox(ctx, "playhead follows selected cut", settings.cursorFollowSelectedCut)
+    if ret then
+        if settings.cursorFollowSelectedCut then
+            moveCursorToPos(cur_pos)
+        end
+
+        saveSettings()
+    end
+    setToolTipFunc("Playhead will jump to selected cut position", "p")
+
+    if (not markerNameIsFocused or isSuperDown) and isP then
+        settings.cursorFollowSelectedCut = not settings.cursorFollowSelectedCut
+        if settings.cursorFollowSelectedCut then
+            moveCursorToPos(cur_pos)
+        end
+
+        saveSettings()
+    end
+
+
+    reaper.ImGui_SameLine(ctx, posX2)
+    ret, settings.navigationFollowsPlayhead = reaper.ImGui_Checkbox(ctx, "selection follows playhead", settings.navigationFollowsPlayhead)
+    if ret then
+        saveSettings()
+    end
+    setToolTipFunc("Select cut marker when playhead passes", "s")
+
+    if (not markerNameIsFocused or isSuperDown) and isS then
+        settings.navigationFollowsPlayhead = not settings.navigationFollowsPlayhead
+        saveSettings()
+    end
+    
+    
+    if settings.selectionType == "Time selection" then reaper.ImGui_BeginDisabled(ctx) end
+    reaper.ImGui_SameLine(ctx, posX3)
+    ret, settings.displayTimeSelection = reaper.ImGui_Checkbox(ctx, "display time selection", settings.displayTimeSelection)
+    if ret then
+        saveSettings()
+    end
+    setToolTipFunc("Display time selection in the overview area", "d")
+    
+    if (not markerNameIsFocused or isSuperDown) and isD then
+        settings.displayTimeSelection = not settings.displayTimeSelection
+        saveSettings()
+    end
+    if settings.selectionType == "Time selection" then reaper.ImGui_EndDisabled(ctx) end
+
+end
+
+
+function settingsCheckBoxesOLD(IP, IP2)
     --if start_time_sel ~= end_time_sel and start_time_sel < end_time_sel then
     --reaper.ImGui_SameLine(ctx)
     ret, settings.analyseOnlyBetweenMarkers = reaper.ImGui_Checkbox(ctx, "use area within time selection", settings.analyseOnlyBetweenMarkers)
@@ -1446,7 +1765,10 @@ function settingsCheckBoxes()
         if ret then
             setArrangeviewArea()
             saveSettings() 
-            update_cut_data = true
+            --update_cut_data = true
+            
+            find_cut_data(IP)
+            find_cut_data(IP2)
         end
         setToolTipFunc("Link arrange view with the editor view", "l")
 
@@ -1454,7 +1776,10 @@ function settingsCheckBoxes()
             settings.arrangeviewFollowsOverview = not settings.arrangeviewFollowsOverview
             saveSettings()
             setArrangeviewArea() 
-            update_cut_data = true
+            --update_cut_data = true
+            
+            find_cut_data(IP)
+            find_cut_data(IP2)
         end
     else
         ret, settings.overviewFollowsArrangeview = reaper.ImGui_Checkbox(ctx, "link overview to arrange view", settings.overviewFollowsArrangeview)
@@ -1467,8 +1792,11 @@ function settingsCheckBoxes()
         if (not markerNameIsFocused or isSuperDown) and isL then
             settings.overviewFollowsArrangeview = not settings.overviewFollowsArrangeview
             saveSettings()
-            update_cut_data = true
+            --update_cut_data = true
             --setArrangeviewArea()
+            
+            find_cut_data(IP)
+            find_cut_data(IP2)
         end
     end
 
@@ -1510,7 +1838,7 @@ function settingsCheckBoxes()
 end
 
 
-function cutShowingSettings(IP)
+function cutShowingSettings(IP, IP2)
 
     reaper.ImGui_SetNextItemWidth(ctx, 120)
     if settings.extremeCutDetection then
@@ -1523,6 +1851,7 @@ function cutShowingSettings(IP)
         settings.threshold = val
         saveSettings()
         find_cut_data(IP)
+        find_cut_data(IP2)
     end
     setToolTipFunc("Set the sensitivity for how likely there is a cut.\n- press cmd/ctrl+keypad plus or keypad minus to set with keyboard")
     
@@ -1534,8 +1863,9 @@ function cutShowingSettings(IP)
         local newVal = settings.threshold + (isSuperDown and 0.01 or 1)
         if newVal > 100 then newVal = 100 end
         settings.threshold = newVal
-        saveSettings()
+        saveSettings() 
         find_cut_data(IP)
+        find_cut_data(IP2)
     end
     
     if isKeypadSubtract then
@@ -1544,6 +1874,7 @@ function cutShowingSettings(IP)
         settings.threshold = newVal
         saveSettings()
         find_cut_data(IP)
+        find_cut_data(IP2)
     end
     
     
@@ -1553,6 +1884,7 @@ function cutShowingSettings(IP)
         setArrangeviewArea()
         saveSettings()
         find_cut_data(IP)
+        find_cut_data(IP2)
     end
     setToolTipFunc("Hide cuts that does not have an edited name.\n- press cmd/ctrl+o to set with keyboard")
 
@@ -1560,6 +1892,7 @@ function cutShowingSettings(IP)
         settings.onlyShowCutsWithEditedName = not settings.onlyShowCutsWithEditedName
         saveSettings()
         find_cut_data(IP)
+        find_cut_data(IP2)
     end
 
 
@@ -1569,6 +1902,7 @@ function cutShowingSettings(IP)
         setArrangeviewArea()
         saveSettings()
         find_cut_data(IP)
+        find_cut_data(IP2)
     end
     setToolTipFunc( "Show cuts that have an edited name, even if they are outside threshold","n")
 
@@ -1576,6 +1910,7 @@ function cutShowingSettings(IP)
         settings.alwaysShowCutsWithEditedName = not settings.alwaysShowCutsWithEditedName
         saveSettings()
         find_cut_data(IP)
+        find_cut_data(IP2)
     end
 end
 
@@ -1593,7 +1928,7 @@ function cutColors(IP)
             reaper.ImGui_SameLine(ctx, reaper.ImGui_GetCursorPosX(ctx) - 6)
         end
 
-        colSelected = (IP and IP.cut_data and IP.currentSelectedCut and IP.cut_data[IP.currentSelectedCut]) and (IP.cut_data[IP.currentSelectedCut].color and IP.cut_data[IP.currentSelectedCut].color or colorGrey) or nil
+        colSelected = (IP and IP.cut_data and IP.currentSelectedCut and IP.cut_data[IP.currentSelectedCut]) and (IP.cut_data[IP.currentSelectedCut].color and IP.cut_data[IP.currentSelectedCut].color or nil) or nil
         local colIsSelected = col == colSelected
 
         colButton = not colIsSelected and col & 0xFFFFFFFF55 or col
@@ -1709,13 +2044,13 @@ function selectedItemButtons(IP)
     --reaper.ImGui_PopStyleColor(ctx)
         
     local itemNumber = IP and IP.itemNumber and IP.itemNumber or ""
-    reaper.ImGui_SameLine(ctx, posX4) 
     --local btnName = (IP.cutTextFilePath and reaper.file_exists(IP.cutTextFilePath)) and "Re-analyse video" or "Analyse video"
     --analyseButton(IP, "Analyse video")
     --reaper.ImGui_SameLine(ctx)--, posX45)
     
    
     if IP.analysisMade then 
+        reaper.ImGui_SameLine(ctx, posX4) 
         if reaper.ImGui_Button(ctx, "Generate Thumbnails##"..itemNumber) then
             generateThumbnailsForCuts(IP)
         end
@@ -1723,57 +2058,59 @@ function selectedItemButtons(IP)
     end 
     
     
-    --reaper.ImGui_SameLine(ctx, posX4 - 52) 
-    reaper.ImGui_SameLine(ctx) 
-    if reaper.ImGui_Button(ctx, "Extra##"..itemNumber) or (not markerNameIsFocused and isE) then
-        reaper.ImGui_OpenPopup(ctx, "extra")
-    end 
-    setToolTipFunc("Click to see some extra options", "e")
-    
-    if (not markerNameIsFocused and isE) then
-        local extraPosX, extraPosY = reaper.ImGui_GetItemRectMax(ctx) 
-        reaper.ImGui_SetNextWindowPos(ctx,extraPosX - 10, extraPosY - 10)
-    end
-    
-    if reaper.ImGui_BeginPopup(ctx, "extra") then 
-        local closePopup = false
-        if IP.analysisMade then 
-            if IP and (IP.cutTextFilePath and reaper.file_exists(IP.cutTextFilePath)) then
-                analyseButton(IP, "Analyse video")
-            end
+    if IP.item then 
+        --reaper.ImGui_SameLine(ctx, posX4 - 52) 
+        reaper.ImGui_SameLine(ctx) 
+        if reaper.ImGui_Button(ctx, "Extra##"..itemNumber) or (not markerNameIsFocused and isE) then
+            reaper.ImGui_OpenPopup(ctx, "extra")
+        end 
+        setToolTipFunc("Click to see some extra options", "e")
         
-            if not IP.thumbnailPath_exist then reaper.ImGui_BeginDisabled(ctx) end
-            if reaper.ImGui_Button(ctx, "Remove thumbnails") or isR then 
-                local count = 0
-                local filePath = reaper.EnumerateFiles(IP.thumbnailPath,count)
-                while filePath do
-                    os.remove(IP.thumbnailPath .. filePath)
-                    count = count + 1
-                    filePath = reaper.EnumerateFiles(IP.thumbnailPath,count)
+        if (not markerNameIsFocused and isE) then
+            local extraPosX, extraPosY = reaper.ImGui_GetItemRectMax(ctx) 
+            reaper.ImGui_SetNextWindowPos(ctx,extraPosX - 10, extraPosY - 10)
+        end
+        
+        if reaper.ImGui_BeginPopup(ctx, "extra") then 
+            local closePopup = false
+            if IP.analysisMade then 
+                if IP and (IP.cutTextFilePath and reaper.file_exists(IP.cutTextFilePath)) then
+                    analyseButton(IP, "Analyse video")
                 end
-                os.remove(IP.thumbnailPath)
+            
+                if not IP.thumbnailPath_exist then reaper.ImGui_BeginDisabled(ctx) end
+                if reaper.ImGui_Button(ctx, "Remove thumbnails") or isR then 
+                    local count = 0
+                    local filePath = reaper.EnumerateFiles(IP.thumbnailPath,count)
+                    while filePath do
+                        os.remove(IP.thumbnailPath .. filePath)
+                        count = count + 1
+                        filePath = reaper.EnumerateFiles(IP.thumbnailPath,count)
+                    end
+                    os.remove(IP.thumbnailPath)
+                    closePopup = true
+                end
+                setToolTipFunc("Click to remove generated thumbnails and the thumbnail folder", "r")
+                if not IP.thumbnailPath_exist then reaper.ImGui_EndDisabled(ctx) end
+            end
+            
+            if reaper.ImGui_Button(ctx, "Open video path") or isO then
+                reaper.CF_ShellExecute(IP.directory)
                 closePopup = true
             end
-            setToolTipFunc("Click to remove generated thumbnails and the thumbnail folder", "r")
-            if not IP.thumbnailPath_exist then reaper.ImGui_EndDisabled(ctx) end
-        end
-        
-        if reaper.ImGui_Button(ctx, "Open video path") or isO then
-            reaper.CF_ShellExecute(IP.directory)
-            closePopup = true
-        end
-        setToolTipFunc("Click to remove generated thumbnails and the thumbnail folder", "o")
-        
-        if isEscape then
-            closePopup = true
-        end
-        
-        if closePopup then
-            reaper.ImGui_CloseCurrentPopup(ctx)
-        end
-        
-        reaper.ImGui_EndPopup(ctx)
-    end 
+            setToolTipFunc("Click to remove generated thumbnails and the thumbnail folder", "o")
+            
+            if isEscape then
+                closePopup = true
+            end
+            
+            if closePopup then
+                reaper.ImGui_CloseCurrentPopup(ctx)
+            end
+            
+            reaper.ImGui_EndPopup(ctx)
+        end 
+    end
 end
 
 
@@ -1807,9 +2144,9 @@ function itemButton(IP)
             reaper.ImGui_PushStyleColor(ctx,reaper.ImGui_Col_ButtonHovered(), pulsatingColor(theme.accent, 3))
             analyseButton(IP, "Analyse video##" .. itemNumber)
             reaper.ImGui_PopStyleColor(ctx,2)
+            reaper.ImGui_SameLine(ctx, posX4)
         end
         
-        reaper.ImGui_SameLine(ctx, posX4)
         selectedItemButtons(IP)
     end
 end
@@ -1857,7 +2194,7 @@ function selectedCutInfoArea(IP)
         if not isSuperDown and isEnter and not markerNameIsFocused then
             reaper.ImGui_SetKeyboardFocusHere(ctx)
         end
-        colSelected = (IP and IP.currentSelectedCut and IP.cut_data and IP.cut_data[IP.currentSelectedCut]) and (IP.cut_data[IP.currentSelectedCut].color and IP.cut_data[IP.currentSelectedCut].color or colorGrey) or colorBlue
+        colSelected = (IP and IP.currentSelectedCut and IP.cut_data and IP.cut_data[IP.currentSelectedCut]) and (IP.cut_data[IP.currentSelectedCut].color and IP.cut_data[IP.currentSelectedCut].color or colorBlue) or colorBlue
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(), colSelected)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), GetTextColorForBackground(colSelected))
         ret, markerTextInput = reaper.ImGui_InputText(ctx, "##Marker name", markerName, reaper.ImGui_InputTextFlags_EnterReturnsTrue() | reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_NoUndoRedo())
@@ -1962,58 +2299,205 @@ function overviewArea(IP, IP2)
         focusNavigation = false
     end
     
+    
     local timeLineW = winW - 8 * 2      -- (imageW * (16/9)) * 2 + 8 --
-    local overviewAreaWidth = timeLineW
-    local largestFileLength
-    if IP and IP2 and IP.item_area_to_analyze_length and IP2.item_area_to_analyze_length 
-        and IP.item_area_to_analyze_length ~= IP2.item_area_to_analyze_length and not settings.overviewFollowsArrangeview then 
-        largestFileLength = IP.item_area_to_analyze_length >= IP2.item_area_to_analyze_length and IP.item_area_to_analyze_length or IP2.item_area_to_analyze_length
-        overviewAreaWidth = timeLineW / largestFileLength * IP.item_area_to_analyze_length 
+    local overviewArea_w = timeLineW
+    local overviewArea_h = 38 * (compareVideos and 2 or 1)
+    local itemAreaWidth = overviewArea_w
+    
+    if IP.itemNumber == 0 and IP.fileName then  
+        local posYStart = reaper.ImGui_GetCursorPosY(ctx)
+        if reaper.ImGui_Button(ctx, IP.fileName .. "##looparea", overviewArea_w, 4) then
+            settings.displayTimeSelection = not settings.displayTimeSelection
+            saveSettings()
+        end
+        overviewArea_x, overviewArea_y = reaper.ImGui_GetItemRectMin(ctx)
+        --reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_SetCursorPosY(ctx, posYStart + 6)
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, overviewArea_x, 4 + overviewArea_y, overviewArea_x + overviewArea_w, 4 + overviewArea_y + overviewArea_h, colorReallyBlack)
     end
     
-    if not settings.analyseOnlyBetweenMarkers and largestFileLength and not settings.overviewFollowsArrangeview then 
-        if IP.item_area_to_analyze_length < largestFileLength then 
-            posOfSmallerItem = reaper.ImGui_GetCursorPosX(ctx) + timeLineW / largestFileLength * IP.item_pos
-            if settings.overviewFollowsArrangeview then
-                posOfSmallerItem = posOfSmallerItem - 1 
-            end
-            --reaper.ImGui_SetCursorPosX(ctx, posOfSmallerItem)
-        end
+    
+    
+    -- set difference in length and start pos
+    
+    local overview_length_time = IP.overview_length_time 
+    local overview_start_time = IP.overview_start_time
+    local overview_start_in_item = IP.overview_start_in_item
+    local overview_start_in_item_offset = IP.overview_start_in_item_offset
+    if not overview_start_time or not overview_length_time then 
+        return 
     end
+    
+    --if compareVideos then
+    if settings.selectionType == "Video item" then 
+        if compareVideos then 
+            if IP and IP2 and IP.item_area_to_analyze_length and IP2.item_area_to_analyze_length then  
+                --difference_in_length = IP.item_area_to_analyze_length >= IP2.item_area_to_analyze_length and IP.item_area_to_analyze_length - IP2.item_area_to_analyze_length or IP2.item_area_to_analyze_length - IP.item_area_to_analyze_length
+                --difference_in_pos_start = IP.item_pos >= IP2.item_pos and IP.item_pos - IP2.item_pos or IP2.item_pos - IP.item_pos
+                --largestFileLength = IP.item_area_to_analyze_length >= IP2.item_area_to_analyze_length and IP.item_area_to_analyze_length or IP2.item_area_to_analyze_length 
+                
+                local first_start_pos = IP.item_pos < IP2.item_pos and IP.item_pos or IP2.item_pos
+                local last_end_pos = IP.item_end > IP2.item_end and IP.item_end or IP2.item_end
+                local largestFileLength = last_end_pos - first_start_pos --IP.item_area_to_analyze_length >= IP2.item_area_to_analyze_length and IP.item_area_to_analyze_length or IP2.item_area_to_analyze_length 
+                overview_length_time = largestFileLength
+                --largestFileLength = largestFileLength + difference_in_pos_start
+                itemAreaWidth = timeLineW / (largestFileLength) * IP.item_area_to_analyze_length 
+                
+                if IP.item_pos ~= IP2.item_pos then 
+                    local difference_in_pos_start = IP.item_pos >= IP2.item_pos and IP.item_pos - IP2.item_pos or 0 
+                    local posOfSmallerItem = reaper.ImGui_GetCursorPosX(ctx) + (timeLineW / largestFileLength) * difference_in_pos_start 
+                    reaper.ImGui_SetCursorPosX(ctx, posOfSmallerItem)
+                end
+            end 
+        end
+    else
+        
+        if IP.overview_start_in_item < 0 then  
+            local posOfSmallerItem = reaper.ImGui_GetCursorPosX(ctx) + (timeLineW / overview_length_time) * -IP.overview_start_in_item 
+            reaper.ImGui_SetCursorPosX(ctx, posOfSmallerItem) 
+        end
+        
+        itemAreaWidth = timeLineW / (overview_length_time) * (IP.overview_length_in_item + (IP.overview_start_in_item < 0 and IP.overview_start_in_item or 0) ) 
+    end
+    local item_in_view = true
+    if itemAreaWidth <= 0 then 
+        item_in_view = false
+        itemAreaWidth = 200 
+        reaper.ImGui_SetCursorPosX(ctx, 8)
+    end
+    
     
     if IP and IP.item then 
-        reaper.ImGui_InvisibleButton(ctx, "CutsOverview##".. (IP.itemNumber and IP.itemNumber or "noitem"), overviewAreaWidth, 30)
+        reaper.ImGui_InvisibleButton(ctx, IP.fileName .. "##CutsOverview".. (IP.itemNumber and IP.itemNumber or "noitem"), itemAreaWidth, 30)
+        
     else
-        reaper.ImGui_Button(ctx, "No video selected##".. (IP and IP.itemNumber and IP.itemNumber or "noitem"), overviewAreaWidth, 30)
+        reaper.ImGui_Button(ctx, "No video selected##".. (IP and IP.itemNumber and IP.itemNumber or "noitem"), itemAreaWidth, 30)
     end
     
     local minX, minY = reaper.ImGui_GetItemRectMin(ctx)
     local maxX, maxY = reaper.ImGui_GetItemRectMax(ctx)
     local w, h = reaper.ImGui_GetItemRectSize(ctx)
-
-    local overviewAreaFocused = (IP and compareVideos) and (overviewAreaFocus == IP.itemNumber and colorWhite or colorLowGrey) or (markerNameIsFocused and colorLowGrey or colorWhite)
-    reaper.ImGui_DrawList_AddRect(draw_list, minX, minY, maxX, maxY, overviewAreaFocused, 0, nil, 1)
     
-    local margin = 4
-    minX = minX + 1
-    minY = minY + margin
-    maxX = maxX - 2
-    maxY = maxY - margin
-    w = w - 3
-
-    if IP and IP.item then 
-        -- LOOP AREA
-        if not settings.analyseOnlyBetweenMarkers and start_time_sel ~= end_time_sel and start_time_sel < end_time_sel
-            and start_time_sel < IP.item_end and end_time_sel > IP.item_pos
-        then
-            posX = IP.start_time_in_item
-            blockOutXStart = ((IP.start_time_in_item - IP.overview_start_in_item) / IP.overview_length_in_item) * w + minX
-            blockOutXStart = blockOutXStart > minX and blockOutXStart or minX
-            blockOutXEnd = ((IP.end_time_in_item - IP.overview_start_in_item) / IP.overview_length_in_item) * w + minX
-            blockOutXEnd = blockOutXEnd < maxX and blockOutXEnd or maxX
-
-            reaper.ImGui_DrawList_AddRectFilled(draw_list, blockOutXStart, minY - 2, blockOutXEnd, minY, colorGreen, 0)
+    
+    function withinOverviewArea(x)
+        return x >= overviewArea_x and x <= overviewArea_w + overviewArea_x
+    end
+    
+    function withinOverviewAreaY(y)
+        return y >= overviewArea_y and y <= overviewArea_h + overviewArea_y
+    end
+    
+    function withinOverviewArea_start(x)
+        return x >= overviewArea_x
+    end
+    function withinOverviewArea_end(x)
+        return x < overviewArea_w + overviewArea_x
+    end
+    
+    -- LOOP AREA 
+    if IP.itemNumber == 0 
+        --and start_time_sel ~= end_time_sel and start_time_sel < end_time_sel
+        --and (start_time_sel < IP.item_end and end_time_sel > IP.item_pos)
+    then
+        -- time selection
+        if settings.displayTimeSelection and settings.selectionType ~= "Time selection" then 
+            blockOutXStart = ((start_time_sel - overview_start_time) / overview_length_time) * overviewArea_w + overviewArea_x
+            blockOutXStart2 = withinOverviewArea(blockOutXStart) and blockOutXStart or (withinOverviewArea_start(blockOutXStart) and overviewArea_x + overviewArea_w or overviewArea_x)
+            blockOutXEnd = ((end_time_sel - overview_start_time) / overview_length_time) * overviewArea_w + overviewArea_x
+            blockOutXEnd2 = withinOverviewArea(blockOutXEnd) and blockOutXEnd or (withinOverviewArea_end(blockOutXEnd) and overviewArea_x or overviewArea_x + overviewArea_w)
+            aa = blockOutXStart2
+            ab = blockOutXEnd2
+            --if blockOutXStart2 ~= blockOutXEnd2 then --withinOverviewArea(blockOutXStart) or withinOverviewArea(blockOutXEnd) then 
+                reaper.ImGui_DrawList_AddRectFilled(draw_list, blockOutXStart2, overviewArea_y, blockOutXEnd2, overviewArea_y+4, colorGreen, 0)
+            --end
         end
+        
+        -- play cursor pos
+        blockOutXStart = ((cur_pos - overview_start_time + subProj_item_pos) / overview_length_time) * overviewArea_w + overviewArea_x
+        
+        if withinOverviewArea(blockOutXStart) then 
+            reaper.ImGui_DrawList_AddLine(draw_list, blockOutXStart, overviewArea_y+ 6, blockOutXStart, overviewArea_y + overviewArea_h - 4, colorWhite, 1)       --currentSelectedCut and colorMapLight or colorMap, 1)
+        end
+        
+ 
+        --[[
+        -- play cursor pos
+        if not settings.cursorFollowSelectedCut 
+        -- and IP.cur_pos_in_item >= (IP.overview_start_in_item - subProj_item_pos)
+        -- and IP.cur_pos_in_item <= (IP.overview_start_in_item - subProj_item_pos) + IP.overview_length_in_item
+        then
+            local pos = IP.cur_pos_in_item 
+            local timeX = (pos - (IP.overview_start_in_item - subProj_item_pos)) / IP.overview_length_in_item * w + minX
+            --if (settings.cursorFollowSelectedCut and not IP.currentSelectedCut) or not settings.cursorFollowSelectedCut then
+            reaper.ImGui_DrawList_AddLine(draw_list, timeX, minY - 5 + h / 2, timeX, maxY + 4, colorWhite, 1)       --currentSelectedCut and colorMapLight or colorMap, 1)
+            --end
+        end
+        
+        
+        if (IP.timeline_cur_pos_in_item >= IP.overview_start_in_item - subProj_item_pos and IP.timeline_cur_pos_in_item <= (IP.overview_start_in_item - subProj_item_pos) + IP.overview_length_in_item) then
+        
+        --if (settings.cursorFollowSelectedCut and not IP.currentSelectedCut) or not settings.cursorFollowSelectedCut then
+            local pos = IP.overview_start_in_item - subProj_item_pos
+            local timeX = (IP.timeline_cur_pos_in_item - pos) / IP.overview_length_in_item * w + minX
+            reaper.ImGui_DrawList_AddLine(draw_list, timeX, minY - 5, timeX, maxY + 4 - (not settings.cursorFollowSelectedCut and h / 2 or 0), colorWhite, 1)  --currentSelectedCut and colorMapLight or colorMap, 1)
+            --end
+        else
+            cursorOutsideArea = true
+        end
+        ]]
+        
+        
+        if withinOverviewArea(mouse_pos_x) and withinOverviewAreaY(mouse_pos_y) then
+            if (scrollVertical ~= 0 or scrollHorizontal ~= 0) then
+                local mousePosRelativeInOverviewArea = math.floor((mouse_pos_x - overviewArea_x) / w * 10 + 0.5) / 10 
+                local scrollPrecision = 2
+                local left, right
+                local useTimeSelectionType = (settings.selectionType == "Time selection" and not isShiftDown) or (settings.selectionType == "Arrange view" and isShiftDown)
+                aaa = useTimeSelectionType
+                local leftVal = useTimeSelectionType and start_time_sel or start_time_arr
+                local rightVal = useTimeSelectionType and end_time_sel or end_time_arr
+                if scrollVertical ~= 0 then
+                    local scrollIn = scrollVertical > 0
+                    left = leftVal - (scrollVertical / scrollPrecision) * (scrollIn and mousePosRelativeInOverviewArea or 1 - mousePosRelativeInOverviewArea)  --(scrollVertical > 0 and 0 or -1))
+                    right = rightVal - (scrollVertical / scrollPrecision) * (scrollIn and (mousePosRelativeInOverviewArea - 1) or -mousePosRelativeInOverviewArea)
+                elseif scrollHorizontal ~= 0 then
+                    left = leftVal - scrollHorizontal / scrollPrecision
+                    right = rightVal - scrollHorizontal / scrollPrecision
+                end
+                if left < 0 then left = 0 end
+                
+                if useTimeSelectionType then 
+                    reaper.GetSet_LoopTimeRange(true, true, left, right, false)
+                end
+                if not useTimeSelectionType then 
+                    reaper.GetSet_ArrangeView2(0, true, 0, 0,left, right)
+                elseif settings.arrangeviewFollowsOverview then
+                    setArrangeviewArea()
+                end
+            end
+        end
+    end
+    
+    if not item_in_view then  
+        reaper.ImGui_DrawList_AddText(draw_list, minX,minY + 4, colorGrey, IP.fileName .. " outisde overview area")
+    else
+        if compareVideos then 
+            reaper.ImGui_DrawList_AddText(draw_list, minX + 6,minY + 6, colorLowGrey, IP.fileName) 
+        end
+        
+        local overviewAreaFocused = (IP and compareVideos) and (overviewAreaFocus == IP.itemNumber and colorWhite or colorLowGrey) or (markerNameIsFocused and colorLowGrey or colorWhite)
+        reaper.ImGui_DrawList_AddRect(draw_list, minX, minY, maxX, maxY, overviewAreaFocused, 0, nil, 1)
+    
+    
+        local margin = 4
+        minX = minX + 1
+        minY = minY + margin
+        maxX = maxX - 1
+        maxY = maxY - margin
+        w = w - 3
+    
+        
 
 
         local mouseOutsideAnalysedAreaStart = false
@@ -2028,27 +2512,27 @@ function overviewArea(IP, IP2)
 
         -- NOT ANALYSED BLOCKS
         if lol then 
-        for _, c in ipairs(IP.cut_data) do
-            if c.special == "start" and c.time and c.time > blockOutStartX and c.time < blockOutEndX then
-                blockOutXStart = ((blockOutStartX - IP.overview_start_in_item) / IP.overview_length_in_item) * w + minX
-                blockOutXStart = blockOutXStart > minX and blockOutXStart or minX
-                blockOutXEnd = ((c.time - IP.overview_start_in_item) / IP.overview_length_in_item) * w + minX
-                blockOutXEnd = blockOutXEnd < maxX and blockOutXEnd or maxX
-                if mouse_pos_x > blockOutXStart and mouse_pos_x <= blockOutXEnd and mouse_pos_y >= minY and mouse_pos_y <= maxY then
-                    mouseInsideUnanalysedArea = true
-                    hoverUnanalyzedBlock = true
+            for _, c in ipairs(IP.cut_data) do
+                if c.special == "start" and c.time and c.time > blockOutStartX and c.time < blockOutEndX then
+                    blockOutXStart = ((blockOutStartX - IP.overview_start_in_item) / IP.overview_length_in_item) * w + minX
+                    blockOutXStart = blockOutXStart > minX and blockOutXStart or minX
+                    blockOutXEnd = ((c.time - IP.overview_start_in_item) / IP.overview_length_in_item) * w + minX
+                    blockOutXEnd = blockOutXEnd < maxX and blockOutXEnd or maxX
+                    if mouse_pos_x > blockOutXStart and mouse_pos_x <= blockOutXEnd and mouse_pos_y >= minY and mouse_pos_y <= maxY then
+                        mouseInsideUnanalysedArea = true
+                        hoverUnanalyzedBlock = true
+                    end
+                    reaper.ImGui_DrawList_AddRectFilled(draw_list, blockOutXStart, minY, blockOutXEnd, maxY,
+                        hoverUnanalyzedBlock and colorDarkGrey or colorDarkGreyTransparent, 0)
+    
+                    showBlockOutAtEnd = false
                 end
-                reaper.ImGui_DrawList_AddRectFilled(draw_list, blockOutXStart, minY, blockOutXEnd, maxY,
-                    hoverUnanalyzedBlock and colorDarkGrey or colorDarkGreyTransparent, 0)
-
-                showBlockOutAtEnd = false
+                if c.special == "end" and c.time and c.time < IP.overview_start_in_item + IP.overview_length_in_item then  --and c.time < IP.overview_start_in_item + overview_length_in_item then
+                    blockOutStartX = c.time
+                    showBlockOutAtEnd = true
+                    hoverUnanalyzedBlock = false
+                end
             end
-            if c.special == "end" and c.time and c.time < IP.overview_start_in_item + IP.overview_length_in_item then  --and c.time < IP.overview_start_in_item + overview_length_in_item then
-                blockOutStartX = c.time
-                showBlockOutAtEnd = true
-                hoverUnanalyzedBlock = false
-            end
-        end
         end
 
         if showBlockOutAtEnd then
@@ -2065,9 +2549,10 @@ function overviewArea(IP, IP2)
 
         local timeX, hoverName, betweenCut, hoverIndex
         if reaper.ImGui_IsItemHovered(ctx) then
-            local mouse_cursor_pos_in_item = ((mouse_pos_x - minX) / w * IP.overview_length_in_item) + IP.overview_start_in_item
-            local mousePosRelativeInOverviewArea = math.floor((mouse_pos_x - minX) / w * 10 + 0.5) / 10
-          
+            -- blockOutXStart = ((cur_pos - overview_start_time) / overview_length_time) * overviewArea_w + overviewArea_x 
+            local mouse_cursor_pos = ((mouse_pos_x - minX) / w * overview_length_time) + overview_start_time
+            local mouse_cursor_pos_in_item = ((mouse_pos_x - overviewArea_x) / overviewArea_w * overview_length_time) + overview_start_in_item_offset --overview_start_time--overview_start_in_item_offset
+            
             if isShiftDown or #IP.cuts_making_threashold == 0 then
                 posX = mouse_cursor_pos_in_item
                 betweenCut = true 
@@ -2092,16 +2577,15 @@ function overviewArea(IP, IP2)
 
             -- cursor
             if not mouseInsideUnanalysedArea then
-                if posX and posX >= IP.overview_start_in_item and posX <= IP.overview_start_in_item + IP.overview_length_in_item then 
-                    timeX = ((posX - IP.overview_start_in_item) / IP.overview_length_in_item) * w + minX
+                --if posX and posX >= overview_start_in_item_offset and posX <= overview_start_in_item_offset + overview_length_time then 
+                    timeX = ((posX - overview_start_in_item_offset) / overview_length_time) * overviewArea_w + overviewArea_x
                     if betweenCut then
                         reaper.ImGui_DrawList_AddLine(draw_list, timeX, minY, timeX, maxY, colorWhite, 1)
                     end
-                    local timeXInSeconds = ((timeX / w) * IP.overview_length_in_item + IP.overview_start_in_item)
-                    -- TODO: Timex not correctly calculated. Fix this before showing it
-                    --setToolTipFunc((hoverName and (hoverName .. " | ") or "") .. reaper.format_timestr_pos(timeXInSeconds, "", 5))
-                    setToolTipFunc(hoverName and hoverName or "Click to select point")
-                end
+                    local timeXInSeconds = posX - IP.item_offset + IP.item_pos - subProj_item_pos
+                    setToolTipFunc((hoverName and (hoverName .. " | ") or "") .. reaper.format_timestr_pos(timeXInSeconds, "", 5))
+                    --setToolTipFunc(hoverName and hoverName or "Click to select point")
+                --end
             else
                 setToolTipFunc("Area not analysed")
             end
@@ -2129,72 +2613,20 @@ function overviewArea(IP, IP2)
                -- currentSelectedCut_array[tostring(IP2.item)] = nil
             end
 
-
-            if (scrollVertical ~= 0 or scrollHorizontal ~= 0) then
-                local scrollPrecision = 2
-                local left, right
-                if scrollVertical ~= 0 then
-                    local scrollIn = scrollVertical > 0
-                    left = start_time_sel -
-                    (scrollVertical / scrollPrecision) *
-                    (scrollIn and mousePosRelativeInOverviewArea or 1 - mousePosRelativeInOverviewArea)  --(scrollVertical > 0 and 0 or -1))
-                    right = end_time_sel -
-                    (scrollVertical / scrollPrecision) *
-                    (scrollIn and (mousePosRelativeInOverviewArea - 1) or -mousePosRelativeInOverviewArea)
-                elseif scrollHorizontal ~= 0 then
-                    left = start_time_sel - scrollHorizontal / scrollPrecision
-
-                    right = end_time_sel - scrollHorizontal / scrollPrecision
-                end
-                if left < 0 then left = 0 end
-
-                reaper.GetSet_LoopTimeRange(true, true, left, right, false)
-                if settings.arrangeviewFollowsOverview then
-                    setArrangeviewArea()
-                end
-            end
         end
 
-        -- play cursor pos
-        if not settings.cursorFollowSelectedCut and 
-        IP.cur_pos_in_item >= (IP.overview_start_in_item - subProj_item_pos) and 
-        IP.cur_pos_in_item <= (IP.overview_start_in_item - subProj_item_pos) + IP.overview_length_in_item then
-            local pos = IP.cur_pos_in_item 
-            local timeX = (pos - (IP.overview_start_in_item - subProj_item_pos)) / IP.overview_length_in_item * w + minX
-            --if (settings.cursorFollowSelectedCut and not IP.currentSelectedCut) or not settings.cursorFollowSelectedCut then
-            reaper.ImGui_DrawList_AddLine(draw_list, timeX, minY - 5 + h / 2, timeX, maxY + 4, colorWhite, 1)       --currentSelectedCut and colorMapLight or colorMap, 1)
-            --end
-        end
         
-        
-        if (IP.timeline_cur_pos_in_item >= IP.overview_start_in_item - subProj_item_pos and IP.timeline_cur_pos_in_item <= (IP.overview_start_in_item - subProj_item_pos) + IP.overview_length_in_item) then
-        
-        --if (settings.cursorFollowSelectedCut and not IP.currentSelectedCut) or not settings.cursorFollowSelectedCut then
-            local pos = IP.overview_start_in_item - subProj_item_pos
-            local timeX = (IP.timeline_cur_pos_in_item - pos) / IP.overview_length_in_item * w + minX
-            reaper.ImGui_DrawList_AddLine(draw_list, timeX, minY - 5, timeX, maxY + 4 - (not settings.cursorFollowSelectedCut and h / 2 or 0), colorWhite, 1)  --currentSelectedCut and colorMapLight or colorMap, 1)
-            --end
-        else
-            cursorOutsideArea = true
-        end
-        
-        
-        --reaper.ShowConsoleMsg(tostring(IP.currentSelectedCut) .. " - " .. IP.itemNumber .. "\n")
         -- draw cuts
         for _, c in ipairs(IP.cuts_making_threashold) do
-            if c.time >= IP.overview_start_in_item and c.time <= IP.overview_start_in_item + IP.overview_length_in_item then
-                local timeX = ((c.time - IP.overview_start_in_item) / IP.overview_length_in_item) * w + minX
-                --local col = c.exclude and colorGrey or (IP.cut_data[c.index].color and  IP.cut_data[c.index].color or colorBlue)
-                local col = hoverIndex == c.index and colorWhite or
-                (IP.cut_data[c.index] and IP.cut_data[c.index].color and IP.cut_data[c.index].color or colorGrey)
+            local timeX = (((c.time + IP.item_pos - IP.item_offset) - overview_start_time) / overview_length_time) * overviewArea_w + overviewArea_x
+            --local col = c.exclude and colorGrey or (IP.cut_data[c.index].color and  IP.cut_data[c.index].color or colorBlue)
+            local col = hoverIndex == c.index and colorWhite or (IP.cut_data[c.index] and IP.cut_data[c.index].color and IP.cut_data[c.index].color or colorLowGrey)
+            if withinOverviewArea(timeX) then  
                 reaper.ImGui_DrawList_AddLine(draw_list, timeX,
                     minY - (c.index == IP.currentSelectedCut and 5 or -2) + (c.exclude and 10 or 0), timeX,
                     maxY + (c.index == IP.currentSelectedCut and 4 or 0), col, c.index == IP.currentSelectedCut and 4 or 1)
             end
         end
-        
-    else
-        
     end
 end
 
@@ -2266,7 +2698,6 @@ function should_thumbnail_update(IP)
             IP.last_currentSelectedCut = IP.currentSelectedCut
             
             IP.cur_pos_in_item = (IP.item_pos and (cur_pos - IP.item_pos + IP.item_offset) or 0) 
-            
         end
     else
     
@@ -2279,14 +2710,14 @@ function should_thumbnail_update(IP)
                     if compareWithMargin(c.time, IP.cur_pos_in_item + subProj_item_pos) then
                         IP.last_currentSelectedCut = IP.currentSelectedCut
                         IP.currentSelectedCut = c.index
-                        
+                        updateThumbnails = true 
                         break;
                     end
                 end
             end
             --IP.ignoreCutOnNextDefer = nil
             
-            if IP.last_cur_pos_in_item ~= IP.cur_pos_in_item then
+            if not updateThumbnails and IP.last_cur_pos_in_item ~= IP.cur_pos_in_item then
                 updateThumbnails = true
             end
         end
@@ -2495,18 +2926,19 @@ function addButtons(IP)
         reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", length)
         reaper.SetMediaItemInfo_Value(newItem, "I_CUSTOMCOLOR", (col >> 8) |16777216)
         
-        -- Create video source from image
-        local source = reaper.PCM_Source_CreateFromFile(image_path)
-        if not source then
-          reaper.ShowMessageBox("Failed to load image.", "Error", 0)
-          return
-        end
+        local newTake = reaper.AddTakeToMediaItem(newItem) 
+        reaper.GetSetMediaItemTakeInfo_String( newTake, "P_NAME", name, true )
         
         -- Assign source to item
-        local newTake = reaper.AddTakeToMediaItem(newItem)
-        reaper.SetMediaItemTake_Source(newTake, source)
-        reaper.GetSetMediaItemTakeInfo_String( newTake, "P_NAME", name, true )
-    
+        if image_path then 
+            -- Create video source from image
+            local source = reaper.PCM_Source_CreateFromFile(image_path)
+            if not source then
+              reaper.ShowMessageBox("Failed to load image.", "Error", 0)
+              return
+            end
+            reaper.SetMediaItemTake_Source(newTake, source)
+        end 
     end
     
     
@@ -2525,7 +2957,7 @@ function addButtons(IP)
         time = c and c.time
         if index then 
             local name = IP.cut_data[c.index].name and IP.cut_data[c.index].name or "Cut " .. index
-            local col = IP.cut_data[c.index].color and IP.cut_data[c.index].color or 0
+            local col = IP.cut_data[c.index].color and IP.cut_data[c.index].color or colorBlue
             local pos = time + IP.item_pos - IP.item_offset
             local endPos = (index < #IP.cuts_making_threashold and IP.cuts_making_threashold[index + 1].time or findNextSpecialEnd(IP)) + IP.item_pos - IP.item_offset
             if is_a_subproject then
@@ -2540,6 +2972,7 @@ function addButtons(IP)
     
     
     if reaper.ImGui_Button(ctx, "Markers") or 
+      (isOptionDown and is1) or 
       (isSuperDown and isEnter and 
       ((not is_a_subproject and settings.useTypeForSingleInsert == "Markers") or
       (is_a_subproject and settings.useTypeForSingleInsertSubproject == "Markers"))) then
@@ -2560,11 +2993,12 @@ function addButtons(IP)
         undo_redo.save_undo({reaperAction = true})
         reaper.Undo_EndBlock("Insert markers from video cut detection", -1)
     end 
-    setToolTipFunc("Insert markers with name and color for each cut.\n - Hold down super or press super+enter to insert the selected cut only")
+    setToolTipFunc("Insert markers with name and color for each cut.\n - Hold down super or press super+enter to insert the selected cut only", "option+1")
     
     reaper.ImGui_SameLine(ctx)
 
     if reaper.ImGui_Button(ctx, "Regions") or 
+      (isOptionDown and is2) or 
       (isSuperDown and isEnter and 
       ((not is_a_subproject and settings.useTypeForSingleInsert == "Regions") or
       (is_a_subproject and settings.useTypeForSingleInsertSubproject == "Regions"))) then
@@ -2586,12 +3020,13 @@ function addButtons(IP)
         undo_redo.save_undo({reaperAction = true})
         reaper.Undo_EndBlock("Insert regions from video cut detection", -1)
     end
-    setToolTipFunc("Insert Regions with name and color for each cut.\n - Hold down super or press super+enter to insert the selected cut only")
+    setToolTipFunc("Insert Regions with name and color for each cut.\n - Hold down super or press super+enter to insert the selected cut only", "option+2")
     
     reaper.ImGui_SameLine(ctx)
     
     if is_a_subproject then reaper.ImGui_BeginDisabled(ctx) end
     if reaper.ImGui_Button(ctx, "Take markers") or 
+      (isOptionDown and is3 and not is_a_subproject) or 
       (isSuperDown and isEnter and not is_a_subproject and settings.useTypeForSingleInsert == "Take markers") then
         reaper.Undo_BeginBlock()
         if isSuperDown then
@@ -2610,11 +3045,12 @@ function addButtons(IP)
         undo_redo.save_undo({reaperAction = true})
         reaper.Undo_EndBlock("Insert take markers from video cut detection", -1)
     end 
-    setToolTipFunc("Insert take markers with name and color for each cut.\n - Hold down super or press super+enter to insert the selected cut only")
+    setToolTipFunc("Insert take markers with name and color for each cut.\n - Hold down super or press super+enter to insert the selected cut only", "option+3")
     
     
     reaper.ImGui_SameLine(ctx)
     if reaper.ImGui_Button(ctx, "Thumbnails") 
+    or (isOptionDown and is4 and not is_a_subproject) 
     or (isSuperDown and isEnter and not is_a_subproject and settings.useTypeForSingleInsert == "Thumbnails")
     or waitingForThumbnailsToBeCreated then
         
@@ -2627,6 +3063,11 @@ function addButtons(IP)
         else
             local track = reaper.GetMediaItemTrack(IP.item)
             reaper.Undo_BeginBlock()
+            
+            local track = reaper.GetMediaItemTrack(IP.item)
+            if settings.insertItemsOnDedicatedTrack then
+                track = GetOrCreateTrackBelow(track, IP.fileName .. "_Cuts")
+            end
             if isSuperDown then
                 local name, col, pos, endPos, c = getNameColorAndPos(IP)
                 if pos then 
@@ -2652,11 +3093,45 @@ function addButtons(IP)
         undo_redo.save_undo({reaperAction = true})
         reaper.Undo_EndBlock("Insert thumbnails from video cut detection", -1)
     end
-    setToolTipFunc("Insert thumbnails with name and color for each cut.\n - Hold down super or press super+enter to insert the selected cut only")
+    setToolTipFunc("Insert thumbnails with name and color for each cut.\n - Hold down super or press super+enter to insert the selected cut only", "option+4")
+    
+    reaper.ImGui_SameLine(ctx)
+    if reaper.ImGui_Button(ctx, "Empty items") 
+    or (isOptionDown and is5 and not is_a_subproject) 
+    or (isSuperDown and isEnter and not is_a_subproject and settings.useTypeForSingleInsert == "Empty items")
+    then 
+        
+        reaper.Undo_BeginBlock() 
+        local track = reaper.GetMediaItemTrack(IP.item)
+        if settings.insertItemsOnDedicatedTrack then
+            track = GetOrCreateTrackBelow(track, IP.fileName .. "_Cuts")
+        end
+        if isSuperDown then
+            local name, col, pos, endPos, c = getNameColorAndPos(IP)
+            if pos then 
+                local len = endPos - pos 
+                insertMediaItem(track, pos, len, name, col)
+            end
+        else 
+            for i, c in ipairs(IP.cuts_making_threashold) do
+                if not c.exclude then
+                    local name, col, pos, endPos = getNameColorAndPos(IP, i, c)
+                    local len = endPos - pos  
+                    insertMediaItem(track, pos, len, name, col)
+                end
+            end
+        end
+        reaper.UpdateArrange()
+        
+        undo_redo.save_undo({reaperAction = true})
+        reaper.Undo_EndBlock("Insert thumbnails from video cut detection", -1)
+    end
+    setToolTipFunc("Insert thumbnails with name and color for each cut.\n - Hold down super or press super+enter to insert the selected cut only", "option+5")
     
     
     reaper.ImGui_SameLine(ctx)
     if reaper.ImGui_Button(ctx, "Split video item") 
+    or (isOptionDown and is6 and not is_a_subproject) 
     or (isSuperDown and isEnter and not is_a_subproject and settings.useTypeForSingleInsert == "Split video item") then 
         reaper.Undo_BeginBlock()
         
@@ -2698,10 +3173,80 @@ function addButtons(IP)
             end
         end 
         undo_redo.save_undo({reaperAction = true})
-        reaper.Undo_EndBlock("Split items from video cut detection", -1)
+        reaper.Undo_EndBlock("Split video items from video cut detection", -1)
         reaper.UpdateArrange()
     end
-    setToolTipFunc("Split video at each cut and name each part with name and color.\n - Hold down super or press super+enter to split on the selected cut only")
+    setToolTipFunc("Split video at each cut and name each part with name and color.\n - Hold down super or press super+enter to split on the selected cut only", "option+6")
+    
+    reaper.ImGui_SameLine(ctx)
+    if reaper.ImGui_Button(ctx, "Split selected items") 
+    or (isOptionDown and is7) 
+    or (isSuperDown and isEnter and not is_a_subproject and settings.useTypeForSingleInsert == "Split video item") then 
+        local selectedItemsAmount = reaper.CountSelectedMediaItems(0)
+        if selectedItemsAmount > 0 then 
+            reaper.Undo_BeginBlock() 
+            
+            local selectedItems = {}
+            for i = 0, selectedItemsAmount - 1 do
+                table.insert(selectedItems, reaper.GetSelectedMediaItem(0, i))
+            end
+            
+            reaper.Main_OnCommand(40289, 0) --Item: Unselect (clear selection of) all items 
+            for _, item in ipairs(selectedItems) do 
+                if isSuperDown then 
+                    index, c = findSelectedCutMakingThreshold()
+                    if index then 
+                        local new_item = reaper.SplitMediaItem(item, c.time + IP.item_pos - IP.item_offset)
+                        if new_item then  
+                            reaper.SetMediaItemSelected(new_item, true) 
+                        end
+                    end
+                else 
+                    -- Sort cuts descending to split from right to left
+                    local cuts_to_split = {}
+                    for i, c in ipairs(IP.cuts_making_threashold) do
+                        if not c.exclude then 
+                            table.insert(cuts_to_split, {cut=c, original_index=i}) 
+                        end
+                    end
+                    table.sort(cuts_to_split, function(a,b) return a.cut.time > b.cut.time end)
+                    
+                    for i, entry in ipairs(cuts_to_split) do 
+                        local c = entry.cut
+                        local idx = entry.original_index
+                        local new_item = reaper.SplitMediaItem(item, c.time + IP.item_pos - IP.item_offset)
+                        if new_item then
+                            if settings.setNameOnSplitItems then 
+                                local name = IP.cut_data[c.index].name and IP.cut_data[c.index].name or "Cut " .. idx
+                                local take = reaper.GetActiveTake(new_item)
+                                if take then
+                                    reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", name, true)
+                                end
+                            end
+                            
+                            if settings.setColorOnSplitItems then 
+                                local col = IP.cut_data[c.index].color and IP.cut_data[c.index].color or 0
+                                if col ~= 0 then
+                                    reaper.SetMediaItemInfo_Value(new_item, "I_CUSTOMCOLOR", (col >> 8) | 16777216)
+                                end
+                            end
+                            
+                            if i == 1 then 
+                                reaper.SetMediaItemSelected(new_item, true) 
+                            end
+                        end 
+                    end
+                end 
+            end
+            undo_redo.save_undo({reaperAction = true})
+            reaper.Undo_EndBlock("Split items from video cut detection", -1)
+            reaper.UpdateArrange()
+        end
+    end
+    setToolTipFunc("Split video at each cut and name each part with name and color.\n - Hold down super or press super+enter to split on the selected cut only", "option+7")
+    
+    
+    
     
     reaper.ImGui_SameLine(ctx)
     reaper.ImGui_InvisibleButton(ctx, "dummy", 20, 20)
@@ -2933,9 +3478,9 @@ function settingButtons(IP)
     
     reaper.ImGui_SameLine(ctx, posX2)
     
-    local typesForInsert = {"Markers", "Regions", "Take markers", "Thumbnails", "Split video item"}
+    local typesForInsert = {"Markers", "Regions", "Take markers", "Thumbnails", "Empty items", "Split video item", "Split selected items"}
     reaper.ImGui_BeginGroup(ctx)
-    reaper.ImGui_TextColored(ctx, colorGrey, "Use type for single insert")
+    reaper.ImGui_TextColored(ctx, colorGrey, "Use type for single actions")
     for _, t in ipairs(typesForInsert) do
         if reaper.ImGui_RadioButton(ctx, t .. "##SingleInsert",settings.useTypeForSingleInsert == t) then
             settings.useTypeForSingleInsert = t
@@ -2948,12 +3493,37 @@ function settingButtons(IP)
     reaper.ImGui_BeginGroup(ctx)
     reaper.ImGui_TextColored(ctx, colorGrey, "Use type for single insert in subprojects")
     for i, t in ipairs(typesForInsert) do
-        if i == 3 then break end
-        if reaper.ImGui_RadioButton(ctx, t .. "##SingleInsertSubproject",settings.useTypeForSingleInsertSubproject == t) then
-            settings.useTypeForSingleInsertSubproject = t
-            saveSettings()
+        if i == 1 or i == 2 or i == 7 then 
+            if reaper.ImGui_RadioButton(ctx, t .. "##SingleInsertSubproject",settings.useTypeForSingleInsertSubproject == t) then
+                settings.useTypeForSingleInsertSubproject = t
+                saveSettings()
+            end
         end
     end
+    
+    reaper.ImGui_NewLine(ctx) 
+    reaper.ImGui_TextColored(ctx, colorGrey, "Action settings")
+    ret, settings.insertItemsOnDedicatedTrack = reaper.ImGui_Checkbox(ctx, "Insert Thumbnails/Empty items on dedicated track", settings.insertItemsOnDedicatedTrack)
+    if ret then 
+        saveSettings()
+    end
+    setToolTipFunc("This will create a dedicated track below the track containing the video, using the video name, and insert thumbnails and empty items on here instead")
+    
+    
+    ret, settings.setNameOnSplitItems = reaper.ImGui_Checkbox(ctx, "Set cut name when splitting items", settings.setNameOnSplitItems)
+    if ret then 
+        saveSettings()
+    end
+    setToolTipFunc("This will name the new items with cut name")
+    
+    ret, settings.setColorOnSplitItems = reaper.ImGui_Checkbox(ctx, "Set cut color when splitting items", settings.setColorOnSplitItems)
+    if ret then 
+        saveSettings()
+    end
+    setToolTipFunc("This will color the new items with cut color")
+    
+    
+    
     reaper.ImGui_EndGroup(ctx)
     
     
@@ -3166,6 +3736,7 @@ local function loop()
 
         isShiftDown = ImGui.IsKeyDown(ctx, ImGui.Mod_Shift)
         isCtrlDown = ImGui.IsKeyDown(ctx, ImGui.Mod_Super)
+        isOptionDown = ImGui.IsKeyDown(ctx, ImGui.Mod_Alt)
         isSuperDown = ImGui.IsKeyDown(ctx, ImGui.Mod_Ctrl)
         isSuperPressed = reaper.ImGui_IsKeyPressed(ctx, ImGui.Mod_Ctrl, false)
         isSuperReleased = reaper.ImGui_IsKeyReleased(ctx, ImGui.Mod_Ctrl)
@@ -3211,13 +3782,23 @@ local function loop()
         --if not last_cur_pos then --or settings.cursorFollowSelectedCut then
             cur_pos = timeline_cur_pos
         --end
-
-        start_time_sel, end_time_sel = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
         
-        if (last_start_time_sel and last_start_time_sel ~= start_time_sel) or (last_end_time_sel and last_end_time_sel ~= end_time_sel) then
-            update_cut_data = true
+        
+        start_time_arr, end_time_arr = reaper.GetSet_ArrangeView2(0, false, 0, 0, 0, 0) 
+        length_time_arr = end_time_arr - start_time_arr
+        if settings.selectionType == "Arrange view" and ((not last_start_time_arr or last_start_time_arr ~= start_time_arr) or (not last_end_time_arr or last_end_time_arr ~= end_time_arr)) then
+            last_start_time_arr = start_time_arr
+            last_end_time_arr = end_time_arr
+            update_cut_data_on_all_items({itemProperties, item2Properties})
+        end
+        
+        start_time_sel, end_time_sel = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
+        length_time_sel = end_time_sel - start_time_sel
+        
+        if settings.selectionType == "Time selection" and ((not last_start_time_sel or last_start_time_sel ~= start_time_sel) or (not last_end_time_sel or last_end_time_sel ~= end_time_sel)) then
             last_start_time_sel = start_time_sel
-            last_end_time_sel = end_time_sel
+            last_end_time_sel = end_time_sel 
+            update_cut_data_on_all_items({itemProperties, item2Properties})
         end
         
         run = run + 1
@@ -3229,7 +3810,8 @@ local function loop()
         end
         
         if not item or (not item2 and compareVideos) then 
-            item, item2 = GetFirstVisibleVideoItemUnder(settings.analyseOnlyBetweenMarkers and (start_time_sel + (end_time_sel - start_time_sel) / 2) or timeline_cur_pos)   --reaper.GetSelectedMediaItem(0, 0)   
+            item, item2 = GetFirstVisibleVideoItemUnder(settings.selectionType == "Time selection" and (start_time_sel + (end_time_sel - start_time_sel) / 2) or timeline_cur_pos)   --reaper.GetSelectedMediaItem(0, 0)   
+            
         end
         
         is_a_subproject = false
@@ -3263,7 +3845,7 @@ local function loop()
         end
         
         
-        if itemProperties and itemProperties.item then
+        if itemProperties and itemProperties.item then 
             getItemRealtimeInfo(itemProperties, mainProj) 
         end 
         
@@ -3275,12 +3857,11 @@ local function loop()
         
         if item and (not last_item 
             or last_item ~= item -- get properties when we change item selection
-            or settings.tabSelection ~= last_tabSelection -- update properties when we change tab
+            or settings.tabSelection ~= last_tabSelection_update -- update properties when we change tab
             or analyseStartTime -- get data_cut when we analyse a video
             or is_a_subproject ~= last_is_a_subproject -- get data_cut when we analyse a video
             or update_cut_data
             ) then
-            
             
             if not update_cut_data then 
                 last_cur_pos = nil
@@ -3306,20 +3887,29 @@ local function loop()
                 item2Properties = getItemProperties(item2, 1) 
             end
             
+            last_tabSelection_update = settings.tabSelection
             --if settings.compareVideoMode then
             --end
             
         end
         
         
+        if update_cut_data_after_selectionType_change then 
+            if settings.selectionType == "Time selection" and settings.arrangeviewFollowsOverview then
+                setArrangeviewArea()
+            end
+            update_cut_data_on_all_items({itemProperties, item2Properties})
+            update_cut_data_after_selectionType_change = false
+        end
         
-        function generalSettingButtons()
+        
+        function generalSettingButtons(IP, IP2)
             
             if settings.showSettingsBoxes then 
-                settingsCheckBoxes()
+                settingsCheckBoxes(IP, IP2)
                 --reaper.ImGui_Separator(ctx)
                 
-                cutShowingSettings(itemProperties)
+                cutShowingSettings(IP, IP2)
                 
                 reaper.ImGui_Separator(ctx)
             end
@@ -3353,7 +3943,7 @@ local function loop()
             if cutDetection then
                 updateTabSelection(1) 
                 
-                generalSettingButtons()
+                generalSettingButtons(itemProperties)
                 
                 
                 selectedCutInfoArea(itemProperties)
@@ -3385,19 +3975,46 @@ local function loop()
             compareVideos = reaper.ImGui_BeginTabItem(ctx, "Compare Videos", nil, flags)
             if compareVideos then 
                 updateTabSelection(2)
-                --if item2 and item2Properties then 
-                    if not overviewAreaFocus then overviewAreaFocus = 0 end
-                    focusOverviewAreaKeycommands()
+                if not overviewAreaFocus then overviewAreaFocus = 0 end
+                focusOverviewAreaKeycommands()
+                
+                generalSettingButtons(itemProperties, item2Properties)
+                
+                    
+                if itemProperties and item2Properties and itemProperties.item and item2Properties.item then 
+                    
+                    
                     --if not item2Properties then item2Properties = {} end
                     local navigationFocusIP1 = overviewAreaFocus == itemProperties.itemNumber and itemProperties or item2Properties
                     local navigationFocusIP2 = overviewAreaFocus == itemProperties.itemNumber and item2Properties or itemProperties
                     
-                    
-                    generalSettingButtons()
-                    
                     itemButton(itemProperties)
-                    if reaper.ImGui_Button(ctx, "<Swap>") then
+                    
+                    if reaper.ImGui_InvisibleButton(ctx, "arrow", buttonSize, buttonSize) then 
                         swapItems = not swapItems
+                    end
+                    local arrowX, arrowY = reaper.ImGui_GetItemRectMin(ctx)
+                    local arrowW, arrowH = reaper.ImGui_GetItemRectSize(ctx)
+                    local posX = arrowX + arrowW/2
+                    local posX1 = arrowX + arrowW/4
+                    local posX2 = arrowX + arrowW/4 * 3
+                    local posY1 = arrowY + 2
+                    local posY2 = arrowY + arrowH - 2
+                    local posY3 = arrowY + arrowH / 5 * 3
+                    reaper.ImGui_DrawList_AddLine(draw_list,posX , posY1, posX, posY2, colorWhite, 1)
+                    reaper.ImGui_DrawList_AddLine(draw_list,posX, posY2, posX1, posY3, colorWhite, 1)
+                    reaper.ImGui_DrawList_AddLine(draw_list,posX, posY2, posX2, posY3, colorWhite, 1)
+                    
+                    reaper.ImGui_SameLine(ctx)
+                    if reaper.ImGui_Button(ctx, "Swap") then
+                        swapItems = not swapItems
+                    end
+                    
+                    if devMode then 
+                        reaper.ImGui_SameLine(ctx)
+                        if reaper.ImGui_Button(ctx, "Compare") then
+                            
+                        end
                     end
                     
                     itemButton(item2Properties)
@@ -3417,9 +4034,17 @@ local function loop()
                     
         
                     navigationButtons(navigationFocusIP1, navigationFocusIP2)  
-                    
-                --end
+                else
                 
+                    --reaper.ImGui_Text(ctx, "Please select 2 video items to compare")
+                    reaper.ImGui_PushFont(ctx, font, 30) 
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorTransparent)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorTransparent)
+                    reaper.ImGui_Button(ctx, "Please select 2 video items to compare", winW-16, 400)
+                    reaper.ImGui_PopStyleColor(ctx, 3)
+                    reaper.ImGui_PopFont(ctx)
+                end
                 
                 --[[
                 reaper.ImGui_SameLine(ctx, posX2)
@@ -3516,4 +4141,5 @@ end
 
 
 reaper.defer(loop)
+
 
