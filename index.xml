@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="55cc8e10b13318dc4f2fd2c54bdca3b89e87e60e" name="Saxmand ReaPack">
+<index version="1" commit="b8b32af9284530048cd13740b72abf35895ad12d" name="Saxmand ReaPack">
   <category name="FX">
     <reapack name="Saxmand_Close all open FX windows.lua" type="script" desc="Close all open FX windows">
       <version name="1.0.0" author="Saxmand" time="2025-07-18T21:03:27Z">
@@ -5987,6 +5987,18 @@
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/55cc8e10b13318dc4f2fd2c54bdca3b89e87e60e/Video/Helpers/json.lua</source>
         <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/55cc8e10b13318dc4f2fd2c54bdca3b89e87e60e/Video/Helpers/undo_redo.lua</source>
         <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/55cc8e10b13318dc4f2fd2c54bdca3b89e87e60e/Video/Helpers/hosi_exec_hidden.vbs</source>
+      </version>
+      <version name="0.2.2" author="saxmand" time="2026-01-28T09:17:33Z">
+        <changelog><![CDATA[+ fixed a whole bunch of things regarding layout and wrong calculations
++ filtering when a frame is detected right after another detected frame as this seems like a problem with the algorithm.
++ added Empty Items option.
++ added option to use dedicated track for empty items or thumbnails.
++ added key commands for action buttons.]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/b8b32af9284530048cd13740b72abf35895ad12d/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/ffmpeg.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/b8b32af9284530048cd13740b72abf35895ad12d/Video/Helpers/ffmpeg.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/b8b32af9284530048cd13740b72abf35895ad12d/Video/Helpers/json.lua</source>
+        <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/b8b32af9284530048cd13740b72abf35895ad12d/Video/Helpers/undo_redo.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/b8b32af9284530048cd13740b72abf35895ad12d/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
