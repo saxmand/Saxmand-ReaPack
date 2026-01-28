@@ -1,15 +1,13 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.2.2
+-- @version 0.2.3
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
 -- @changelog
---   + fixed a whole bunch of things regarding layout and wrong calculations
---   + filtering when a frame is detected right after another detected frame as this seems like a problem with the algorithm.
---   + added Empty Items option.
---   + added option to use dedicated track for empty items or thumbnails.
---   + added key commands for action buttons.
+--   + added cut frequency slider
+--   + fixed some filter logic with never hide edited cuts.
+--   + fixed some errors where a item was missing. hopefully the last
 
 
 
@@ -176,6 +174,7 @@ end
 local defaultSettings = {
     windowSize = 200,
     threshold = 100,
+    removeCutsWithinXFrames = 1,
     showToolTip = true,
     --analyseOnlyBetweenMarkers = false,
     --overviewFollowsLoopSelection = true,
@@ -775,18 +774,9 @@ function extract_cut_data(IP)
   
     f:close()
     
-    -- filter for frames that are right after another frame
-    local filter_results = {}
-    for i, e in ipairs(results) do
-        local time = e.time --roundToFrame(e.time, frames_per_second)
-        
-        if not last_time or time - last_time > (1.1 / frames_per_second) then -- compareWithMargin(e.time, last_time, (1 / frames_per_second)) do
-             table.insert(filter_results, e)
-        end
-        last_time = time
-    end
     
-    return filter_results
+    
+    return results
 end
 
 -- Global throttling variable
@@ -1350,7 +1340,7 @@ function setArrangeviewArea()
 end
 
 function moveCursorToPos(pos)
-    if isSuperDown or settings.cursorFollowSelectedCut then
+    if pos and isSuperDown or settings.cursorFollowSelectedCut then
         if playState ~= 0 then
             reaper.Main_OnCommand(1016, 0) --Transport: Stop
         end
@@ -1372,6 +1362,7 @@ end
 
 
 function getCutData(IP)
+    if not IP then return end
     if fast then
         IP.cut_data = extract_cut_data_fast(IP)
     else
@@ -1490,9 +1481,21 @@ function find_cut_data(IP)
             analyseEndTime = nil
         end
     end
-
-
-
+    
+    
+    --[[
+        -- filter for frames that are right after another frame
+        local filter_results = {}
+        for i, e in ipairs(results) do
+            local time = e.time --roundToFrame(e.time, frames_per_second)
+            
+            if not last_time or time - last_time > (1.1 / frames_per_second) then -- compareWithMargin(e.time, last_time, (1 / frames_per_second)) do
+                 table.insert(filter_results, e)
+            end
+            last_time = time
+        end 
+    ]]
+    
     
     IP.cut_data_time_pos = {} 
     if IP.thumbnailPath_exist then 
@@ -1514,6 +1517,7 @@ function find_cut_data(IP)
     
     IP.cuts_within_selection = {}
     IP.cuts_making_threashold = {}
+    last_cut_time = -100000
     for i, cutInfo in pairs(IP.cut_data) do
         --local cut = {}
         -- reaper.SetEditCurPos(time+position, false, false)
@@ -1525,19 +1529,20 @@ function find_cut_data(IP)
         if time >= IP.item_offset and time < IP.item_length + IP.item_offset and not cutInfo.special then 
             table.insert(IP.cuts_within_selection, { index = i, time = time, exclude = exclude })
             
-            if settings.alwaysShowCutsWithEditedName and 
-                (cutInfo.name or 
-                cutInfo.color or 
-                (not settings.onlyShowCutsWithEditedName and 
-                    cutInfo.score and cutInfo.score <= settings.threshold and 
-                    cutInfo.time >= IP.item_area_to_analyze_start and cutInfo.time <= IP.item_area_to_analyze_start + IP.item_area_to_analyze_length) or 
-                (settings.onlyShowCutsWithEditedName and (cutInfo.name or cutInfo.color))) then
+            if (not settings.onlyShowCutsWithEditedName and 
+                  (cutInfo.score and cutInfo.score <= settings.threshold and cutInfo.time >= IP.item_area_to_analyze_start and cutInfo.time <= IP.item_area_to_analyze_start + IP.item_area_to_analyze_length) 
+                or (settings.alwaysShowCutsWithEditedName and (cutInfo.name or cutInfo.color)))
+                or (settings.onlyShowCutsWithEditedName and (cutInfo.name or cutInfo.color)) then
                 
 
                 --itemEnd = roundToFrame(time + videoStart, frames_per_second)
-
+                if settings.removeCutsWithinXFrames == 0 or (not last_cut_time or (time - last_cut_time) > ((settings.removeCutsWithinXFrames)/frames_per_second)) then 
                 --if default_insideTime == 0 or itemStart >= start_time_sel and itemStart < end_time_sel then
-                table.insert(IP.cuts_making_threashold, { index = i, time = time, exclude = exclude }) --,itemEnd=itemEnd, videoStartOffset = videoStartOffset})
+                    table.insert(IP.cuts_making_threashold, { index = i, time = time, exclude = exclude }) --,itemEnd=itemEnd, videoStartOffset = videoStartOffset})
+                    
+                    last_cut_time = time    
+                end
+                    
                 --if default_createThumbnails == 1 then
                 -- createThumbnails(videoStartOffset)
                 --end
@@ -1548,6 +1553,7 @@ function find_cut_data(IP)
             end
         end
     end
+    
 end
 
 
@@ -1853,32 +1859,66 @@ function cutShowingSettings(IP, IP2)
         find_cut_data(IP)
         find_cut_data(IP2)
     end
-    setToolTipFunc("Set the sensitivity for how likely there is a cut.\n- press cmd/ctrl+keypad plus or keypad minus to set with keyboard")
+    setToolTipFunc("Set the sensitivity for how likely there is a cut.\n - press keypad plus/minus to set with keyboard.\n - Hold down super for fine grained")
     
     reaper.ImGui_SameLine(ctx)
     reaper.ImGui_AlignTextToFramePadding(ctx)
     reaper.ImGui_Text(ctx, "Sensitivity")
     
-    if isKeypadAdd then
-        local newVal = settings.threshold + (isSuperDown and 0.01 or 1)
-        if newVal > 100 then newVal = 100 end
-        settings.threshold = newVal
+    if not isShiftDown and not markerNameIsFocused then 
+        if isKeypadAdd then
+            local newVal = settings.threshold + (isSuperDown and 0.01 or 1)
+            if newVal > 100 then newVal = 100 end
+            settings.threshold = newVal
+            saveSettings() 
+            find_cut_data(IP)
+            find_cut_data(IP2)
+        end
+        
+        if isKeypadSubtract then
+            local newVal = settings.threshold -(isSuperDown and 0.01 or 1)
+            if newVal < 1 then newVal = 1 end
+            settings.threshold = newVal
+            saveSettings()
+            find_cut_data(IP)
+            find_cut_data(IP2)
+        end
+    end
+    
+    
+    reaper.ImGui_SetNextItemWidth(ctx, 120)
+    reaper.ImGui_SameLine(ctx, posX2)
+    ret, val = reaper.ImGui_SliderInt(ctx, "Cut frequency", settings.removeCutsWithinXFrames, 0, 100)
+    if ret then 
+        settings.removeCutsWithinXFrames = val
         saveSettings() 
         find_cut_data(IP)
         find_cut_data(IP2)
     end
+    setToolTipFunc("Clean up the frequency of cuts or remove false detected cuts, that useually happens within 1 frame. This will remove cuts within X frames.\n - press shift+keypad plus/minus to set with keyboard")
     
-    if isKeypadSubtract then
-        local newVal = settings.threshold -(isSuperDown and 0.01 or 1)
-        if newVal < 1 then newVal = 1 end
-        settings.threshold = newVal
-        saveSettings()
-        find_cut_data(IP)
-        find_cut_data(IP2)
+    if isShiftDown and not markerNameIsFocused then 
+        if isKeypadAdd then
+            local newVal = settings.removeCutsWithinXFrames + 1
+            if newVal > 100 then newVal = 100 end
+            settings.removeCutsWithinXFrames = newVal
+            saveSettings() 
+            find_cut_data(IP)
+            find_cut_data(IP2)
+        end
+        
+        if isKeypadSubtract then
+            local newVal = settings.removeCutsWithinXFrames - 1
+            if newVal < 0 then newVal = 0 end
+            settings.removeCutsWithinXFrames = newVal
+            saveSettings()
+            find_cut_data(IP)
+            find_cut_data(IP2)
+        end
     end
     
     
-    reaper.ImGui_SameLine(ctx, posX2)
+    reaper.ImGui_SameLine(ctx, posX3)
     ret, settings.onlyShowCutsWithEditedName = reaper.ImGui_Checkbox(ctx, "only show edited cuts", settings.onlyShowCutsWithEditedName)
     if ret then
         setArrangeviewArea()
@@ -1896,7 +1936,7 @@ function cutShowingSettings(IP, IP2)
     end
 
 
-    reaper.ImGui_SameLine(ctx, posX3)
+    reaper.ImGui_SameLine(ctx, posX4)
     ret, settings.alwaysShowCutsWithEditedName = reaper.ImGui_Checkbox(ctx, "never hide edited cuts", settings.alwaysShowCutsWithEditedName)
     if ret then
         setArrangeviewArea()
@@ -2294,6 +2334,7 @@ end
 
 -- OVERVIEW AREA
 function overviewArea(IP, IP2)
+    if not IP then return end
     if focusNavigation then
         reaper.ImGui_SetKeyboardFocusHere(ctx)
         focusNavigation = false
@@ -2729,7 +2770,8 @@ function should_thumbnail_update(IP)
 end
 
 
-function previewSection(IP)  
+function previewSection(IP)      
+    if not IP then return end
     if not imageA_array then imageA_array = {} end
     if not imageB_array then imageB_array = {} end
     -- PREVIEW SECTION  
@@ -3448,6 +3490,14 @@ function settingButtons(IP)
     reaper.ImGui_BeginGroup(ctx)
     reaper.ImGui_TextColored(ctx, colorGrey, "Settings")
      
+    if reaper.ImGui_Button(ctx, "Reset Settings") then
+        settings = deep_copy(defaultSettings)
+        settings.tabSelection = 3
+        saveSettings()
+    end
+    setToolTipFunc("Click to reset FFMPEG path if you selected the wrong one or moved the file.")
+    
+    
     local isDisabled = not settings.analyseSpeed
     if isDisabled then reaper.ImGui_BeginDisabled(ctx) end
     if reaper.ImGui_Button(ctx, "Reset analyze speed") then
@@ -3472,8 +3522,12 @@ function settingButtons(IP)
     if ret then 
         saveSettings()
     end
-    setToolTipFunc("This will make a lot more cuts detected, and maybe not be useful, as a lot of falls cut might apear.\nYou can hold down super while pressing keypad minus or plus for more gradual sensitivity")
+    setToolTipFunc("This will make a lot more cuts detected, and maybe not be useful, as a lot of falls cut might apear." .. 
+    "\nYou can hold down super while pressing keypad minus or plus for more gradual sensitivity." ..
+    "\nEnabling this requires to re-analyse a video for more cuts to show up")
     reaper.ImGui_EndGroup(ctx)
+    
+    
     
     
     reaper.ImGui_SameLine(ctx, posX2)
@@ -3903,8 +3957,7 @@ local function loop()
         end
         
         
-        function generalSettingButtons(IP, IP2)
-            
+        function generalSettingButtons(IP, IP2)            
             if settings.showSettingsBoxes then 
                 settingsCheckBoxes(IP, IP2)
                 --reaper.ImGui_Separator(ctx)
