@@ -1,24 +1,21 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.2.3
+-- @version 0.2.4
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
 -- @changelog
---   + added cut frequency slider
---   + fixed some filter logic with never hide edited cuts.
---   + fixed some errors where a item was missing. hopefully the last
-
+--   + fixed exit error, to clean any temp image from script folder
 
 
 -------- Possible IDEAS TODO
 -- add option to keep old cut information (eg. color and name)
+-- support drop frames (never looked at it so don't know how it behavies)
 -- add waveform
--- randomize all colors
 -- have multiple videos for cross reference (idea by soundfield)
 -- Compare two videos
     -- cut timeline depending on video changes for you :) 
--- option to only show thumbnails on cuts (work sterted, but did not work properly), was an idea for windows speed, maybe not needed
+-- randomize all colors
 
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
@@ -3709,9 +3706,21 @@ compareVideos = settings.tabSelection == 2
 
 
 local function exit()
-    -- clean up generated images
-    os.remove(itemProperties.pngPathA)
-    os.remove(itemProperties.pngPathB)
+    local i = 0
+    
+    while true do
+        local file = reaper.EnumerateFiles(script_path, i)
+        if not file then break end
+
+        -- case-insensitive match
+        local lower = file:lower()
+
+        if lower:match("%.png$") and (lower:find("tempa", 1, true) or lower:find("tempb", 1, true)) then 
+            os.remove(script_path .. seperator .. file)
+        end
+
+        i = i + 1
+    end 
 end
 
     
