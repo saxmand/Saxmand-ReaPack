@@ -1,0 +1,55 @@
+-- @version 1.0
+-- @noindex
+
+local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
+
+-- Load the reaper sections id number
+local reaper_sections = dofile(scriptPath .. "/Helpers/reaper_sections.lua")
+
+
+local function findArticulationScript(track)
+    if not track then return end
+    local fxAmount = reaper.TrackFX_GetCount(track)
+    for i = 0, fxAmount - 1 do
+        local _, fxName = reaper.TrackFX_GetFXName(track, i)
+        if fxName:match("Articulation Script") then
+            local name = fxName:gsub(" %(Articulation Script%)", ""):gsub("JS: ", "")
+            if name:match(" %[Articulation Scripts/") then
+                name = name:match("^(.-) %[Sound")
+            end -- "fix" if more maps have the same description
+            local fxNumber = i
+            return fxNumber, name
+        end
+    end
+end
+
+local export = {}
+
+function export.trackDependingOnSelection()
+    local midiEditor = reaper.MIDIEditor_GetActive()
+    local track, section_id, name, fxNumber, item, take
+    local isRecording = reaper.GetPlayState() & 4 == 4 
+
+    if not isRecording then
+        if midiEditor then
+            take = reaper.MIDIEditor_GetTake(midiEditor)
+            item = reaper.GetMediaItemTake_Item(take)
+            track = reaper.GetMediaItemTrack(item)
+            section_id = reaper_sections["MIDI Editor"]
+            -- inline editor = 32061
+        else
+            local selectedMediaItemsCount = reaper.CountSelectedMediaItems(0)
+            if selectedMediaItemsCount > 0 then
+                item = reaper.GetSelectedMediaItem(0, 0)
+                take = reaper.GetActiveTake(item)
+                track = reaper.GetMediaItemTrack(item)
+            end
+            section_id = reaper_sections["Main"]
+        end
+    end
+    if not track then track = reaper.GetSelectedTrack(0, 0) end
+    fxNumber, name = findArticulationScript(track)
+    return track, section_id, name, fxNumber, item, take, midiEditor
+end
+
+return export
