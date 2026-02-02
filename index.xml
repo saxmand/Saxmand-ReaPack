@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="9f62b0982d42073a64e2f7f190b2ebdcfd9d9703" name="Saxmand ReaPack">
+<index version="1" commit="2dc5e5c1b23c3f3e8f614de304210dd8873b22ff" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Saxmand_Articulation_Background Server.lua" type="script" desc="Articulation Script Background Server">
       <metadata>
@@ -17,6 +17,9 @@
       <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:41Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/8ba19d64c0d6a151359cd8e21b66f3b3990125df/Articulation%20Scripts/Saxmand_Articulation_Background%20Server.lua</source>
       </version>
+      <version name="0.0.3" author="saxmand" time="2026-02-02T12:25:58Z">
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/2dc5e5c1b23c3f3e8f614de304210dd8873b22ff/Articulation%20Scripts/Saxmand_Articulation_Background%20Server.lua</source>
+      </version>
     </reapack>
     <reapack name="Saxmand_Articulation_Keyboard Trigger Surface.lua" type="script" desc="Toggle Toolbar Icon For Keyboard Trigger Surface of selected articulation script">
       <metadata>
@@ -33,6 +36,9 @@
       </version>
       <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:41Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/8ba19d64c0d6a151359cd8e21b66f3b3990125df/Articulation%20Scripts/Saxmand_Articulation_Keyboard%20Trigger%20Surface.lua</source>
+      </version>
+      <version name="0.0.3" author="saxmand" time="2026-02-02T12:25:58Z">
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/2dc5e5c1b23c3f3e8f614de304210dd8873b22ff/Articulation%20Scripts/Saxmand_Articulation_Keyboard%20Trigger%20Surface.lua</source>
       </version>
     </reapack>
     <reapack name="Saxmand_Articulation_List Overview Surface.lua" type="script" desc="Toggle Toolbar Icon For List Overview of selected articulation script">
@@ -99,6 +105,9 @@
       </version>
       <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:41Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/8ba19d64c0d6a151359cd8e21b66f3b3990125df/Articulation%20Scripts/Saxmand_Articulation_Scripts%20List.lua</source>
+      </version>
+      <version name="0.0.3" author="saxmand" time="2026-02-02T12:25:58Z">
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/2dc5e5c1b23c3f3e8f614de304210dd8873b22ff/Articulation%20Scripts/Saxmand_Articulation_Scripts%20List.lua</source>
       </version>
     </reapack>
   </category>
