@@ -1,4 +1,5 @@
 -- @description Articulation Script License Window
+-- @author saxmand
 -- @package Articulation Scripts
 -- @about
 --   Toggles the toolbar button
