@@ -1,5 +1,5 @@
 -- @description Toggle Toolbar Icon For List Overview of selected articulation script
--- @version 0.0.2
+-- @version 0.0.3
 -- @author saxmand
 -- @package Articulation Scripts
 -- @about
