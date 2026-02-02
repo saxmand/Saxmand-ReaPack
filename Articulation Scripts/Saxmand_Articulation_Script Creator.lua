@@ -6,7 +6,7 @@
 --   Create new articulation scripts
 -- @provides
 --   Functions/*.lua
---   Functions/*.luac
+--   Functions/*.dat
 --   Functions/Helpers/*.lua
 -- @changelog
 --   + 
