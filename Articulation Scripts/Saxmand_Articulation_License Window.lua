@@ -3,8 +3,8 @@
 -- @package Articulation Scripts
 -- @about
 --   Toggles the toolbar button
--- @provides
---   Helpers/*.lua
+
+
 
 local is_new_value, filename, sectionID, cmdID, mode, resolution, val, contextstr = reaper.get_action_context()
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
