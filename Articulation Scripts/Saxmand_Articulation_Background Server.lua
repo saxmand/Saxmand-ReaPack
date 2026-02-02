@@ -1,6 +1,7 @@
 -- @description Articulation Script Background Server
--- @version 0.0.1
+-- @version 0.0.2
 -- @author saxmand
+-- @package Articulation Scripts
 -- @about
 --   Toggles the background server on/off
 

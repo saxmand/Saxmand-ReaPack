@@ -1,6 +1,9 @@
 -- @description Articulation Script Creator
 -- @author Saxmand
--- @version 0.0.1
+-- @package Articulation Scripts
+-- @version 0.0.2
+-- @about
+--   Create new articulation scripts
 -- @provides
 --   Functions/*.lua
 --   Functions/*.luac

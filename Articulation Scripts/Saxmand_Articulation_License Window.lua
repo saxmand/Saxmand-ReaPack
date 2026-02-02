@@ -1,6 +1,7 @@
 -- @description Articulation Script License Window
 -- @author Saxmand
--- @version 0.0.1
+-- @package Articulation Scripts
+-- @version 0.0.2
 -- @provides
 --   Helpers/*.lua
 

@@ -1,6 +1,7 @@
 -- @description Toggle Toolbar Icon For List Overview of selected articulation script
--- @version 0.0.1
+-- @version 0.0.2
 -- @author saxmand
+-- @package Articulation Scripts
 -- @about
 --   Toggles the toolbar button
 
