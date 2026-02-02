@@ -29,15 +29,21 @@ local inDevMappings = {
 }
 
 seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
-local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
-local scriptPathSubfolder = scriptPath .. "Functions" .. seperator  
+scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
+scriptPathSubfolder = scriptPath .. "Functions" .. seperator  
 
-local devMode = scriptPath:match("jesperankarfeldt") ~= nil
+local functionsFilePath = ""
+local functionsFileExtension = ""
+local devMode = false -- scriptPath:match("jesperankarfeldt") ~= nil
 if devMode then
-    local devFilesPath = reaper.GetResourcePath() .. "/Scripts/Jesper/Articulations/Functions/"
+    local devFilesPath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
     package.path = package.path .. ";" .. devFilesPath .. "?.lua"
+    functionsFilePath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
+    functionsFileExtension  = "lua"
 else
-    package.path = package.path .. ";" .. scriptPathSubfolder .. "?.luac"
+    functionsFilePath = scriptPathSubfolder
+    package.path = package.path .. ";" .. scriptPathSubfolder .. "?.dat"
+    functionsFileExtension  = "dat"
 end
 package.path = package.path .. ";" .. scriptPathSubfolder .. "?.lua"
 package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. seperator  .. "?.lua"
@@ -45,17 +51,21 @@ package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. sepera
 
 -- Load the json functions
 --local json = require(scriptPath .. "/Functions/Helpers/json")
-local json = require("json")
+json = require("json")
 
 -- Load the articulation map export function
 --local export = require(scriptPath .. "/Functions/export")
 local export = require("export")
-
+--export = dofile(functionsFilePath .. "export." .. functionsFileExtension)
 local file_handling = require("file_handling")
 local musicxml = require("musicxml")
 
+--aaa = functionsFilePath .. "add_script_to_instrument." .. functionsFileExtension
 
-local addMap = require("add_script_to_instrument")
+--addMap = 
+--file = io.open(aaa, 'r')
+--dofile(functionsFilePath .. "add_script_to_instrument." .. functionsFileExtension)
+addMap = require("add_script_to_instrument")
 
 
 local embed_ui = require("embed_ui")
@@ -72,8 +82,9 @@ local undo_redo = require("undo_redo")
 
 -- Load the keyboard tables
 --local keyboard_tables = require(scriptPath .."/Functions/Helpers/keyboard_tables")
-local keyboard_tables = require("keyboard_tables")
-local kt = keyboard_tables.getKeyboardTables()
+keyboard_tables = require("keyboard_tables")
+kt = keyboard_tables.getKeyboardTables()
+keyboardTableXY = kt.xy
 local keyboardTableKeys = kt.keys
 local keyboardTableKeysOrder = kt.keysOrder 
 
