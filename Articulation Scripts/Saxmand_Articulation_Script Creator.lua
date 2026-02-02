@@ -1,7 +1,7 @@
 -- @description Articulation Script Creator
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.0.6
+-- @version 0.0.7
 -- @about
 --   Create new articulation scripts
 -- @provides
