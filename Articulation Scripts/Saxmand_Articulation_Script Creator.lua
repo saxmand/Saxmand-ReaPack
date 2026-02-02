@@ -1,7 +1,7 @@
 -- @description Articulation Script Creator
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.0.5
+-- @version 0.0.6
 -- @about
 --   Create new articulation scripts
 -- @provides
@@ -34,7 +34,7 @@ scriptPathSubfolder = scriptPath .. "Functions" .. seperator
 
 local functionsFilePath = ""
 local functionsFileExtension = ""
-local devMode = scriptPath:match("jesperankarfeldt") ~= nil
+local devMode = false -- scriptPath:match("jesperankarfeldt") ~= nil
 if devMode then
     local devFilesPath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
     package.path = package.path .. ";" .. devFilesPath .. "?.lua"
@@ -51,7 +51,7 @@ package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. sepera
 
 -- Load the json functions
 --local json = require(scriptPath .. "/Functions/Helpers/json")
-json = require("json")
+local json = require("json")
 
 -- Load the articulation map export function
 --local export = require(scriptPath .. "/Functions/export")
@@ -65,7 +65,7 @@ local musicxml = require("musicxml")
 --addMap = 
 --file = io.open(aaa, 'r')
 --dofile(functionsFilePath .. "add_script_to_instrument." .. functionsFileExtension)
-addMap = require("add_script_to_instrument")
+local addMap = require("add_script_to_instrument")
 
 
 local embed_ui = require("embed_ui")
@@ -82,9 +82,9 @@ local undo_redo = require("undo_redo")
 
 -- Load the keyboard tables
 --local keyboard_tables = require(scriptPath .."/Functions/Helpers/keyboard_tables")
-keyboard_tables = require("keyboard_tables")
-kt = keyboard_tables.getKeyboardTables()
-keyboardTableXY = kt.xy
+local keyboard_tables = require("keyboard_tables")
+local kt = keyboard_tables.getKeyboardTables()
+local keyboardTableXY = kt.xy
 local keyboardTableKeys = kt.keys
 local keyboardTableKeysOrder = kt.keysOrder 
 
