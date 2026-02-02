@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="f67a6ba11e4da58b64ac2a983819dc9168e10c47" name="Saxmand ReaPack">
+<index version="1" commit="6df3e8fba7c61994c35f89a943051fd4e8cd0b1f" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Saxmand_Articulation_Background Server.lua" type="script" desc="Articulation Script Background Server">
       <metadata>
@@ -151,6 +151,33 @@
         <source file="Functions/Helpers/keyboard_tables.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/f67a6ba11e4da58b64ac2a983819dc9168e10c47/Articulation%20Scripts/Functions/Helpers/keyboard_tables.lua</source>
         <source file="Functions/Helpers/pass_through_command.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/f67a6ba11e4da58b64ac2a983819dc9168e10c47/Articulation%20Scripts/Functions/Helpers/pass_through_command.lua</source>
         <source file="Functions/Helpers/reaper_sections.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/f67a6ba11e4da58b64ac2a983819dc9168e10c47/Articulation%20Scripts/Functions/Helpers/reaper_sections.lua</source>
+      </version>
+      <version name="0.0.6" author="Saxmand" time="2026-02-02T14:27:37Z">
+        <changelog><![CDATA[+ ]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Saxmand_Articulation_Script%20Creator.lua</source>
+        <source file="Functions/3json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/3json.lua</source>
+        <source file="Functions/add_script_to_instrument.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/add_script_to_instrument.lua</source>
+        <source file="Functions/change_articulation.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/change_articulation.lua</source>
+        <source file="Functions/embed_ui.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/embed_ui.lua</source>
+        <source file="Functions/file_handling.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/file_handling.lua</source>
+        <source file="Functions/keyboard_trigger.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/keyboard_trigger.lua</source>
+        <source file="Functions/license_window.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/license_window.lua</source>
+        <source file="Functions/list_overview.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/list_overview.lua</source>
+        <source file="Functions/md5.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/md5.lua</source>
+        <source file="Functions/musicxml.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/musicxml.lua</source>
+        <source file="Functions/pathes.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/pathes.lua</source>
+        <source file="Functions/scripts_list.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/scripts_list.lua</source>
+        <source file="Functions/track_depending_on_selection.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/track_depending_on_selection.lua</source>
+        <source file="Functions/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/undo_redo.lua</source>
+        <source file="Functions/check_license.dat">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/check_license.dat</source>
+        <source file="Functions/export.dat">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/export.dat</source>
+        <source file="Functions/get_articulation_scripts.dat">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/get_articulation_scripts.dat</source>
+        <source file="Functions/read_articulation_script.dat">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/read_articulation_script.dat</source>
+        <source file="Functions/Helpers/get_screen_size.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/Helpers/get_screen_size.lua</source>
+        <source file="Functions/Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/Helpers/json.lua</source>
+        <source file="Functions/Helpers/keyboard_tables.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/Helpers/keyboard_tables.lua</source>
+        <source file="Functions/Helpers/pass_through_command.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/Helpers/pass_through_command.lua</source>
+        <source file="Functions/Helpers/reaper_sections.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/6df3e8fba7c61994c35f89a943051fd4e8cd0b1f/Articulation%20Scripts/Functions/Helpers/reaper_sections.lua</source>
       </version>
     </reapack>
     <reapack name="Saxmand_Articulation_Scripts List.lua" type="script" desc="Toggle Toolbar Icon For Articulation Script List Overview">
