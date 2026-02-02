@@ -1,6 +1,5 @@
 -- @description Articulation Script License Window
 -- @package Articulation Scripts
--- @version 0.0.3
 -- @provides
 --   Helpers/*.lua
 
