@@ -1,5 +1,7 @@
 -- @description Articulation Script License Window
 -- @package Articulation Scripts
+-- @about
+--   Toggles the toolbar button
 -- @provides
 --   Helpers/*.lua
 
