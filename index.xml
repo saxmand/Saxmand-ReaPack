@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="8ba19d64c0d6a151359cd8e21b66f3b3990125df" name="Saxmand ReaPack">
+<index version="1" commit="9f62b0982d42073a64e2f7f190b2ebdcfd9d9703" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Saxmand_Articulation_Background Server.lua" type="script" desc="Articulation Script Background Server">
       <metadata>
@@ -50,6 +50,9 @@
       </version>
       <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:41Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/8ba19d64c0d6a151359cd8e21b66f3b3990125df/Articulation%20Scripts/Saxmand_Articulation_List%20Overview%20Surface.lua</source>
+      </version>
+      <version name="0.0.3" author="saxmand" time="2026-02-02T12:02:16Z">
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/9f62b0982d42073a64e2f7f190b2ebdcfd9d9703/Articulation%20Scripts/Saxmand_Articulation_List%20Overview%20Surface.lua</source>
       </version>
     </reapack>
     <reapack name="Saxmand_Articulation_Script Creator.lua" type="script" desc="Articulation Script Creator">
