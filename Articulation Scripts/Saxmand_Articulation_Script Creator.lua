@@ -1,7 +1,7 @@
 -- @description Articulation Script Creator
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.0.3
+-- @version 0.0.4
 -- @about
 --   Create new articulation scripts
 -- @provides
@@ -34,7 +34,7 @@ scriptPathSubfolder = scriptPath .. "Functions" .. seperator
 
 local functionsFilePath = ""
 local functionsFileExtension = ""
-local devMode = false -- scriptPath:match("jesperankarfeldt") ~= nil
+local devMode = scriptPath:match("jesperankarfeldt") ~= nil
 if devMode then
     local devFilesPath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
     package.path = package.path .. ";" .. devFilesPath .. "?.lua"
