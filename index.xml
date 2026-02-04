@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <index version="1" commit="afc824498e8923d4146f03ac384fbc86b0b2146e" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
+    <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
+      <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
+        <changelog><![CDATA[initial beta release]]></changelog>
+        <source file="Articulation Scripts Web Surface.html">https://github.com/saxmand/Saxmand-ReaPack/raw/8fe3f2c9ca754ebcdbae3e8c73f92cc6c7ba4b4b/Articulation%20Scripts/Articulation%20Scripts%20Web%20Surface.html</source>
+      </version>
+    </reapack>
     <reapack name="Saxmand_Articulation_Scripts.lua" type="script" desc="Articulation Scripts">
       <metadata>
         <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
