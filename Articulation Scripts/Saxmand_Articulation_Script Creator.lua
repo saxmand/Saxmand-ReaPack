@@ -8,7 +8,6 @@
 --   Functions/*.lua
 --   Functions/*.dat
 --   Functions/Helpers/*.lua
---   [reaper_www_root] ../FX Modulator Linking/Curve Mapped Modulation/*.html
 -- @changelog
 --   + 
 
