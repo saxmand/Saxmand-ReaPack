@@ -1,11 +1,3 @@
--- @description Toggle Toolbar Icon For Articulation Script List Overview
--- @author saxmand
--- @package Articulation Scripts
--- @about
---   Toggles the toolbar button
-
---local commandID = ({reaper.get_action_context()})[4]  -- This script's command ID
-
 local is_new_value, filename, sectionID, cmdID, mode, resolution, val, contextstr = reaper.get_action_context()
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
 local commandID = reaper.AddRemoveReaScript(true, 0, filename, false)

@@ -1,11 +1,3 @@
--- @description Articulation Script License Window
--- @author saxmand
--- @package Articulation Scripts
--- @about
---   Toggles the toolbar button
-
-
-
 local is_new_value, filename, sectionID, cmdID, mode, resolution, val, contextstr = reaper.get_action_context()
 
 seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
