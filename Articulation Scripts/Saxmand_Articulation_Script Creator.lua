@@ -1712,7 +1712,7 @@ local function loop()
                             reaper.ImGui_TextColored(ctx, 0x777777FF, "Filter incoming:")  
                             
                             local buttonsData = {{
-                            name = "Position (Legato)", triggerName = "Position", key = "P", ctrl = true,
+                            name = "Position (Legato)", triggerName = "Position", key = "P", ctrl = true, shift = true,
                             tip = "Filter articulation based on position in legato phrase." -- could extend to numbers in phrase maybe
                             },{
                             name = "Filter Channel", triggerName = "FilterChannel", key = "C", ctrl = true, shift = true,
