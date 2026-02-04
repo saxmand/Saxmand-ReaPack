@@ -1,18 +1,18 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.1.3
+-- @version 0.1.4
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
---   Articulation Scripts/Functions/*.lua
---   Articulation Scripts/Functions/*.dat
---   Articulation Scripts/Functions/Helpers/*.lua
---   [main] Articulation Scripts/Saxmand_Articulation_Script Creator.lua
---   [main] Articulation Scripts/Saxmand_Articulation_Background Server.lua
---   [main] Articulation Scripts/Saxmand_Articulation_License Window.lua
---   [main] Articulation Scripts/Saxmand_Articulation_Scripts List.lua
---   [main=midi_editor,midi_inlineeditor,main] Articulation Scripts/Saxmand_Articulation_Keyboard Trigger Surface.lua
---   [main=midi_editor,midi_inlineeditor,main] Articulation Scripts/Saxmand_Articulation_List Overview Surface.lua
+--   Functions/*.lua
+--   Functions/*.dat
+--   Functions/Helpers/*.lua
+--   [main] Saxmand_Articulation_Script Creator.lua
+--   [main] Saxmand_Articulation_Background Server.lua
+--   [main] Saxmand_Articulation_License Window.lua
+--   [main] Saxmand_Articulation_Scripts List.lua
+--   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
+--   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
 --   + tried making a main file
