@@ -1,13 +1,14 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.1.5
+-- @version 0.1.6
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
 --   Functions/*.lua
 --   Functions/*.dat
 --   Functions/Helpers/*.lua
+--   Articulation Scripts Web Surface.html
 --   [main] Saxmand_Articulation_Script Creator.lua
 --   [main] Saxmand_Articulation_Background Server.lua
 --   [main] Saxmand_Articulation_License Window.lua
@@ -15,5 +16,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + updated open license window
---   + fix shortcut for filter position
+--   + tried adding web surface
