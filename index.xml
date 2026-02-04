@@ -20,8 +20,8 @@
       <version name="0.0.1" author="saxmand" time="2026-01-31T20:26:56Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/d7e20a7c30c8f091bc0440a6a0dedcfd56bb6789/Articulation%20Scripts/Saxmand_Articulation_Background%20Server.lua</source>
       </version>
-      <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:41Z">
-        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/8ba19d64c0d6a151359cd8e21b66f3b3990125df/Articulation%20Scripts/Saxmand_Articulation_Background%20Server.lua</source>
+      <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:50Z">
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/69d003290525019f5bd72a041f665dad8ef62d39/Articulation%20Scripts/Saxmand_Articulation_Background%20Server.lua</source>
       </version>
       <version name="0.0.3" author="saxmand" time="2026-02-02T12:25:58Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/2dc5e5c1b23c3f3e8f614de304210dd8873b22ff/Articulation%20Scripts/Saxmand_Articulation_Background%20Server.lua</source>
@@ -40,8 +40,8 @@
       <version name="0.0.1" author="saxmand" time="2026-01-31T20:26:56Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/d7e20a7c30c8f091bc0440a6a0dedcfd56bb6789/Articulation%20Scripts/Saxmand_Articulation_Keyboard%20Trigger%20Surface.lua</source>
       </version>
-      <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:41Z">
-        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/8ba19d64c0d6a151359cd8e21b66f3b3990125df/Articulation%20Scripts/Saxmand_Articulation_Keyboard%20Trigger%20Surface.lua</source>
+      <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:50Z">
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/69d003290525019f5bd72a041f665dad8ef62d39/Articulation%20Scripts/Saxmand_Articulation_Keyboard%20Trigger%20Surface.lua</source>
       </version>
       <version name="0.0.3" author="saxmand" time="2026-02-02T12:25:58Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/2dc5e5c1b23c3f3e8f614de304210dd8873b22ff/Articulation%20Scripts/Saxmand_Articulation_Keyboard%20Trigger%20Surface.lua</source>
@@ -60,8 +60,8 @@
       <version name="0.0.1" author="saxmand" time="2026-01-31T20:26:56Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/d7e20a7c30c8f091bc0440a6a0dedcfd56bb6789/Articulation%20Scripts/Saxmand_Articulation_List%20Overview%20Surface.lua</source>
       </version>
-      <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:41Z">
-        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/8ba19d64c0d6a151359cd8e21b66f3b3990125df/Articulation%20Scripts/Saxmand_Articulation_List%20Overview%20Surface.lua</source>
+      <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:50Z">
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/69d003290525019f5bd72a041f665dad8ef62d39/Articulation%20Scripts/Saxmand_Articulation_List%20Overview%20Surface.lua</source>
       </version>
       <version name="0.0.3" author="saxmand" time="2026-02-02T12:02:16Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/9f62b0982d42073a64e2f7f190b2ebdcfd9d9703/Articulation%20Scripts/Saxmand_Articulation_List%20Overview%20Surface.lua</source>
@@ -309,8 +309,8 @@
       <version name="0.0.1" author="saxmand" time="2026-01-31T20:26:56Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/d7e20a7c30c8f091bc0440a6a0dedcfd56bb6789/Articulation%20Scripts/Saxmand_Articulation_Scripts%20List.lua</source>
       </version>
-      <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:41Z">
-        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/8ba19d64c0d6a151359cd8e21b66f3b3990125df/Articulation%20Scripts/Saxmand_Articulation_Scripts%20List.lua</source>
+      <version name="0.0.2" author="saxmand" time="2026-02-02T11:50:50Z">
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/69d003290525019f5bd72a041f665dad8ef62d39/Articulation%20Scripts/Saxmand_Articulation_Scripts%20List.lua</source>
       </version>
       <version name="0.0.3" author="saxmand" time="2026-02-02T12:25:58Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/2dc5e5c1b23c3f3e8f614de304210dd8873b22ff/Articulation%20Scripts/Saxmand_Articulation_Scripts%20List.lua</source>
@@ -1104,6 +1104,8 @@
         <source type="effect" file="../FX Modulator Linking/Note Velocity Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX%20Modulator%20Linking/Note%20Velocity%20Modulator.jsfx</source>
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Helpers/json.lua</source>
         <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Helpers/special_buttons.lua</source>
+        <source file="Color sets/Dark lol.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Color%20sets/Dark%20lol.txt</source>
+        <source file="Color sets/Dark test.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Color%20sets/Dark%20test.txt</source>
         <source file="Color sets/Dark.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Color%20sets/Dark.txt</source>
         <source file="Color sets/Light.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/5e61248d87d16618e40e7cfe28a0a62168a16559/FX/Color%20sets/Light.txt</source>
       </version>
@@ -1753,6 +1755,43 @@
         <source file="Color sets/Dark test.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/4e75e827c42fb759ddc5605f86fb44046e1a596f/FX/Color%20sets/Dark%20test.txt</source>
         <source file="Color sets/Dark.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/4e75e827c42fb759ddc5605f86fb44046e1a596f/FX/Color%20sets/Dark.txt</source>
         <source file="Color sets/Light.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/4e75e827c42fb759ddc5605f86fb44046e1a596f/FX/Color%20sets/Light.txt</source>
+      </version>
+      <version name="0.9.41" author="Saxmand" time="2025-05-29T16:37:44Z">
+        <changelog><![CDATA[+ adding master track support attempt 2]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX/Saxmand_FX%20Modulator%20Linking.lua</source>
+        <source type="effect" file="../FX Modulator Linking/4-in-1-out Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/4-in-1-out%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/AB Slider Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/AB%20Slider%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/ACS Native Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/ACS%20Native%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Button Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/Button%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Counter Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/Counter%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Keytracker Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/Keytracker%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/LFO Native Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/LFO%20Native%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/MIDI Fader Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/MIDI%20Fader%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/MIDI Out Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/MIDI%20Out%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Macro 4 Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/Macro%204%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Macro Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/Macro%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/Note Velocity Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/Note%20Velocity%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/XY Modulator.jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/XY%20Modulator.jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/Math Modulator (SNJUK2).jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/Math%20Modulator%20(SNJUK2).jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/Pitch 12 Modulator (SNJUK2).jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/Pitch%2012%20Modulator%20(SNJUK2).jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/Toggle Select 4 Modulator (SNJUK2).jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/Toggle%20Select%204%20Modulator%20(SNJUK2).jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/LFO (SNJUK2)/LFO (SNJUK2).jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/LFO%20(SNJUK2)/LFO%20(SNJUK2).jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/LFO (SNJUK2)/lfo_gfxlib.jsfx-inc">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/LFO%20(SNJUK2)/lfo_gfxlib.jsfx-inc</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/MIDI Envelope Modulator (SNJUK2)/MIDI Envelope Modulator (SNJUK2).jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/MIDI%20Envelope%20Modulator%20(SNJUK2)/MIDI%20Envelope%20Modulator%20(SNJUK2).jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/MIDI Envelope Modulator (SNJUK2)/dwelx.zenvelib.v1.jsfx-inc">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/MIDI%20Envelope%20Modulator%20(SNJUK2)/dwelx.zenvelib.v1.jsfx-inc</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/MIDI Envelope Modulator (SNJUK2)/gfxlib.jsfx-inc">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/MIDI%20Envelope%20Modulator%20(SNJUK2)/gfxlib.jsfx-inc</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/Steps Modulator (SNJUK2)/Steps Modulator (SNJUK2).jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/Steps%20Modulator%20(SNJUK2)/Steps%20Modulator%20(SNJUK2).jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/Steps Modulator (SNJUK2)/step_gfxlib.jsfx-inc">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/Steps%20Modulator%20(SNJUK2)/step_gfxlib.jsfx-inc</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/Curve (SNJUK2)/Curve (SNJUK2).jsfx">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/Curve%20(SNJUK2)/Curve%20(SNJUK2).jsfx</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/Curve (SNJUK2)/Curve3-2.jsfx-inc">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/Curve%20(SNJUK2)/Curve3-2.jsfx-inc</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/Curve (SNJUK2)/Grid1-2.jsfx-inc">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/Curve%20(SNJUK2)/Grid1-2.jsfx-inc</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/Curve (SNJUK2)/Mouse3Full.jsfx-inc">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/Curve%20(SNJUK2)/Mouse3Full.jsfx-inc</source>
+        <source type="effect" file="../FX Modulator Linking/SNJUK2 Modulators/Curve (SNJUK2)/cur_gfxlib.jsfx-inc">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX%20Modulator%20Linking/SNJUK2%20Modulators/Curve%20(SNJUK2)/cur_gfxlib.jsfx-inc</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX/Helpers/json.lua</source>
+        <source file="Helpers/special_buttons.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX/Helpers/special_buttons.lua</source>
+        <source file="Color sets/Dark test.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX/Color%20sets/Dark%20test.txt</source>
+        <source file="Color sets/Dark.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX/Color%20sets/Dark.txt</source>
+        <source file="Color sets/Light.txt">https://github.com/saxmand/Saxmand-ReaPack/raw/1bc59c9e2c5f1633469738b2ff0fdbc385b12f85/FX/Color%20sets/Light.txt</source>
       </version>
       <version name="0.9.4.1" author="Saxmand" time="2025-05-29T16:41:57Z">
         <changelog><![CDATA[+ adding master track support attempt 2]]></changelog>
