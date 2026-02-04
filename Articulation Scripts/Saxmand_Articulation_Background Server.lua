@@ -38,16 +38,20 @@ end
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
 local scriptPathSubfolder = scriptPath .. "Functions" .. seperator   
-local devMode = scriptPath:match("jesperankarfeldt") ~= nil
 if devMode then
-    local devFilesPath = reaper.GetResourcePath() .. "/Scripts/Jesper/Articulations/Functions/"
+    local devFilesPath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
     package.path = package.path .. ";" .. devFilesPath .. "?.lua"
+    functionsFilePath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
+    functionsFileExtension  = "lua"
 else
-    package.path = package.path .. ";" .. scriptPathSubfolder .. "?.luac"
+    functionsFilePath = scriptPathSubfolder
+    package.path = package.path .. ";" .. scriptPathSubfolder .. "?.dat"
+    functionsFileExtension  = "dat"
 end
-
 package.path = package.path .. ";" .. scriptPathSubfolder .. "?.lua"
 package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. seperator  .. "?.lua"
+
+if not require("dependencies").main() then return end
 
 -- Load the json functions
 local json = require("json")

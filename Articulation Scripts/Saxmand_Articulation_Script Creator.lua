@@ -8,10 +8,11 @@
 --   Functions/*.lua
 --   Functions/*.dat
 --   Functions/Helpers/*.lua
+--   [reaper_www_root] ../FX Modulator Linking/Curve Mapped Modulation/*.html
 -- @changelog
 --   + 
 
-version = 0.2
+version = 0.3
 
 
 local stateName = "ArticulationScripts"
@@ -24,6 +25,8 @@ local inDevMappings = {
     ["Filter Channel"] = true,
     ["Filter Pitch"] = true,
     ["Notation"] = true,
+    ["Undo"] = true,
+    ["Redo"] = true,
     --["Filter Velocity"] = true,
     --["Transpose"] = true, -- would need to keep track of notes, to know proper note off
 }
@@ -34,37 +37,21 @@ scriptPathSubfolder = scriptPath .. "Functions" .. seperator
 
 local functionsFilePath = ""
 local functionsFileExtension = ""
-local devMode = false -- scriptPath:match("jesperankarfeldt") ~= nil
+local devMode = scriptPath:match("jesperankarfeldt") ~= nil
 if devMode then
     local devFilesPath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
     package.path = package.path .. ";" .. devFilesPath .. "?.lua"
-    functionsFilePath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
-    functionsFileExtension  = "lua"
 else
-    functionsFilePath = scriptPathSubfolder
     package.path = package.path .. ";" .. scriptPathSubfolder .. "?.dat"
-    functionsFileExtension  = "dat"
 end
 package.path = package.path .. ";" .. scriptPathSubfolder .. "?.lua"
 package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. seperator  .. "?.lua"
 
-
--- Load the json functions
---local json = require(scriptPath .. "/Functions/Helpers/json")
+if not require("dependencies").main() then return end
 local json = require("json")
-
--- Load the articulation map export function
---local export = require(scriptPath .. "/Functions/export")
 local export = require("export")
---export = dofile(functionsFilePath .. "export." .. functionsFileExtension)
 local file_handling = require("file_handling")
 local musicxml = require("musicxml")
-
---aaa = functionsFilePath .. "add_script_to_instrument." .. functionsFileExtension
-
---addMap = 
---file = io.open(aaa, 'r')
---dofile(functionsFilePath .. "add_script_to_instrument." .. functionsFileExtension)
 local addMap = require("add_script_to_instrument")
 
 
@@ -145,6 +132,13 @@ require("pathes")
 
 --- SETTINGS STUFF
 
+local defaultAppSettings = { 
+    auditionNote = 64, 
+    alwaysOverwriteApps = false,
+    alwaysEmbedUi = false,
+    expandWindow = false,
+}
+
 local function saveAppSettings()
     local settingsStr = json.encodeToJson(appSettings)
     reaper.SetExtState(stateName,"appSettings", settingsStr, true) 
@@ -155,7 +149,7 @@ if reaper.HasExtState(stateName, "appSettings") then
     local settingsStr = reaper.GetExtState(stateName,"appSettings") 
     appSettings = json.decodeFromJson(settingsStr)
 else    
-    appSettings = {}
+    appSettings = defaultAppSettings
     saveAppSettings()
 end
 
@@ -488,7 +482,7 @@ function importTable(specificFilePath)
                     local usedNoteMapping = {}
                     for _, a in ipairs(tableInfo) do
                         for k, v in pairs(a) do 
-                            if v and v ~= "" then
+                            if v and v ~= "" then 
                                 if k:match("NoteM") ~= nil and k:match("Velocity") == nil then
                                     if not usedNoteMapping[k] then 
                                         table.insert(mapping.NoteM, true)
@@ -517,7 +511,7 @@ function importTable(specificFilePath)
                 if luaTable.mapping then
                     mapping = luaTable.mapping
                 end
-                if mapping.NoteM or mapping.NoteH then
+                --if mapping.NoteM or mapping.NoteH then
                     mapping.NoteM = nil
                     mapping.NoteH = nil
                     mapping.Note = {}
@@ -527,15 +521,20 @@ function importTable(specificFilePath)
                         if not newTable[i] then newTable[i] = {} end
                         for k, v in pairs(a) do 
                             if v and v ~= "" then
-                                if k:match("Note") ~= nil and k:match("Velocity") == nil then
+                                if k:match("Note") ~= nil and k:match("Velocity") == nil and k:match("Held") == nil then
                                     if not usedNoteMapping[k] then 
                                         table.insert(mapping.Note, #mapping.Note + 1)
                                         usedNoteMapping[k] = #mapping.Note
                                     end 
                                     
-                                    newTable[i]["Note" .. usedNoteMapping[k]] = v
+                                    newTable[i]["Note" .. usedNoteMapping[k]] = v 
+                                elseif k:match("Note") ~= nil and k:match("Velocity") ~= nil then
+                                    newTable[i][k:gsub("M", ""):gsub("M", "")] = v 
                                 elseif k:match("CC") ~= nil then
-                                    mapping.CC[key:gsub("CC", "")] = true
+                                    local ccNumberClean = k:gsub("CC", "")
+                                    if tonumber(ccNumberClean) and not mapping.CC[tonumber(ccNumberClean)]  then 
+                                        mapping.CC[tonumber(ccNumberClean)] = true
+                                    end
                                     newTable[i][k] = v
                                 else
                                     newTable[i][k] = v
@@ -549,6 +548,11 @@ function importTable(specificFilePath)
                         end
                     end
                     tableInfo = newTable
+                --end
+            elseif articulationMapCreatorVersion == 0.3 then   
+                tableInfo = luaTable.tableInfo
+                if luaTable.mapping then
+                    mapping = luaTable.mapping
                 end
             else
                 reaper.ShowConsoleMsg("Script not supported from version: " .. tostring(articulationMapCreatorVersion) .. "\n")
@@ -752,7 +756,6 @@ function moveRows(up)
                 --for _, map in pairs(mappingType) do
                     --if tableInfo[map][rowKeyToMove] then
                         local tempMappingInfo = tableInfo[rowKeyToMove + direction]
-                        reaper.ShowConsoleMsg(rowKeyToMove .. " - " .. direction .. "\n")
                         tableInfo[rowKeyToMove + direction] = tableInfo[rowKeyToMove]
                         tableInfo[rowKeyToMove] = tempMappingInfo
                     --end
@@ -792,8 +795,9 @@ defaultModifierSettings = {
     ["Channel"] = "Increment",
     ["Layer"] = "Increment",
     ["Delay"] = "Same",
-    ["Pitch"] = "Same",
+    ["Pitch"] = "Fixed",
     ["Velocity"] = "Fixed",
+    ["FilterVelocity"] = "Fixed",
     ["Note"] = "Same",
     ["CC"] = "Same", 
 }
@@ -1216,12 +1220,17 @@ function createMappingButton(data)
         data.tip = data.disabledText
     end
     
+    if refocusActionData and refocusActionData.name == data.name then  
+        refocusActionData.func()
+        refocusActionData = false
+    end
+    
     if not data.hide then
         if data.sameLine then reaper.ImGui_SameLine(ctx) end
         local triggerName = data.triggerName and data.triggerName or data.name:gsub("%s", "")
         
         local keyTrigger = nil 
-        if not data.key then
+        if not data.key or data.key == "" or data.noKeyTrigger then
             keyTrigger = false
         elseif #data.key > 1 then 
             keyTrigger = keyNameTranslation[data.key]
@@ -1229,7 +1238,7 @@ function createMappingButton(data)
             keyTrigger = _G["reaper"]["ImGui_Key_" .. data.key]()
         end
         
-        if not reaper.ImGui_IsKeyReleased(ctx, keyTrigger) and data.key2 then
+        if keyTrigger and not reaper.ImGui_IsKeyReleased(ctx, keyTrigger) and data.key2 then
             local keyTrigger2 = nil
             if #data.key2 > 1 then 
                 keyTrigger2 =  keyNameTranslation[data.key2]
@@ -1242,11 +1251,17 @@ function createMappingButton(data)
         end
         
         
-        local keyTriggerTrigger = not disable and reaper.ImGui_IsKeyPressed(ctx, keyTrigger, false) -- (data.quickKeyTrigger and reaper.ImGui_IsKeyPressed(ctx, keyTrigger) or reaper.ImGui_IsKeyReleased(ctx, keyTrigger)) or nil
+        local keyTriggerTrigger = not disable and keyTrigger and reaper.ImGui_IsKeyPressed(ctx, keyTrigger, false) -- (data.quickKeyTrigger and reaper.ImGui_IsKeyPressed(ctx, keyTrigger) or reaper.ImGui_IsKeyReleased(ctx, keyTrigger)) or nil
         
         if data.func then
             if reaper.ImGui_Button(ctx, data.name) or (keyTrigger and (not data.ctrl and not ctrl or data.ctrl == ctrl) and (not data.shift and not shift or data.shift == shift) and (not data.alt and not alt or data.alt == alt) and (not data.cmd and not cmd or data.cmd == cmd) and keyTriggerTrigger) then 
-                data.func()
+                if data.refocus then 
+                    reaper.ImGui_SetKeyboardFocusHere(ctx)
+                    refocusActionData = data 
+                    refocusButtonFirst = true
+                else
+                    data.func()
+                end
             end
         --elseif data.buttonType == "articulation" then
         --    if reaper.ImGui_Button(ctx, data.name) or ((not data.ctrl and not ctrl or data.ctrl == ctrl) and (not data.shift and not shift or data.shift == shift) and (not data.alt and not alt or data.alt == alt) and (not data.cmd and not cmd or data.cmd == cmd) and keyTriggerTrigger) then 
@@ -1290,7 +1305,7 @@ function createMappingButton(data)
         end
         setToolTipFunc(data.tip)
         
-        if data.key and not data.doNotshowShortCut then
+        if keyTrigger and not data.doNotshowShortCut then
             reaper.ImGui_SameLine(ctx)  
             local shortcut = (data.ctrl and "ctrl+" or "") .. (data.shift and "shift+" or "") .. (data.alt and "alt+" or "") .. (data.cmd and "cmd+" or "") .. string.lower(data.key)  
             reaper.ImGui_TextColored(ctx, 0x777777FF, "(".. shortcut .. ")")
@@ -1364,6 +1379,7 @@ local function loop()
         end
         setToolTipFunc("Auto resize window to table (cmd+r)")
         
+        
         reaper.ImGui_EndGroup(ctx)
         
         
@@ -1409,13 +1425,19 @@ local function loop()
                     appSettings.alwaysOverwriteApps = val
                     saveAppSettings()
                 end 
-                
                 ret, val = reaper.ImGui_Checkbox(ctx, "Always embed UI in TCP", appSettings.alwaysEmbedUi)
                 if ret then 
                     appSettings.alwaysEmbedUi = val
                     saveAppSettings()
                 end 
                 setToolTipFunc("When adding a script to a track, embed the UI in the TCP")
+                
+                reaper.ImGui_SetNextItemWidth(ctx, 127)
+                ret, appSettings.auditionNote = reaper.ImGui_SliderInt(ctx, "Audition Note", appSettings.auditionNote or 64, 0, 127)
+                if ret then 
+                    saveAppSettings()
+                end 
+                setToolTipFunc("Select which note to send when auditioning articulations")
                 
                 
             end
@@ -1684,7 +1706,7 @@ local function loop()
                             tip = "Delay articulation and note in miliseconds.\nUsually used together with a negative track delay."
                             },{
                             name = "Pitch", key = "P", ctrl = true, triggerName = "Pitch", 
-                            tip = "Make note a specific pitch.\nThis is great for remapping notes to a percussion instrument."
+                            tip = "Make note a specific pitch or pitch range.\nThis is great for remapping notes to a percussion instrument."
                             }}
                             
                             for _, data in ipairs(buttonsData) do
@@ -1879,7 +1901,7 @@ local function loop()
                         reaper.ImGui_NewLine(ctx)
                         
                         
-                        reaper.ImGui_SetCursorPos(ctx, mappingX, MappingEndsY + 100)
+                        reaper.ImGui_SetCursorPos(ctx, mappingX, MappingEndsY + 50)
             
                         reaper.ImGui_Separator(ctx)
 
@@ -1914,7 +1936,7 @@ local function loop()
                         name = "Select all rows", key = "A", cmd = true, shift = true, sameLine = false, func = function() selectAllRows(true) end,
                         tip = 'Select all rows'
                         },{
-                        name = "Import clipboard", key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet() end,
+                        name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet() end,
                         tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12'
                         },{
                         name = "Move up rows", key = "up", cmd = true, alt = true, sameLine = false, func = function() moveRowStart(true) end,
@@ -2038,10 +2060,10 @@ local function loop()
                                 local modifierNames = {"Same"}
                                 multipleSelectionOptions(mappingTypeName, modifierNames)
                             elseif mappingType[focusedColumn] and mappingTypeName == "Pitch" then
-                                local modifierNames = { "Same", "Increment", "Chromatic", "White Keys", "Black Keys" }
-                                multipleSelectionOptions(mappingTypeName, modifierNames)
-                                --local modifierNames = {"Fixed", "Minimum", "Maximum", "Within", "Outside"}
-                                --multipleSelectionVelocity(mappingTypeName, modifierNames)
+                                --local modifierNames = { "Same", "Increment", "Chromatic", "White Keys", "Black Keys" }
+                                --multipleSelectionOptions(mappingTypeName, modifierNames)
+                                local modifierNames = {"Fixed", "Minimum", "Maximum", "Within", "Outside"}
+                                multipleSelectionVelocity(mappingTypeName, modifierNames)
                             elseif mappingType[focusedColumn] and  mappingTypeName == "Layer" then
                                 local modifierNames = {"Same", "Increment"}
                                 multipleSelectionOptions(mappingTypeName, modifierNames) 
@@ -2957,7 +2979,7 @@ local function loop()
                         tableSizeUIText = reaper.ImGui_CalcTextSize(ctx, "UIText  X",0,0)
                         tableSizeDelay = reaper.ImGui_CalcTextSize(ctx, "Delay (ms)  X",0,0)
                         tableSizeChannel = reaper.ImGui_CalcTextSize(ctx, "Channel X",0,0)
-                        tableSizePitch = reaper.ImGui_CalcTextSize(ctx, "Pitch",0,0)
+                        tableSizePitch = reaper.ImGui_CalcTextSize(ctx, "Pitch X",0,0)
                         tableSizeLayer = reaper.ImGui_CalcTextSize(ctx, "Layer  X",0,0)
                         tableSizePosition = reaper.ImGui_CalcTextSize(ctx, "Position   X",0,0)
                         tableSizeTranspose = reaper.ImGui_CalcTextSize(ctx, "Traspose   X",0,0)
@@ -2970,7 +2992,10 @@ local function loop()
                         tableSizeFilterCount = reaper.ImGui_CalcTextSize(ctx, "F.Note Count  X",0,0)
                         tableSizeFilterVelocity = tableSizeFilterVelocity + 10 -- added for extra space or something??
                         
-                        tableSizeVelocity = tableSizeFilterVelocity--reaper.ImGui_CalcTextSize(ctx, "Velocity    X",0,0)
+                        tableSizePitch = tableSizeFilterVelocity
+                        tableSizeFilterPitch = tableSizeFilterVelocity 
+                        tableSizeVelocity = tableSizeFilterVelocity
+                        
                         tableSizeNote = reaper.ImGui_CalcTextSize(ctx, "Note (M)     X",0,0)
                         tableSizeNoteVel = tableSizeNote
                         tableWidth = 0
@@ -3030,7 +3055,7 @@ local function loop()
                             end
                         end
                 
-                        tableWidth = tableWidth + 24 + ((#mappingType - 1) * 9) + 24 + (tableSizePlay + 9)
+                        tableWidth = tableWidth + ((#mappingType - 1) * 13) + (tableSizePlay + 9) --+ 10 --+ 26-- + 24 + 24
 
                         --reaper.ImGui_SetCursorPosY(ctx, tableY)
                         --reaper.ImGui_SetCursorPosX(ctx, tableX + 30)
@@ -3048,7 +3073,7 @@ local function loop()
                                             
                                             | reaper.ImGui_TableFlags_Borders()
                             if reaper.ImGui_BeginTable(ctx, 'table1', columnAmount + 1, tableFlags) then --, tableWidth - 10, windowH - tableY - 40) then -- ,reaper.ImGui_GetTextLineHeightWithSpacing(ctx) * 20) then
-                                reaper.ImGui_TableSetupScrollFreeze(ctx, 1, 1)
+                                reaper.ImGui_TableSetupScrollFreeze(ctx, 2, 1)
                                 -- Display headers so we can inspect their interaction with borders.
                                 -- (Headers are not the main purpose of this section of the demo, so we are not elaborating on them too much. See other sections for details)
                                 reaper.ImGui_TableSetupColumn(ctx, "play", reaper.ImGui_TableColumnFlags_WidthFixed(), tableSizePlay)
@@ -3138,7 +3163,7 @@ local function loop()
                                             elseif column_name == "Delay" then
                                                 mapping.Delay = false  
                                             elseif column_name == "Pitch" then
-                                                mapping.Delay = false 
+                                                mapping.Pitch = false 
                                             elseif column_name == "Position" then
                                                 mapping.Position = false
                                             elseif column_name == "FilterChannel" then
@@ -3206,7 +3231,6 @@ local function loop()
                                 
                                 
                                 
-                                local sendNote = 50
                                 
                                 function bypassAnyArticulationScriptOnSelectedTracks(bypass)
                                     anyArticulationScriptOnSelectedTrackHasBeenBypassed = false
@@ -3229,13 +3253,46 @@ local function loop()
                                     end 
                                 end
                                 
-                                function sendANoteArticulation(index, triggerType)
+                                function findNoteToPlay(row) 
+                                    local sendNote = 64 
+                                    local msg2 = sendNote
+                                    if (tableInfo[row] and tableInfo[row]["Pitch"] and tableInfo[row]["Pitch"] ~= "") then
+                                        if not tableInfo[row]["PitchType"] or tableInfo[row]["PitchType"] == "" or tableInfo[row]["PitchType"] == "Fixed" then 
+                                        elseif tableInfo[row]["PitchType"] == "Minimum" then
+                                            if msg2 < tableInfo[row]["Pitch"] then 
+                                                msg2 = tableInfo[row]["Pitch"]
+                                            end
+                                        elseif tableInfo[row]["PitchType"] == "Maximum" then
+                                            if msg2 > tableInfo[row]["Pitch"] then 
+                                                msg2 = tableInfo[row]["Pitch"]
+                                            end
+                                        elseif tableInfo[row]["PitchType"] == "Within" then
+                                            if msg2 < tableInfo[row]["Pitch"] or msg2 > tableInfo[row]["Pitch2"] then 
+                                                if msg2 < tableInfo[row]["Pitch"] then
+                                                    msg2 = tableInfo[row]["Pitch"]
+                                                elseif msg2 > tableInfo[row]["Pitch2"] then
+                                                    msg2 = tableInfo[row]["Pitch2"]
+                                                end
+                                            end
+                                        elseif tableInfo[row]["PitchType"] == "Outside" then
+                                            if msg2 > tableInfo[row]["Pitch"] or msg2 < tableInfo[row]["Pitch2"] then 
+                                                if msg2 > tableInfo[row]["Pitch"] then
+                                                    msg2 = tableInfo[row]["Pitch"]
+                                                elseif msg2 < tableInfo[row]["Pitch2"] then
+                                                    msg2 = tableInfo[row]["Pitch2"]
+                                                end
+                                            end
+                                        end
+                                    end
+                                    return msg2
+                                end
+                                
+                                function sendANoteArticulation(row, triggerType)
                                     
-                                    playingArticulationId = index
+                                    playingArticulationId = row
                                     playingArticulationTime = reaper.time_precise() 
                                     mouseOrKeyHasTriggeredArticulation = triggerType
-                                    
-                                    reaper.StuffMIDIMessage(0, 0x90, sendNote, 64)
+                                    reaper.StuffMIDIMessage(0, 0x90, findNoteToPlay(row) , 64)
                                 end
                                 
                                 if playingArticulationTime and reaper.ImGui_IsMouseReleased(ctx, 0) and mouseOrKeyHasTriggeredArticulation == "mouse" then 
@@ -3249,7 +3306,7 @@ local function loop()
                                 if playingArticulationTime and reaper.time_precise() - playingArticulationTime > 1 then
                                     if not mouseOrKeyHasTriggeredArticulation then
                                         if playingArticulationTime then 
-                                            reaper.StuffMIDIMessage(0, 0x80, sendNote, 64) 
+                                            reaper.StuffMIDIMessage(0, 0x80, findNoteToPlay(playingArticulationId) , 64) 
                                             playingArticulationId = nil
                                             playingArticulationTime = nil 
                                             unbypassAnyArticulationMapTime = reaper.time_precise()
@@ -3266,7 +3323,7 @@ local function loop()
                                 
                                 function sendArticulation(row, triggerType)
                                     if playingArticulationId then
-                                        reaper.StuffMIDIMessage(0, 0x80, sendNote, 64)
+                                        reaper.StuffMIDIMessage(0, 0x80, findNoteToPlay(row) , 64)
                                     end
                                     bypassAnyArticulationScriptOnSelectedTracks(true)
                                     
@@ -3274,10 +3331,13 @@ local function loop()
                                         columnName = mappingType[column]
                                         if columnName:match("Note") ~= nil then  
                                             local msg2 = tableInfo[row][columnName]
+                                            local heldNote = tableInfo[row][columnName .. "Held"]
                                             if msg2 then 
                                                 local msg3 = (tableInfo[row] and tableInfo[row][columnName.. "Velocity"]) and tableInfo[row][columnName.. "Velocity"] or 127
                                                 reaper.StuffMIDIMessage(0, 0x90, msg2, msg3)
-                                                reaper.StuffMIDIMessage(0, 0x80, msg2, msg3)
+                                                if not heldNote then 
+                                                    reaper.StuffMIDIMessage(0, 0x80, msg2, msg3)
+                                                end
                                             end
                                         elseif columnName:match("CC") ~= nil then 
                                             local msg2 = columnName:gsub("CC", "")
@@ -3287,9 +3347,21 @@ local function loop()
                                             end
                                         end
                                     end
-                                    -- TODO: impelement pitch
+                                    -- TODO: implement pitch
                                     sendANoteArticulation(row, triggerType)
+                                    
+                                    for column = 1, columnAmount do 
+                                        columnName = mappingType[column]
+                                        if columnName:match("Note") ~= nil and tableInfo[row][columnName .. "Held"] then  
+                                            local msg2 = tableInfo[row][columnName]
+                                            if msg2 then 
+                                                reaper.StuffMIDIMessage(0, 0x80, msg2, 64) 
+                                            end
+                                        end
+                                    end
+                                    
                                 end
+                                
                                 
                                 for row = 1, #tableInfo do
                                     
@@ -3311,6 +3383,7 @@ local function loop()
                                             sendArticulation(focusedRow, "key") 
                                         end
                                     end
+                                    setToolTipFunc("Play articulation by pressing with mouse or super+ctrl+p for the top selected articulation.")
                                     
                                     
                                     local color = isHovered and colorLightGrey or colorGrey
@@ -3438,7 +3511,8 @@ local function loop()
                                                 modifyIncrement(id, columnName, row, column, true, false, -3000, 4000)
                                             end
                                         elseif columnName == "Pitch" then   
-                                            modifyNotes(id, columnName, row, column, modify)
+                                            --modifyNotes(id, columnName, row, column, modify) 
+                                            modifyVelocity(id, columnName, row, column, 0, 127, tableSizePitch)
                                         elseif columnName == "Velocity" then  
                                             --reaper.ImGui_SetNextItemWidth(ctx, tableSizeVelocity)
                                             modifyVelocity(id, columnName, row, column, 0, 127,tableSizeVelocity) 
@@ -3470,22 +3544,17 @@ local function loop()
                                             modifyExact(id, columnName, row, column, legatoSelection, legatoKeys)
                                             
                                         elseif columnName == "FilterVelocity" then  
-                                            --reaper.ImGui_SetNextItemWidth(ctx, tableSizeFilterVelocity)
                                             modifyVelocity(id, columnName, row, column, 0, 127, tableSizeFilterVelocity)    
                                         elseif columnName == "FilterSpeed" then  
-                                            --reaper.ImGui_SetNextItemWidth(ctx, tableSizeFilterVelocity)
                                             modifyVelocity(id, columnName, row, column, 0, 2000, tableSizeFilterSpeed, nil)
                                         elseif columnName == "FilterInterval" then  
-                                            --reaper.ImGui_SetNextItemWidth(ctx, tableSizeFilterVelocity)
                                             modifyVelocity(id, columnName, row, column, 0, 127, tableSizeFilterInterval, nil)
                                         elseif columnName == "FilterCount" then  
                                             modifyVelocity(id, columnName, row, column, 0, 100, tableSizeFilterCount, nil)
                                         elseif columnName == "FilterChannel" then  
-                                            --reaper.ImGui_SetNextItemWidth(ctx, tableSizeFilterVelocity)
                                             modifyVelocity(id, columnName, row, column, 1, 16, tableSizeFilterChannel) 
                                         elseif columnName == "FilterPitch" then  
-                                            --reaper.ImGui_SetNextItemWidth(ctx, tableSizeFilterVelocity)
-                                            modifyVelocity(id, columnName, row, column, 0, 127, tableSizeFilterVelocity)
+                                            modifyVelocity(id, columnName, row, column, 0, 127, tableSizeFilterPitch)
                                             
                                         elseif columnName == "Transpose" then 
                                             reaper.ImGui_SetNextItemWidth(ctx, tableSizeTranspose)
@@ -4139,7 +4208,6 @@ local function loop()
             if reaper.ImGui_Button(ctx, 'Overwrite', 120, 30) or enter or reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_O(), false) then 
                 export.writeFile(overWriteFile_filePath, overWriteFile_text)
                 addMap.updateOrAddMapAfterWait()
-                reaper.ShowConsoleMsg("hej\n")
                 reaper.ImGui_CloseCurrentPopup(ctx) 
             end
             reaper.ImGui_SameLine(ctx)

@@ -7,22 +7,22 @@
 
 
 local is_new_value, filename, sectionID, cmdID, mode, resolution, val, contextstr = reaper.get_action_context()
-local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
-local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
-local scriptPathSubfolder = scriptPath .. "Functions" .. seperator   
 
+seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
+scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
+scriptPathSubfolder = scriptPath .. "Functions" .. seperator  
+
+local functionsFilePath = ""
+local functionsFileExtension = ""
 local devMode = scriptPath:match("jesperankarfeldt") ~= nil
 if devMode then
-    local devFilesPath = reaper.GetResourcePath() .. "/Scripts/Jesper/Articulations/Functions/"
+    local devFilesPath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
     package.path = package.path .. ";" .. devFilesPath .. "?.lua"
 else
-    package.path = package.path .. ";" .. scriptPathSubfolder .. "?.luac"
+    package.path = package.path .. ";" .. scriptPathSubfolder .. "?.dat"
 end
 package.path = package.path .. ";" .. scriptPathSubfolder .. "?.lua"
 package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. seperator  .. "?.lua"
-
-
-local devMode = scriptPath:match("jesperankarfeldt") ~= nil
 
 local license = require("check_license")
 local ctx = reaper.ImGui_CreateContext('Articulation Script - License')
@@ -36,6 +36,7 @@ local code_buf  = registeredCode and registeredCode or ''
 local status_msg = (registeredEmail and registeredCode) and 'Active license installed' or ('Activation requires an active internet connection')
 local validLicense = (registeredEmail and registeredCode)
 
+isDemo = not validLicense and isDemo or false
 -- Function to set the toolbar icon state
 local function setToolbarState(isActive)
     -- Set the command state to 1 for active, 0 for inactive
@@ -76,7 +77,7 @@ Paypal charges 2.9% + $0.30 per donation.
 After that I'll give 10% of all sales to ReaImGui and ReaPack development. 
 Nothing could be done without the work of those who paved the way <3
 
-I will continue developing the functionallity of Articulation scripts, 
+I will continue developing the functionality of Articulation scripts, 
 and will love any feedback and wishes for them.
 
 These scripts were made for professionals composers, that see the value in them!! 
@@ -99,7 +100,7 @@ local function loop()
         local isEscape = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape())
 
         if isDemo then 
-            reaper.ImGui_Text(ctx, "This is a beta version of the script which will work until 2026-03-01")
+            reaper.ImGui_Text(ctx, "This is a free version of the scripts which will work until " .. email_buf:gsub("DEMO_UNTIL_",""))
             reaper.ImGui_BeginDisabled(ctx) 
         end
     

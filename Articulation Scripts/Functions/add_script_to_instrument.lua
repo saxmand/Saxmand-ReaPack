@@ -179,7 +179,6 @@ function ex.updateMapOnInstrumentsWithMap(mapName)
                 end
             end
         end
-                reaper.ShowConsoleMsg(tostring(overWriteFile_Wait_Name) .. " hejssaa3\n")
         return somethingAdded
     else
         overWriteFile_Wait_Name = mapName

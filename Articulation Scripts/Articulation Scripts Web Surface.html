@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Articulation Scripts Web Surface</title>
+    <style>
+        html, body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            /* margin-top: 10px; */
+            background-color: #333;
+            overflow: hidden; /* Prevent scrolling */
+            height: 100vh; /* Set full height */
+            margin: 0; /* Remove default margins */
+        }
+      
+
+        button {
+            font-size: 20px;
+            padding: 4px 4px;
+            margin: 4px;
+            cursor: pointer;
+            color: #000;
+            border: 6px;
+            border-radius: 30px;
+            background: #888;
+        }
+
+        stopButton {
+            float: right;
+            font-size: 18px;
+            padding: 4px 4px;
+            margin: 4px;
+            cursor: pointer;
+            color: #000;
+            border: 6px;
+            border-radius: 10px;
+            background: #888;
+        }
+
+        buttons {
+            cursor: pointer;
+        }
+
+
+
+        instrumentText {
+            font-size: 30px;
+            color: #fff;
+        }
+    </style>
+    <script src="main.js"></script>
+
+    <script type="text/javascript">
+
+        function setTextForObject(obj, text) { // thx cfillion
+            if (obj.lastChild) obj.lastChild.nodeValue = text;
+            else obj.appendChild(document.createTextNode(text));
+        }
+
+        function mouseDownEventHandler(msg) {
+            return function (e) {
+                if (typeof e == 'undefined') e = event;
+                if (e.preventDefault) e.preventDefault();
+                wwr_req(msg);
+                return false;
+            }
+        }
+
+        function createButtonsFromResponse(data) {
+            const colorSpectrum = [
+                '#cc6666', // Soft Red
+                '#cc9966', // Soft Orange
+                '#cccc66', // Soft Yellow
+                '#99cc66', // Soft Green
+                '#66cc99', // Soft Cyan
+                '#6699cc', // Soft Blue
+                '#9966cc', // Soft Purple
+                '#cc66cc', // Soft Magenta
+                '#99cc66', // Soft Lime
+                '#cc6699'  // Soft Pink
+            ];
+            const buttonContainer = document.getElementById("buttons");
+            // Clear any existing buttons
+            buttonContainer.innerHTML = "";
+
+            const dataParts = data.split(';')
+            const sqrt = Math.sqrt(dataParts.length);
+            const w = Math.floor(100 / Math.ceil(sqrt)) + "%"
+            const h = Math.floor(100 / Math.floor(sqrt)) + "%"
+            const marginAmount = 20 + 8 * (Math.ceil(sqrt))
+            const marginAmountH = 20 + 8 * (Math.round(sqrt))
+
+
+            const width = (window.innerWidth - marginAmount) / Math.ceil(sqrt) + "px";
+            const height = (window.innerHeight - (60 + marginAmountH)) / Math.round(sqrt) + "px";
+            const colorsAssigned = {}
+            const buttons = []
+            for (var b = 0; b < dataParts.length; ++b) {
+                var buttonLabel = dataParts[b]
+                subTitle = buttonLabel.split(':')[0]
+                title = buttonLabel.split(":")[1]
+                group = buttonLabel.split(":")[2]                
+                if (group) {
+                    if (group && title && colorsAssigned[subTitle + group] == undefined) {
+                        colorsAssigned[subTitle + group] = colorSpectrum[Object.keys(colorsAssigned).length % colorSpectrum.length]
+                    }
+                } else {
+                    if (subTitle && title && colorsAssigned[subTitle + group] == undefined) {
+                        colorsAssigned[subTitle + group] = colorSpectrum[Object.keys(colorsAssigned).length % colorSpectrum.length]
+                    }
+                }
+                color = colorsAssigned[subTitle + group] ? colorsAssigned[subTitle + group] : ""
+
+
+
+                // Create a new button
+                const button = document.createElement("button");
+                button.innerText = subTitle ? subTitle + ":\n" + title : title; //buttonLabel.replace(":", ":\n")
+                button.style.width = width;
+                button.style.height = height;
+                button.id = b;
+                button.style.border = "6px solid " + color;
+                button.subTitle = subTitle ? subTitle : "NA";
+
+                button.onclick = mouseDownEventHandler("SET/PROJEXTSTATE/articulationMapOnDevice/setArticulationFromDevice/" + (b));
+
+                if (title == "No Map") {
+                    button.style.background = "#555";
+                }
+
+                buttons.push(button)
+                // Append the button to the container
+            };
+
+            const sortedButtons = [];
+            const buttonsUsed = {};
+            for (var b = 0; b < buttons.length; ++b) {
+                if (buttonsUsed[b] !== true) {
+                    currentButtonSubtitle = buttons[b].subTitle
+                    for (var b2 = b; b2 < buttons.length; ++b2) {
+                        if (buttonsUsed[b2] !== true && buttons[b2].subTitle == currentButtonSubtitle) {
+                            buttonsUsed[b2] = true;
+                            sortedButtons.push(buttons[b2])
+                        }
+                    }
+                }
+            }
+
+            for (var b = 0; b < sortedButtons.length; ++b) {
+                const button = sortedButtons[b]
+                buttonContainer.appendChild(button);
+            };
+        }
+
+
+
+        function createStartButton() {
+            const buttonContainer = document.getElementById("buttons");
+            // Clear any existing buttons
+            buttonContainer.innerHTML = "";
+            // Create a new button
+            const button = document.createElement("button");
+            button.innerText = "Start Script";
+            button.style.width = window.innerWidth / 2 + "px";
+            button.style.height = window.innerHeight / 2 + "px";
+            button.onclick = mouseDownEventHandler('SET/EXTSTATEPERSIST/articulationMapOnDevice/useOnlyOnDevice/1;_RSeaedcc5257225ad318bf80f43589fdfcc0b535a0');
+            button.style.border = "6px solid #0f0";
+            button.style.color = "#0f0";
+            button.style["font-size"] = "50px";
+            buttonContainer.appendChild(button);
+        }
+
+        function createNoMapButton() {
+            const buttonContainer = document.getElementById("buttons");
+            // Clear any existing buttons
+            buttonContainer.innerHTML = "";
+            buttonContainer.appendChild({});
+        }
+
+        function stopScript() {
+            wwr_req('SET/EXTSTATE/articulationMap/stopScript/1')
+        }
+
+
+        function wwr_onreply(results) {
+            var ar = results.split("\n");
+            for (var i = 0; i < ar.length; ++i) {
+                var tok = ar[i].split("\t");
+                if (tok && tok.length > 0) {
+                    if (tok[1] == "articulationMap") {
+                        if (tok[2] == "running") {
+                            scriptIsRunning = tok[3] == "1"
+                            if (scriptIsRunning == false) {
+                                createStartButton()
+                                // not the best way, but "hides" the stop button when not running
+                                setTextForObject(document.getElementById("stop"), "");
+                                document.getElementById("stop").style.border = "0px solid #000";
+                            }
+                            else {
+
+                                // not the best way, but "sets" the stop button when not running
+                                setTextForObject(document.getElementById("stop"), "Stop");
+                                document.getElementById("stop").style.float = "right";
+                                document.getElementById("stop").style.color = "#600";
+                                document.getElementById("stop").style.border = "2px solid #f00";
+                                document.getElementById("stop").style["border-radius"] = "3px";
+                            }
+                        }
+                    }
+                    if (scriptIsRunning) {
+                        if (tok[1] == "articulationMapOnDevice") {
+                            if (tok[2] == "articulations") {
+                                if (tok[3]) {
+                                    createButtonsFromResponse(tok[3])
+                                    articulationsFound = true
+                                }
+                                else {
+                                    createButtonsFromResponse(":No Map")
+                                    articulationsFound = false
+                                }
+                                //var row = host.insertRow(addtop);
+                                //setTextForObject(document.getElementById("buttons"), tok[3]);
+                                //setTextForObject(document.getElementById("buttons"), dataPart);
+                            }
+                            if (tok[2] == "selectedArticulationIdx") {
+                                if (tok[3] >= 0 && document.getElementById(Math.floor(tok[3])) && articulationsFound) {
+                                    document.getElementById(Math.floor(tok[3])).style.background = "#ccc";
+                                }
+                                //document.getElementById(Math.floor(tok[3]) + 1).style["border-radius"] = "30px";
+                                //document.getElementById(Math.floor(tok[3]) + 1).style["border"] = "6px solid #222";
+                                //setTextForObject(document.getElementById("buttons"), dataPart);
+                            }
+
+                            if (tok[2] == "mapName") {
+                                mapName = tok[3]
+                            }
+
+                            if (tok[2] == "trackName") {
+                                trackName = tok[3]
+                            }
+                        }
+                    }
+                }
+            }
+            //setTextForObject(document.getElementById("test"), "tok[3]");
+            const fullName = ""
+            if (scriptIsRunning) {
+                if (mapName && trackName) {
+                    fullname = mapName == trackName ? mapName : (trackName + " (" + mapName + ")")
+                }
+                else if (trackName) {
+                    fullname = "No Map: " + trackName
+                }
+            }
+            else {
+                fullname = "Articulation Map Surface"
+            }
+            setTextForObject(document.getElementById("trackName"), fullname);
+        }
+
+
+        scriptIsRunning = true;
+        wwr_start();
+        wwr_req_recur("GET/EXTSTATE/articulationMap/running;GET/PROJEXTSTATE/articulationMapOnDevice/articulations;GET/PROJEXTSTATE/articulationMapOnDevice/selectedArticulationIdx;GET/PROJEXTSTATE/articulationMapOnDevice/mapName;GET/PROJEXTSTATE/articulationMapOnDevice/trackName", 10);
+    </script>
+
+</head>
+
+<body>
+    <instrumentText id="trackName"></instrumentText>
+    <button id="stop" onclick="stopScript()">Stop Script</button>
+    <br>
+    <br>
+    <buttons id="buttons"></buttons>
+
+</body>
+
+</html>

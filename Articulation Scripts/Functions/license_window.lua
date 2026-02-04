@@ -3,36 +3,34 @@
 
 local export = {}
 
-    local ctx2 = reaper.ImGui_CreateContext('Articulation Script - License')
-    local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
-    package.path = package.path .. ";" .. scriptPath .. "?.lua"
-    local license = require("check_license")
+local ctx2 = reaper.ImGui_CreateContext('Articulation Script - License')
 
-    -- License Window (ReaImGui)
-    -- Intended to be used in LUAC
+local license = require("check_license")
+-- License Window (ReaImGui)
+-- Intended to be used in LUAC
 
-    local registeredEmail, registeredCode = license.registered_license()
-    local isDemo = license.is_demo_valid()
-    --local isFree = license.check_articulation_script_list()
-    -- UI state
-    local email_buf = registeredEmail and registeredEmail or ''
-    local code_buf  = registeredCode and registeredCode or ''
-    local status_msg = (registeredEmail and registeredCode) and 'Active license installed' or ('Activation requires an active internet connection')
-    local validLicense = (registeredEmail and registeredCode)
+local registeredEmail, registeredCode = license.registered_license()
+local isDemo = license.is_demo_valid()
+--local isFree = license.check_articulation_script_list()
+-- UI state
+local email_buf = registeredEmail and registeredEmail or ''
+local code_buf  = registeredCode and registeredCode or ''
+local status_msg = (registeredEmail and registeredCode) and 'Active license installed' or ('Activation requires an active internet connection')
+local validLicense = (registeredEmail and registeredCode)
 
-    -- URLs
-    local BUY_URL     = "https://www.paypal.com/paypalme/saxmand"
-    local SUPPORT_URL = "https://forum.cockos.com/showthread.php?t=299999"
+-- URLs
+local BUY_URL     = "https://www.paypal.com/paypalme/saxmand"
+local SUPPORT_URL = "https://forum.cockos.com/showthread.php?t=299999"
 
-    local function openWebpage(url)
-        if reaper.GetOS():match("Win") then
-        os.execute('start "" "' .. url .. '"')
-        elseif reaper.GetOS():match("mac") then
-        os.execute('open "' .. url .. '"')
-        else -- Assume Linux
-        os.execute('xdg-open "' .. url .. '"')
-        end
+local function openWebpage(url)
+    if reaper.GetOS():match("Win") then
+    os.execute('start "" "' .. url .. '"')
+    elseif reaper.GetOS():match("mac") then
+    os.execute('open "' .. url .. '"')
+    else -- Assume Linux
+    os.execute('xdg-open "' .. url .. '"')
     end
+end
 ------------------------------------------------------------
 -- UI loop
 ------------------------------------------------------------

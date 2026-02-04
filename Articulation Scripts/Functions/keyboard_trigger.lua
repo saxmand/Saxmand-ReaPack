@@ -267,7 +267,7 @@ function export.keyboardTriggerSurface()
 
                     -- end
 
-                    if (triggerTableKeys[key]) or key == "K" or key == "<" then
+                    if (triggerTableKeys[key]) then --or key == "<" then --or key == "K" then
                         textColor = 0x444444FF
                     else
                         -- reaper.ImGui_SetCursorPos(ctx,posX+ buttonWidth/2 - textWidth/2 -4,posY + buttonHeight / 2 - textHeight/2)
@@ -385,10 +385,10 @@ function export.keyboardTriggerSurface()
             --stopScript = true
         end
 
-        if key == "<" then
-            keep = not keep
-            reaper.SetExtState(contextName, "keep", tostring(keep), true)
-        end
+        --if key == "<" then
+        --    keep = not keep
+        --    reaper.SetExtState(contextName, "keep", tostring(keep), true)
+        --end
     end
 end
 
