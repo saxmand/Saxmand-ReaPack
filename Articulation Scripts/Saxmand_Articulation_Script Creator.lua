@@ -1,7 +1,7 @@
 -- @description Articulation Script Creator
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.0.7
+-- @version 0.0.8
 -- @about
 --   Create new articulation scripts
 -- @provides
@@ -9,7 +9,7 @@
 --   Functions/*.dat
 --   Functions/Helpers/*.lua
 -- @changelog
---   + 
+--   + tried to add webserver
 
 version = 0.3
 
