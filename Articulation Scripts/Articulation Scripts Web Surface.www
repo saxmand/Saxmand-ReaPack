@@ -1,6 +1,6 @@
 @description Articulation Scripts Web Surface
 @author saxmand
-@package Articulation Scripts
+@version 0.0.2
 @provides Articulation Scripts Web Surface.html
 @changelog
    initial beta release
