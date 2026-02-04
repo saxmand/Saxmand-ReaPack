@@ -1,3 +1,5 @@
+-- @noindex
+
 version = 0.3
 
 

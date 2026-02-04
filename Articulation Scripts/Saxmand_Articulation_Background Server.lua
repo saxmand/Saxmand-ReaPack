@@ -1,3 +1,5 @@
+-- @noindex
+
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 --local ImGui = require 'imgui' '0.9.3'
 

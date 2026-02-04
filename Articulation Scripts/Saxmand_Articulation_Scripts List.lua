@@ -1,3 +1,5 @@
+-- @noindex
+
 local is_new_value, filename, sectionID, cmdID, mode, resolution, val, contextstr = reaper.get_action_context()
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
 local commandID = reaper.AddRemoveReaScript(true, 0, filename, false)
