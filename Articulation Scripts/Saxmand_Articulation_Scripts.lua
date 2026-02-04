@@ -8,7 +8,7 @@
 --   Functions/*.lua
 --   Functions/*.dat
 --   Functions/Helpers/*.lua
---   Articulation Scripts Web Surface.html -> reaper_www_root/Articulation Scripts Web Surface.html 
+--   Articulation Scripts Web Surface.html > reaper_www_root/Articulation Scripts Web Surface.html 
 --   [main] Saxmand_Articulation_Script Creator.lua
 --   [main] Saxmand_Articulation_Background Server.lua
 --   [main] Saxmand_Articulation_License Window.lua
