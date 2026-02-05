@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.2.5
+-- @version 0.2.6
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,6 +15,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + ensuring midi editor has to have a take to be the focused area
---   + keyboard trigger: keep focus button added
---   + keyboard trigger: change the size, language or remove maps 
+--   + fixed missing tags

@@ -1,3 +1,4 @@
+--@noindex
 local export = {}
 
 function export.defaultKeyboardTable_DA()

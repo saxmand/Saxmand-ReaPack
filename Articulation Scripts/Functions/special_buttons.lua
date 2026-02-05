@@ -1,3 +1,4 @@
+--@noindex
 local export = {}
 
 function export.cogwheel(ctx, id, size, lock, tooltipText, lockedColor, unlockedColor, background, hover, active, centerColor)
