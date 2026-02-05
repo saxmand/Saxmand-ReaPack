@@ -200,8 +200,7 @@ local function loop()
 
     track, section_id, name, fxNumber, item, take, midi_editor = trackDependingOnSelection()
     if not lastTrack or lastTrack ~= track then
-        triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam =
-        readArticulationScript(track, name)
+        triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam = readArticulationScript(track, name)
         lastTrack = track
 
         if track then
