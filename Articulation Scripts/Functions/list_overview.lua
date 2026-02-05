@@ -32,6 +32,8 @@ local export = {}
 function export.listOverviewSurface()
     EnsureValidContext(ctx)
     local windowIsFocused
+        
+    reaper.ImGui_SetNextWindowSize(ctx, 200, 600, reaper.ImGui_Cond_FirstUseEver())
     local visible, open =  reaper.ImGui_Begin(ctx, "Articulations", true,
             --    reaper.ImGui_WindowFlags_NoDecoration() |
                 reaper.ImGui_WindowFlags_TopMost()                 -- | reaper.ImGui_WindowFlags_NoMove()

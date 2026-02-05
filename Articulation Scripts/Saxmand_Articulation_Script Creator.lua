@@ -32,6 +32,7 @@ if devMode then
 else
     package.path = package.path .. ";" .. scriptPathSubfolder .. "?.dat"
 end
+
 package.path = package.path .. ";" .. scriptPathSubfolder .. "?.lua"
 package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. seperator  .. "?.lua"
 
@@ -122,6 +123,8 @@ require("pathes")
 
 local defaultAppSettings = { 
     auditionNote = 64, 
+    tableSizeTitle = 120, 
+    tableSizeSubtitle = 100, 
     alwaysOverwriteApps = false,
     alwaysEmbedUi = false,
     expandWindow = false,
@@ -141,11 +144,32 @@ else
     saveAppSettings()
 end
 
+
+-- BACKWARDS COMPATABILITY
+for key, value in pairs(defaultAppSettings) do
+    if type(value) == "table" then 
+        if appSettings[key] == nil then
+            appSettings[key] = {}
+        end
+        
+        for subKey, subValue in pairs(value) do
+            if appSettings[key][subKey] == nil then
+                appSettings[key][subKey] = subValue
+            end
+        end
+    else  
+        if appSettings[key] == nil then
+            appSettings[key] = value
+        end
+    end
+end
+
 -- Function to open a folder in Finder (macOS) or File Explorer (Windows)
 function openFolderInExplorer(folderPath)
     -- Check the operating system
     local osName = reaper.GetOS()
 
+    reaper.RecursiveCreateDirectory(folderPath, 0)
     -- Construct and execute the appropriate command based on the OS
     if osName:find("OS") then
         -- macOS
@@ -622,7 +646,7 @@ function moveRowStart(direction) --if reaper.ImGui_IsAnyItemFocused(ctx) then
 end
 
 function deleteRows()
-    if #selectedArticulationsCountKeys > 0 then  
+    if selectedArticulationsCountKeys and #selectedArticulationsCountKeys > 0 then  
         for i = #selectedArticulationsCountKeys, 1, -1 do
             local rowKey = selectedArticulationsCountKeys[i]
             table.remove(tableInfo, rowKey) 
@@ -632,7 +656,7 @@ function deleteRows()
 end
 
 function makeArticulationALaneOrNot()
-    if #selectedArticulationsCountKeys > 0 then  
+    if selectedArticulationsCountKeys and #selectedArticulationsCountKeys > 0 then  
         for i = #selectedArticulationsCountKeys, 1, -1 do
             local rowKey = selectedArticulationsCountKeys[i]
             if tableInfo[rowKey].isLane then
@@ -1312,6 +1336,9 @@ local firstLoop = true
 local function loop()
 
     reaper.ImGui_SetNextWindowBgAlpha(ctx, 1) -- Transparent background
+    
+    
+    reaper.ImGui_SetNextWindowSize(ctx, minimumsWidth + 8, minimumsWidth*1.5, reaper.ImGui_Cond_FirstUseEver())
 
     local visible, open = reaper.ImGui_Begin(ctx, 'Articulation Creator', true,
     -- reaper.ImGui_WindowFlags_NoDecoration() |
@@ -1388,47 +1415,15 @@ local function loop()
         
         --setToolTipFunc("Show app settings")
         
-        
+        --[[
         reaper.ImGui_SameLine(ctx) 
         reaper.ImGui_SameLine(ctx, reaper.ImGui_GetCursorPosX(ctx) - 6) 
         if cogwheel(ctx, "settings", 40, showSettings, "Show app settings",colorWhite,  colorGrey, colorTransparent, colorDarkGrey, colorTransparent, colorBlack) then
             showSettings = not showSettings
         end
-        
+        ]]
         --if reaper.ImGui_BeginMenu(ctx, "Options") then
-            if showSettings then  
-                local license = require("check_license")
-                local email = license.registered_license()
-                local licenseText = email and ("Licensed to: " .. email) or "No license"
-                
-                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
-                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorGrey)
-                if reaper.ImGui_Button(ctx, licenseText) then
-                    license.openLicenseWindow(true)  
-                end 
-                reaper.ImGui_PopStyleColor(ctx, 2)
-                
-                ret, val = reaper.ImGui_Checkbox(ctx, "Always overwrite maps", appSettings.alwaysOverwriteApps)
-                if ret then 
-                    appSettings.alwaysOverwriteApps = val
-                    saveAppSettings()
-                end 
-                ret, val = reaper.ImGui_Checkbox(ctx, "Always embed UI in TCP", appSettings.alwaysEmbedUi)
-                if ret then 
-                    appSettings.alwaysEmbedUi = val
-                    saveAppSettings()
-                end 
-                setToolTipFunc("When adding a script to a track, embed the UI in the TCP")
-                
-                reaper.ImGui_SetNextItemWidth(ctx, 127)
-                ret, appSettings.auditionNote = reaper.ImGui_SliderInt(ctx, "Audition Note", appSettings.auditionNote or 64, 0, 127)
-                if ret then 
-                    saveAppSettings()
-                end 
-                setToolTipFunc("Select which note to send when auditioning articulations")
-                
-                
-            end
+            
             
         --    reaper.ImGui_EndMenu(ctx)
         --end
@@ -1452,6 +1447,79 @@ local function loop()
         
 
         reaper.ImGui_Separator(ctx)
+        
+        
+        
+        function dropFiles(whereToInsert, rowStart)
+            if reaper.ImGui_BeginDragDropTarget(ctx) then
+              local rv, count = reaper.ImGui_AcceptDragDropPayloadFiles(ctx)
+              
+              if whereToInsert == "mapName" then
+                  reaper.ImGui_SetTooltip(ctx,"Release to add map name.\n - Hold down Super to add to exisiting file name.\n - Add Shift to add to before file name.\n - Hold Ctrl to use folder content as articulations.")
+              elseif whereToInsert == "articulation" then
+                  reaper.ImGui_SetTooltip(ctx,"Release to use files as articulations.")
+              end
+              
+              if rv then
+                local filePathes = {}
+                for i = 0, count - 1 do 
+                  local rv, fileName = reaper.ImGui_GetDragDropPayloadFile(ctx, i)
+                  if rv and fileName then
+                      if whereToInsert == "mapName" then 
+                          if not mapName then mapName = "" end
+                          if cmd then  
+                              if shift then
+                                  mapName = file_handling.get_last_path_component(fileName) .. " - " .. mapName  
+                              else
+                                  mapName = mapName .. " - " .. file_handling.get_last_path_component(fileName)
+                              end
+                          else
+                              mapName = file_handling.get_last_path_component(fileName)
+                          end
+                          
+                          if ctrl then 
+                              if file_handling.path_is_directory(fileName) then 
+                                  whereToInsert = "articulation" 
+                                  tableInfo = {}
+                              end
+                          else
+                              break;
+                          end
+                      end
+                      if whereToInsert == "articulation" then
+                          if file_handling.path_is_directory(fileName) then 
+                              local i = 0 
+                              while true do
+                                  local file = reaper.EnumerateFiles(fileName, i)
+                                  if not file then break end
+                                  if not file_handling.path_is_directory(file) then 
+                                      table.insert(filePathes, file)
+                                  end
+                                  i = i + 1
+                              end
+                          else
+                              table.insert(filePathes, file_handling.get_last_path_component(fileName)) 
+                          end
+                      end 
+                  end
+                  --table.insert(widgets.dragdrop.files, filename)
+                end
+                if whereToInsert == "articulation" then 
+                    if not rowStart then rowStart = 1 end
+                    local simpleFileNames = file_handling.strip_common_parts(filePathes)
+                    for i, p in ipairs(simpleFileNames) do
+                        if #simpleFileNames > 1 then 
+                            tableInfo[i + rowStart - 1] = {["Title"] = p, ["Channel"] = i}
+                        else
+                            tableInfo[i + rowStart - 1] = {["Title"] = p}
+                        end
+                    end
+                    mapping.Channel = true
+                end
+              end
+              reaper.ImGui_EndDragDropTarget(ctx)
+            end
+        end
         -- mapName = "test"
         -- reaper.ImGui_Text(ctx, 'Map name: ' .. mapName) 
         -- Infinite Brass Trumpet
@@ -1463,6 +1531,7 @@ local function loop()
             end
             ret, stringInput = reaper.ImGui_InputText(ctx, "##nameinput", nil, reaper.ImGui_InputTextFlags_EnterReturnsTrue())
             if ret then mapName = stringInput end
+            dropFiles("mapName")
             
             if not reaper.ImGui_IsItemFocused(ctx) and not popupOkCancelTitle then
                 focusNameInput = focusNameInput + 1
@@ -1476,7 +1545,8 @@ local function loop()
                 popup = "Name"
                 mapNameButton = ""
                 popupStringName = mapName or ""
-            end
+            end 
+            dropFiles("mapName")
             reaper.ImGui_PopFont(ctx)
             reaper.ImGui_SameLine(ctx)
             reaper.ImGui_TextColored(ctx, 0x777777FF, "(cmd+r)")
@@ -1565,7 +1635,7 @@ local function loop()
         
         local firstArticulationPath = getFirstArticulationMapFXJsonLine(true)
         local buttonsData = {{
-          name = "New", key = "N", cmd = true, sameLine = false, func = function() newMap() end,
+          name = "New", key = "N", shift = true, cmd = true, sameLine = false, func = function() newMap() end,
           tip = 'Create a new map', disabled = not mapName --#tableInfo == 0
         },{
           name = "Edit first selected", key = "E", cmd = true, sameLine = true, func = function() editFirstSelected(firstArticulationPath) end,
@@ -1620,6 +1690,7 @@ local function loop()
                     --#tableInfo = tonumber(stringInput)
                     addArticulation(tonumber(stringInput))
                 end
+                dropFiles("articulation")
             else  
                 if reaper.ImGui_BeginTabBar(ctx, 'MyTabBar') then  
                     
@@ -1845,7 +1916,7 @@ local function loop()
                         reaper.ImGui_EndGroup(ctx)
                         
                         --reaper.ImGui_SameLine(ctx) 
-                        reaper.ImGui_SetCursorPos(ctx, mappingX + 400, MappingY)
+                        reaper.ImGui_SetCursorPos(ctx, mappingX + 430, MappingY)
                         
                         reaper.ImGui_BeginGroup(ctx)
                             --reaper.ImGui_Separator(ctx) 
@@ -2193,79 +2264,84 @@ local function loop()
                         ----------------------------------------------------------------------
                     
                         local movingRows = cmd and alt
+                        if movingRows then
+                            reaper.ImGui_SetKeyboardFocusHere(ctx)
+                        end
                         
-                        if (downArrow and (not movingRows)) or (not popup and not (shift or cmd or alt) and (enter)) or focusNextRow then 
-                            if waitTimer() then
-                                if popupGone or focusNextRow then
+                        if not movingRows then 
+                            if (downArrow) or (not popup and not (shift or cmd or alt) and (enter)) or focusNextRow then 
+                                if waitTimer() then
+                                    if popupGone or focusNextRow then
+                                        if not focusedItem then
+                                            setFocus = 1
+                                            adjust = -1
+                                        else 
+                                            if #tableInfo > 1 then
+                                                if ctrl and shift then
+                                                    if not focusedColumn then
+                                                        setFocus = 0
+                                                        adjust = -1
+                                                    else
+                                                        setFocus = (#tableInfo - 1) * columnAmount + focusedColumn - 1
+                                                    end
+                                                else
+                                                    if focusedRow == #tableInfo then
+                                                        setFocus = focusedColumn
+                                                        adjust = -1
+                                                    else
+                                                        setFocus = math.floor(focusedItem) + columnAmount - 1
+                                                        
+                                                        -- TODO: Needs more work, to jump to the next thing that's not a lane
+                                                        local adjustFocusABit = nil
+                                                        
+                                                        if mappingType[focusedColumn]:match("Note") ~= nil and focusedOnVel then 
+                                                            adjust = -1
+                                                            setFocus = setFocus + 1
+                                                        end
+                                                        
+                                                        if adjustFocusABit  then
+                                                            setFocus = setFocus + (focusedColumn - 1)
+                                                        end
+                                                        --reaper.ShowConsoleMsg(math.floor((setFocus) / columnAmount) .. " - " .. focusedColumn .. " - " .. tostring(tableInfo[mappingType[focusedColumn]][math.floor((setFocus) / columnAmount) + 1]) .. "\n")
+                                                    end
+                                                end
+                                            end
+                                            focusNextRow = nil
+                                        end
+                                    else
+                                        setFocus = focusedItem and math.floor(focusedItem)
+                                        adjust = -1
+                                        -- setFocusOnNewMapping = focusBack
+                                        popupGone = true
+                                    end
+                                end
+                            end
+                    
+                            if upArrow then
+                                if waitTimer() then
                                     if not focusedItem then
                                         setFocus = 1
                                         adjust = -1
-                                    else 
+                                    else
                                         if #tableInfo > 1 then
                                             if ctrl and shift then
-                                                if not focusedColumn then
-                                                    setFocus = 0
-                                                    adjust = -1
-                                                else
-                                                    setFocus = (#tableInfo - 1) * columnAmount + focusedColumn - 1
-                                                end
+                                                setFocus = focusedColumn
+                                                adjust = -1
                                             else
-                                                if focusedRow == #tableInfo then
-                                                    setFocus = focusedColumn
-                                                    adjust = -1
+                                                if focusedRow == 1 then 
+                                                    setFocus = ((#tableInfo - 1) * columnAmount) + focusedColumn - 1 -- totalItemAmount - columnAmount + focusedItem - 1
+                                                    -- setFocus = (columnAmount)-(totalItemAmount%focusedItem) 
+                                                    
                                                 else
-                                                    setFocus = math.floor(focusedItem) + columnAmount - 1
+                                                    setFocus = math.floor(focusedItem) - (columnAmount)
                                                     
-                                                    -- TODO: Needs more work, to jump to the next thing that's not a lane
-                                                    local adjustFocusABit = nil
-                                                    
-                                                    if mappingType[focusedColumn]:match("Note") ~= nil and focusedOnVel then 
+                                                    if mappingType[focusedColumn]:match("Note") ~= nil and not focusedOnVel then 
+                                                        --adjustFocusABit = true 
+                                                        adjust = nil
+                                                        setFocus = setFocus - 1
+                                                    else
                                                         adjust = -1
-                                                        setFocus = setFocus + 1
                                                     end
-                                                    
-                                                    if adjustFocusABit  then
-                                                        setFocus = setFocus + (focusedColumn - 1)
-                                                    end
-                                                    --reaper.ShowConsoleMsg(math.floor((setFocus) / columnAmount) .. " - " .. focusedColumn .. " - " .. tostring(tableInfo[mappingType[focusedColumn]][math.floor((setFocus) / columnAmount) + 1]) .. "\n")
-                                                end
-                                            end
-                                        end
-                                        focusNextRow = nil
-                                    end
-                                else
-                                    setFocus = focusedItem and math.floor(focusedItem)
-                                    adjust = -1
-                                    -- setFocusOnNewMapping = focusBack
-                                    popupGone = true
-                                end
-                            end
-                        end
-                
-                        if upArrow and not movingRows then
-                            if waitTimer() then
-                                if not focusedItem then
-                                    setFocus = 1
-                                    adjust = -1
-                                else
-                                    if #tableInfo > 1 then
-                                        if ctrl and shift then
-                                            setFocus = focusedColumn
-                                            adjust = -1
-                                        else
-                                            if focusedRow == 1 then 
-                                                setFocus = ((#tableInfo - 1) * columnAmount) + focusedColumn - 1 -- totalItemAmount - columnAmount + focusedItem - 1
-                                                -- setFocus = (columnAmount)-(totalItemAmount%focusedItem) 
-                                                
-                                            else
-                                                setFocus = math.floor(focusedItem) - (columnAmount)
-                                                
-                                                if mappingType[focusedColumn]:match("Note") ~= nil and not focusedOnVel then 
-                                                    --adjustFocusABit = true 
-                                                    adjust = nil
-                                                    setFocus = setFocus - 1
-                                                else
-                                                    adjust = -1
                                                 end
                                             end
                                         end
@@ -2958,8 +3034,8 @@ local function loop()
                         
                     
                         tableSizePlay = 20
-                        tableSizeTitle = 120
-                        tableSizeSubtitle = 100
+                        tableSizeTitle = appSettings.tableSizeTitle
+                        tableSizeSubtitle = appSettings.tableSizeSubtitle
                         tableSizeOthers = 90
                         tableSizeCC = reaper.ImGui_CalcTextSize(ctx, "CC127 X",0,0)
                         tableSizeKT = reaper.ImGui_CalcTextSize(ctx, "KT X",0,0)
@@ -3043,10 +3119,11 @@ local function loop()
                             end
                         end
                 
-                        tableWidth = tableWidth + ((#mappingType - 1) * 13) + (tableSizePlay + 9) --+ 10 --+ 26-- + 24 + 24
+                        tableWidth = tableWidth + ((#mappingType - 1) * 13) + (tableSizePlay + 9) +20--+ 10 --+ 26-- + 24 + 24
 
                         --reaper.ImGui_SetCursorPosY(ctx, tableY)
                         --reaper.ImGui_SetCursorPosX(ctx, tableX + 30)
+                        
                         
                         
                         local childSizeW = windowW - 16 < tableWidth and windowW - 16 or tableWidth
@@ -3275,12 +3352,11 @@ local function loop()
                                     return msg2
                                 end
                                 
-                                function sendANoteArticulation(row, triggerType)
-                                    
+                                function sendANoteArticulation(row, channelOffset, triggerType) 
                                     playingArticulationId = row
                                     playingArticulationTime = reaper.time_precise() 
                                     mouseOrKeyHasTriggeredArticulation = triggerType
-                                    reaper.StuffMIDIMessage(0, 0x90, findNoteToPlay(row) , 64)
+                                    reaper.StuffMIDIMessage(0, 0x90 + channelOffset, findNoteToPlay(row) , 64)
                                 end
                                 
                                 if playingArticulationTime and reaper.ImGui_IsMouseReleased(ctx, 0) and mouseOrKeyHasTriggeredArticulation == "mouse" then 
@@ -3310,8 +3386,10 @@ local function loop()
                                 end
                                 
                                 function sendArticulation(row, triggerType)
+                                    local channelOffset = tableInfo[row]["Channel"] and (tableInfo[row]["Channel"] - 1) or 0
+                                    
                                     if playingArticulationId then
-                                        reaper.StuffMIDIMessage(0, 0x80, findNoteToPlay(row) , 64)
+                                        reaper.StuffMIDIMessage(0, 0x80 + channelOffset, findNoteToPlay(row) , 64)
                                     end
                                     bypassAnyArticulationScriptOnSelectedTracks(true)
                                     
@@ -3322,28 +3400,28 @@ local function loop()
                                             local heldNote = tableInfo[row][columnName .. "Held"]
                                             if msg2 then 
                                                 local msg3 = (tableInfo[row] and tableInfo[row][columnName.. "Velocity"]) and tableInfo[row][columnName.. "Velocity"] or 127
-                                                reaper.StuffMIDIMessage(0, 0x90, msg2, msg3)
+                                                reaper.StuffMIDIMessage(0, 0x90 + channelOffset, msg2, msg3)
                                                 if not heldNote then 
-                                                    reaper.StuffMIDIMessage(0, 0x80, msg2, msg3)
+                                                    reaper.StuffMIDIMessage(0, 0x80 + channelOffset, msg2, msg3)
                                                 end
                                             end
                                         elseif columnName:match("CC") ~= nil then 
                                             local msg2 = columnName:gsub("CC", "")
                                             local msg3 = tableInfo[row][columnName]
                                             if msg3 then 
-                                                reaper.StuffMIDIMessage(0, 0xB0, tonumber(msg2), msg3)
+                                                reaper.StuffMIDIMessage(0, 0xB0 + channelOffset, tonumber(msg2), msg3)
                                             end
                                         end
                                     end
-                                    -- TODO: implement pitch
-                                    sendANoteArticulation(row, triggerType)
+                                    
+                                    sendANoteArticulation(row, channelOffset, triggerType)
                                     
                                     for column = 1, columnAmount do 
                                         columnName = mappingType[column]
                                         if columnName:match("Note") ~= nil and tableInfo[row][columnName .. "Held"] then  
                                             local msg2 = tableInfo[row][columnName]
                                             if msg2 then 
-                                                reaper.StuffMIDIMessage(0, 0x80, msg2, 64) 
+                                                reaper.StuffMIDIMessage(0, 0x80 + channelOffset, msg2, 64) 
                                             end
                                         end
                                     end
@@ -3407,6 +3485,7 @@ local function loop()
                                                 end
                                             --end
                                             
+                                            dropFiles("articulation", row)
                                         elseif columnName == "Subtitle" then
                                             reaper.ImGui_SetNextItemWidth(ctx, tableSizeSubtitle)
                                             --if isNotALane(columnName, row) then
@@ -3743,7 +3822,7 @@ local function loop()
                     
                     openSettingsTab = cmd and reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_I())
                     settingsTabFlag = openSettingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
-                    if reaper.ImGui_BeginTabItem(ctx, 'Instrument Settings (cmd+i)',openSettingsTab, settingsTabFlag) then
+                    if reaper.ImGui_BeginTabItem(ctx, 'Instrument (cmd+i)',openSettingsTab, settingsTabFlag) then
                         
                         local childSizeW = windowW - 16
                         if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - 60) then 
@@ -4001,8 +4080,83 @@ local function loop()
                             reaper.ImGui_EndChild(ctx)
                         end
                         
+                            
                         reaper.ImGui_EndTabItem(ctx)
                     end  
+                    
+                    
+                    
+                    ----------------------------------------------------------------------
+                    -------------------------NEW TAB--------------------------------------
+                    ----------------------------------------------------------------------
+                    
+                    if devMode then 
+                        openSettingsTab = cmd and reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_1()) and not shift
+                        settingsTabFlag = openSettingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
+                        if reaper.ImGui_BeginTabItem(ctx, 'Notation (cmd+n)',openSettingsTab, settingsTabFlag) then
+                            reaper.ImGui_TextColored(ctx, 0x777777FF, 'Notation is in developement and will be updated soon')
+                            
+                            reaper.ImGui_EndTabItem(ctx)
+                        end  
+                    end
+                    
+                    
+                    
+                    ----------------------------------------------------------------------
+                    -------------------------NEW TAB--------------------------------------
+                    ----------------------------------------------------------------------
+                    
+                    openSettingsTab = cmd and reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_X())
+                    settingsTabFlag = openSettingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
+                    if reaper.ImGui_BeginTabItem(ctx, 'App Settings (cmd+x)',openSettingsTab, settingsTabFlag) then
+                        local license = require("check_license")
+                        local email = license.registered_license()
+                        local licenseText = email and ("Licensed to: " .. email) or "No license"
+                        
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorGrey)
+                        if reaper.ImGui_Button(ctx, licenseText) then
+                            license.openLicenseWindow(true)  
+                        end 
+                        reaper.ImGui_PopStyleColor(ctx, 2)
+                        
+                        ret, val = reaper.ImGui_Checkbox(ctx, "Always overwrite maps", appSettings.alwaysOverwriteApps)
+                        if ret then 
+                            appSettings.alwaysOverwriteApps = val
+                            saveAppSettings()
+                        end 
+                        ret, val = reaper.ImGui_Checkbox(ctx, "Always embed UI in TCP", appSettings.alwaysEmbedUi)
+                        if ret then 
+                            appSettings.alwaysEmbedUi = val
+                            saveAppSettings()
+                        end 
+                        setToolTipFunc("When adding a script to a track, embed the UI in the TCP")
+                        
+                        reaper.ImGui_SetNextItemWidth(ctx, 127)
+                        ret, appSettings.auditionNote = reaper.ImGui_SliderInt(ctx, "Audition Note", appSettings.auditionNote or 64, 0, 127)
+                        if ret then 
+                            saveAppSettings()
+                        end 
+                        setToolTipFunc("Select which note to send when auditioning articulations")
+                        
+                        reaper.ImGui_SetNextItemWidth(ctx, 127)
+                        ret, appSettings.tableSizeTitle = reaper.ImGui_SliderInt(ctx, "Title column size", appSettings.tableSizeTitle or 120, 60, 300)
+                        if ret then 
+                            saveAppSettings()
+                        end 
+                        setToolTipFunc("Set the width of the Title column. If you use long names you might want it wider")
+                        
+                        reaper.ImGui_SetNextItemWidth(ctx, 127)
+                        ret, appSettings.tableSizeSubtitle = reaper.ImGui_SliderInt(ctx, "Subtitle column size", appSettings.tableSizeSubtitle or 120, 60, 300)
+                        if ret then 
+                            saveAppSettings()
+                        end 
+                        setToolTipFunc("Set the width of the Subtitle column. If you use long names you might want it wider")
+                       
+                    
+                        reaper.ImGui_EndTabItem(ctx)
+                    end  
+                    
                     openMappingsTab = false
                     openSettingsTab = false
                     reaper.ImGui_EndTabBar(ctx)           

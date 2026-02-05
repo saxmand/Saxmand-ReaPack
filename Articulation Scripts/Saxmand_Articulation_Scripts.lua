@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.2.1
+-- @version 0.2.2
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,4 +15,8 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + tried adding web surface
+--   + Added Drag and drop from explorer possibilities
+--   + first time load size for creator script
+--   + first time load size for list overview surface
+--   + open folder adds folder, if missing
+--   + do not include articulations without a title when creating articulation scripts
