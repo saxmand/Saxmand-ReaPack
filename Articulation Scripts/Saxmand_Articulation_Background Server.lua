@@ -107,7 +107,7 @@ scriptsList_script_path = scriptPath .. scriptsList_name
 scriptsList_command_id = reaper.AddRemoveReaScript(true, 0, scriptsList_script_path, false)
 
 
-contextName = "Articulation_System_Context"
+contextName = "Articulation_Scripts"
 
 function setupLocalSurface()
     firstFrame = true
@@ -194,9 +194,9 @@ local function loop()
     isAnyMouseDown = isMouseDown or isMouseRightDown
 
 
-    local ReloadArticaultion = reaper.GetExtState("ArticulationScripts", "ReloadArticaultion") == "1"
-    if reaper.GetExtState("ArticulationScripts", "ReloadArticaultion") == "1" then
-        reaper.SetExtState("ArticulationScripts", "ReloadArticaultion", "0", true)
+    local ReloadArticulation = reaper.GetExtState(contextName, "ReloadArticulation") == "1"
+    if ReloadArticulation then
+        reaper.SetExtState(contextName, "ReloadArticulation", "0", true)
         lastTrack = nil
     end
 

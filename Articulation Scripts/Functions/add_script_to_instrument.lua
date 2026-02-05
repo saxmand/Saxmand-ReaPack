@@ -201,7 +201,7 @@ function ex.addMapToInstruments(mapName)
                 addMapToTrack(track, mapName)-- .. " (Articulation script)")
             end
         end
-        reaper.SetExtState("ArticulationScripts", "ReloadArticaultion", "1", true) 
+        reaper.SetExtState("ArticulationScripts", "ReloadArticulation", "1", true) 
         --return somethingAdded
     else                
         overWriteFile_Wait_Name = mapName

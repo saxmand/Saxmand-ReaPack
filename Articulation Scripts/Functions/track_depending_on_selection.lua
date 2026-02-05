@@ -33,11 +33,14 @@ function export.trackDependingOnSelection()
     if not isRecording then
         if midiEditor then
             take = reaper.MIDIEditor_GetTake(midiEditor)
-            item = reaper.GetMediaItemTake_Item(take)
-            track = reaper.GetMediaItemTrack(item)
-            section_id = reaper_sections["MIDI Editor"]
+            if take then 
+                item = reaper.GetMediaItemTake_Item(take)
+                track = reaper.GetMediaItemTrack(item)
+                section_id = reaper_sections["MIDI Editor"]
+            end
+        end
             -- inline editor = 32061
-        else
+        if not section_id then
             local selectedMediaItemsCount = reaper.CountSelectedMediaItems(0)
             if selectedMediaItemsCount > 0 then
                 item = reaper.GetSelectedMediaItem(0, 0)

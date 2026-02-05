@@ -788,7 +788,7 @@ end
 -----------------------------------------------------------------
 -- RUN
 -- ---
-contextName = "Articulation Creator"
+contextName = "Articulation_Scripts"
 focusedWindow = reaper.JS_Window_GetFocus()
 ctx = reaper.ImGui_CreateContext(contextName)
 -- font = reaper.ImGui_CreateFont('Arial', 30, reaper.ImGui_FontFlags_Bold())
