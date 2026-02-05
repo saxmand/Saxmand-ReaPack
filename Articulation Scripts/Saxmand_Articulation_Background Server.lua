@@ -34,6 +34,8 @@ end
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
 local scriptPathSubfolder = scriptPath .. "Functions" .. seperator   
+
+local devMode = scriptPath:match("jesperankarfeldt") ~= nil
 if devMode then
     local devFilesPath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
     package.path = package.path .. ";" .. devFilesPath .. "?.lua"

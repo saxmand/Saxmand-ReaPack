@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.2.2
+-- @version 0.2.3
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -20,3 +20,4 @@
 --   + first time load size for list overview surface
 --   + open folder adds folder, if missing
 --   + do not include articulations without a title when creating articulation scripts
+--   + console message removed
