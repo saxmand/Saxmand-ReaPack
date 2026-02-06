@@ -133,13 +133,14 @@ function export.keyboardTriggerSurface()
     local fontSize = math.ceil(buttonWidth/100 * 16)
     local keep_open = settings.keyboard_trigger_keep_opend--getExtState("keyboard_trigger_keep_open", "false")
     local keep_focused = settings.keyboard_trigger_keep_focused--getExtState("keyboard_trigger_keep_focused", "true")
-    local draw_list = reaper.ImGui_GetWindowDrawList(ctx)
+    draw_list = reaper.ImGui_GetWindowDrawList(ctx)
     
     local windowColorBg = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0, (100 - settings.keyboardTrigger_transparency)/100)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), windowColorBg)
     
     if reaper.ImGui_Begin(ctx, contextName .. "_Keyboard_Trigger", nil,
                 reaper.ImGui_WindowFlags_NoDecoration() |
+                reaper.ImGui_WindowFlags_NoDocking() |
                 reaper.ImGui_WindowFlags_TopMost()                 -- | reaper.ImGui_WindowFlags_NoMove()
             -- | reaper.ImGui_WindowFlags_NoBackground()
             -- | reaper.ImGui_FocusedFlags_None()
