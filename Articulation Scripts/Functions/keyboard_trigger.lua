@@ -5,7 +5,7 @@ local retval, filename, sectionID, cmdID, mode, resolution, val = reaper.get_act
 
 -- If cmdID is non-zero → script was triggered as an action (user)
 -- If cmdID is 0 → usually run via another script (Main_OnCommandEx / NamedCommandLookup)
-local keepFocused = true
+
 if cmdID == 70649 then 
     reaper.ShowConsoleMsg(tostring(reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0)).." hej\n")
     
@@ -24,7 +24,6 @@ else
 
 end
     
-keepFocused = false
 local edit_keyboard_layout = false
     
 local contextName = "Articulation_Scripts"
@@ -52,6 +51,7 @@ end
 -- Load the pass through function of keycommands
 local passThroughCommand = require("pass_through_command").passThroughCommand
 local buttons = require("special_buttons")
+require("imgui_colors")
 
 function getExtState(name, default)
     local state = reaper.HasExtState(contextName,name) and reaper.GetExtState(contextName,name) or default
@@ -62,10 +62,8 @@ end
 
 local buttonSizes = {60, 80, 100}
 local margin = 10
-local buttonWidth = getExtState("keyboard_trigger_buttonWidth", 100)-- , textHeight = reaper.ImGui_CalcTextSize(ctx,"SELECTE PROJECT FOLDER: 12345",0,0)
-local windowColorBgTransparency = getExtState("keyboard_trigger_windowColorBgTransparency", 0.5)
-local keep_open = getExtState("keyboard_trigger_keep_open", "false")
-local keep_focused = getExtState("keyboard_trigger_keep_focused", "true")
+--local buttonWidth = getExtState("keyboard_trigger_buttonWidth", 100)-- , textHeight = reaper.ImGui_CalcTextSize(ctx,"SELECTE PROJECT FOLDER: 12345",0,0)
+--local windowColorBgTransparency = getExtState("keyboard_trigger_windowColorBgTransparency", 0.5)
 
 local startPosX = 10    --
 local startPosY = 10    --
@@ -121,14 +119,6 @@ function colorToggleWhiteBlack(on)
     end
 end
 
-local colorTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0,0)
-local colorBlack = reaper.ImGui_ColorConvertDouble4ToU32(0.0,0,0,1)
-local colorDarkGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.2,0.2,0.2,1)
-local colorGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.4,0.4,1)
-local colorLightGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.6,0.6,0.6,1)
-local colorWhite = reaper.ImGui_ColorConvertDouble4ToU32(1, 1, 1,1)
-local colorBlue = reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.2, 1,1)
-local colorAlmostWhite = reaper.ImGui_ColorConvertDouble4ToU32(0.8, 0.8, 0.8,1)
 
 local edit_keyboard_layout
 local edit_key_index
@@ -138,12 +128,15 @@ local resetNeeded = false
 local export = {}
 function export.keyboardTriggerSurface()
     EnsureValidContext(ctx)
+    local buttonWidth = settings.keyboardTrigger_size
     local buttonHeight = buttonWidth 
     local buttonSpacer = math.ceil(buttonWidth/10)
     local fontSize = math.ceil(buttonWidth/100 * 16)
+    local keep_open = settings.keyboard_trigger_keep_opend--getExtState("keyboard_trigger_keep_open", "false")
+    local keep_focused = settings.keyboard_trigger_keep_focused--getExtState("keyboard_trigger_keep_focused", "true")
+    local draw_list = reaper.ImGui_GetWindowDrawList(ctx)
     
-    
-    local windowColorBg = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0, 1 - windowColorBgTransparency)
+    local windowColorBg = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0, (100 - settings.keyboardTrigger_transparency)/100)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), windowColorBg)
     
     if reaper.ImGui_Begin(ctx, contextName .. "_Keyboard_Trigger", nil,
@@ -173,7 +166,6 @@ function export.keyboardTriggerSurface()
 
 
 
-        draw_list = reaper.ImGui_GetWindowDrawList(ctx)
 
         reaper.ImGui_SetNextFrameWantCaptureKeyboard(ctx, 1)
         retval, unicode_char = reaper.ImGui_GetInputQueueCharacter(ctx, 0)
@@ -251,15 +243,14 @@ function export.keyboardTriggerSurface()
             end
             
             
-            ret, buttonWidth = reaper.ImGui_SliderInt(ctx, "Size", buttonWidth, 10, 200)
+            ret, settings.keyboardTrigger_size = reaper.ImGui_SliderInt(ctx, "Size", settings.keyboardTrigger_size, 10, 200)
             if ret then  
-                reaper.SetExtState(contextName,"keyboard_trigger_buttonWidth", buttonWidth, true) 
+                saveSettings()
             end
             
-            ret, val = reaper.ImGui_SliderInt(ctx, "Window transparency", math.ceil(windowColorBgTransparency*100), 0, 100)
-            if ret and val then
-                windowColorBgTransparency = val / 100
-                reaper.SetExtState(contextName,"keyboard_trigger_windowColorBgTransparency", windowColorBgTransparency, true) 
+            ret, settings.keyboardTrigger_transparency = reaper.ImGui_SliderInt(ctx, "Window transparency", settings.keyboardTrigger_transparency, 0, 100)
+            if ret then
+                saveSettings()
             end
             
             
@@ -322,8 +313,8 @@ function export.keyboardTriggerSurface()
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), color - hoverDifference)
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), keep_open and 0xFFFFFFFF or 0x999999FF)
             if reaper.ImGui_Button(ctx,"Keep open: " .. (keep_open and "On" or "Off")) then        
-                keep_open = not keep_open
-                reaper.SetExtState(contextName, "keyboard_trigger_keep_open", tostring(keep_open), true)
+                settings.keyboard_trigger_keep_open = not settings.keyboard_trigger_keep_open
+                saveSettings()
             end
             reaper.ImGui_PopStyleColor(ctx, 4)
             
@@ -335,8 +326,8 @@ function export.keyboardTriggerSurface()
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), color - hoverDifference)
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), keep_focused and 0xFFFFFFFF or 0x999999FF)
             if reaper.ImGui_Button(ctx,"Keep focused: " .. (keep_focused and "On" or "Off")) then        
-                keep_focused = not keep_focused
-                reaper.SetExtState(contextName, "keyboard_trigger_keep_focused", tostring(keep_focused), true)
+                settings.keyboard_trigger_keep_focused = not settings.keyboard_trigger_keep_focused
+                saveSettings()                
             end
             reaper.ImGui_PopStyleColor(ctx, 4)
             

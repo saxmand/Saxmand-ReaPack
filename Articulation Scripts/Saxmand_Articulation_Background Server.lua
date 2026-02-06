@@ -59,7 +59,6 @@ local export = require("export")
 
 
 local addMapToInstruments = require("add_script_to_instrument").addMapToInstruments
-
 -- Load pathes
 require("pathes")
 
@@ -86,6 +85,49 @@ local trackDependingOnSelection = require("track_depending_on_selection").trackD
 
 -- Load the reaper sections id number, used for
 local reaper_sections = dofile(scriptPath .. "/Functions/Helpers/reaper_sections.lua")
+
+
+local defaultSettings = { 
+    listOverview_onlyShowOnMidiEditor = false,
+    listOverview_size = 100,
+    listOverview_transparency = 20,
+    keyboardTrigger_size = 100,
+    keyboardTrigger_transparency = 30,
+}
+
+function saveSettings()
+    local settingsStr = json.encodeToJson(settings)
+    reaper.SetExtState(contextstr,"settings", settingsStr, true) 
+end
+
+
+if reaper.HasExtState(contextstr, "settings") then 
+    local settingsStr = reaper.GetExtState(contextstr,"settings") 
+    settings = json.decodeFromJson(settingsStr)
+else    
+    settings = defaultSettings
+    saveSettings()
+end
+
+
+-- BACKWARDS COMPATABILITY
+for key, value in pairs(defaultSettings) do
+    if type(value) == "table" then 
+        if settings[key] == nil then
+            settings[key] = {}
+        end
+        
+        for subKey, subValue in pairs(value) do
+            if settings[key][subKey] == nil then
+                settings[key][subKey] = subValue
+            end
+        end
+    else  
+        if settings[key] == nil then
+            settings[key] = value
+        end
+    end
+end
 
 
 
@@ -199,6 +241,8 @@ local function loop()
         reaper.SetExtState(contextName, "ReloadArticulation", "0", true)
         lastTrack = nil
     end
+    
+    
 
     track, section_id, name, fxNumber, item, take, midi_editor = trackDependingOnSelection()
     if not lastTrack or lastTrack ~= track then
@@ -212,7 +256,6 @@ local function loop()
             end
         end
     end
-
     --reaper.StuffMIDIMessage(0, 0xF0, msgBytes)
 
     if track then
@@ -273,11 +316,11 @@ local function loop()
                 end
             end
         end
-
+        
 
         local listOverview_command_state = reaper.GetToggleCommandState(listOverview_command_id) == 1
         if listOverview_command_state then
-            if midi_editor or not onlyShowOnMidiEditor then
+            if midi_editor or not settings.listOverview_onlyShowOnMidiEditor then
                 local windowIsFocused = listOverviewSurface() -- show the list overview
                 if midi_editor then
                     -- trying is mouse not down to make sure we focus midi editor even when opening the window
@@ -292,7 +335,7 @@ local function loop()
             end
         end
 
-        if midi_editor then
+        if midi_editor and take then
             updateArticulationJSFX(take)
         end
     end

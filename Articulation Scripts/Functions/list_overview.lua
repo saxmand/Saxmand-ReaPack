@@ -11,6 +11,8 @@ package.path = package.path .. ";" .. scriptPath .. "Helpers/?.lua"
 require("pathes")
 -- load list of articulation scripts
 local articulation_scripts_list = require("get_articulation_scripts").get_articulation_scripts(articulationScriptsPath)
+local buttons = require("special_buttons")
+require("imgui_colors")
 --[[ 
 function setupLocalSurface()    
     ctx = reaper.ImGui_CreateContext(contextName)
@@ -30,11 +32,19 @@ end
 local export = {}
 
 function export.listOverviewSurface()
-    EnsureValidContext(ctx)
-    local windowIsFocused
-        
+    EnsureValidContext(ctx)    
+    draw_list = reaper.ImGui_GetWindowDrawList(ctx)
+
+
+    local windowIsFocused      
+
+    reaper.ImGui_PushFont(ctx, font,  14)
+    local windowColorBg = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0, (100 - settings.listOverview_transparency)/100)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), windowColorBg)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBgActive(), colorBlack)
+
     reaper.ImGui_SetNextWindowSize(ctx, 200, 600, reaper.ImGui_Cond_FirstUseEver())
-    local visible, open =  reaper.ImGui_Begin(ctx, "Articulations", true,
+    local visible, open =  reaper.ImGui_Begin(ctx, "Articulations List", true,
             --    reaper.ImGui_WindowFlags_NoDecoration() |
                 reaper.ImGui_WindowFlags_TopMost()                 -- | reaper.ImGui_WindowFlags_NoMove()
             -- | reaper.ImGui_WindowFlags_NoBackground()
@@ -44,15 +54,22 @@ function export.listOverviewSurface()
             )
 
     if visible then    
+
       --[[
         if waitForFocused > 10 then
             focusedPopupWindow = reaper.JS_Window_GetFocus()
             waitForFocused = -1
         end
         if waitForFocused > -1 then waitForFocused = waitForFocused + 1 end
+
 ]]      
-        
+
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), colorDarkGrey)
+        reaper.ImGui_PushFont(ctx, font,  12)
         if reaper.ImGui_BeginMenuBar(ctx) then 
+            --reaper.ImGui_PushFont(ctx, font,  12)
+            
+            --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), 0, 4)
             if reaper.ImGui_BeginMenu(ctx, "Options") then
                 
                 local midi_editor = reaper.MIDIEditor_GetActive()
@@ -101,15 +118,61 @@ function export.listOverviewSurface()
                         
                         reaper.ImGui_EndMenu(ctx)
                     end
+                else
+                    reaper.ImGui_Text(ctx, "Open midi editor to see midi editor options")
                 end
                 
                 reaper.ImGui_EndMenu(ctx)
             end
+            
+            --local posX1 = reaper.ImGui_GetCursorPosX(ctx)
+            if reaper.ImGui_BeginMenu(ctx, "Settings") then
+                
+                if reaper.ImGui_Checkbox(ctx, "Open/close list overview together with midi editor", settings.listOverview_onlyShowOnMidiEditor) then
+                    settings.listOverview_onlyShowOnMidiEditor = not settings.listOverview_onlyShowOnMidiEditor
+                    saveSettings()
+                end
+
+                
+                reaper.ImGui_SetNextItemWidth(ctx, 150)
+                ret, settings.listOverview_size = reaper.ImGui_SliderInt(ctx, "Size", settings.listOverview_size, 50, 300)
+                if ret then  
+                    saveSettings()
+                end
+                
+
+                reaper.ImGui_SetNextItemWidth(ctx, 150)
+                ret, settings.listOverview_transparency = reaper.ImGui_SliderInt(ctx, "Window transparency", settings.listOverview_transparency, 0, 100)
+                if ret then                 
+                    saveSettings()
+                end
+
+                reaper.ImGui_EndMenu(ctx)
+            end
+            --local posX2 = reaper.ImGui_GetCursorPosX(ctx)
+            --reaper.ImGui_SetCursorPosX(ctx, 4)
+            --if buttons.cogwheel(ctx, "listOverview_settings",  math.ceil(settings.listOverview_size/100 * 18), colorGrey, "Settings", colorGrey, colorWhite, colorTransparent, colorDarkGrey, colorDarkGrey, colorBlack) then
+                --reaper.ImGui_OpenPopup(ctx, "listOverview_settings")
+            --end
+            --reaper.ImGui_SetCursorPosX(ctx, posX2)
+
+            --reaper.ImGui_PopStyleVar(ctx)
+            --reaper.ImGui_PopFont(ctx)
             reaper.ImGui_EndMenuBar(ctx)
         end
+
+
+        reaper.ImGui_PopStyleColor(ctx,1)
+        reaper.ImGui_PopFont(ctx)
+        --if reaper.ImGui_BeginPopup(ctx, "listOverview_settings") then
+            
+        
+        --    reaper.ImGui_EndPopup(ctx)
+        --end
         
         windowIsFocused = reaper.ImGui_IsWindowFocused(ctx)
         
+        reaper.ImGui_PushFont(ctx, font,  math.ceil(settings.listOverview_size/100 * 12))
 
         local draw_list = reaper.ImGui_GetWindowDrawList(ctx)
 
@@ -190,9 +253,13 @@ function export.listOverviewSurface()
         
         reaper.ImGui_PopStyleColor(ctx,3)
                 
+        reaper.ImGui_PopFont(ctx)
         
         reaper.ImGui_End(ctx)
     end
+
+    reaper.ImGui_PopStyleColor(ctx,2)
+    reaper.ImGui_PopFont(ctx)
 
     if not open then 
         setToggleCommandState(listOverview_command_id)
