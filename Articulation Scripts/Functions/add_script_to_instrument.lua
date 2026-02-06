@@ -8,7 +8,7 @@ local json = require("json")
 local embed_ui = require("embed_ui").main
 local export = require("export")
 
-
+local contextName = "Articulation_Scripts"
 
 local function getLuaTable(mapName)
     local specificFilePath = articulationScriptsPath .. seperator .. mapName .. ".jsfx"
@@ -206,7 +206,7 @@ function ex.addMapToInstruments(mapName)
                 addMapToTrack(track, mapName)-- .. " (Articulation script)")
             end
         end
-        reaper.SetExtState("ArticulationScripts", "ReloadArticulation", "1", true) 
+        reaper.SetExtState(contextName, "ReloadArticulation", "1", true) 
         --return somethingAdded
     else                
         overWriteFile_Wait_Name = mapName

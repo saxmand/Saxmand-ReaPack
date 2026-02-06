@@ -245,9 +245,10 @@ local function loop()
     
 
     track, section_id, name, fxNumber, item, take, midi_editor = trackDependingOnSelection()
-    if not lastTrack or lastTrack ~= track then
+    if not lastTrack or lastTrack ~= track or (last_fxNumber ~= fxNumber) then
         triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam = readArticulationScript(track, name)
-        lastTrack = track
+        lastTrack = track        
+        last_fxNumber = fxNumber
 
         if track then
             trackNameRet, trackName = reaper.GetTrackName(track)
