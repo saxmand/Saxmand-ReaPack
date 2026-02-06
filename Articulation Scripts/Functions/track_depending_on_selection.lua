@@ -1,4 +1,3 @@
--- @version 1.0
 -- @noindex
 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")

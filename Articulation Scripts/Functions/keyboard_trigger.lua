@@ -1,4 +1,3 @@
--- @version 1.0
 -- @noindex
 
 local retval, filename, sectionID, cmdID, mode, resolution, val = reaper.get_action_context()
