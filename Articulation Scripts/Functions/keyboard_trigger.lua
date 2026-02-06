@@ -39,14 +39,6 @@ local keyboardTableKeysOrder = keyboard_tables.order
 
 local allRows = keyboard_tables.table
 
-local keep_open
-local keepStr = reaper.GetExtState(contextName, "keep_open") or "false"
-if keepStr and keepStr == "true" then
-    keep_open = true
-else
-    keep_open = false
-end
-
 -- Load the pass through function of keycommands
 local passThroughCommand = require("pass_through_command").passThroughCommand
 local buttons = require("special_buttons")
@@ -131,7 +123,7 @@ function export.keyboardTriggerSurface()
     local buttonHeight = buttonWidth 
     local buttonSpacer = math.ceil(buttonWidth/10)
     local fontSize = math.ceil(buttonWidth/100 * 16)
-    local keep_open = settings.keyboard_trigger_keep_opend--getExtState("keyboard_trigger_keep_open", "false")
+    local keep_open = settings.keyboard_trigger_keep_open --getExtState("keyboard_trigger_keep_open", "false")
     local keep_focused = settings.keyboard_trigger_keep_focused--getExtState("keyboard_trigger_keep_focused", "true")
     draw_list = reaper.ImGui_GetWindowDrawList(ctx)
     
@@ -281,9 +273,7 @@ function export.keyboardTriggerSurface()
             reaper.ImGui_AlignTextToFramePadding(ctx)   
             reaper.ImGui_SameLine(ctx)
             reaper.ImGui_SetCursorPosY(ctx, 12)
-            reaper.ImGui_Text(ctx, " |   Press key on your keyboard to remap the selected key   |   Use arrows to navigate   |   Delete or backspace to remove   |   Press escape to finish")
-            
-            reaper.ImGui_Text(ctx, keyInput:lower() .. " - Test")
+            reaper.ImGui_Text(ctx, " |   Press key on your keyboard to remap the selected key   |   Use arrows to navigate   |   Delete or backspace to remove   |   Press escape to finish")            
         else
             --[[
           
@@ -552,9 +542,10 @@ function export.keyboardTriggerSurface()
                     edit_key_index = edit_key_index - 1
                     if edit_key_index < 1 then
                         edit_key_row = edit_key_row - 1 
-                        if edit_key_row > #allRows then
-                            edit_key_row = 1
+                        if edit_key_row < 1 then
+                            edit_key_row = #allRows 
                         end
+                        
                         edit_key_index = #allRows[edit_key_row]  
                     end
                 elseif retval and (last_key ~= key) and key then 
@@ -638,6 +629,11 @@ function export.keyboardTriggerSurface()
         else 
             if closeWindow or reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape()) or (finish and not keep_open and key ~= "<") then 
                 reaper.SetToggleCommandState(0, keyboardTrigger_command_id, 0)
+                if resetNeeded then
+                    reaper.SetExtState("articulationMap", "stopScript", "1", true)
+                    --reaper.SetToggleCommandState(0, background_server_command_id, 0)
+                    resetNeeded = false
+                end
                 reaper.RefreshToolbar(0)
                 --stopScript = true
             end

@@ -148,6 +148,7 @@ scriptsList_script_path = scriptPath .. scriptsList_name
 -- Register (or just retrieve if already added)
 scriptsList_command_id = reaper.AddRemoveReaScript(true, 0, scriptsList_script_path, false)
 
+background_server_command_id = cmdID
 
 contextName = "Articulation_Scripts"
 
@@ -354,6 +355,9 @@ local function loop()
 
 
     if reaper.GetExtState("articulationMap", "stopScript") == "1" then
+        stopScript = true
+    end
+    if reaper.GetToggleCommandState(0, background_server_command_id) == 0 then
         stopScript = true
     end
 

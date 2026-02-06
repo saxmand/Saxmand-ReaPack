@@ -8,9 +8,9 @@ local state = reaper.GetToggleCommandState(commandID)
 local enabled = state == 1
 
 function ensureBackgroundServerIsRunning(stop)
-    background_server_name = "Saxmand_Articulation_Background Server.lua"
-    background_server_script_path = scriptPath .. background_server_name 
-    background_server_command_id = reaper.AddRemoveReaScript(true, 0, background_server_script_path, false)
+    local background_server_name = "Saxmand_Articulation_Background Server.lua"
+    local background_server_script_path = scriptPath .. background_server_name 
+    local background_server_command_id = reaper.AddRemoveReaScript(true, 0, background_server_script_path, false)
     
     
     if stop then
@@ -23,7 +23,7 @@ function ensureBackgroundServerIsRunning(stop)
             --reaper.SetToggleCommandState(0, background_server_command_id, 1)
         end
     end  
-    reaper.RefreshToolbar2(0, background_server_command_id)
+    --reaper.RefreshToolbar2(0, background_server_command_id)
 end
 
 -- Toggle state
