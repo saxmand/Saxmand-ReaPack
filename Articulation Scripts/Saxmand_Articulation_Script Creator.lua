@@ -88,7 +88,6 @@ end
 local colors = GenerateSpectrumColors(10)
 
 
-
 function readLicense()
     -- LICENSE
     local license = require("check_license")
@@ -828,6 +827,8 @@ instrumentSettingsDefault = {
     usePDC = true, 
     sustainPedalForcesLegato = true, 
     addKeyswitchNamesToPianoRoll = true, 
+    addKeyswitchNamesOverwriteAllNotes = true, 
+    addKeyswitchNamesOverwriteAllCC = false, 
     recognizeArticulationsKeyswitches = true
 }
 
@@ -3904,7 +3905,7 @@ local function loop()
                             reaper.ImGui_NewLine(ctx)
                             reaper.ImGui_TextColored(ctx, 0x777777FF, 'Track settings')
                             
-                            if instrumentSettings.addKeyswitchNamesToPianoRoll == nil then instrumentSettings.addKeyswitchNamesToPianoRoll = true end 
+                            
                             _, instrumentSettings.addKeyswitchNamesToPianoRoll = reaper.ImGui_Checkbox(ctx, "Add keyswitch names to piano roll keys", instrumentSettings.addKeyswitchNamesToPianoRoll)
                             setToolTipFunc("Show key switch names on the piano roll keys.\nThis will only show for keyswitches that uses a single keyswitch")
                             
@@ -3912,6 +3913,9 @@ local function loop()
                             if instrumentSettings.addKeyswitchNamesToPianoRoll then
                                 _, instrumentSettings.addKeyswitchNamesToPianoRollOnlyUseTitle = reaper.ImGui_Checkbox(ctx, "Only use title", instrumentSettings.addKeyswitchNamesToPianoRollOnlyUseTitle)
                                 setToolTipFunc("For simpler names, only use the Title and not include subtitle on the piano roll keys") 
+                             
+                                _, instrumentSettings.addKeyswitchNamesOverwriteAllNotes = reaper.ImGui_Checkbox(ctx, "Overwrite all piano roll keys", instrumentSettings.addKeyswitchNamesOverwriteAllNotes)
+                                setToolTipFunc("Overwrite all key names on the piano roll")
                             end
                             reaper.ImGui_Unindent(ctx)
                             

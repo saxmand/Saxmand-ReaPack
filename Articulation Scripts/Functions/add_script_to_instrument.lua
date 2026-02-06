@@ -85,12 +85,17 @@ local function addMapToTrack(track, mapName)
         if luaTable.instrumentSettings.addKeyswitchNamesToPianoRoll then
             local articulationLayers = export.getArticulationsLayers(luaTable.tableInfo)
 
-            local overwrite = true --reaper.ShowMessageBox("Overwrite old MIDI note and cc names", "SELECT",1) == 1
+            local overwrite = luaTable.instrumentSettings.addKeyswitchNamesOverwriteAllNotes --reaper.ShowMessageBox("Overwrite old MIDI note and cc names", "SELECT",1) == 1
             for t = 0, reaper.CountSelectedTracks(0)- 1 do
                 track = reaper.GetSelectedTrack(0,t)
                 if overwrite then
                     for n = 0, 255 do
-                        reaper.SetTrackMIDINoteNameEx( 0, track, n, 0, "" )
+                        if luaTable.instrumentSettings.addKeyswitchNamesOverwriteAllNotes and n < 128 then 
+                            reaper.SetTrackMIDINoteNameEx( 0, track, n, 0, "" )
+                        end
+                        if luaTable.instrumentSettings.addKeyswitchNamesOverwriteAllCC and n >= 128 then 
+                            reaper.SetTrackMIDINoteNameEx( 0, track, n, 0, "" )
+                        end
                     end
                 end
             end
