@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.3.2
+-- @version 0.3.3
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,4 +15,7 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + fixed keep open button on Keyboard Trigger
+--   + license work
+--   + changed delay to be negative delay, and only positive values available.
+--   + cleaned code for Note and CC to be recognized correctly when generating maps
+--   + Cleaned some generation of code to omit stuff if not using delay

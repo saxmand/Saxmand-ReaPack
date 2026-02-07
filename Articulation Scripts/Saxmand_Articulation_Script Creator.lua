@@ -567,6 +567,20 @@ function importTable(specificFilePath)
                 --end
             elseif articulationMapCreatorVersion == 0.3 then   
                 tableInfo = luaTable.tableInfo
+                if luaTable.mapping then 
+                    mapping = {}
+                    for k, v in pairs(luaTable.mapping) do
+                        if k == "Note" or k == "CC" then
+                            for i, v2 in ipairs(v) do
+                                mapping[k .. i] = true -- k .. i
+                            end
+                        else
+                            mapping[k] = v
+                        end
+                    end 
+                end 
+            elseif articulationMapCreatorVersion == 0.4 then   
+                tableInfo = luaTable.tableInfo
                 if luaTable.mapping then
                     mapping = luaTable.mapping
                 end
@@ -1822,7 +1836,7 @@ local function loop()
                             name = "Channel",key = "X", ctrl = true,triggerName = "Channel", 
                             tip = "Send articulation and note to sepecific channel."
                             },{
-                            name = "Delay", key = "D", ctrl = true,triggerName = "Delay", 
+                            name = "Negative Delay", key = "D", ctrl = true,triggerName = "Delay", 
                             tip = "Delay articulation and note in miliseconds.\nUsually used together with a negative track delay."
                             },{
                             name = "Pitch", key = "P", ctrl = true, triggerName = "Pitch", 
@@ -2219,49 +2233,68 @@ local function loop()
                         
                             tableX, tableY = reaper.ImGui_GetCursorPos(ctx)
                 
-                        
-                
-                            -- flags =reaper.ImGui_WindowFlags_NoMove() | reaper.ImGui_WindowFlags_NoResize() | reaper.ImGui_WindowFlags_TopMost()
-                            -- reaper.ImGui_FocusedFlags_NoPopupHierarchy()
-                    
-                            mappingType = {}
-                            table.insert(mappingType, "Title") 
                             
-                            if mapping.Subtitle then table.insert(mappingType, "Subtitle") end
-                            
-                            
-                            if mapping.Notation then table.insert(mappingType, "Notation") end
-                            
-                            for key, value in pairs(mapping.CC) do
-                                table.insert(mappingType, "CC" .. key)
+                            function createTableOrderFromUsedMappings(mapping) 
+                            -- WE DO THIS TO FORCE THE ORDER in our table
+                                local mappingType = {}
+                                table.insert(mappingType, "Title") 
+                                
+                                if mapping.Subtitle then table.insert(mappingType, "Subtitle") end
+                                
+                                
+                                if mapping.Notation then table.insert(mappingType, "Notation") end
+                                
+                                
+                                for k, v in pairs(mapping) do 
+                                    if k:match("Note") ~= nil then 
+                                        table.insert(mappingType, k)
+                                    end
+                                end
+                                
+                                for k, v in pairs(mapping) do 
+                                    if k:match("CC") ~= nil then 
+                                        table.insert(mappingType, k)
+                                    end
+                                end
+                                --[[
+                                for key, value in pairs(mapping.CC) do
+                                    table.insert(mappingType, "CC" .. key)
+                                end
+                                
+                                
+                                
+                                for key, value in pairs(mapping.Note) do
+                                    table.insert(mappingType, "Note" .. key)
+                                    --table.insert(mappingType, "NoteM" .. key.."Velocity")
+                                end
+                                
+                                ]]
+                                
+                                if mapping.Layer then table.insert(mappingType, "Layer") end
+                                if mapping.Velocity then table.insert(mappingType, "Velocity") end
+                                if mapping.Channel then table.insert(mappingType, "Channel") end
+                                if mapping.Delay then table.insert(mappingType, "Delay") end
+                                if mapping.Pitch then table.insert(mappingType, "Pitch") end
+                                if mapping.Transpose then table.insert(mappingType, "Transpose") end
+                                if mapping.Interval then table.insert(mappingType, "Interval") end
+                                
+                                if mapping.Position then table.insert(mappingType, "Position") end
+                                if mapping.FilterChannel then table.insert(mappingType, "FilterChannel") end
+                                if mapping.FilterPitch then table.insert(mappingType, "FilterPitch") end
+                                if mapping.FilterVelocity then table.insert(mappingType, "FilterVelocity") end
+                                if mapping.FilterSpeed then table.insert(mappingType, "FilterSpeed") end
+                                if mapping.FilterInterval then table.insert(mappingType, "FilterInterval") end
+                                if mapping.FilterCount then table.insert(mappingType, "FilterCount") end
+                                
+                                if mapping.KeyboardTrigger then table.insert(mappingType, "KT") end
+                                
+                                if mapping.UIText then table.insert(mappingType, "UIText") end
+                                return mappingType
                             end
-                            firstColumnForNote = #mappingType
-                            aaa = mapping
-                            for key, value in pairs(mapping.Note) do
-                                table.insert(mappingType, "Note" .. key)
-                                --table.insert(mappingType, "NoteM" .. key.."Velocity")
-                            end
                             
-                            if mapping.Layer then table.insert(mappingType, "Layer") end
-                            if mapping.Velocity then table.insert(mappingType, "Velocity") end
-                            if mapping.Channel then table.insert(mappingType, "Channel") end
-                            if mapping.Delay then table.insert(mappingType, "Delay") end
-                            if mapping.Pitch then table.insert(mappingType, "Pitch") end
-                            if mapping.Transpose then table.insert(mappingType, "Transpose") end
-                            if mapping.Interval then table.insert(mappingType, "Interval") end
                             
-                            if mapping.Position then table.insert(mappingType, "Position") end
-                            if mapping.FilterChannel then table.insert(mappingType, "FilterChannel") end
-                            if mapping.FilterPitch then table.insert(mappingType, "FilterPitch") end
-                            if mapping.FilterVelocity then table.insert(mappingType, "FilterVelocity") end
-                            if mapping.FilterSpeed then table.insert(mappingType, "FilterSpeed") end
-                            if mapping.FilterInterval then table.insert(mappingType, "FilterInterval") end
-                            if mapping.FilterCount then table.insert(mappingType, "FilterCount") end
+                            mappingType = createTableOrderFromUsedMappings(mapping) 
                             
-                            if mapping.KeyboardTrigger then table.insert(mappingType, "KT") end
-                            
-                            if mapping.UIText then table.insert(mappingType, "UIText") end
-                    
                             columnAmount = #mappingType
                             
                             totalItemAmount = (#tableInfo) * (columnAmount)
@@ -3072,7 +3105,7 @@ local function loop()
                             tableSizeKT = reaper.ImGui_CalcTextSize(ctx, "KT X",0,0)
                             tableSizeNotation = reaper.ImGui_CalcTextSize(ctx, "Notation     X",0,0)
                             tableSizeUIText = reaper.ImGui_CalcTextSize(ctx, "UIText  X",0,0)
-                            tableSizeDelay = reaper.ImGui_CalcTextSize(ctx, "Delay (ms)  X",0,0)
+                            tableSizeDelay = reaper.ImGui_CalcTextSize(ctx, "N.Delay  X",0,0)
                             tableSizeChannel = reaper.ImGui_CalcTextSize(ctx, "Channel X",0,0)
                             tableSizePitch = reaper.ImGui_CalcTextSize(ctx, "Pitch X",0,0)
                             tableSizeLayer = reaper.ImGui_CalcTextSize(ctx, "Layer  X",0,0)
@@ -3206,7 +3239,7 @@ local function loop()
                                         if column_name:match("Note") then
                                             visualColumnName = "Note"
                                         elseif column_name == "Delay" then
-                                            visualColumnName = column_name .. " (ms)" 
+                                            visualColumnName = "N." .. column_name --.. " (ms)" 
                                         elseif column_name:match("FilterCount") ~= nil then
                                             visualColumnName = "F.N.Count"
                                         elseif column_name:match("Filter") ~= nil then
@@ -3611,7 +3644,7 @@ local function loop()
                                             elseif columnName == "Delay" then
                                                 reaper.ImGui_SetNextItemWidth(ctx, tableSizeDelay)
                                                 if modify == "Same" then
-                                                    modifyIncrement(id, columnName, row, column, true, false, -3000, 4000)
+                                                    modifyIncrement(id, columnName, row, column, true, false, 0, 4000)
                                                 end
                                             elseif columnName == "Pitch" then   
                                                 --modifyNotes(id, columnName, row, column, modify) 

@@ -62,10 +62,11 @@ local text =
 
 These scripts are the result of 2 years work, and over 15 years of thinking and experience.
 Therefor I ask for a donation of a minimum of $60, which works as a perpetual license. 
-(You can use the scripts for free if you have 6 or less articulation maps)
+(You can use the scripts for free if you have 6 or less articulation scripts)
 
 On the Paypal page please SUBMIT YOUR EMAIL and you will receive an activation code 
-for that email, on that email, within 24 hours! The license is personal.
+for that email, on that email, within 24 hours! 
+The license is personal. You'll need internet connection when registrating in the app.
 
 Paypal charges 2.9% + $0.30 per donation. 
 After that I'll give 10% of all sales to ReaImGui and ReaPack development. 
@@ -74,7 +75,7 @@ Nothing could be done without the work of those who paved the way <3
 I will continue developing the functionality of Articulation scripts, 
 and will love any feedback and wishes for them.
 
-These scripts were made for professionals composers, that see the value in them!! 
+This system were made for professionals composers, who see the value in it!! 
 You could probably create some simple articulations scripts with a AI chatbot. 
 If that feels better to you, then I encurage you to do that :) 
 
@@ -88,7 +89,7 @@ local function loop()
     reaper.ImGui_SetNextWindowSize(ctx, 600, 456, reaper.ImGui_Cond_Appearing())
     
     local visible, open = reaper.ImGui_Begin(ctx, 'Articulation scripts - License window', true, 
-    reaper.ImGui_WindowFlags_NoResize() | reaper.ImGui_WindowFlags_TopMost() | reaper.ImGui_WindowFlags_NoCollapse())
+    reaper.ImGui_WindowFlags_AlwaysAutoResize() | reaper.ImGui_WindowFlags_TopMost() | reaper.ImGui_WindowFlags_NoCollapse())
     if visible then
                 
         local isEscape = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape())
@@ -113,7 +114,7 @@ local function loop()
         
         reaper.ImGui_Spacing(ctx)
         
-        if wasIsNoteValid then reaper.ImGui_BeginDisabled(ctx) end
+        if not devMode and wasIsNoteValid then reaper.ImGui_BeginDisabled(ctx) end
             if reaper.ImGui_Button(ctx, 'Activate', 120, 0) then
                 if license.verify_code(email_buf, code_buf) then
                     if license.save_license(email_buf, code_buf) then
@@ -127,7 +128,7 @@ local function loop()
                     status_msg = 'Invalid license. Please check your details.'
                 end
             end
-        if wasIsNoteValid then reaper.ImGui_EndDisabled(ctx) end
+        if not devMode and wasIsNoteValid then reaper.ImGui_EndDisabled(ctx) end
 
         reaper.ImGui_SameLine(ctx)
         
