@@ -850,8 +850,6 @@ function resetCreator()
     --#tableInfo = 0
     mapName = nil
     mapping = {}
-    mapping.Note = {} 
-    mapping.CC = {}
     subtitles = {}
     titles = {} 
     selectedArticulations = {}  
@@ -1282,6 +1280,20 @@ function createMappingButton(data)
                     table.insert(instrumentSettings.realtimeTrigger, {"Channel", nil, "", ""})
                 elseif triggerName == "Velocity realtime" then 
                     table.insert(instrumentSettings.realtimeTrigger, {"Velocity", nil, "", ""})
+                elseif triggerName == "Note" then
+                    local nextNoteNumber = 0
+                    for k, v in pairs(mapping) do
+                        if k:match("Note") ~= nil then
+                            local noteIndex = tonumber(k:gsub("Note", "")) or 0
+                            if  noteIndex > nextNoteNumber then
+                                nextNoteNumber = noteIndex
+                            end
+                        end
+                    end
+                    mapping[triggerName .. nextNoteNumber] = true
+                    setFocusOnNewMapping = triggerName .. nextNoteNumber
+                    modifierSettings[setFocusOnNewMapping] = "Same"
+                    tableInfo[setFocusOnNewMapping] = {}
                 else
                     table.insert(mapping[triggerName], #mapping[triggerName] + 1)
                     setFocusOnNewMapping = triggerName .. #mapping[triggerName]
@@ -1825,7 +1837,7 @@ local function loop()
                             tip = "Add a CC switch to the articulation."
                             },{
                             name = "Note", triggerName = "Note", key = "N", ctrl = true, buttonType = "multi",
-                            tip = "Add a note keyswitch to the articulation."
+                            tip = "Add a note keyswitch to the articulation.\nIf no velocity is specified, 127 will be used"
                             },{
                             --name = "Note Held", triggerName = "NoteH", key = "H", ctrl = true, buttonType = "multi",
                             --tip = "Add a held note keyswitch to the articulation."
@@ -2799,8 +2811,13 @@ local function loop()
                                       --  visualTitle = visualTitle .. " (" .. velocityValue .. ")"
                                     end
                                     if velocityValueRet and velocityValueString then 
-                                        for rowKey, counter in pairs(selectedArticulations) do
-                                            setNewTableValue(rowKey, columnName .. "Velocity", tonumber(velocityValueString))
+                                        local velNumber = velocityValueString and tonumber(velocityValueString)
+                                        if velNumber then 
+                                            if velNumber < 1 then velNumber = 1 end
+                                            if velNumber > 127 then velNumber = 127 end
+                                        end
+                                        for rowKey, counter in pairs(selectedArticulations) do                                            
+                                            setNewTableValue(rowKey, columnName .. "Velocity", velNumber)
                                             --tableInfo[rowKey][columnName .. "Velocity"] = tonumber(velocityValueString)
                                         end
                                     end
@@ -3322,13 +3339,9 @@ local function loop()
                                                 elseif column_name == "UIText" then
                                                     mapping.UIText = false
                                                 elseif column_name:match("CC") ~= nil then
-                                                    local clean = column_name:gsub("CC", "") 
-                                                    mapping.CC[tonumber(clean)] = nil
-                                                    mapping.CC[clean] = nil -- for safety
-                                                elseif column_name:match("Note") ~= nil then 
-                                                    local clean = column_name:gsub("Note", "")
-                                                    mapping.Note[tonumber(clean)] = nil
-                                                    mapping.Note[clean] = nil
+                                                    mapping[columnName] = nil 
+                                                elseif column_name:match("Note") ~= nil then  
+                                                    mapping[columnName] = nil 
                                                 end
                                                 undo_redo.commit({tableInfo, mapping})
                                             end
@@ -4324,11 +4337,11 @@ local function loop()
                         local setFocusOnNewMapping = "CC" .. inputStringNumber
                         
                         if popup == "CC" then 
-                            if tableInfo[setFocusOnNewMapping] then
+                            if mapping[setFocusOnNewMapping] then
                                 newInput = false
                             end
                             if newInput and inputStringNumber >= 0 and inputStringNumber < 128 then
-                                mapping.CC[inputStringNumber] = true
+                                mapping[setFocusOnNewMapping] = true
                                 modifierSettings[setFocusOnNewMapping] = "Same"
                                 tableInfo[setFocusOnNewMapping] = {}
                             end
