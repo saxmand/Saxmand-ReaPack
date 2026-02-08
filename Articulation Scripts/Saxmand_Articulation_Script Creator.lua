@@ -285,7 +285,7 @@ local function getNoteNumber(str)
 end
 
 local function getCCNumber(str)
-    local n = str:match("^CC%d+)$")
+    local n = str:match("^CC(%d+)$")
     if n then 
         return tonumber(n) 
     else
@@ -1850,11 +1850,11 @@ local function loop()
                             --if reaper.ImGui_BeginChild(ctx, 'mappingChild', 300, 320, reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_ResizeY()) then
                             mappingX, MappingY = reaper.ImGui_GetCursorPos(ctx)
                             buttonsData = {{
-                            name = "Controller", triggerName = "CC", key = "C", ctrl = true, buttonType = "popup",
-                            tip = "Add a CC switch to the articulation."
+                                name = "Note", triggerName = "Note", key = "N", ctrl = true, buttonType = "multi",
+                                tip = "Add a note keyswitch to the articulation.\nIf no velocity is specified, 127 will be used"
                             },{
-                            name = "Note", triggerName = "Note", key = "N", ctrl = true, buttonType = "multi",
-                            tip = "Add a note keyswitch to the articulation.\nIf no velocity is specified, 127 will be used"
+                                name = "Controller", triggerName = "CC", key = "C", ctrl = true, buttonType = "popup",
+                                tip = "Add a CC switch to the articulation."
                             },{
                             --name = "Note Held", triggerName = "NoteH", key = "H", ctrl = true, buttonType = "multi",
                             --tip = "Add a held note keyswitch to the articulation."

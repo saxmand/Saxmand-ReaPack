@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.3.7
+-- @version 0.3.8
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,4 +15,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + finally fixed note mapping on windows (you can't do %0)
+--   + CC had been broken in the search of the int error
