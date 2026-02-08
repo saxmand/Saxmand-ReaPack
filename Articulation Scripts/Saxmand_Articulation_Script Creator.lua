@@ -4303,7 +4303,7 @@ local function loop()
 
             reaper.ImGui_SetNextWindowBgAlpha(ctx, 0.8) -- Transparent background
             reaper.ImGui_SetNextWindowPos(ctx, posX + sizeW / 2 - 120, posY + sizeH / 2 - 10)
-            reaper.ImGui_SetNextWindowSize(ctx, 240, 60)
+            reaper.ImGui_SetNextWindowSize(ctx, 300, 100)
 
             if reaper.ImGui_BeginPopupContextItem(ctx, "popup", reaper.ImGui_PopupFlags_NoReopen()) then
 
