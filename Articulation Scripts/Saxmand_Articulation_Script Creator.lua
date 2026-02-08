@@ -275,6 +275,23 @@ end
 -------------------------------
 -------------------------------
 -------------------------------
+local function getNoteNumber(str)
+    local n = str:match("^Note(%d+)$")
+    if n then 
+        return tonumber(n) 
+    else
+        return false
+    end
+end
+
+local function getCCNumber(str)
+    local n = str:match("^CC%d+)$")
+    if n then 
+        return tonumber(n) 
+    else
+        return false
+    end
+end
 
 function createMidiNotesMap()
     local midiNotesMap = {}
@@ -409,7 +426,6 @@ function importTable(specificFilePath)
                     
                     --reaper.ShowConsoleMsg(key .. "\n")
                     --
-                    
                     if key:match("Note") ~= nil then
                         if key:match("NoteM") ~= nil and key:match("Velocity") == nil then
                             local anyValues = false
@@ -570,7 +586,7 @@ function importTable(specificFilePath)
                 if luaTable.mapping then 
                     mapping = {}
                     for k, v in pairs(luaTable.mapping) do
-                        if k == "Note" or k == "CC" then
+                        if (k == "Note" or k == "CC") then
                             for i, v2 in ipairs(v) do
                                 mapping[k .. i] = true -- k .. i
                             end
@@ -627,12 +643,12 @@ function importArticulationSet()
         for line in string.gmatch(clipboard, "([^\n]*)\n?") do
             if line ~= "" then -- To avoid adding empty strings if the string ends with a newline
                 parts = splitString(line, ";")
-
+                        
                 for i, name in ipairs(parts) do
                     columnToInsertTo = focusedColumn + i - 1
                     focusedColumnName = mappingType[columnToInsertTo]
                     if focusedColumnName then
-                        if focusedColumnName:match("Note") ~= nil then
+                        if getNoteNumber(focusedColumnName) then
                             nameNumber = tonumber(name)
                             if not nameNumber then
                                 nameNumber = tonumber(noteNameValues[name])
@@ -1281,12 +1297,12 @@ function createMappingButton(data)
                 elseif triggerName == "Velocity realtime" then 
                     table.insert(instrumentSettings.realtimeTrigger, {"Velocity", nil, "", ""})
                 elseif triggerName == "Note" then
-                    local nextNoteNumber = 0
+                    local nextNoteNumber = 1
                     for k, v in pairs(mapping) do
-                        if k:match("Note") ~= nil then
-                            local noteIndex = tonumber(k:gsub("Note", "")) or 0
-                            if  noteIndex > nextNoteNumber then
-                                nextNoteNumber = noteIndex
+                        local noteNumber = getNoteNumber(k)
+                        if noteNumber then
+                            if  noteNumber >= nextNoteNumber then
+                                nextNoteNumber = noteNumber + 1
                             end
                         end
                     end
@@ -1309,8 +1325,8 @@ function createMappingButton(data)
                 end
             else
                 if redCross(triggerName .. "Remove", 20) then
-                    mapping[triggerName] = nil
                     undo_redo.commit({tableInfo, mapping})
+                    mapping[triggerName] = nil
                 end 
                 setToolTipFunc("Remove " .. data.name .. " from mapping")
                 reaper.ImGui_SameLine(ctx, 20)
@@ -2256,17 +2272,30 @@ local function loop()
                                 
                                 if mapping.Notation then table.insert(mappingType, "Notation") end
                                 
-                                
+                                local noteMappings = {}
+                                local CCMappings = {}
                                 for k, v in pairs(mapping) do 
-                                    if k:match("Note") ~= nil then 
-                                        table.insert(mappingType, k)
+                                    if v then 
+                                        local noteNumber = getNoteNumber(k)
+                                        if noteNumber then 
+                                            table.insert(noteMappings, noteNumber)                                        
+                                        else 
+                                            local ccNumber = getCCNumber(k)
+                                            if ccNumber then 
+                                                table.insert(CCMappings, ccNumber)
+                                            end
+                                        end
                                     end
                                 end
-                                
-                                for k, v in pairs(mapping) do 
-                                    if k:match("CC") ~= nil then 
-                                        table.insert(mappingType, k)
-                                    end
+
+                                table.sort(noteMappings)
+                                for i, v in ipairs(noteMappings) do
+                                    table.insert(mappingType, "Note" .. v)
+                                end
+
+                                table.sort(CCMappings)
+                                for i, v in ipairs(CCMappings) do
+                                    table.insert(mappingType, "CC" .. v)
                                 end
                                 --[[
                                 for key, value in pairs(mapping.CC) do
@@ -2363,7 +2392,8 @@ local function loop()
                                                             -- TODO: Needs more work, to jump to the next thing that's not a lane
                                                             local adjustFocusABit = nil
                                                             
-                                                            if mappingType[focusedColumn]:match("Note") ~= nil and focusedOnVel then 
+                        
+                                                            if getNoteNumber(mappingType[focusedColumn]) and focusedOnVel then 
                                                                 adjust = -1
                                                                 setFocus = setFocus + 1
                                                             end
@@ -2404,7 +2434,7 @@ local function loop()
                                                     else
                                                         setFocus = math.floor(focusedItem) - (columnAmount)
                                                         
-                                                        if mappingType[focusedColumn]:match("Note") ~= nil and not focusedOnVel then 
+                                                        if getNoteNumber(mappingType[focusedColumn]) and not focusedOnVel then 
                                                             --adjustFocusABit = true 
                                                             adjust = nil
                                                             setFocus = setFocus - 1
@@ -2771,7 +2801,7 @@ local function loop()
                                 textInputIsFocused = (column == focusedColumn and row == focusedRow)
                                 
                                 visualTitle = allNoteValuesMap[title] -- Only using sharps
-                                velocityValue = tableInfo[row][columnName .. "Velocity"] and tableInfo[row][columnName .. "Velocity"] or nil
+                                velocityValue = visualTitle and visualTitle ~= "" and (tableInfo[row][columnName .. "Velocity"] and tableInfo[row][columnName .. "Velocity"] or 127) or nil
                                 
                                 
                                 parenteseTitle = ""
@@ -3151,7 +3181,7 @@ local function loop()
                                 --    tableWidth = tableWidth + tableSizeSubtitle
                                 elseif mappingName == "Subtitle" then
                                     tableWidth = tableWidth + tableSizeSubtitle
-                                elseif mappingName:match("CC") ~= nil then
+                                elseif getCCNumber(mappingName) then
                                     tableWidth = tableWidth + tableSizeCC
                                 elseif mappingName == "KT" then
                                     tableWidth = tableWidth + tableSizeKT  
@@ -3187,9 +3217,8 @@ local function loop()
                                 elseif mappingName == "FilterInterval" then
                                     tableWidth = tableWidth + tableSizeFilterInterval
                                 elseif mappingName == "FilterCount" then
-                                    tableWidth = tableWidth + tableSizeFilterCount
-                                                                    
-                                elseif mappingName:match("Note") ~= nil then
+                                    tableWidth = tableWidth + tableSizeFilterCount                                                           
+                                elseif getNoteNumber(mappingName) then
                                     --if tableInfo[mappingName .. "Velocity"] and next(tableInfo[mappingName .. "Velocity"]) ~= nil then
                                         tableWidth = tableWidth + tableSizeNoteVel 
                                     --else
@@ -3227,15 +3256,13 @@ local function loop()
                                     
                                     for _, mappingName in ipairs(mappingType) do 
                                         local tbSize = _G["tableSize" .. mappingName]
-                                        if not tbSize then 
-                                            if mappingName:match("Note") ~= nil then
-                                                if tableInfo[mappingName .. "Velocity"] and next(tableInfo[mappingName .. "Velocity"]) ~= nil then
-                                                    tbSize = tableSizeNoteVel 
-                                                else
-                                                    tbSize = tableSizeNote 
-                                                end
-                                            else
-                                                tbSize = tableSizeOthers 
+                                        if not tbSize then                                             
+                                            if getNoteNumber(mappingName) then                                                
+                                                tbSize = tableSizeNote                                                                                
+                                            elseif getCCNumber(mappingName) then                                                
+                                                tbSize = tableSizeCC   
+                                            --else
+                                            --    tbSize = tableSizeOthers 
                                             end
                                         end
                                         
@@ -3253,7 +3280,7 @@ local function loop()
                                         reaper.ImGui_TableSetColumnIndex(ctx, column)
                                         local column_name = mappingType[column] -- reaper.ImGui_TableGetColumnName(ctx, column) -- Retrieve name passed to TableSetupColumn()
         
-                                        if column_name:match("Note") then
+                                        if getNoteNumber(column_name) then
                                             visualColumnName = "Note"
                                         elseif column_name == "Delay" then
                                             visualColumnName = "N." .. column_name --.. " (ms)" 
@@ -3270,8 +3297,8 @@ local function loop()
                                         setToolTipFunc(tipTable[column_name])
                                         
                                         -- for note held system
-                                        if column_name:match("Note") then 
-                                            local clean = column_name:gsub("Note", "")
+                                        if getNoteNumber(column_name) then 
+                                            local clean = getNoteNumber(column_name)
                                             reaper.ImGui_SameLine(ctx)--, 38)
                                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent) 
                                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorGrey)
@@ -3301,6 +3328,7 @@ local function loop()
                                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xFF0000FF)
                                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x880000FF)
                                             if reaper.ImGui_SmallButton(ctx, "X##" .. column) then
+                                                undo_redo.commit({tableInfo, mapping})
                                                 if column_name == "Subtitle" then
                                                     mapping.Subtitle = false
                                                 elseif column_name == "Channel" then
@@ -3324,8 +3352,7 @@ local function loop()
                                                 elseif column_name == "FilterInterval" then
                                                     mapping.FilterInterval = false 
                                                 elseif column_name == "FilterCount" then
-                                                    mapping.FilterCount = false
-                                                                                                
+                                                    mapping.FilterCount = false                                                                                                
                                                 elseif column_name == "Layer" then
                                                     mapping.Layer = false  
                                                 elseif column_name == "Transpose" then 
@@ -3338,12 +3365,11 @@ local function loop()
                                                     mapping.Notation = false
                                                 elseif column_name == "UIText" then
                                                     mapping.UIText = false
-                                                elseif column_name:match("CC") ~= nil then
-                                                    mapping[columnName] = nil 
-                                                elseif column_name:match("Note") ~= nil then  
-                                                    mapping[columnName] = nil 
+                                                elseif getCCNumber(column_name) then
+                                                    mapping[column_name] = nil 
+                                                elseif getNoteNumber(column_name) then  
+                                                    mapping[column_name] = nil 
                                                 end
-                                                undo_redo.commit({tableInfo, mapping})
                                             end
                                             reaper.ImGui_PopStyleColor(ctx, 3)
                                         end
@@ -3477,7 +3503,7 @@ local function loop()
                                         local channelOffset = findChannelOffset(row) 
                                         for column = 1, columnAmount do 
                                             columnName = mappingType[column]
-                                            if columnName:match("Note") ~= nil then  
+                                            if getNoteNumber(columnName) then  
                                                 local msg2 = tableInfo[row][columnName]
                                                 local heldNote = tableInfo[row][columnName .. "Held"]
                                                 if msg2 then 
@@ -3487,11 +3513,11 @@ local function loop()
                                                         reaper.StuffMIDIMessage(0, 0x80 + channelOffset, msg2, msg3)
                                                     end
                                                 end
-                                            elseif columnName:match("CC") ~= nil then 
-                                                local msg2 = columnName:gsub("CC", "")
+                                            elseif getCCNumber(columnName) then 
+                                                local msg2 = getCCNumber(columnName)
                                                 local msg3 = tableInfo[row][columnName]
-                                                if msg3 then 
-                                                    reaper.StuffMIDIMessage(0, 0xB0 + channelOffset, tonumber(msg2), msg3)
+                                                if msg2 and msg3 then 
+                                                    reaper.StuffMIDIMessage(0, 0xB0 + channelOffset, msg2, msg3)
                                                 end
                                             end
                                         end
@@ -3500,7 +3526,7 @@ local function loop()
                                         
                                         for column = 1, columnAmount do 
                                             columnName = mappingType[column]
-                                            if columnName:match("Note") ~= nil and tableInfo[row][columnName .. "Held"] then  
+                                            if getNoteNumber(columnName) then  
                                                 local msg2 = tableInfo[row][columnName]
                                                 if msg2 then 
                                                     reaper.StuffMIDIMessage(0, 0x80 + channelOffset, msg2, 64) 
@@ -3665,7 +3691,7 @@ local function loop()
                                             elseif columnName == "Velocity" then  
                                                 --reaper.ImGui_SetNextItemWidth(ctx, tableSizeVelocity)
                                                 modifyVelocity(id, columnName, row, column, 0, 127,tableSizeVelocity) 
-                                            elseif columnName:match("Note") ~= nil then 
+                                            elseif getNoteNumber(columnName) then 
                                                 reaper.ImGui_SetNextItemWidth(ctx, tableSizeNote)
                                                 -- tableInfo[row][columnName] = 12
                                                 -- reaper.ShowConsoleMsg(#(tableInfo[row]).. " note\n")
@@ -3675,7 +3701,7 @@ local function loop()
                                                 --end
                                                 
                                                 
-                                            elseif columnName:match("CC") ~= nil then
+                                            elseif getCCNumber(columnName) then
                                                 reaper.ImGui_SetNextItemWidth(ctx, tableSizeCC)
                                                 --if isNotALane(columnName, row) then
                                                     

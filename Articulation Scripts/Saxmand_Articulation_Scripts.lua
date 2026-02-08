@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.3.5
+-- @version 0.3.6
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,6 +15,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + fixed some bugs relating on changing note and cc object structure
---   + fixed note vel only being between 1 and 127
---   + fixed note keyswitch description text
+--   + posibly fixed note mapping (broke it at some point)
