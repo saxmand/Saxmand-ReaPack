@@ -836,6 +836,7 @@ reaper.ImGui_Attach(ctx, font)
 font30 = reaper.ImGui_CreateFont('Arial', 30)
 reaper.ImGui_Attach(ctx, font30)
 reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigVar_KeyRepeatDelay(), 0.5)
+reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigFlags_NavEnableKeyboard(), 0)
 --reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigVar_KeyRepeatRate(), 0.2)
 
 --reaper.ImGui_SetConfigVar(ctx,reaper.ImGui_ConfigVar_MacOSXBehaviors(),0)
