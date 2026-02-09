@@ -15,4 +15,7 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + fixed popup going crazy on windows
+--   + fixed legato not being recognized/triggered when no title was in the lane
+--   + import clipboard supports //json from jsfx scripts
+--   + fixed note input not allowing for 4 characters. Needed different string callback. Added extra logic to round off to 127
+--   + changed subtitle to be called group instead

@@ -1,6 +1,6 @@
 -- @noindex
 
-version = 0.3
+version = 0.4
 
 
 local stateName = "ArticulationScripts"
@@ -49,7 +49,7 @@ local embed_ui = require("embed_ui")
 
 local columnsToNotUseLanes = {
     ["Title"] = true,
-    ["Subtitle"] = true,
+    ["Group"] = true,
     ["Notation"] = true,
     ["Layer"] = true,
     ["KT"] = true,
@@ -125,7 +125,7 @@ local defaultAppSettings = {
     auditionNote = 64, 
     auditionVelocity = 100, 
     tableSizeTitle = 120, 
-    tableSizeSubtitle = 100, 
+    tableSizeGroup = 100, 
     alwaysOverwriteApps = false,
     alwaysEmbedUi = false,
     autoResizeWindowWidth = false,
@@ -389,29 +389,20 @@ function getLargestDelay(specificFilePath)
     end
 end
 
-function importTable(specificFilePath)
-    if not specificFilePath then
-        retval, filePath = reaper.GetUserFileNameForRead( articulationScriptsPath .. seperator, "Select an action main script", "")
+local function importJsonString(jsonString)
+    local luaTable, error = json.decodeFromJson(jsonString)
+    if not luaTable then 
+        reaper.ShowConsoleMsg("json parsing error: " .. error .. "\n")
     else
-        retval = true
-        filePath = specificFilePath
-    end
-    if retval then
-        file = io.open(filePath)
-        if not file then
-            print("Error: Unable to read file " .. filename)
-            return nil
-        end
-        local jsonString = file_handling.readFileForJsonLine(filePath)
-        
-        if jsonString then
-            local luaTable = json.decodeFromJson(jsonString)
-            local articulationMapCreatorVersion = luaTable.articulationMapCreatorVersion and tonumber(luaTable.articulationMapCreatorVersion) or 0
-            
-            mapping = {}
-            mapping.NoteM = {}
-            mapping.NoteH = {}
-            mapping.CC = {}
+        local articulationMapCreatorVersion = luaTable.articulationMapCreatorVersion and tonumber(luaTable.articulationMapCreatorVersion) or 0
+        mapName = luaTable.mapName
+        if mapName then 
+            if articulationMapCreatorVersion < 0.4 then
+                mapping = {}
+                mapping.NoteM = {}
+                mapping.NoteH = {}
+                mapping.CC = {}
+            end
             if articulationMapCreatorVersion > 0 and articulationMapCreatorVersion < 0.2 then 
                 modifierSettings = luaTable.modifierSettings or defaultModifierSettings
                 --mappingType = luaTable.mappingType or {}
@@ -478,7 +469,7 @@ function importTable(specificFilePath)
                         if anyValues then
                             if key:match("Velocity") ~= nil and key:match("FilterVelocity") == nil then mapping.Velocity = true end
                             if key:match("Channel") ~= nil then mapping.Channel = true end
-                            if key:match("Subtitle") ~= nil then mapping.Subtitle = true end
+                            if key:match("Group") ~= nil then mapping.Group = true end
                             if key:match("KT") ~= nil then mapping.KeyboardTrigger = true end
                             if key:match("Notation") ~= nil then mapping.Notation = true end
                             if key:match("UI Text") ~= nil then mapping.UIText = true end
@@ -523,8 +514,8 @@ function importTable(specificFilePath)
                                 elseif k:match("NoteH") ~= nil and k:match("Velocity") == nil  then
                                     if not usedNoteMapping[k] then 
                                         table.insert(mapping.NoteH, true)
-                                         usedNoteMapping[k] = true
-                                     end 
+                                            usedNoteMapping[k] = true
+                                        end 
                                 elseif k:match("CC") ~= nil then
                                     mapping.CC[key:gsub("CC", "")] = true
                                 else
@@ -605,9 +596,29 @@ function importTable(specificFilePath)
             end
             
             --#tableInfo = #tableInfo -- luaTable.tableInfo.Title and #luaTable.tableInfo.Title or 0
-            mapName = luaTable.mapName
             instrumentSettings = luaTable.instrumentSettings and luaTable.instrumentSettings or instrumentSettingsDefault
             undo_redo.commit({tableInfo, mapping})
+        end
+    end
+end
+
+function importTable(specificFilePath)
+    if not specificFilePath then
+        retval, filePath = reaper.GetUserFileNameForRead( articulationScriptsPath .. seperator, "Select an action main script", "")
+    else
+        retval = true
+        filePath = specificFilePath
+    end
+    if retval then
+        file = io.open(filePath)
+        if not file then
+            print("Error: Unable to read file " .. filename)
+            return nil
+        end
+        local jsonString = file_handling.readFileForJsonLine(filePath)
+        
+        if jsonString then
+            importJsonString(jsonString)
         end
         -- modifierSettings,mappingType,mapping.CC, mapping.NoteH, mapping.NoteM, tableInfo, #tableInfo, mapName = unpickle(fileText)
     end
@@ -637,35 +648,39 @@ function importArticulationSet()
     
 
     clipboard = reaper.CF_GetClipboard()
-
-    if clipboard and focusedColumn then
-        local row = focusedRow and focusedRow or 0
-        for line in string.gmatch(clipboard, "([^\n]*)\n?") do
-            if line ~= "" then -- To avoid adding empty strings if the string ends with a newline
-                parts = splitString(line, ";")
-                        
-                for i, name in ipairs(parts) do
-                    columnToInsertTo = focusedColumn + i - 1
-                    focusedColumnName = mappingType[columnToInsertTo]
-                    if focusedColumnName then
-                        if getNoteNumber(focusedColumnName) then
-                            nameNumber = tonumber(name)
-                            if not nameNumber then
-                                nameNumber = tonumber(noteNameValues[name])
+    if clipboard then
+        if clipboard:match("//json") ~= nil then 
+            local jsonString = clipboard:gsub("//json:", "") 
+            importJsonString(jsonString)
+        elseif focusedColumn then
+            local row = focusedRow and focusedRow or 0
+            for line in string.gmatch(clipboard, "([^\n]*)\n?") do
+                if line ~= "" then -- To avoid adding empty strings if the string ends with a newline
+                    parts = splitString(line, ";")
+                            
+                    for i, name in ipairs(parts) do
+                        columnToInsertTo = focusedColumn + i - 1
+                        focusedColumnName = mappingType[columnToInsertTo]
+                        if focusedColumnName then
+                            if getNoteNumber(focusedColumnName) then
+                                nameNumber = tonumber(name)
+                                if not nameNumber then
+                                    nameNumber = tonumber(noteNameValues[name])
+                                end
+                                name = nameNumber
                             end
-                            name = nameNumber
+                            if not tableInfo[row] then tableInfo[row] = {} end
+                            
+                            tableInfo[row][focusedColumnName] = name
+                            
                         end
-                        if not tableInfo[row] then tableInfo[row] = {} end
-                        
-                        tableInfo[row][focusedColumnName] = name
-                        
                     end
+                    -- reaper.ShowConsoleMsg()
+                    row = row + 1
+                    --if #tableInfo < lineCount then
+                        --#tableInfo = inputLine
+                    --end
                 end
-                -- reaper.ShowConsoleMsg()
-                row = row + 1
-                --if #tableInfo < lineCount then
-                    --#tableInfo = inputLine
-                --end
             end
         end
     end
@@ -843,7 +858,7 @@ reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigFlags_NavEnableKeyboard(), 0)
 
 defaultModifierSettings = {
     ["Title"] = "Same",
-    ["Subtitle"] = "Same",
+    ["Group"] = "Same",
     ["Channel"] = "Increment",
     ["Layer"] = "Increment",
     ["Delay"] = "Same",
@@ -867,8 +882,6 @@ function resetCreator()
     --#tableInfo = 0
     mapName = nil
     mapping = {}
-    subtitles = {}
-    titles = {} 
     selectedArticulations = {}  
     modifierSettings = defaultModifierSettings
     mappingType = {}
@@ -881,7 +894,7 @@ resetCreator()
 waitTimeBeforeRetrigger = 0.2
 --[[
 tableInfo["Title"] = {}
-tableInfo["Subtitle"] = {}
+tableInfo["Group"] = {}
 tableInfo["Velocity"] = {}
 tableInfo["VelocityType"] = {}
 tableInfo["Channel"] = {}
@@ -920,7 +933,7 @@ kts = {"1","2","q","w"}
 for i = 1, 4 do 
   tableInfo["CC4"][i] = 20 + i*20
   tableInfo["Title"][i] = "Hej " .. i 
-  tableInfo["Subtitle"][i] = "Short"
+  tableInfo["Group"][i] = "Short"
   tableInfo["KT"][i] = kts[i]
 end
 ]]
@@ -1495,11 +1508,11 @@ local function loop()
             setToolTipFunc("Set the width of the Title column. If you use long names you might want it wider")
             
             reaper.ImGui_SetNextItemWidth(ctx, 127)
-            ret, appSettings.tableSizeSubtitle = reaper.ImGui_SliderInt(ctx, "Subtitle column size", appSettings.tableSizeSubtitle or 120, 60, 300)
+            ret, appSettings.tableSizeGroup = reaper.ImGui_SliderInt(ctx, "Group column size", appSettings.tableSizeGroup or 120, 60, 300)
             if ret then 
                 saveAppSettings()
             end 
-            setToolTipFunc("Set the width of the Subtitle column. If you use long names you might want it wider")
+            setToolTipFunc("Set the width of the Group column. If you use long names you might want it wider")
             
             reaper.ImGui_Separator(ctx)
             
@@ -1780,20 +1793,98 @@ local function loop()
             for _, data in ipairs(buttonsData) do
                 createMappingButton(data) 
             end
-            
-            
+
+            -- OLD EEL
+            --strlen(#Buf) > 3 ? ( 
+            --    c = str_getchar(#Buf, 3);
+            --    str_setchar(#first, 0, c);
+            --    InputTextCallback_DeleteChars(0, strlen(#Buf));
+            --    InputTextCallback_InsertChars(0, #first);
+            --);
+
             -- NOW WE ARE ABLE TO LOOK THROUGH AND ENSURE IT's only one character. It would be great to be able to match it to a string specifically
             if not reaper.ImGui_ValidatePtr(filterFunction3Characters, 'ImGui_Function*') then
-                filterFunction3Characters = reaper.ImGui_CreateFunctionFromEEL([[
-                    strlen(#Buf) > 3 ? ( 
+                filterFunction3Characters = reaper.ImGui_CreateFunctionFromEEL([[                
+                    len = strlen(#Buf);
+                    len > 3 ? (
                         c = str_getchar(#Buf, 3);
                         str_setchar(#first, 0, c);
                         InputTextCallback_DeleteChars(0, strlen(#Buf));
                         InputTextCallback_InsertChars(0, #first);
+                    ) : (
+                        len > 0 ? (
+                            // ---- manual integer parse ----
+                            val = 0;
+                            i = 0;
+
+                            loop(len,
+                                c = str_getchar(#Buf, i, 'cu');
+                                (c >= 48 && c <= 57) ? (
+                                    val = val * 10 + (c - 48);
+                                    i += 1;
+                                ) : (
+                                    i = len; // break loop
+                                );
+                            );
+
+                            // ---- clamp ----
+                            val > 127 ? (
+                                InputTextCallback_DeleteChars(0, len);
+                                InputTextCallback_InsertChars(0, "127");
+                            );
+                        );
                     );
-                    
                 ]])
                 reaper.ImGui_Function_SetValue_String(filterFunction3Characters, '#allowed', reaper.ImGui_InputTextFlags_CallbackEdit())
+            end
+
+            -- NOW WE ARE ABLE TO LOOK THROUGH AND ENSURE IT's only one character. It would be great to be able to match it to a string specifically
+            if not reaper.ImGui_ValidatePtr(filterFunction4Characters, 'ImGui_Function*') then
+                filterFunction4Characters = reaper.ImGui_CreateFunctionFromEEL([[
+                    len = strlen(#Buf);
+
+                    len > 0 ? (
+                        c0 = str_getchar(#Buf, 0, 'cu');
+                        isDigit = (c0 >= 48) && (c0 <= 57);
+
+                        isDigit ? (
+                            // ---- manual integer parse ----
+                            val = 0;
+                            i = 0;
+
+                            loop(len,
+                                c = str_getchar(#Buf, i, 'cu');
+                                (c >= 48 && c <= 57) ? (
+                                    val = val * 10 + (c - 48);
+                                    i += 1;
+                                ) : (
+                                    i = len; // break loop
+                                );
+                            );
+
+                            // ---- clamp ----
+                            val > 127 ? (
+                                InputTextCallback_DeleteChars(0, len);
+                                InputTextCallback_InsertChars(0, "127");
+                            );
+                        )
+                        : (
+                            // ---- text mode: limit to 4 chars ----
+                            len > 4 ? (
+                                tmp = #;
+                                strcpy(tmp, "");
+                                i = 0;
+                                loop(4,
+                                    tmp += str_getchar(#Buf, i);
+                                    i += 1;
+                                );
+                                InputTextCallback_DeleteChars(0, len);
+                                InputTextCallback_InsertChars(0, tmp);
+                            );
+                        );
+                    );
+                ]])
+                reaper.ImGui_Function_SetValue_String(filterFunction4Characters, '#allowed', reaper.ImGui_InputTextFlags_CallbackEdit())
             end
         end
         
@@ -1949,8 +2040,8 @@ local function loop()
                                 reaper.ImGui_TextColored(ctx, 0x777777FF, "Extras:")  
                                 
                                 local buttonsData = {{
-                                name = "Subtitle", key = "S", ctrl = true, triggerName = "Subtitle",
-                                tip = "Add a subtitle to articulations."
+                                name = "Group", key = "G", ctrl = true, triggerName = "Group",
+                                tip = "Add a Group name to the front of the articulations.\nCan also be used to group articulations types across a script, like; long, shorts ect."
                                 },{
                                 name = "Layer", key = "L", ctrl = true,triggerName = "Layer", 
                                 tip = "Add Layers to triggers, to have multilayered articulations.\nMultiple layers will be triggered based on articulation name."
@@ -2023,20 +2114,20 @@ local function loop()
                             
                             --reaper.ImGui_Spacing(ctx)
                             local buttonsData = {{
-                            name = "Add Articulation", key = "A", cmd = true, func = function() addArticulation() end,
+                                name = "Add Articulation", key = "A", cmd = true, func = function() addArticulation() end,
                             },{
-                            name = "Add Multiple Articulations", triggerName = "Art", key = "A",cmd = true, ctrl = true, buttonType = "popup", sameLine = true
+                                name = "Add Multiple Articulations", triggerName = "Art", key = "A",cmd = true, ctrl = true, buttonType = "popup", sameLine = true
                             },{
-                            name = "Duplicate", key = "D",cmd = true, func = function() duplicateRows() end, sameLine = false
+                                name = "Duplicate", key = "D",cmd = true, func = function() duplicateRows() end, sameLine = false
                             }}
                             
                             if hasFilterMapping then
                                 table.insert(buttonsData, {
-                                name = "Add Filter Lane", key = "L",cmd = true, func = function() addLane() end, sameLine = true
+                                    name = "Add Filter Lane", key = "L",cmd = true, func = function() addLane() end, sameLine = true
                                 })
                                 table.insert(buttonsData, {
-                                name = "Articulation <> Lane", key = "L", cmd = true, ctrl = true, func = function()  makeArticulationALaneOrNot() end, sameLine = true, 
-                                tip = "Swap row between being an articulation or lane"
+                                    name = "Articulation <> Lane", key = "L", cmd = true, ctrl = true, func = function()  makeArticulationALaneOrNot() end, sameLine = true, 
+                                    tip = "Swap row between being an articulation or lane"
                                 })
                             end
                             
@@ -2044,14 +2135,15 @@ local function loop()
                             for _, data in ipairs(buttonsData) do
                                 createMappingButton(data) 
                             end
-                                                    
+                            
+                            reaper.ImGui_Separator(ctx) 
                             
                             local buttonsData = {{
                             name = "Select all rows", key = "A", cmd = true, shift = true, sameLine = false, func = function() selectAllRows(true) end,
                             tip = 'Select all rows'
                             },{
                             name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet() end,
-                            tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12'
+                            tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12\n\nCan also import "//json:{...}" string from Articulation Script JSFX'
                             },{
                             name = "Move up rows", key = "up", cmd = true, alt = true, sameLine = false, func = function() moveRowStart(true) end,
                             tip = "Move selected articulations rows up"
@@ -2111,7 +2203,7 @@ local function loop()
                                 if mappingType[focusedColumn] and mappingTypeName == "Title" then
                                     local modifierNames = {"Same", "Increment"}
                                     multipleSelectionOptions(mappingTypeName, modifierNames)
-                                elseif mappingType[focusedColumn] and  mappingTypeName == "Subtitle" then
+                                elseif mappingType[focusedColumn] and  mappingTypeName == "Group" then
                                     local modifierNames = {"Same", "Increment"}
                                     multipleSelectionOptions(mappingTypeName, modifierNames)
                                 elseif mappingType[focusedColumn] and mappingTypeName:match("CC") ~= nil then
@@ -2268,7 +2360,7 @@ local function loop()
                                 local mappingType = {}
                                 table.insert(mappingType, "Title") 
                                 
-                                if mapping.Subtitle then table.insert(mappingType, "Subtitle") end
+                                if mapping.Group then table.insert(mappingType, "Group") end
                                 
                                 
                                 if mapping.Notation then table.insert(mappingType, "Notation") end
@@ -2817,7 +2909,7 @@ local function loop()
                                 --else
                                 --    reaper.ImGui_SetNextItemWidth(ctx, tableSizeNote)
                                 --end
-                                ret, stringInput = reaper.ImGui_InputText(ctx, "##" .. id, visualTitle, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsUppercase() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction3Characters) -- ,reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                ret, stringInput = reaper.ImGui_InputText(ctx, "##" .. id, visualTitle, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsUppercase() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction4Characters) -- ,reaper.ImGui_InputTextFlags_EnterReturnsTrue())
                                 updateItemFocus(row, column, itemNumber, 0.1)
                                 
                                 if focusedRow == row and focusedColumn == column and reaper.ImGui_IsItemFocused(ctx) then
@@ -3147,7 +3239,7 @@ local function loop()
                         
                             tableSizePlay = math.ceil(appSettings.fontSize / 100 * 20)
                             tableSizeTitle = math.ceil(appSettings.fontSize / 100 * appSettings.tableSizeTitle)
-                            tableSizeSubtitle = math.ceil(appSettings.fontSize / 100 * appSettings.tableSizeSubtitle)
+                            tableSizeGroup = math.ceil(appSettings.fontSize / 100 * appSettings.tableSizeGroup)
                             tableSizeOthers = math.ceil(appSettings.fontSize / 100 * 90)
                             tableSizeCC = reaper.ImGui_CalcTextSize(ctx, "CC127 X",0,0)
                             tableSizeKT = reaper.ImGui_CalcTextSize(ctx, "KT X",0,0)
@@ -3179,9 +3271,9 @@ local function loop()
                                 if mappingName == "Title" then
                                     tableWidth = tableWidth + tableSizeTitle 
                                 --elseif mappingName == "PlayArticulation" then
-                                --    tableWidth = tableWidth + tableSizeSubtitle
-                                elseif mappingName == "Subtitle" then
-                                    tableWidth = tableWidth + tableSizeSubtitle
+                                --    tableWidth = tableWidth + tableSizeGroup
+                                elseif mappingName == "Group" then
+                                    tableWidth = tableWidth + tableSizeGroup
                                 elseif getCCNumber(mappingName) then
                                     tableWidth = tableWidth + tableSizeCC
                                 elseif mappingName == "KT" then
@@ -3330,8 +3422,8 @@ local function loop()
                                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x880000FF)
                                             if reaper.ImGui_SmallButton(ctx, "X##" .. column) then
                                                 undo_redo.commit({tableInfo, mapping})
-                                                if column_name == "Subtitle" then
-                                                    mapping.Subtitle = false
+                                                if column_name == "Group" then
+                                                    mapping.Group = false
                                                 elseif column_name == "Channel" then
                                                     mapping.Channel = false
                                                 elseif column_name == "Velocity" then
@@ -3595,8 +3687,8 @@ local function loop()
                                                 --end
                                                 
                                                 dropFiles("articulation", row)
-                                            elseif columnName == "Subtitle" then
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeSubtitle)
+                                            elseif columnName == "Group" then
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeGroup)
                                                 --if isNotALane(columnName, row) then
                                                     if modify == "Same" then
                                                         modifyIncrement(id, columnName, row, column, true, true)
@@ -3985,7 +4077,7 @@ local function loop()
                             reaper.ImGui_Indent(ctx)
                             if instrumentSettings.addKeyswitchNamesToPianoRoll then
                                 _, instrumentSettings.addKeyswitchNamesToPianoRollOnlyUseTitle = reaper.ImGui_Checkbox(ctx, "Only use title", instrumentSettings.addKeyswitchNamesToPianoRollOnlyUseTitle)
-                                setToolTipFunc("For simpler names, only use the Title and not include subtitle on the piano roll keys") 
+                                setToolTipFunc("For simpler names, only use the Title and not include group on the piano roll keys") 
                              
                                 _, instrumentSettings.addKeyswitchNamesOverwriteAllNotes = reaper.ImGui_Checkbox(ctx, "Overwrite all piano roll keys", instrumentSettings.addKeyswitchNamesOverwriteAllNotes)
                                 setToolTipFunc("Overwrite all key names on the piano roll")
@@ -4152,7 +4244,7 @@ local function loop()
                                                     parenteseTitle = "(" .. visualTitle .. ")"
                                                 end
                                                 
-                                                ret, stringInput = reaper.ImGui_InputText(ctx, "##" .. id, visualTitle, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsUppercase() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction3Characters) -- ,reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                                ret, stringInput = reaper.ImGui_InputText(ctx, "##" .. id, visualTitle, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsUppercase() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction4Characters) -- ,reaper.ImGui_InputTextFlags_EnterReturnsTrue())
                                                 
                                                 --if column == focusedColumn and row == focusedRow then
                                                     if ret and stringInput then  
@@ -4303,7 +4395,7 @@ local function loop()
 
             reaper.ImGui_SetNextWindowBgAlpha(ctx, 0.8) -- Transparent background
             reaper.ImGui_SetNextWindowPos(ctx, posX + sizeW / 2 - 120, posY + sizeH / 2 - 10)
-            reaper.ImGui_SetNextWindowSize(ctx, 300, 100)
+            reaper.ImGui_SetNextWindowSize(ctx, 300, 80)
 
             if reaper.ImGui_BeginPopupContextItem(ctx, "popup", reaper.ImGui_PopupFlags_NoReopen()) then
 
