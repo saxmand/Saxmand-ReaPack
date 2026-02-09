@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.4.5
+-- @version 0.4.6
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -9,11 +9,10 @@
 --   Functions/*.dat
 --   Functions/Helpers/*.lua
 --   [main] Saxmand_Articulation_Script Creator.lua
---   [main] Saxmand_Articulation_Background Server.lua
 --   [main] Saxmand_Articulation_License Window.lua
 --   [main] Saxmand_Articulation_Scripts List.lua
+--   [main] Saxmand_Articulation_Background Server.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + More work on sharing system
---   + fixed PDC bug
+--   + license window update
