@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.4.0
+-- @version 0.4.1
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,7 +15,6 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + fixed legato not being recognized/triggered when no title was in the lane
---   + import clipboard supports //json from jsfx scripts
---   + fixed note input not allowing for 4 characters. Needed different string callback. Added extra logic to round off to 127
---   + changed subtitle to be called group instead
+--   + AZERTY support
+--   + Added support for lot more non latin characters as keyboard triggers
+--   + Fixed keyboard trigger still using subtitle instead of Group.
