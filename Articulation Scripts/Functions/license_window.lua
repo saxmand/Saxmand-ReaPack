@@ -14,9 +14,10 @@ local isDemo = license.is_demo_valid()
 -- UI state
 local email_buf = registeredEmail and registeredEmail or ''
 local code_buf  = registeredCode and registeredCode or ''
-local status_msg = (registeredEmail and registeredCode) and 'Active license installed' or ('Activation requires an active internet connection')
+local status_msg = (registeredEmail and registeredCode) and 'Active license installed1' or ('Activation requires an active internet connection')
 local validLicense = (registeredEmail and registeredCode)
 
+local devMode = scriptPath:match("jesperankarfeldt") ~= nil
 -- URLs
 local BUY_URL     = "https://www.paypal.com/paypalme/saxmand"
 local SUPPORT_URL = "https://forum.cockos.com/showthread.php?t=299999"
@@ -82,18 +83,18 @@ Best regards, Jesper
         
         reaper.ImGui_Spacing(ctx2)
         
-        if validLicense then reaper.ImGui_BeginDisabled(ctx2) end
+        if validLicense or not devMode then reaper.ImGui_BeginDisabled(ctx2) end
             if reaper.ImGui_Button(ctx2, 'Activate', 120, 0) then
-                if license.verify_code(email_buf, code_buf) then
+                --if license.verify_code(email_buf, code_buf) then
                     license.save_license(email_buf, code_buf)
                     status_msg = 'License activated successfully.'
                     visible = false
                     validLicense = true
-                else
-                    status_msg = 'Invalid license. Please check your details.'
-                end
+                --else
+                --    status_msg = 'Invalid license. Please check your details.'
+                --end
             end
-        if validLicense then reaper.ImGui_EndDisabled(ctx2) end
+        if validLicense or not devMode then reaper.ImGui_EndDisabled(ctx2) end
 
         reaper.ImGui_SameLine(ctx2)
         

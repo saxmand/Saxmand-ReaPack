@@ -33,7 +33,7 @@ if enabled then
   reaper.SetToggleCommandState(0, commandID, 0)
   reaper.RefreshToolbar2(0, commandID)
 else
-  ensureBackgroundServerIsRunning()
+  --ensureBackgroundServerIsRunning()
   -- Turn on
   reaper.SetToggleCommandState(0, commandID, 1)
   reaper.RefreshToolbar2(0, commandID)

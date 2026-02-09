@@ -24,6 +24,15 @@ function checkDependcies.main()
     return false
     end
 
+    if not reaper.SNM_GetIntConfigVar then
+    reaper.ShowMessageBox(
+        "Missing required extension: SWS\n\n" ..
+        "Install it via this link:\n" ..
+        "https://sws-extension.org",
+        "Missing Dependency", 0)
+    return false
+    end
+
     return true
 end
 return checkDependcies

@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.4.2
+-- @version 0.4.3
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,5 +15,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + Fixed list overview to use groups and not subtitles
---   + Fixed tablet surface to use groups and not subtitles
+--   + Fixed bug where two note off's was created when using position filter.
+--   + Working on scripts browser.

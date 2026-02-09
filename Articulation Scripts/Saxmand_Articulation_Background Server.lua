@@ -62,9 +62,6 @@ local addMapToInstruments = require("add_script_to_instrument").addMapToInstrume
 -- Load pathes
 require("pathes")
 
--- load list of articulation scripts
-local articulation_scripts_list = require("get_articulation_scripts").get_articulation_scripts(articulationScriptsPath)
-
 local readArticulationScript = require("read_articulation_script").readArticulationScript
 if not readArticulationScript then
     --return

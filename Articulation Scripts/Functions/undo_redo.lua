@@ -29,7 +29,9 @@ end
 function export.undo(current)
     if #undo_stack == 0 then return current end
 
-    redo_stack[#redo_stack + 1] = deep_copy(current)
+    if current then 
+        redo_stack[#redo_stack + 1] = deep_copy(current)
+    end
     local newCurrent = deep_copy(undo_stack[#undo_stack])
     table.remove(undo_stack, #undo_stack)
     return newCurrent
@@ -37,8 +39,9 @@ end
 
 function export.redo(current)
     if #redo_stack == 0 then return current end
-
-    undo_stack[#undo_stack + 1] = deep_copy(current)
+    if current then 
+        undo_stack[#undo_stack + 1] = deep_copy(current)
+    end
     local newCurrent = deep_copy(redo_stack[#redo_stack])
     table.remove(redo_stack, #redo_stack)    
     return newCurrent
