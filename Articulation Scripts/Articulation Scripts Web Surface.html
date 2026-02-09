@@ -100,30 +100,30 @@
             const buttons = []
             for (var b = 0; b < dataParts.length; ++b) {
                 var buttonLabel = dataParts[b]
-                subTitle = buttonLabel.split(':')[0]
+                group = buttonLabel.split(':')[0]
                 title = buttonLabel.split(":")[1]
                 group = buttonLabel.split(":")[2]                
-                if (group) {
-                    if (group && title && colorsAssigned[subTitle + group] == undefined) {
-                        colorsAssigned[subTitle + group] = colorSpectrum[Object.keys(colorsAssigned).length % colorSpectrum.length]
+                if (layer) {
+                    if (layer && title && colorsAssigned[group + layer] == undefined) {
+                        colorsAssigned[group + layer] = colorSpectrum[Object.keys(colorsAssigned).length % colorSpectrum.length]
                     }
                 } else {
-                    if (subTitle && title && colorsAssigned[subTitle + group] == undefined) {
-                        colorsAssigned[subTitle + group] = colorSpectrum[Object.keys(colorsAssigned).length % colorSpectrum.length]
+                    if (group && title && colorsAssigned[group + layer] == undefined) {
+                        colorsAssigned[group + layer] = colorSpectrum[Object.keys(colorsAssigned).length % colorSpectrum.length]
                     }
                 }
-                color = colorsAssigned[subTitle + group] ? colorsAssigned[subTitle + group] : ""
+                color = colorsAssigned[group + layer] ? colorsAssigned[group + layer] : ""
 
 
 
                 // Create a new button
                 const button = document.createElement("button");
-                button.innerText = subTitle ? subTitle + ":\n" + title : title; //buttonLabel.replace(":", ":\n")
+                button.innerText = group ? group + ":\n" + title : title; //buttonLabel.replace(":", ":\n")
                 button.style.width = width;
                 button.style.height = height;
                 button.id = b;
                 button.style.border = "6px solid " + color;
-                button.subTitle = subTitle ? subTitle : "NA";
+                button.group = group ? group : "NA";
 
                 button.onclick = mouseDownEventHandler("SET/PROJEXTSTATE/articulationMapOnDevice/setArticulationFromDevice/" + (b));
 
@@ -139,9 +139,9 @@
             const buttonsUsed = {};
             for (var b = 0; b < buttons.length; ++b) {
                 if (buttonsUsed[b] !== true) {
-                    currentButtonSubtitle = buttons[b].subTitle
+                    currentButtonGroup = buttons[b].group
                     for (var b2 = b; b2 < buttons.length; ++b2) {
-                        if (buttonsUsed[b2] !== true && buttons[b2].subTitle == currentButtonSubtitle) {
+                        if (buttonsUsed[b2] !== true && buttons[b2].group == currentButtonGroup) {
                             buttonsUsed[b2] = true;
                             sortedButtons.push(buttons[b2])
                         }

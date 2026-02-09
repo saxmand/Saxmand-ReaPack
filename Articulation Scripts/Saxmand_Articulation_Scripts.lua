@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.4.1
+-- @version 0.4.2
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,6 +15,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + AZERTY support
---   + Added support for lot more non latin characters as keyboard triggers
---   + Fixed keyboard trigger still using subtitle instead of Group.
+--   + Fixed list overview to use groups and not subtitles
+--   + Fixed tablet surface to use groups and not subtitles

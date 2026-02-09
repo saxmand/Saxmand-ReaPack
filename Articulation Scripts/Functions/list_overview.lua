@@ -229,8 +229,8 @@ function export.listOverviewSurface()
                 for artNum, key in ipairs(layer) do
                     isSelected = artNum - 1 == artSelected[layerNumber]
                     local buttonTitle
-                    if #key.subtitle > 0 then
-                        buttonTitle = key.subtitle ..
+                    if #key.group > 0 then
+                        buttonTitle = key.group ..
                         ": " .. -- \n" ..
                         key.title:gsub("+ ", "+")--:gsub(" ", "\n")                                                    -- .. " " .. colorGradient
                     else
