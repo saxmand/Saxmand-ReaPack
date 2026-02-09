@@ -40,20 +40,16 @@ if not require("dependencies").main() then return end
 json = require("json")
 local export = require("export")
 local file_handling = require("file_handling")
+local mapping_handling = require("mapping_handling")
 local musicxml = require("musicxml")
 local addMap = require("add_script_to_instrument")
 local buttons = require("special_buttons")
+local midi_note_names = require("midi_note_names")
 
 
 local embed_ui = require("embed_ui")
 
-local columnsToNotUseLanes = {
-    ["Title"] = true,
-    ["Group"] = true,
-    ["Notation"] = true,
-    ["Layer"] = true,
-    ["KT"] = true,
-}
+local columnsToNotUseLanes = mapping_handling.columnsToNotUseLanes()
 
 local undo_redo = require("undo_redo")
 
@@ -275,83 +271,13 @@ end
 -------------------------------
 -------------------------------
 -------------------------------
-local function getNoteNumber(str)
-    local n = str:match("^Note(%d+)$")
-    if n then 
-        return tonumber(n) 
-    else
-        return false
-    end
-end
 
-local function getCCNumber(str)
-    local n = str:match("^CC(%d+)$")
-    if n then 
-        return tonumber(n) 
-    else
-        return false
-    end
-end
 
-function createMidiNotesMap()
-    local midiNotesMap = {}
-    local noteNamesSharp = { 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B' }
-    local noteNamesFlat = { 'C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B' }
 
-    local noteIndex = 0
 
-    for i = -2, 9 do -- MIDI note range spans from C-1 to G9
-        for j = 1, #noteNamesSharp do
-            local noteSharp = noteNamesSharp[j] .. i
-            local noteFlat = noteNamesFlat[j] .. i
-
-            if noteIndex <= 127 then
-                midiNotesMap[noteSharp] = noteIndex
-                midiNotesMap[noteFlat] = noteIndex
-                noteIndex = noteIndex + 1
-            end
-        end
-    end
-
-    return midiNotesMap
-end
-
--- Example usage
-local noteNameValues = createMidiNotesMap()
-
-function createAllMidiNotesArray()
-    local notes = {}
-    local noteNames = { 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B' }
-    for i = 0, 11 do
-        for _, noteName in ipairs(noteNames) do
-            table.insert(notes, noteName .. (i - 2))
-        end
-    end
-    local limitedNotes = {}
-    for i = 1, 128 do limitedNotes[i - 1] = notes[i] end
-    return limitedNotes
-end
-
-local allNoteValuesMap = createAllMidiNotesArray()
-
-function createAllWhiteMidiNotesArray()
-    local notes = {}
-    local noteNames = { 'C', '-', 'D', '-', 'E', 'F', '-', 'G', '-', 'A', '-', 'B' }
-    counter = 0
-    for i = 0, 11 do
-        for _, noteName in ipairs(noteNames) do
-            if noteName == '-' then
-                table.insert(notes, false)
-            else
-                table.insert(notes, noteName .. (i - 2))
-            end
-        end
-    end
-    local limitedNotes = {}
-    for i = 1, 128 do limitedNotes[i - 1] = notes[i] end
-    return limitedNotes
-end
-local allWhiteNoteValuesMap = createAllWhiteMidiNotesArray()
+local noteNameValues = midi_note_names.createMidiNotesMap()
+local allNoteValuesMap = midi_note_names.createAllMidiNotesArray()
+local allWhiteNoteValuesMap = midi_note_names.createAllWhiteMidiNotesArray()
 
 function createAllBlackMidiNotesArray()
     local notes = {}
@@ -460,7 +386,7 @@ function importArticulationSet()
                         columnToInsertTo = focusedColumn + i - 1
                         focusedColumnName = mappingType[columnToInsertTo]
                         if focusedColumnName then
-                            if getNoteNumber(focusedColumnName) then
+                            if mapping_handling.getNoteNumber(focusedColumnName) then
                                 nameNumber = tonumber(name)
                                 if not nameNumber then
                                     nameNumber = tonumber(noteNameValues[name])
@@ -1111,7 +1037,7 @@ function createMappingButton(data)
                 elseif triggerName == "Note" then
                     local nextNoteNumber = 1
                     for k, v in pairs(mapping) do
-                        local noteNumber = getNoteNumber(k)
+                        local noteNumber = mapping_handling.getNoteNumber(k)
                         if noteNumber then
                             if  noteNumber >= nextNoteNumber then
                                 nextNoteNumber = noteNumber + 1
@@ -1160,7 +1086,19 @@ function createMappingButton(data)
 end
 
 local firstLoop = true
+--local shift, cmd, ctrl, alt
 
+
+function checkShortCut(shortcut_key, isCmd, isShift, isCtrl, isAlt)
+    
+    if (isCmd == nil or isCmd == cmd) and (isShift == nil or isShift == shift) and (isCtrl == nil or isCtrl == ctrl) and (isAlt == nil or isAlt == alt) then  
+        --if reaper.ImGui_IsKeyReleased(ctx, reaper["ImGui_Key_" .. shortcut_key]()) then
+        if reaper.ImGui_IsKeyPressed(ctx, reaper["ImGui_Key_" .. shortcut_key](), false) then
+        
+            return true
+        end 
+    end
+end
 
 
 local function loop()
@@ -1215,7 +1153,7 @@ local function loop()
         reaper.ImGui_BeginGroup(ctx)
         
         reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(),math.ceil(appSettings.fontSize/100 * 4), math.ceil(appSettings.fontSize/100 * 2))
-        if redCross("CloseApp", math.ceil(appSettings.fontSize/100 * 20)) or (cmd and reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_W())) then 
+        if redCross("CloseApp", math.ceil(appSettings.fontSize/100 * 20)) or checkShortCut("W", true) then 
             popupOkCancelTitle = 'Close app?'
             popupOkCancelDescription = 'Do you want to close this window.\n\nAll non saved settings will be lost!!' 
             popupOkCancelFunc = closeApp
@@ -1224,11 +1162,11 @@ local function loop()
         setToolTipFunc("Close Articulation Map Creator (cmd+w)")
         
         
-        if expandIcon("autoResizeWindowWidth", math.ceil(appSettings.fontSize/100 * 20), appSettings.autoResizeWindowWidth) or (cmd and reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_R())) then
+        if expandIcon("autoResizeWindowWidth", math.ceil(appSettings.fontSize/100 * 20), appSettings.autoResizeWindowWidth) or checkShortCut("R", true, true) then
             appSettings.autoResizeWindowWidth = not appSettings.autoResizeWindowWidth
             saveAppSettings()
         end
-        setToolTipFunc("Auto resize window to table (cmd+r)")
+        setToolTipFunc("Auto resize window to table (cmd+shift+r)")
         reaper.ImGui_PopStyleVar(ctx)
         
         reaper.ImGui_EndGroup(ctx)
@@ -1258,7 +1196,6 @@ local function loop()
         --end
         reaper.ImGui_PopStyleColor(ctx, 3)
         reaper.ImGui_PopFont(ctx)
-        
         
         function appSettingsButtons() 
             local license = require("check_license")
@@ -1463,7 +1400,7 @@ local function loop()
                 end
                 reaper.ImGui_SetNextItemWidth(ctx, math.ceil(appSettings.fontSize/100 * 540))
                 ret, stringInput = reaper.ImGui_InputText(ctx, "##nameinput", nil, reaper.ImGui_InputTextFlags_EnterReturnsTrue())
-                if ret then mapName = stringInput end
+                if ret and stringInput ~= "" then mapName = stringInput end
                 dropFiles("mapName")
                 
                 if not reaper.ImGui_IsItemFocused(ctx) and not popupOkCancelTitle and focusNameInput then
@@ -1474,8 +1411,7 @@ local function loop()
                 -- reaper.ImGui_SameLine(ctx)
                 
                 reaper.ImGui_PushFont(ctx, font, math.ceil(appSettings.fontSize/100 * 30))
-                if reaper.ImGui_Button(ctx, mapName, math.ceil(appSettings.fontSize/100 * 540)) or
-                    (cmd and reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_R())) then
+                if reaper.ImGui_Button(ctx, mapName, math.ceil(appSettings.fontSize/100 * 540)) or checkShortCut("R", true) then
                     popup = "Name"
                     mapNameButton = ""
                     popupStringName = mapName or ""
@@ -1725,9 +1661,9 @@ local function loop()
                     
                     --mappingsFlag = reaper.ImGui_TabItemFlags_SetSelected()
                     tipTable = {}
-                    openMappingsTab = cmd and reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_M())
-                    mappingsTabFlag = openMappingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
-                    if reaper.ImGui_BeginTabItem(ctx, 'Mappings (cmd+m)', openMappingsTab, mappingsTabFlag) then
+                    openMappingsTab = checkShortCut("1", true)
+                    settingsTabFlag = openMappingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
+                    if reaper.ImGui_BeginTabItem(ctx, 'Mappings (cmd+1)', openMappingsTab, settingsTabFlag) then
                         
                         
                         reaper.ImGui_BeginGroup(ctx)
@@ -2153,79 +2089,9 @@ local function loop()
                             tableX, tableY = reaper.ImGui_GetCursorPos(ctx)
                 
                             
-                            function createTableOrderFromUsedMappings(mapping) 
-                            -- WE DO THIS TO FORCE THE ORDER in our table
-                                local mappingType = {}
-                                table.insert(mappingType, "Title") 
-                                
-                                if mapping.Group then table.insert(mappingType, "Group") end
-                                
-                                
-                                if mapping.Notation then table.insert(mappingType, "Notation") end
-                                
-                                local noteMappings = {}
-                                local CCMappings = {}
-                                for k, v in pairs(mapping) do 
-                                    if v then 
-                                        local noteNumber = getNoteNumber(k)
-                                        if noteNumber then 
-                                            table.insert(noteMappings, noteNumber)                                        
-                                        else 
-                                            local ccNumber = getCCNumber(k)
-                                            if ccNumber then 
-                                                table.insert(CCMappings, ccNumber)
-                                            end
-                                        end
-                                    end
-                                end
 
-                                table.sort(noteMappings)
-                                for i, v in ipairs(noteMappings) do
-                                    table.insert(mappingType, "Note" .. v)
-                                end
-
-                                table.sort(CCMappings)
-                                for i, v in ipairs(CCMappings) do
-                                    table.insert(mappingType, "CC" .. v)
-                                end
-                                --[[
-                                for key, value in pairs(mapping.CC) do
-                                    table.insert(mappingType, "CC" .. key)
-                                end
-                                
-                                
-                                
-                                for key, value in pairs(mapping.Note) do
-                                    table.insert(mappingType, "Note" .. key)
-                                    --table.insert(mappingType, "NoteM" .. key.."Velocity")
-                                end
-                                
-                                ]]
-                                
-                                if mapping.Layer then table.insert(mappingType, "Layer") end
-                                if mapping.Velocity then table.insert(mappingType, "Velocity") end
-                                if mapping.Channel then table.insert(mappingType, "Channel") end
-                                if mapping.Delay then table.insert(mappingType, "Delay") end
-                                if mapping.Pitch then table.insert(mappingType, "Pitch") end
-                                if mapping.Transpose then table.insert(mappingType, "Transpose") end
-                                if mapping.Interval then table.insert(mappingType, "Interval") end
-                                
-                                if mapping.Position then table.insert(mappingType, "Position") end
-                                if mapping.FilterChannel then table.insert(mappingType, "FilterChannel") end
-                                if mapping.FilterPitch then table.insert(mappingType, "FilterPitch") end
-                                if mapping.FilterVelocity then table.insert(mappingType, "FilterVelocity") end
-                                if mapping.FilterSpeed then table.insert(mappingType, "FilterSpeed") end
-                                if mapping.FilterInterval then table.insert(mappingType, "FilterInterval") end
-                                if mapping.FilterCount then table.insert(mappingType, "FilterCount") end
-                                
-                                if mapping.KeyboardTrigger then table.insert(mappingType, "KT") end
-                                
-                                if mapping.UIText then table.insert(mappingType, "UIText") end
-                                return mappingType
-                            end
                             
-                            
-                            mappingType = createTableOrderFromUsedMappings(mapping) 
+                            mappingType = mapping_handling.createTableOrderFromUsedMappings(mapping) 
                             
                             columnAmount = #mappingType
                             
@@ -2284,7 +2150,7 @@ local function loop()
                                                             local adjustFocusABit = nil
                                                             
                         
-                                                            if getNoteNumber(mappingType[focusedColumn]) and focusedOnVel then 
+                                                            if mapping_handling.getNoteNumber(mappingType[focusedColumn]) and focusedOnVel then 
                                                                 adjust = -1
                                                                 setFocus = setFocus + 1
                                                             end
@@ -2325,7 +2191,7 @@ local function loop()
                                                     else
                                                         setFocus = math.floor(focusedItem) - (columnAmount)
                                                         
-                                                        if getNoteNumber(mappingType[focusedColumn]) and not focusedOnVel then 
+                                                        if mapping_handling.getNoteNumber(mappingType[focusedColumn]) and not focusedOnVel then 
                                                             --adjustFocusABit = true 
                                                             adjust = nil
                                                             setFocus = setFocus - 1
@@ -2496,15 +2362,7 @@ local function loop()
                                 reaper.ImGui_Function_SetValue_String(filterFunctionSingleCharacter, '#allowed', reaper.ImGui_InputTextFlags_CallbackEdit())
                             end
                             
-                            function getMainLaneRow(columnName, row) 
-                                if tableInfo[row].isLane and columnsToNotUseLanes[columnName] then
-                                    for r = row, 1, -1 do
-                                        if not tableInfo[r].isLane then
-                                            return r 
-                                        end
-                                    end
-                                end
-                            end
+                            
                             
                             function getArticulationTextFromLane(columnName, row, defaultValue)
                                 if not tableInfo[row] then
@@ -2533,7 +2391,7 @@ local function loop()
                             end
                             
                             function setNewTableValue(row, columnName, newValue)
-                                local mainLaneRow = getMainLaneRow(columnName, row)
+                                local mainLaneRow = mapping_handling.getMainLaneRow(tableInfo, columnName, row)
                                 if mainLaneRow then 
                                     tableInfo[mainLaneRow][columnName] = newValue
                                 else
@@ -2645,7 +2503,7 @@ local function loop()
                                     ret, stringInput = reaper.ImGui_InputText(ctx, "##1 - " .. id, title, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction3Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
                                     updateItemFocus(row, column, itemNumber, 0.1)
                                     
-                                    --reaper.ImGui_SameLine(ctx,tableSizeVelocity/2)
+                                    --reaper.ImGui_SameLine(ctx,tableSizes.Velocity/2)
                                     --reaper.ImGui_SetNextItemWidth(ctx, 5)
                                     --reaper.ImGui_Text(ctx, "-")
                                     
@@ -2701,11 +2559,11 @@ local function loop()
                                     parenteseTitle = "(" .. visualTitle .. ")"
                                 end
                                 
-                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeNote / 2)
+                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Note / 2)
                                 --if tableInfo[row][columnName .. "Velocity"] then -- and #tableInfo[columnName .. "Velocity"] > 0 then 
-                                    --reaper.ImGui_SetNextItemWidth(ctx, velocityValue and tableSizeNote or tableSizeNoteVel) 
+                                    --reaper.ImGui_SetNextItemWidth(ctx, velocityValue and tableSizes.Note or tableSizes.Note) 
                                 --else
-                                --    reaper.ImGui_SetNextItemWidth(ctx, tableSizeNote)
+                                --    reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Note)
                                 --end
                                 ret, stringInput = reaper.ImGui_InputText(ctx, "##" .. id, visualTitle, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsUppercase() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction4Characters) -- ,reaper.ImGui_InputTextFlags_EnterReturnsTrue())
                                 updateItemFocus(row, column, itemNumber, 0.1)
@@ -2716,12 +2574,12 @@ local function loop()
                                 
                                 --if velocityValue then
                                     if not (column == focusedColumn and row == focusedRow and tonumber(stringInput) ~= nil and parenteseTitle ~= "") then
-                                        reaper.ImGui_SameLine(ctx,tableSizeNoteVel/2 - 6)
+                                        reaper.ImGui_SameLine(ctx,tableSizes.Note/2 - 6)
                                         reaper.ImGui_SetNextItemWidth(ctx, 20)
                                         reaper.ImGui_TextColored(ctx, colorGrey, "vel:")
                                     end
-                                    reaper.ImGui_SameLine(ctx, tableSizeNoteVel/2+18) 
-                                    reaper.ImGui_SetNextItemWidth(ctx, tableSizeNoteVel/2-18)
+                                    reaper.ImGui_SameLine(ctx, tableSizes.Note/2+18) 
+                                    reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Note/2-18)
                                     velocityValueRet, velocityValueString = reaper.ImGui_InputText(ctx, "##2 - " .. id, velocityValue, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction3Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue()) 
                                      
                                     if focusedRow == row and focusedColumn == column and reaper.ImGui_IsItemFocused(ctx) then
@@ -3034,93 +2892,10 @@ local function loop()
                             ------------------------------------------------------------------------------------------
                             ------------------------------------------------------------------------------------------
                             
-                        
-                            tableSizePlay = math.ceil(appSettings.fontSize / 100 * 20)
-                            tableSizeTitle = math.ceil(appSettings.fontSize / 100 * appSettings.tableSizeTitle)
-                            tableSizeGroup = math.ceil(appSettings.fontSize / 100 * appSettings.tableSizeGroup)
-                            tableSizeOthers = math.ceil(appSettings.fontSize / 100 * 90)
-                            tableSizeCC = reaper.ImGui_CalcTextSize(ctx, "CC127 X",0,0)
-                            tableSizeKT = reaper.ImGui_CalcTextSize(ctx, "KT X",0,0)
-                            tableSizeNotation = reaper.ImGui_CalcTextSize(ctx, "Notation     X",0,0)
-                            tableSizeUIText = reaper.ImGui_CalcTextSize(ctx, "UIText  X",0,0)
-                            tableSizeDelay = reaper.ImGui_CalcTextSize(ctx, "N.Delay  X",0,0)
-                            tableSizeChannel = reaper.ImGui_CalcTextSize(ctx, "Channel X",0,0)
-                            tableSizePitch = reaper.ImGui_CalcTextSize(ctx, "Pitch X",0,0)
-                            tableSizeLayer = reaper.ImGui_CalcTextSize(ctx, "Layer  X",0,0)
-                            tableSizePosition = reaper.ImGui_CalcTextSize(ctx, "Position   X",0,0)
-                            tableSizeTranspose = reaper.ImGui_CalcTextSize(ctx, "Traspose   X",0,0)
-                            tableSizeInterval = reaper.ImGui_CalcTextSize(ctx, "Interval   X",0,0)
-                            tableSizeFilterChannel = reaper.ImGui_CalcTextSize(ctx, "F.Channel  X",0,0)
-                            tableSizeFilterPitch = reaper.ImGui_CalcTextSize(ctx, "F.Pitch  X",0,0)
-                            tableSizeFilterVelocity = reaper.ImGui_CalcTextSize(ctx, "F.Velocity  X",0,0)
-                            tableSizeFilterSpeed = reaper.ImGui_CalcTextSize(ctx, "F.Speed  X",0,0)
-                            tableSizeFilterInterval = reaper.ImGui_CalcTextSize(ctx, "F.Interval  X",0,0)
-                            tableSizeFilterCount = reaper.ImGui_CalcTextSize(ctx, "F.Note Count  X",0,0)
-                            tableSizeFilterVelocity = tableSizeFilterVelocity + math.ceil(appSettings.fontSize / 100 * 10) -- added for extra space or something??
+                            tableWidth, tableSizes = mapping_handling.getTableSizes(appSettings.fontSize, appSettings.tableSizeTitle, appSettings.tableSizeGroup)
                             
-                            tableSizePitch = tableSizeFilterVelocity
-                            tableSizeFilterPitch = tableSizeFilterVelocity 
-                            tableSizeVelocity = tableSizeFilterVelocity
-                            
-                            tableSizeNote = reaper.ImGui_CalcTextSize(ctx, "Note (M)     X",0,0)
-                            tableSizeNoteVel = tableSizeNote
-                            tableWidth = 0
-                            for _, mappingName in ipairs(mappingType) do
-                                if mappingName == "Title" then
-                                    tableWidth = tableWidth + tableSizeTitle 
-                                --elseif mappingName == "PlayArticulation" then
-                                --    tableWidth = tableWidth + tableSizeGroup
-                                elseif mappingName == "Group" then
-                                    tableWidth = tableWidth + tableSizeGroup
-                                elseif getCCNumber(mappingName) then
-                                    tableWidth = tableWidth + tableSizeCC
-                                elseif mappingName == "KT" then
-                                    tableWidth = tableWidth + tableSizeKT  
-                                elseif mappingName == "Notation" then
-                                    tableWidth = tableWidth + tableSizeNotation
-                                elseif mappingName == "UIText" then
-                                    tableWidth = tableWidth + tableSizeUIText
-                                elseif mappingName == "Delay" then
-                                    tableWidth = tableWidth + tableSizeDelay 
-                                elseif mappingName == "Pitch" then
-                                    tableWidth = tableWidth + tableSizePitch
-                                elseif mappingName == "Velocity" then
-                                    tableWidth = tableWidth + tableSizeVelocity
-                                elseif mappingName == "Channel" then
-                                    tableWidth = tableWidth + tableSizeChannel
-                                elseif mappingName == "Layer" then
-                                    tableWidth = tableWidth + tableSizeLayer
-                                elseif mappingName == "Transpose" then
-                                    tableWidth = tableWidth + tableSizeTranspose
-                                elseif mappingName == "Interval" then
-                                    tableWidth = tableWidth + tableSizeInterval
-                                
-                                elseif mappingName == "Position" then
-                                    tableWidth = tableWidth + tableSizePosition
-                                elseif mappingName == "FilterChannel" then
-                                    tableWidth = tableWidth + tableSizeFilterChannel
-                                elseif mappingName == "FilterPitch" then
-                                    tableWidth = tableWidth + tableSizeFilterPitch
-                                elseif mappingName == "FilterVelocity" then
-                                    tableWidth = tableWidth + tableSizeFilterVelocity
-                                elseif mappingName == "FilterSpeed" then
-                                    tableWidth = tableWidth + tableSizeFilterSpeed
-                                elseif mappingName == "FilterInterval" then
-                                    tableWidth = tableWidth + tableSizeFilterInterval
-                                elseif mappingName == "FilterCount" then
-                                    tableWidth = tableWidth + tableSizeFilterCount                                                           
-                                elseif getNoteNumber(mappingName) then
-                                    --if tableInfo[mappingName .. "Velocity"] and next(tableInfo[mappingName .. "Velocity"]) ~= nil then
-                                        tableWidth = tableWidth + tableSizeNoteVel 
-                                    --else
-                                    --    tableWidth = tableWidth + tableSizeNote 
-                                    --end
-                                else
-                                    tableWidth = tableWidth + tableSizeOthers 
-                                end
-                            end
                     
-                            tableWidth = tableWidth + ((#mappingType - 1) * 13) + (tableSizePlay + 9) +20--+ 10 --+ 26-- + 24 + 24
+                            tableWidth = tableWidth + ((#mappingType - 1) * 13) + (tableSizes.Play + 9) +20--+ 10 --+ 26-- + 24 + 24
     
                             --reaper.ImGui_SetCursorPosY(ctx, tableY)
                             --reaper.ImGui_SetCursorPosX(ctx, tableX + 30)
@@ -3129,35 +2904,35 @@ local function loop()
                             
                             local childSizeW = windowW - 16 < tableWidth and windowW - 16 or tableWidth
                             tableHeight = windowH - tableY  - (math.ceil(appSettings.fontSize / 100 * 40) + 30)
-                            if reaper.ImGui_BeginChild(ctx, "tablechild2", childSizeW, tableHeight) then
+                            if reaper.ImGui_BeginChild(ctx, "tablechild2", nil, tableHeight) then
                                 
                                 tableFlags = 
                                                 reaper.ImGui_TableFlags_ScrollY()
                                                 | reaper.ImGui_TableFlags_ScrollX()
                                                 | reaper.ImGui_TableFlags_RowBg() 
-                                                --| reaper.ImGui_TableFlags_NoHostExtendX()
-                                                --| reaper.ImGui_TableFlags_NoHostExtendY() 
+                                                | reaper.ImGui_TableFlags_NoHostExtendX()
+                                                | reaper.ImGui_TableFlags_NoHostExtendY() 
                                                 
                                                 | reaper.ImGui_TableFlags_Borders()
                                 if reaper.ImGui_BeginTable(ctx, 'table1', columnAmount + 1, tableFlags) then --, tableWidth - 10, windowH - tableY - 40) then -- ,reaper.ImGui_GetTextLineHeightWithSpacing(ctx) * 20) then
                                     reaper.ImGui_TableSetupScrollFreeze(ctx, 2, 1)
                                     -- Display headers so we can inspect their interaction with borders.
                                     -- (Headers are not the main purpose of this section of the demo, so we are not elaborating on them too much. See other sections for details)
-                                    reaper.ImGui_TableSetupColumn(ctx, "play", reaper.ImGui_TableColumnFlags_WidthFixed(), tableSizePlay)
+                                    reaper.ImGui_TableSetupColumn(ctx, "play", reaper.ImGui_TableColumnFlags_WidthFixed(), tableSizes.Play)
                                     
                                     for _, mappingName in ipairs(mappingType) do 
-                                        local tbSize = _G["tableSize" .. mappingName]
+                                        local tbSize = tableSizes[mappingName]
                                         if not tbSize then                                             
-                                            if getNoteNumber(mappingName) then                                                
-                                                tbSize = tableSizeNote                                                                                
-                                            elseif getCCNumber(mappingName) then                                                
-                                                tbSize = tableSizeCC   
+                                            if mapping_handling.getNoteNumber(mappingName) then                                                
+                                                tbSize = tableSizes.Note                                                                                
+                                            elseif mapping_handling.getCCNumber(mappingName) then                                                
+                                                tbSize = tableSizes.CC   
                                             --else
-                                            --    tbSize = tableSizeOthers 
+                                            --    tbSize = tableSizes.Others 
                                             end
                                         end
                                         
-                                        reaper.ImGui_TableSetupColumn(ctx, mappingName, reaper.ImGui_TableColumnFlags_WidthFixed(), tbSize)
+                                        --reaper.ImGui_TableSetupColumn(ctx, mappingName, reaper.ImGui_TableColumnFlags_WidthFixed(), tbSize)
                                     end
                                     
         
@@ -3165,31 +2940,23 @@ local function loop()
         
                                     -- reaper.ImGui_TableHeadersRow(ctx)
                                     -- Instead of calling TableHeadersRow() we'll submit custom headers ourselves
-                                    reaper.ImGui_TableNextRow(ctx, reaper.ImGui_TableRowFlags_Headers())
+                                    reaper.ImGui_TableNextRow(ctx)--, reaper.ImGui_TableRowFlags_Headers())
         
                                     for column = 1, columnAmount  do
                                         reaper.ImGui_TableSetColumnIndex(ctx, column)
                                         local column_name = mappingType[column] -- reaper.ImGui_TableGetColumnName(ctx, column) -- Retrieve name passed to TableSetupColumn()
-        
-                                        if getNoteNumber(column_name) then
-                                            visualColumnName = "Note"
-                                        elseif column_name == "Delay" then
-                                            visualColumnName = "N." .. column_name --.. " (ms)" 
-                                        elseif column_name:match("FilterCount") ~= nil then
-                                            visualColumnName = "F.N.Count"
-                                        elseif column_name:match("Filter") ~= nil then
-                                            visualColumnName = column_name:gsub("Filter","F.")
-                                        else
-                                            visualColumnName = column_name
-                                        end
+                                        
+                                        visualColumnName = mapping_handling.getVisualColumnName(column_name)
+                                        
                                         reaper.ImGui_AlignTextToFramePadding(ctx)
                                         
-                                        reaper.ImGui_TextWrapped(ctx, visualColumnName)
+                                        reaper.ImGui_Text(ctx, visualColumnName)
+                                        --reaper.ImGui_TextWrapped(ctx, visualColumnName)
                                         setToolTipFunc(tipTable[column_name])
                                         
                                         -- for note held system
-                                        if getNoteNumber(column_name) then 
-                                            local clean = getNoteNumber(column_name)
+                                        if mapping_handling.getNoteNumber(column_name) then 
+                                            local clean = mapping_handling.getNoteNumber(column_name)
                                             reaper.ImGui_SameLine(ctx)--, 38)
                                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent) 
                                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorGrey)
@@ -3256,15 +3023,17 @@ local function loop()
                                                     mapping.Notation = false
                                                 elseif column_name == "UIText" then
                                                     mapping.UIText = false
-                                                elseif getCCNumber(column_name) then
+                                                elseif mapping_handling.getCCNumber(column_name) then
                                                     mapping[column_name] = nil 
-                                                elseif getNoteNumber(column_name) then  
+                                                elseif mapping_handling.getNoteNumber(column_name) then  
                                                     mapping[column_name] = nil 
                                                 end
                                             end
                                             reaper.ImGui_PopStyleColor(ctx, 3)
                                         end
                                         -- reaper.ImGui_PopID(ctx)
+                                                                        
+                                        reaper.ImGui_TableSetBgColor(ctx, reaper.ImGui_TableBgTarget_CellBg(), colorDarkGrey)
                                     end
     
                                     function rowIsALane(row)
@@ -3394,7 +3163,7 @@ local function loop()
                                         local channelOffset = findChannelOffset(row) 
                                         for column = 1, columnAmount do 
                                             columnName = mappingType[column]
-                                            if getNoteNumber(columnName) then  
+                                            if mapping_handling.getNoteNumber(columnName) then  
                                                 local msg2 = tableInfo[row][columnName]
                                                 local heldNote = tableInfo[row][columnName .. "Held"]
                                                 if msg2 then 
@@ -3404,8 +3173,8 @@ local function loop()
                                                         reaper.StuffMIDIMessage(0, 0x80 + channelOffset, msg2, msg3)
                                                     end
                                                 end
-                                            elseif getCCNumber(columnName) then 
-                                                local msg2 = getCCNumber(columnName)
+                                            elseif mapping_handling.getCCNumber(columnName) then 
+                                                local msg2 = mapping_handling.getCCNumber(columnName)
                                                 local msg3 = tableInfo[row][columnName]
                                                 if msg2 and msg3 then 
                                                     reaper.StuffMIDIMessage(0, 0xB0 + channelOffset, msg2, msg3)
@@ -3417,7 +3186,7 @@ local function loop()
                                         
                                         for column = 1, columnAmount do 
                                             columnName = mappingType[column]
-                                            if getNoteNumber(columnName) then  
+                                            if mapping_handling.getNoteNumber(columnName) then  
                                                 local msg2 = tableInfo[row][columnName]
                                                 if msg2 then 
                                                     reaper.StuffMIDIMessage(0, 0x80 + channelOffset, msg2, 64) 
@@ -3436,7 +3205,7 @@ local function loop()
                                         
                                         
                                         reaper.ImGui_TableSetColumnIndex(ctx, 0)
-                                        reaper.ImGui_InvisibleButton(ctx, "play" .. row, tableSizePlay ,tableSizePlay)
+                                        reaper.ImGui_InvisibleButton(ctx, "play" .. row, tableSizes.Play ,tableSizes.Play)
                                         local isHovered = reaper.ImGui_IsItemHovered(ctx)
                                         
                                         if not mouseOrKeyHasTriggeredArticulation then 
@@ -3444,7 +3213,7 @@ local function loop()
                                                 sendArticulation(row, "mouse")
                                             end
                                             
-                                            if (row == focusedRow and cmd and ctrl and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_P())) then
+                                            if (row == focusedRow and cmd and ctrl and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_P()) and not shift and not cmd) then
                                                 sendArticulation(focusedRow, "key") 
                                             end
                                         end
@@ -3458,10 +3227,10 @@ local function loop()
                               
                                         
                                         posX, posY = reaper.ImGui_GetItemRectMin(ctx)
-                                        posXFix = posX + math.ceil(tableSizePlay/20 * 10)
-                                        posYFix = posY + math.ceil(tableSizePlay/20 * 12)
+                                        posXFix = posX + math.ceil(tableSizes.Play/20 * 10)
+                                        posYFix = posY + math.ceil(tableSizes.Play/20 * 12)
                                         
-                                        reaper.ImGui_DrawList_AddCircle(draw_list, posXFix, posYFix, math.ceil(tableSizePlay/20 * 8), color, 3, math.ceil(tableSizePlay/20 * 2))
+                                        reaper.ImGui_DrawList_AddCircle(draw_list, posXFix, posYFix, math.ceil(tableSizes.Play/20 * 8), color, 3, math.ceil(tableSizes.Play/20 * 2))
                                         --reaper.ImGui_DrawList_AddText(draw_list, posXFix, posYFix, colorLightGrey,row)
         
                                         for column = 1, columnAmount do
@@ -3475,7 +3244,7 @@ local function loop()
                                             modify = modifierSettings[columnName] and modifierSettings[columnName] or "same"
                                             --modify = tableInfo[row][columnName .. "Type"] and tableInfo[row][columnName .. "Type"] or "Same"
                                             if columnName == "Title" then 
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeTitle)
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Title)
                                                 --if isNotALane(columnName, row) then
                                                     if modify == "Same" then
                                                         modifyIncrement(id, columnName, row, column, true, true)
@@ -3486,7 +3255,7 @@ local function loop()
                                                 
                                                 dropFiles("articulation", row)
                                             elseif columnName == "Group" then
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeGroup)
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Group)
                                                 --if isNotALane(columnName, row) then
                                                     if modify == "Same" then
                                                         modifyIncrement(id, columnName, row, column, true, true)
@@ -3500,8 +3269,8 @@ local function loop()
                                                 --if not tableInfo[row] then tableInfo[row] = {} end
                                                 --if not tableInfo[row][columnName] then tableInfo[row][columnName] = 1 end
                                                 
-                                                --reaper.ShowConsoleMsg(tableSizeLayer .. "\n")
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeLayer -20)
+                                                --reaper.ShowConsoleMsg(tableSizes.Layer .. "\n")
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Layer -20)
                                                 --if isNotALane(columnName, row, 1) then 
                                                     
                                                     if not tableInfo[row] then tableInfo[row] = {} end
@@ -3565,25 +3334,25 @@ local function loop()
                                                 
                                                 
                                             elseif columnName == "Channel" then
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeChannel)
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Channel)
                                                 if modify == "Same" then
                                                     modifyIncrement(id, columnName, row, column, true, false, 1, 16, 1)
                                                 elseif modify == "Increment" then
                                                     modifyIncrement(id, columnName, row, column, false, false, 1, 16, 1)
                                                 end
                                             elseif columnName == "Delay" then
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeDelay)
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Delay)
                                                 if modify == "Same" then
                                                     modifyIncrement(id, columnName, row, column, true, false, 0, 4000)
                                                 end
                                             elseif columnName == "Pitch" then   
                                                 --modifyNotes(id, columnName, row, column, modify) 
-                                                modifyVelocity(id, columnName, row, column, 0, 127, tableSizePitch)
+                                                modifyVelocity(id, columnName, row, column, 0, 127, tableSizes.Pitch)
                                             elseif columnName == "Velocity" then  
-                                                --reaper.ImGui_SetNextItemWidth(ctx, tableSizeVelocity)
-                                                modifyVelocity(id, columnName, row, column, 0, 127,tableSizeVelocity) 
-                                            elseif getNoteNumber(columnName) then 
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeNote)
+                                                --reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Velocity)
+                                                modifyVelocity(id, columnName, row, column, 0, 127,tableSizes.Velocity) 
+                                            elseif mapping_handling.getNoteNumber(columnName) then 
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Note)
                                                 -- tableInfo[row][columnName] = 12
                                                 -- reaper.ShowConsoleMsg(#(tableInfo[row]).. " note\n")
                                                 -- reaper.ImGui_Button(ctx,columnName)
@@ -3592,8 +3361,8 @@ local function loop()
                                                 --end
                                                 
                                                 
-                                            elseif getCCNumber(columnName) then
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeCC)
+                                            elseif mapping_handling.getCCNumber(columnName) then
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.CC)
                                                 --if isNotALane(columnName, row) then
                                                     
                                                         
@@ -3606,31 +3375,31 @@ local function loop()
                                                     end 
                                                 --end
                                             elseif columnName == "Position" then 
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizePosition)
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Position)
                                                 modifyExact(id, columnName, row, column, legatoSelection, legatoKeys)
                                                 
                                             elseif columnName == "FilterVelocity" then  
-                                                modifyVelocity(id, columnName, row, column, 0, 127, tableSizeFilterVelocity)    
+                                                modifyVelocity(id, columnName, row, column, 0, 127, tableSizes.FilterVelocity)    
                                             elseif columnName == "FilterSpeed" then  
-                                                modifyVelocity(id, columnName, row, column, 0, 2000, tableSizeFilterSpeed, nil)
+                                                modifyVelocity(id, columnName, row, column, 0, 2000, tableSizes.FilterSpeed, nil)
                                             elseif columnName == "FilterInterval" then  
-                                                modifyVelocity(id, columnName, row, column, 0, 127, tableSizeFilterInterval, nil)
+                                                modifyVelocity(id, columnName, row, column, 0, 127, tableSizes.FilterInterval, nil)
                                             elseif columnName == "FilterCount" then  
-                                                modifyVelocity(id, columnName, row, column, 0, 100, tableSizeFilterCount, nil)
+                                                modifyVelocity(id, columnName, row, column, 0, 100, tableSizes.FilterCount, nil)
                                             elseif columnName == "FilterChannel" then  
-                                                modifyVelocity(id, columnName, row, column, 1, 16, tableSizeFilterChannel) 
+                                                modifyVelocity(id, columnName, row, column, 1, 16, tableSizes.FilterChannel) 
                                             elseif columnName == "FilterPitch" then  
-                                                modifyVelocity(id, columnName, row, column, 0, 127, tableSizeFilterPitch)
+                                                modifyVelocity(id, columnName, row, column, 0, 127, tableSizes.FilterPitch)
                                                 
                                             elseif columnName == "Transpose" then 
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeTranspose)
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Transpose)
                                                 if modify == "Same" then
                                                     modifyIncrement(id, columnName, row, column, true, false, -127, 127,0)
                                                 elseif modify == "Increment" then
                                                     modifyIncrement(id, columnName, row, column, false, false, -127, 127,0)
                                                 end 
                                             elseif columnName == "Interval" then
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeInterval)
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Interval)
                                                 --if isNotALane(columnName, row) then
                                                     if modify == "Same" then
                                                         modifyIncrement(id, columnName, row, column, true, false, -127, 127)
@@ -3639,17 +3408,17 @@ local function loop()
                                                     end 
                                                 --end
                                             elseif columnName == "KT" then
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeKT)
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.KT)
                                                 --if isNotALane(columnName, row) then
                                                     modifyKeyboardTrigger(id, columnName, row, column)
                                                 --end
                                             elseif columnName == "Notation" then
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeNotation)
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Notation)
                                                 --if isNotALane(columnName, row) then 
                                                     modifyExactFromTable(id, columnName, row, column, getArrayOfSubarray(musicxml.articulations, "name"))
                                                 --end
                                             elseif columnName == "UIText" then
-                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizeUIText)
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.UIText)
                                                 --if modify == "Same" then
                                                     local defaultText = (tableInfo[row].Position and tableInfo[row].Position ~= "" and tableInfo[row].Position ~= "Any") and ("(" .. tableInfo[row].Position .. ")") or ""
                                                     modifyIncrement(id, columnName, row, column, true, true, nil, nil, defaultText)
@@ -3798,8 +3567,8 @@ local function loop()
                                     
                                     tableEndPosY = reaper.ImGui_GetCursorPosY(ctx) 
                                     reaper.ImGui_EndTable(ctx)
-                                    reaper.ImGui_EndChild(ctx)
                                 end
+                              reaper.ImGui_EndChild(ctx)
                             end 
                         else
                             tableHeight = 0
@@ -3826,12 +3595,12 @@ local function loop()
                     -------------------------NEW TAB--------------------------------------
                     ----------------------------------------------------------------------
                     
-                    openSettingsTab = cmd and reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_I())
+                    openSettingsTab = checkShortCut("2", true)
                     settingsTabFlag = openSettingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
-                    if reaper.ImGui_BeginTabItem(ctx, 'Instrument (cmd+i)',openSettingsTab, settingsTabFlag) then
+                    if reaper.ImGui_BeginTabItem(ctx, 'Instrument (cmd+2)',openSettingsTab, settingsTabFlag) then
                         
                         local childSizeW = windowW - 16
-                        if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 20)) then 
+                        if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 28)) then 
                             local width = 200
                             reaper.ImGui_TextColored(ctx, 0x777777FF, 'Instrument settings')
                             
@@ -4100,20 +3869,106 @@ local function loop()
                     ----------------------------------------------------------------------
                     
                     if devMode then 
-                        openSettingsTab = cmd and reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_1()) and not shift
-                        settingsTabFlag = openSettingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
-                        if reaper.ImGui_BeginTabItem(ctx, 'Notation (cmd+n)',openSettingsTab, settingsTabFlag) then
+                        openNotationTab = checkShortCut("3", true)
+                        settingsTabFlag = openNotationTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
+                        if reaper.ImGui_BeginTabItem(ctx, 'Notation (cmd+3)',openNotationTab, settingsTabFlag) then
                             reaper.ImGui_TextColored(ctx, 0x777777FF, 'Notation is in developement and will be updated soon')
                             
                             reaper.ImGui_EndTabItem(ctx)
                         end  
                     end
                     
+                    local textInputWidth = math.ceil(appSettings.fontSize/100 * minimumsWidth)
+                    local infoTextOffset = 0--130
+                    function textInputsForSharingAppSettings(value, info)
+                        local text = appSettings[value]
+                        
+                        reaper.ImGui_TextColored(ctx, colorGrey,value)
+                        --reaper.ImGui_SameLine(ctx, infoTextOffset)
+                        reaper.ImGui_SetNextItemWidth(ctx, textInputWidth)
+                        ret, appSettings[value] = reaper.ImGui_InputText(ctx, "##"..value, text)
+                        if ret then 
+                            saveAppSettings()
+                        end
+                        if info then 
+                            --reaper.ImGui_SameLine(ctx, textInputWidth + infoTextOffset + 10)
+                            --reaper.ImGui_TextColored(ctx, colorGrey, info)
+                            setToolTipFunc(info)
+                        end
+                    end
                     
+                    
+                    function textInputsForSharingInstrumentSettings(value, info, multiline, defaultValue, alsoAppSettings)
+                        reaper.ImGui_TextColored(ctx, colorGrey, value)
+                        --reaper.ImGui_SameLine(ctx, infoTextOffset)
+                        local text = instrumentSettings[value]
+                        reaper.ImGui_SetNextItemWidth(ctx, textInputWidth)
+                        if multiline then 
+                            ret, instrumentSettings[value] = reaper.ImGui_InputTextMultiline(ctx, "##"..value, text)
+                        else
+                            ret, instrumentSettings[value] = reaper.ImGui_InputText(ctx, "##"..value, text)
+                        end
+                        
+                        if alsoAppSettings and ret then 
+                            appSettings[value] = instrumentSettings[value]
+                            saveAppSettings()
+                        end
+                        
+                        if info then 
+                            --reaper.ImGui_SameLine(ctx, textInputWidth + infoTextOffset + 10)
+                            --reaper.ImGui_TextColored(ctx, colorGrey, info)
+                            setToolTipFunc(info)
+                        end
+                    end
                     
                     ----------------------------------------------------------------------
                     -------------------------NEW TAB--------------------------------------
                     ----------------------------------------------------------------------
+                    if devMode then 
+                        openSharingTab = checkShortCut("4", true)
+                        settingsTabFlag = openSharingTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
+                        if reaper.ImGui_BeginTabItem(ctx, 'Sharing (cmd+4)',openSharingTab, settingsTabFlag) then
+                            local childSizeW = windowW - 16
+                            if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 28)) then 
+                                reaper.ImGui_NewLine(ctx) 
+                                reaper.ImGui_NewLine(ctx) 
+                                reaper.ImGui_SameLine(ctx, infoTextOffset)
+                                reaper.ImGui_Text(ctx, 'Share your script with others!')
+                                
+                                reaper.ImGui_NewLine(ctx) 
+                                reaper.ImGui_SameLine(ctx, infoTextOffset)
+                                reaper.ImGui_TextColored(ctx, colorGrey, 'Add info to make it easier to find in the Articulations Scripts Browser')
+                                
+                                reaper.ImGui_NewLine(ctx) 
+                                
+                                if not instrumentSettings.Creator and appSettings.Creator then instrumentSettings.Creator = appSettings.Creator end
+                                textInputsForSharingInstrumentSettings("Creator", "Your user name", nil, nil, true) -- your name
+                                reaper.ImGui_Spacing(ctx)
+                                textInputsForSharingInstrumentSettings("Vendor", "Library manefactor") -- g[1]
+                                reaper.ImGui_Spacing(ctx)
+                                textInputsForSharingInstrumentSettings("Product", "Name of the library") -- g[2]
+                                reaper.ImGui_Spacing(ctx)
+                                local hasPatchName = instrumentSettings.Patch and instrumentSettings.Patch or mapName
+                                textInputsForSharingInstrumentSettings("Patch", "Name of the patch. Script name if empty", nil, hasPatchName) -- n, if not N then after Bank 
+                                reaper.ImGui_Spacing(ctx)
+                                textInputsForSharingInstrumentSettings("Info", "Describe the patch, how to use it or other info", true) -- m
+                                
+                                reaper.ImGui_NewLine(ctx)
+                                reaper.ImGui_NewLine(ctx)
+                                reaper.ImGui_SameLine(ctx, infoTextOffset)
+                                
+                                if reaper.ImGui_Button(ctx, "SHARE SCRIPT TO DATABASE", textInputWidth, textInputWidth / 7) then
+                                
+                                end 
+                            
+                                reaper.ImGui_EndChild(ctx)
+                            end
+                            
+                            reaper.ImGui_EndTabItem(ctx)
+                        end  
+                    end
+                    
+                    
                     --[[
                     openSettingsTab = cmd and reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_X())
                     settingsTabFlag = openSettingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
@@ -4127,6 +3982,7 @@ local function loop()
                     openMappingsTab = false
                     openSettingsTab = false
                     openNotationTab = false
+                    openSharingTab = false
                     reaper.ImGui_EndTabBar(ctx)           
                 end
                 
@@ -4236,7 +4092,7 @@ local function loop()
                 elseif newInput then
                     inputStringNumber = tonumber(inputString)
                     if popup == "Name" then
-                        if newInput then
+                        if newInput and inputString ~= "" then
                             mapName = inputString
                         end
                     elseif popup == "Art" then

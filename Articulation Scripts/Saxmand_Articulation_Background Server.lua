@@ -64,9 +64,9 @@ require("pathes")
 
 local readArticulationScript = require("read_articulation_script").readArticulationScript
 if not readArticulationScript then
+    reaper.ShowConsoleMsg("Somethings wrong!")
     --return
 end
-
 changeArticulationScript = require("change_articulation")
 changeArticulation = changeArticulationScript.changeArticulation
 updateArticulationJSFX = changeArticulationScript.updateArticulationJSFX
@@ -257,8 +257,9 @@ local function loop()
     end
     --reaper.StuffMIDIMessage(0, 0xF0, msgBytes)
 
-    if track then
+    if track and triggerTables then
         if fxNumber then
+            
             artSelected = {}
             layerCollabsed = {}
             for _, sl in ipairs(artSliders) do
@@ -297,7 +298,7 @@ local function loop()
         --notShowingSurface = true
     end
     ]]
-    if track then
+    if track and triggerTables then
         local scriptsList_command_state = reaper.GetToggleCommandState(scriptsList_command_id) == 1
 
 
