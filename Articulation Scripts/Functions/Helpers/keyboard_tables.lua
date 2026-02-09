@@ -17,12 +17,20 @@ function export.defaultKeyboardTable_US()
     local keyboardTable = {numericKeys, letters1, letters2, letters3}    
     return keyboardTable
 end
+function export.defaultKeyboardTable_AZERTY()
+    local numericKeys = {"&", "é", '"', "'", "(", "§", "è", "!", "ç", "à", ")", "-"}
+    local letters1 = {"a", "z", "e", "r", "t", "y", "u", "i", "o", "p", "^", "$"}
+    local letters2 = {"q", "s", "d", "f", "g", "h", "j", "k", "l", "m", "ù", "`"}
+    local letters3 = {"<", "w", "x", "c", "v", "b", "n", ",", ";", ":", "="} 
+    local keyboardTable = {numericKeys, letters1, letters2, letters3}    
+    return keyboardTable
+end
 
 function export.resetKeyboard(country)
     local keyboardTable = export["defaultKeyboardTable_" .. country]()
     for y, table in ipairs(keyboardTable) do
         for x, value in ipairs(table) do
-            reaper.SetExtState(contextName, "keyboardTable:" .. y .. ":" .. x, value, true)            
+            reaper.SetExtState(contextName, "keyboardTable:" .. y .. ":" .. x, value:upper(), true)            
         end
     end
 end

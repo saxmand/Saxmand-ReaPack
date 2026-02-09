@@ -161,7 +161,7 @@ function export.keyboardTriggerSurface()
 
         reaper.ImGui_SetNextFrameWantCaptureKeyboard(ctx, 1)
         retval, unicode_char = reaper.ImGui_GetInputQueueCharacter(ctx, 0)
-        keyInput = string.char(unicode_char & 0xFF):upper()
+        keyInput = string.char(unicode_char & 0xFF)
         --keyInput = (utf8.char(unicode_char)):upper()--string.char(unicode_char & 0xFF):upper()
         
         ctrl = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Super())
@@ -175,15 +175,76 @@ function export.keyboardTriggerSurface()
         
         
         if retval then 
-            if unicode_char == 229 then
-                keyInput = "Å"
-            elseif unicode_char == 230 then
-                keyInput = "Æ"
-            elseif unicode_char == 248 then
-                keyInput = "Ø"
+            if unicode_char == 167 then keyInput = "§"
+            elseif unicode_char == 192 then keyInput = "À"
+            elseif unicode_char == 193 then keyInput = "Á"
+            elseif unicode_char == 194 then keyInput = "Â"
+            elseif unicode_char == 195 then keyInput = "Ã"
+            elseif unicode_char == 196 then keyInput = "Ä"
+            elseif unicode_char == 197 then keyInput = "Å"
+            elseif unicode_char == 198 then keyInput = "Æ"
+            elseif unicode_char == 199 then keyInput = "Ç"
+            elseif unicode_char == 200 then keyInput = "È"
+            elseif unicode_char == 201 then keyInput = "É"
+            elseif unicode_char == 202 then keyInput = "Ê"
+            elseif unicode_char == 203 then keyInput = "Ë"
+            elseif unicode_char == 204 then keyInput = "Ì"
+            elseif unicode_char == 205 then keyInput = "Í"
+            elseif unicode_char == 206 then keyInput = "Î"
+            elseif unicode_char == 207 then keyInput = "Ï"
+            
+            elseif unicode_char == 208 then keyInput = "Ð"
+            elseif unicode_char == 209 then keyInput = "Ñ"
+            elseif unicode_char == 210 then keyInput = "Ò"
+            elseif unicode_char == 211 then keyInput = "Ó"
+            elseif unicode_char == 212 then keyInput = "Ô"
+            elseif unicode_char == 213 then keyInput = "Õ"
+            elseif unicode_char == 214 then keyInput = "Ö"
+            elseif unicode_char == 216 then keyInput = "Ø"
+            elseif unicode_char == 217 then keyInput = "Ù"
+            elseif unicode_char == 218 then keyInput = "Ú"
+            elseif unicode_char == 219 then keyInput = "Û"
+            elseif unicode_char == 220 then keyInput = "Ü"
+            elseif unicode_char == 221 then keyInput = "Ý"
+            elseif unicode_char == 222 then keyInput = "Þ"
+            elseif unicode_char == 223 then keyInput = "ß"
+            
+            elseif unicode_char == 224 then keyInput = "à"
+            elseif unicode_char == 225 then keyInput = "á"
+            elseif unicode_char == 226 then keyInput = "â"
+            elseif unicode_char == 227 then keyInput = "ã"
+            elseif unicode_char == 228 then keyInput = "ä"
+            elseif unicode_char == 229 then keyInput = "å"
+            elseif unicode_char == 230 then keyInput = "æ"
+            elseif unicode_char == 231 then keyInput = "ç"
+            elseif unicode_char == 232 then keyInput = "è"
+            elseif unicode_char == 233 then keyInput = "é"
+            elseif unicode_char == 234 then keyInput = "ê"
+            elseif unicode_char == 235 then keyInput = "ë"
+            elseif unicode_char == 236 then keyInput = "ì"
+            elseif unicode_char == 237 then keyInput = "í"
+            elseif unicode_char == 238 then keyInput = "î"
+            elseif unicode_char == 239 then keyInput = "ï"
+            
+            elseif unicode_char == 240 then keyInput = "ð"
+            elseif unicode_char == 241 then keyInput = "ñ"
+            elseif unicode_char == 242 then keyInput = "ò"
+            elseif unicode_char == 243 then keyInput = "ó"
+            elseif unicode_char == 244 then keyInput = "ô"
+            elseif unicode_char == 245 then keyInput = "õ"
+            elseif unicode_char == 246 then keyInput = "ö"
+            elseif unicode_char == 248 then keyInput = "ø"
+            elseif unicode_char == 249 then keyInput = "ù"
+            elseif unicode_char == 250 then keyInput = "ú"
+            elseif unicode_char == 251 then keyInput = "û"
+            elseif unicode_char == 252 then keyInput = "ü"
+            elseif unicode_char == 253 then keyInput = "ý"
+            elseif unicode_char == 254 then keyInput = "þ"
+            elseif unicode_char == 255 then keyInput = "ÿ"
             end
+            
         end
-        
+        keyInput = keyInput:upper()
         --[[
       if retval and key then
           if triggerTableKeys[key].title and tonumber(key) then
@@ -220,15 +281,24 @@ function export.keyboardTriggerSurface()
             end
             
             reaper.ImGui_SameLine(ctx) 
-            if reaper.ImGui_Button(ctx, "Default US") then
+            reaper.ImGui_Text(ctx, "Reset to default:")
+            reaper.ImGui_SameLine(ctx) 
+            if reaper.ImGui_Button(ctx, "US") then
                 keyboard_functions.resetKeyboard("US")
                 --reaper.SetExtState(contextName, "ReloadArticulation", "1", true)
                 reaper.ImGui_CloseCurrentPopup(ctx)
                 resetNeeded = true
             end
             reaper.ImGui_SameLine(ctx) 
-            if reaper.ImGui_Button(ctx, "Default DA") then
+            if reaper.ImGui_Button(ctx, "DA") then
                 keyboard_functions.resetKeyboard("DA")
+                --reaper.SetExtState(contextName, "ReloadArticulation", "1", true)
+                reaper.ImGui_CloseCurrentPopup(ctx)
+                resetNeeded = true
+            end
+            reaper.ImGui_SameLine(ctx) 
+            if reaper.ImGui_Button(ctx, "AZERTY") then
+                keyboard_functions.resetKeyboard("AZERTY")
                 --reaper.SetExtState(contextName, "ReloadArticulation", "1", true)
                 reaper.ImGui_CloseCurrentPopup(ctx)
                 resetNeeded = true
@@ -360,8 +430,8 @@ function export.keyboardTriggerSurface()
                         end
                     else
                         if triggerTableKeys[key] then
-                            if #triggerTableKeys[key].subtitle > 0 then
-                                buttonTitle = triggerTableKeys[key].subtitle ..
+                            if #triggerTableKeys[key].group > 0 then
+                                buttonTitle = triggerTableKeys[key].group ..
                                 ":\n" ..
                                 triggerTableKeys[key].title:gsub("+ ", "+"):gsub(" ", "\n")                                                    -- .. " " .. colorGradient
                             else
