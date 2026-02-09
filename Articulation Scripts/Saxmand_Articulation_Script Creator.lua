@@ -1659,9 +1659,9 @@ local function loop()
                     
                     --mappingsFlag = reaper.ImGui_TabItemFlags_SetSelected()
                     tipTable = {}
-                    openMappingsTab = checkShortCut("1", true)
+                    openMappingsTab = checkShortCut("1", true, true)
                     settingsTabFlag = openMappingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
-                    if reaper.ImGui_BeginTabItem(ctx, 'Mappings (cmd+1)', openMappingsTab, settingsTabFlag) then
+                    if reaper.ImGui_BeginTabItem(ctx, 'Mappings', openMappingsTab, settingsTabFlag) then
                         
                         
                         reaper.ImGui_BeginGroup(ctx)
@@ -3582,7 +3582,7 @@ local function loop()
                         
                         reaper.ImGui_EndTabItem(ctx)
                     end
-                    
+                    setToolTipFunc("Use cmd+shift+1 to select tab")
                     ----------------------------------------------------------------------
                     ----------------------------------------------------------------------
                     ----------------------------------------------------------------------
@@ -3593,9 +3593,9 @@ local function loop()
                     -------------------------NEW TAB--------------------------------------
                     ----------------------------------------------------------------------
                     
-                    openSettingsTab = checkShortCut("2", true)
+                    openSettingsTab = checkShortCut("2", true, true)
                     settingsTabFlag = openSettingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
-                    if reaper.ImGui_BeginTabItem(ctx, 'Instrument (cmd+2)',openSettingsTab, settingsTabFlag) then
+                    if reaper.ImGui_BeginTabItem(ctx, 'Instrument Settings',openSettingsTab, settingsTabFlag) then
                         
                         local childSizeW = windowW - 16
                         if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 28)) then 
@@ -3859,6 +3859,7 @@ local function loop()
                             
                         reaper.ImGui_EndTabItem(ctx)
                     end  
+                    setToolTipFunc("Use cmd+shift+2 to select tab")
                     
                     
                     
@@ -3867,13 +3868,14 @@ local function loop()
                     ----------------------------------------------------------------------
                     
                     if devMode then 
-                        openNotationTab = checkShortCut("3", true)
+                        openNotationTab = checkShortCut("3", true, true)
                         settingsTabFlag = openNotationTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
-                        if reaper.ImGui_BeginTabItem(ctx, 'Notation (cmd+3)',openNotationTab, settingsTabFlag) then
+                        if reaper.ImGui_BeginTabItem(ctx, 'Notation',openNotationTab, settingsTabFlag) then
                             reaper.ImGui_TextColored(ctx, 0x777777FF, 'Notation is in developement and will be updated soon')
                             
                             reaper.ImGui_EndTabItem(ctx)
                         end  
+                        setToolTipFunc("Use cmd+shift+3 to select tab")
                     end
                     
                     local textInputWidth = math.ceil(appSettings.fontSize/100 * minimumsWidth)
@@ -3923,9 +3925,9 @@ local function loop()
                     -------------------------NEW TAB--------------------------------------
                     ----------------------------------------------------------------------
                     if devMode then 
-                        openSharingTab = checkShortCut("4", true)
+                        openSharingTab = checkShortCut("4", true, true)
                         settingsTabFlag = openSharingTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
-                        if reaper.ImGui_BeginTabItem(ctx, 'Sharing (cmd+4)',openSharingTab, settingsTabFlag) then
+                        if reaper.ImGui_BeginTabItem(ctx, 'Sharing',openSharingTab, settingsTabFlag) then
                             local childSizeW = windowW - 16
                             if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 28)) then 
                                 reaper.ImGui_NewLine(ctx) 
@@ -3964,6 +3966,7 @@ local function loop()
                             
                             reaper.ImGui_EndTabItem(ctx)
                         end  
+                        setToolTipFunc("Use cmd+shift+4 to select tab")
                     end
                     
                     
