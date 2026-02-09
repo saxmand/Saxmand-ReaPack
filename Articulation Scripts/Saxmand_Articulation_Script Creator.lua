@@ -48,7 +48,6 @@ local midi_note_names = require("midi_note_names")
 
 
 local embed_ui = require("embed_ui")
-
 local columnsToNotUseLanes = mapping_handling.columnsToNotUseLanes()
 
 local undo_redo = require("undo_redo")
@@ -183,7 +182,6 @@ function openFolderInExplorer(folderPath)
         reaper.ShowMessageBox("Unsupported OS: " .. osName, "Error", 0)
     end
 end
-
 -------------------------------------------------
 ------------------ HELPERS ----------------------
 -------------------------------------------------
