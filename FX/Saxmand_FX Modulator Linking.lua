@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.6.6
+-- @version 1.6.7
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,14 +18,14 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + fix unified parameter naming issue from https://forum.cockos.com/showpost.php?p=2887211&postcount=996
+--   + updated dependcies
 
 
 local startTime = reaper.time_precise()
 local reaperStartupTime
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.6.6" 
+local version = "1.6.7" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
