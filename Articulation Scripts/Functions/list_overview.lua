@@ -146,6 +146,8 @@ function export.listOverviewSurface()
                     saveSettings()
                 end
 
+                require("notation_event_settings").notation_event_settings()
+
                 reaper.ImGui_EndMenu(ctx)
             end
             --local posX2 = reaper.ImGui_GetCursorPosX(ctx)

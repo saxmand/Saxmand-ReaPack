@@ -315,6 +315,7 @@ function export.keyboardTriggerSurface()
                 saveSettings()
             end
             
+            require("notation_event_settings").notation_event_settings()
             
             reaper.ImGui_EndPopup(ctx)
         end

@@ -6,6 +6,7 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local is_new_value, filename, sectionID, cmdID, mode, resolution, val, contextstr = reaper.get_action_context()
 -- Check where we load from
 
+local toolbarSet
 -- Function to set the toolbar icon state
 local function setToolbarState(isActive)
     -- Set the command state to 1 for active, 0 for inactive
@@ -79,6 +80,11 @@ local listOverviewSurface = require("list_overview").listOverviewSurface
 
 -- Load the articulation map export function
 local trackDependingOnSelection = require("track_depending_on_selection").trackDependingOnSelection
+
+
+
+mirror_notation_to_unique_text_events = require("mirror_notation_to_unique_text_events").mirror_notation_to_unique_text_events
+
 
 -- Load the reaper sections id number, used for
 local reaper_sections = dofile(scriptPath .. "/Functions/Helpers/reaper_sections.lua")
@@ -197,7 +203,6 @@ end
 
 --lastClickedColor = reaper.GetExtState(contextName, "lastClickedColor") or ""
 
-onlyShowOnMidiEditor = true
 local refocusTimer = 100
 local isMouseWasReleased_Timer = 0
 local refocusBasedOnTimer = false
@@ -246,7 +251,7 @@ local function loop()
     if not lastTrack or lastTrack ~= track or (last_fxNumber ~= fxNumber) then
         triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam = readArticulationScript(track, name)
         lastTrack = track        
-        last_fxNumber = fxNumber
+        last_fxNumber = fxNumber        
 
         if track then
             trackNameRet, trackName = reaper.GetTrackName(track)
@@ -335,8 +340,15 @@ local function loop()
             end
         end
 
+        if take then
+            if last_midi_editor ~= midi_editor then 
+                mirror_notation_to_unique_text_events(take)
+                last_midi_editor = midi_editor
+            end
+        end
+
         if midi_editor and take then
-            updateArticulationJSFX(take)
+            updateArticulationJSFX(take)            
         end
     end
     ----------------------
@@ -371,11 +383,3 @@ local function loop()
 end
 
 reaper.defer(loop)
-
-function hexToRGB(hex)
-    local r = (hex >> 24) & 0xFF
-    local g = (hex >> 16) & 0xFF
-    local b = (hex >> 8) & 0xFF
-    local a = hex & 0xFF
-    return r, g, b
-end

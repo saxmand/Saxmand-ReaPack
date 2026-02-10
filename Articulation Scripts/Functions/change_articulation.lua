@@ -1,6 +1,7 @@
 -- @version 1.0
 -- @noindex
 
+
 function getNoteText(take, noteChannel, notePpqpos, notePitch)
     local i = 0
     local notationTexts = {}
@@ -111,6 +112,8 @@ local function setNotationText(take, articulation, allNotes)
     end
     -- Resync the MIDI editor to update the changes
     reaper.MIDI_Sort(take)
+
+    mirror_notation_to_unique_text_events(take)
 end
 
 local function setArticulationOnAllSelectedTakes(articulation)
