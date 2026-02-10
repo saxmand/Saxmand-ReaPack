@@ -60,6 +60,7 @@ end
 local export = {}
 
 function export.mirror_notation_to_unique_text_events(take)
+    if not take then return end
     --reaper.Undo_BeginBlock()
     --reaper.PreventUIRefresh(1)
     if settings.mirror_notation_articulations_to_text_events or settings.mirror_notation_dynamics_to_text_events then

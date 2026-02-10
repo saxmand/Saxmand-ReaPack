@@ -341,13 +341,12 @@ local function loop()
         end
 
         if take then
-            if last_midi_editor and not midi_editor then 
+            if last_take and last_midi_editor and not midi_editor then 
                 mirror_notation_to_unique_text_events(last_take)
             end
             if last_take and last_take ~= take then
                 mirror_notation_to_unique_text_events(last_take)
             end
-            last_take = take
         end
 
         if midi_editor and take then
