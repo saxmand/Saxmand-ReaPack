@@ -184,6 +184,9 @@ function ex.updateMapOnInstrumentsWithMap(mapName)
                 end
             end
         end
+        --if somethingAdded then
+        reaper.SetExtState(contextName, "ReloadArticulation", "1", true) 
+        --end
         return somethingAdded
     else
         overWriteFile_Wait_Name = mapName
