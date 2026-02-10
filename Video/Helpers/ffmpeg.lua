@@ -33,7 +33,7 @@ function export.Get_Path()
             retval, path = reaper.GetUserFileNameForRead(is_windows and "" or "/usr/local/bin/", "Find FFMpeg executable", is_windows and "ffmpeg.exe" or "")
             if retval then
                 reaper.SetExtState(ffmpegSectionName, FFmpegPathKey, path, true)
-                return Get_FFMpeg_Path()
+                return export.Get_Path()
             end
         else
             return nil
@@ -45,7 +45,7 @@ function export.Get_Path()
     else
         reaper.MB("FFmpeg check failed.\nThe file at:\n" .. tostring(path) .. "\n\ndid not respond to '-version' command correctly.\nPlease check if the file is valid.", "Detect Cuts Error", 0)
         reaper.DeleteExtState(ffmpegSectionName, FFmpegPathKey, true)
-        return Get_FFMpeg_Path()
+        return export.Get_Path()
     end
 end
 

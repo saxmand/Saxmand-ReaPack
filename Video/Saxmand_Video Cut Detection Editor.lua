@@ -1,11 +1,11 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.2.4
+-- @version 0.2.5
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
 -- @changelog
---   + fixed exit error, to clean any temp image from script folder
+--   + fixed ffmpeg path not being found
 
 
 -------- Possible IDEAS TODO
