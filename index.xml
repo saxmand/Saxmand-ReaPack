@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="647d4289cec1d231e3462651d2df840d97e3a32c" name="Saxmand ReaPack">
+<index version="1" commit="cbcc78f43c4eff06a496dfaa82d4a2b611daf43d" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -7451,6 +7451,14 @@
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/7227cfeceae1f86cfe2baddecc8248f1331bb69d/Video/Helpers/json.lua</source>
         <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/7227cfeceae1f86cfe2baddecc8248f1331bb69d/Video/Helpers/undo_redo.lua</source>
         <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/7227cfeceae1f86cfe2baddecc8248f1331bb69d/Video/Helpers/hosi_exec_hidden.vbs</source>
+      </version>
+      <version name="0.2.5" author="saxmand" time="2026-02-10T13:38:01Z">
+        <changelog><![CDATA[+ fixed ffmpeg path not being found]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/cbcc78f43c4eff06a496dfaa82d4a2b611daf43d/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/ffmpeg.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/cbcc78f43c4eff06a496dfaa82d4a2b611daf43d/Video/Helpers/ffmpeg.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/cbcc78f43c4eff06a496dfaa82d4a2b611daf43d/Video/Helpers/json.lua</source>
+        <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/cbcc78f43c4eff06a496dfaa82d4a2b611daf43d/Video/Helpers/undo_redo.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/cbcc78f43c4eff06a496dfaa82d4a2b611daf43d/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
