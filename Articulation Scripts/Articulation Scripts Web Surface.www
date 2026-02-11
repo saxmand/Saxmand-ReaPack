@@ -1,6 +1,6 @@
 @description Articulation Scripts Web Surface
 @author saxmand
-@version 0.0.3
+@version 0.0.4
 @provides Articulation Scripts Web Surface.html
 @changelog
-   changed subtitles to groups
+   fixed error where groups re-write had not been completed 
