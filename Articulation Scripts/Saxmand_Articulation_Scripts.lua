@@ -15,4 +15,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + Fixed webserver
+--   + Fixed crash when adding initial articulations
+--   + changed maps to use "/" instead of " / " for recognizing maps. And adding one to the front. THIS IS A BREAKING CHANGE

@@ -476,7 +476,7 @@ end
 
 function addArticulation(multi)
     local insertRowFromSelection = (selectedArticulationsCountKeys and #selectedArticulationsCountKeys > 0)
-    local insertRow =  (insertRowFromSelection and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1) <= #tableInfo + 1 and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 or #tableInfo + 1
+    local insertRow =  (insertRowFromSelection and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 and (tableInfo and selectedArticulationsCountKeys[#selectedArticulationsCountKeys]) <= #tableInfo) and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 or #tableInfo + 1
     
     if not multi then
         table.insert(tableInfo, insertRow, {})
