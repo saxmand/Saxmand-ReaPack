@@ -314,7 +314,6 @@ local function loop()
     end
     ]]
     if track and triggerTables then
-        local scriptsList_command_state = reaper.GetToggleCommandState(scriptsList_command_id) == 1
 
 
         local keyboardTrigger_command_state = reaper.GetToggleCommandState(keyboardTrigger_command_id) == 1
@@ -328,9 +327,10 @@ local function loop()
             end
         end
         
+        local scriptsList_command_state = reaper.GetToggleCommandState(scriptsList_command_id) == 1
         if scriptsList_command_state and not fxNumber then
-            if listOfArticulationsScripts() then
-                lastTrack = nil
+            if not listOfArticulationsScripts() then
+                setToggleCommandState(scriptsList_command_id, false, false)
             end
         end
 

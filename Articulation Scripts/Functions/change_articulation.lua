@@ -200,7 +200,7 @@ function export.changeArticulation(prg, articulation)
     -- use this if in recording mode
     -- change this with keyswitches etc
     -- make auto articaultion naming after recording stops
-    if prg < 128 then 
+    if prg and tonumber(prg) < 128 then 
         reaper.StuffMIDIMessage(0, 192, prg, 127)
     end
     

@@ -41,7 +41,7 @@ function export.listOfArticulationsScripts()
             --| reaper.ImGui_WindowFlags_MenuBar()
             
             )
-    if visible and open then     
+    if visible then     
         --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), 0x444444FF )
         --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), 0x555555FF)
         --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), 0x666666FF)
@@ -54,7 +54,9 @@ function export.listOfArticulationsScripts()
             --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), 0x000000FF)
             
              if reaper.ImGui_Selectable(ctx,script.name .. "##" .. i, false) then
-                scriptAdded = addMapToInstruments(script.name, true)
+                if addMapToInstruments(script.name, true) then
+                    reaper.SetExtState(contextName, "ReloadArticulation", "1", false)
+                end
             end
              
             --reaper.ImGui_PopStyleColor(ctx,4)
@@ -64,7 +66,7 @@ function export.listOfArticulationsScripts()
         
         reaper.ImGui_End(ctx)
     end
-    return scriptAdded
+    return open
 end
 
 return export
