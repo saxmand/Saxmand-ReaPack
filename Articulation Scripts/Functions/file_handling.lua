@@ -291,7 +291,7 @@ function export.importJsonString(jsonString)
                         end
                     end 
                 end 
-            elseif articulationMapCreatorVersion == 0.4 then   
+            elseif articulationMapCreatorVersion >= 0.4 then   
                 tableInfo = luaTable.tableInfo
                 if luaTable.mapping then
                     mapping = luaTable.mapping

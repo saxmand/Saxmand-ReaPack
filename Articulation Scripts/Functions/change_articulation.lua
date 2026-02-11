@@ -20,7 +20,7 @@ function getNoteText(take, noteChannel, notePpqpos, notePitch)
 end
 
 function split_exact(str, sep)
-    sep = sep or "/"
+    sep = sep or " / "
     local t = {}
     local pattern = "(.-)" .. sep:gsub("(%p)", "%%%1") -- escape special chars
     local last_end = 1
@@ -72,7 +72,7 @@ local function setNotationText(take, articulation, allNotes)
 
                     if arts[artLayer] then
                         arts[artLayer] = articulation
-                        newName = table.concat(arts, "/")
+                        newName = table.concat(arts, " / ")
                         replacedName = true
                     end
                     --[[
@@ -91,22 +91,22 @@ local function setNotationText(take, articulation, allNotes)
                     -- updates all articulations based on the slider settings
                     for i, slider in ipairs(artSliders) do
                         --if slider.layer == artLayer then
-                        --    newName = newName .. (i > 1 and "/" or "") .. articulation
+                        --    newName = newName .. (i > 1 and " / " or "") .. articulation
                         --else
                         local selectedArticulationIdx = reaper.TrackFX_GetParam(track, fxNumber, slider.param)     -- 0 is the parameter index, 0 is the parameter value
                         if selectedArticulationIdx > -1 then
                             artNameFromSlider = triggerTableLayers[i][selectedArticulationIdx + 1].articulation
-                            --newName = newName .. (i > 1 and "/" or "") .. artNameFromSlider
-                            newName = newName .. "/" .. artNameFromSlider
+                            newName = newName .. (i > 1 and " / " or "") .. artNameFromSlider
                         end
                         --end
                     end
                 end
-                newName = newName .. "/"
+                newName = newName .. " / "
             else
-                newName = articulation .. "/"
+                newName = articulation .. " / "
             end
-            local text = "NOTE " .. noteChannel .. " " .. notePitch .. " text " .. '"/' .. newName .. '"'
+
+            local text = "NOTE " .. noteChannel .. " " .. notePitch .. " text " .. '"' .. newName .. '"'
             reaper.MIDI_InsertTextSysexEvt(take, selected, muted, notePpqpos, 15, text, true)
         end
     end

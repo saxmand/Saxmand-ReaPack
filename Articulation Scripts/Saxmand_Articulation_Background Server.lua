@@ -53,8 +53,9 @@ package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. sepera
 if not require("dependencies").main() then return end
 
 -- Load the json functions
-local json = require("json")
+json = require("json")
 
+file_handling = require("file_handling")
 -- Load the articulation map export function
 local export = require("export")
 
@@ -80,7 +81,6 @@ local listOverviewSurface = require("list_overview").listOverviewSurface
 
 -- Load the articulation map export function
 local trackDependingOnSelection = require("track_depending_on_selection").trackDependingOnSelection
-
 
 
 mirror_notation_to_unique_text_events = require("mirror_notation_to_unique_text_events").mirror_notation_to_unique_text_events
