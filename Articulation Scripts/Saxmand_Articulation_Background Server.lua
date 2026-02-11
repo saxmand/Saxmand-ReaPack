@@ -324,14 +324,15 @@ local function loop()
             else
                 --local keyboardTrigger_command_state = reaper.GetToggleCommandState(keyboardTrigger_command_id) == 1
                 --if settings.showScriptsListIfNoArticulations then
-                if scriptsList_command_state then
-                    if listOfArticulationsScripts() then
-                        lastTrack = nil
-                    end
-                end
+                
             end
         end
         
+        if scriptsList_command_state and not fxNumber then
+            if listOfArticulationsScripts() then
+                lastTrack = nil
+            end
+        end
 
         local listOverview_command_state = reaper.GetToggleCommandState(listOverview_command_id) == 1
         if listOverview_command_state and (not settings.listOverview_onlyShowWhenTheresAMap or fxNumber) then

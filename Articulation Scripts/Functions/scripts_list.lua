@@ -53,8 +53,8 @@ function export.listOfArticulationsScripts()
             --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), 0x000000FF)
             --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), 0x000000FF)
             
-             if reaper.ImGui_Selectable(ctx,script .. "##" .. i, false) then  
-                scriptAdded = addMapToInstruments(script)
+             if reaper.ImGui_Selectable(ctx,script.name .. "##" .. i, false) then
+                scriptAdded = addMapToInstruments(script.name, true)
             end
              
             --reaper.ImGui_PopStyleColor(ctx,4)

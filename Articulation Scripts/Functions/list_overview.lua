@@ -30,6 +30,29 @@ end
  ]]
 local export = {}
 
+function getTrackColor(track)
+    local color  = reaper.GetTrackColor(track) 
+    --reaper.ShowConsoleMsg(tostring((reaper.ImGui_ColorConvertNative(color) << 8) | 0xFF) .. "\n")
+
+     -- shift 0x00RRGGBB to 0xRRGGBB00 then add 0xFF for 100% opacity
+    return color & 0x1000000 ~= 0 and (reaper.ImGui_ColorConvertNative(color) << 8) | 0xFF or colorTransparent 
+end
+
+function GetTextColorForBackground(u32_color)
+    -- Extract 8-bit R, G, B from U32 (ImGui format: 0xAABBGGRR)
+    r, g, b, a = reaper.ImGui_ColorConvertU32ToDouble4(u32_color)
+
+    -- Calculate relative luminance (W3C standard)
+    local luminance = 0.4 * r * 256 + 0.8 * g * 256 + 0.4 * b * 256
+
+    -- Use black if background is bright, white if it's dark
+    if luminance > 186 then
+        return reaper.ImGui_ColorConvertDouble4ToU32(0, 0, 0, 1) -- black
+    else
+        return reaper.ImGui_ColorConvertDouble4ToU32(1, 1, 1, 1) -- white
+    end
+end
+
 function export.listOverviewSurface()
     EnsureValidContext(ctx)    
     draw_list = reaper.ImGui_GetWindowDrawList(ctx)
@@ -193,6 +216,25 @@ function export.listOverviewSurface()
         alt = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Alt())
         shift = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift())
         
+        
+        reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_SelectableTextAlign(), isLayerCollabsed and 0 or 0.5, 0) 
+        local trackColor = getTrackColor(track) or 0x222222FF 
+        local textColor = GetTextColorForBackground(trackColor)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), textColor)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), trackColor )
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), trackColor)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), trackColor)
+        --reaper.ImGui_Text(ctx, tostring(trackName))
+        if reaper.ImGui_Selectable(ctx,trackName, true) then 
+            local val = reaper.TrackFX_GetFloatingWindow(track, fxNumber)
+            reaper.TrackFX_Show(track, fxNumber, not val and 3 or 2)
+        end
+        reaper.ImGui_PopStyleColor(ctx,4)
+        reaper.ImGui_PopStyleVar(ctx)
+
+
+        reaper.ImGui_Separator(ctx)
+
         local layerAmount = 0
         for layerNumber, layer in pairs(triggerTableLayers) do
             layerAmount = layerAmount + 1
@@ -203,6 +245,8 @@ function export.listOverviewSurface()
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), 0x555555FF)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), 0x666666FF)
         
+
+
         local colorText = true
         local layerColor
         local layerX, layerY, layerX2, layerY2

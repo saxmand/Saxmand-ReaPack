@@ -45,7 +45,7 @@ if not appSettings then
     end
 end
 
-local function addMapToTrack(track, mapName)
+function export.addMapToTrack(track, mapName)
     local fxNumber
     local fxFound = false
     local fxAmount = reaper.TrackFX_GetCount(track)
@@ -178,7 +178,7 @@ function ex.updateMapOnInstrumentsWithMap(mapName)
                 local _, fxName = reaper.TrackFX_GetFXName(track, fxIndex)
                 if fxName:match("Articulation Script") ~= nil and fxName:match(mapName) ~= nil then
                     local articulationScriptSettings = getArticulationScriptSettings(track, fxIndex)
-                    addMapToTrack(track, mapName)
+                    export.addMapToTrack(track, mapName)
                     setArticulationScriptSettings(track, fxIndex, articulationScriptSettings) 
                     break
                 end
@@ -194,8 +194,8 @@ function ex.updateMapOnInstrumentsWithMap(mapName)
     end
 end
 
-function ex.addMapToInstruments(mapName)          
-    if not overWriteFile_Wait then 
+function ex.addMapToInstruments(mapName, doNotOverwrite)          
+    if not overWriteFile_Wait and not doNotOverwrite then 
         export.createObjectForExport() -- generate script
     else
         overWriteFile_Wait = false
@@ -206,7 +206,7 @@ function ex.addMapToInstruments(mapName)
         for i = 0, reaper.GetNumTracks() - 1 do
             local track = reaper.GetTrack(0, i)
             if reaper.IsTrackSelected(track) then
-                addMapToTrack(track, mapName)-- .. " (Articulation script)")
+                export.addMapToTrack(track, mapName)-- .. " (Articulation script)")
             end
         end
         reaper.SetExtState(contextName, "ReloadArticulation", "1", true) 

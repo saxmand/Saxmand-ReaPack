@@ -198,7 +198,11 @@ function export.changeArticulation(prg, articulation)
     -- make this only happen if the selected track and item is the same
     --for i = 0, 15 do
     -- use this if in recording mode
-    reaper.StuffMIDIMessage(0, 192, prg, 127)
+    -- change this with keyswitches etc
+    -- make auto articaultion naming after recording stops
+    if prg < 128 then 
+        reaper.StuffMIDIMessage(0, 192, prg, 127)
+    end
     
     --end
     setArticulationOnTrack(prg)
