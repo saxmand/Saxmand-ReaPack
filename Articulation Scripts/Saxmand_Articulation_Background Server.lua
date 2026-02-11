@@ -92,6 +92,7 @@ local reaper_sections = dofile(scriptPath .. "/Functions/Helpers/reaper_sections
 
 local defaultSettings = { 
     listOverview_onlyShowOnMidiEditor = false,
+    listOverview_onlyShowWhenTheresAMap = false,
     listOverview_size = 100,
     listOverview_transparency = 20,
     keyboardTrigger_size = 100,
@@ -191,6 +192,15 @@ function setToggleCommandState(commandID, forceState, ensureBackgroundServer)
         -- Turn on
         reaper.SetToggleCommandState(0, commandID, 1)
         reaper.RefreshToolbar2(0, commandID)
+    end
+end
+
+local showToolTip = true
+function setToolTipFunc(text, color)
+    if showToolTip and text then  
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(),color and color or colorWhite) 
+        reaper.ImGui_SetItemTooltip(ctx, text) 
+        reaper.ImGui_PopStyleColor(ctx)
     end
 end
 
@@ -324,7 +334,7 @@ local function loop()
         
 
         local listOverview_command_state = reaper.GetToggleCommandState(listOverview_command_id) == 1
-        if listOverview_command_state then
+        if listOverview_command_state and (not settings.listOverview_onlyShowWhenTheresAMap or fxNumber) then
             if midi_editor or not settings.listOverview_onlyShowOnMidiEditor then
                 local windowIsFocused = listOverviewSurface() -- show the list overview
                 if midi_editor then

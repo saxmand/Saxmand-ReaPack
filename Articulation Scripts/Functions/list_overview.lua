@@ -131,6 +131,11 @@ function export.listOverviewSurface()
                     settings.listOverview_onlyShowOnMidiEditor = not settings.listOverview_onlyShowOnMidiEditor
                     saveSettings()
                 end
+                
+                if reaper.ImGui_Checkbox(ctx, "Only show list overview when there's a map", settings.listOverview_onlyShowWhenTheresAMap) then
+                    settings.listOverview_onlyShowWhenTheresAMap = not settings.listOverview_onlyShowWhenTheresAMap
+                    saveSettings()
+                end
 
                 
                 reaper.ImGui_SetNextItemWidth(ctx, 150)

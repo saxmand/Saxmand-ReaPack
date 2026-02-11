@@ -476,7 +476,7 @@ end
 
 function addArticulation(multi)
     local insertRowFromSelection = (selectedArticulationsCountKeys and #selectedArticulationsCountKeys > 0)
-    local insertRow =  insertRowFromSelection and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 or #tableInfo + 1
+    local insertRow =  (insertRowFromSelection and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1) <= #tableInfo + 1 and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 or #tableInfo + 1
     
     if not multi then
         table.insert(tableInfo, insertRow, {})
@@ -1662,6 +1662,7 @@ local function loop()
                     openMappingsTab = checkShortCut("1", true, true)
                     settingsTabFlag = openMappingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
                     if reaper.ImGui_BeginTabItem(ctx, 'Mappings', openMappingsTab, settingsTabFlag) then
+                        setToolTipFunc("Use cmd+shift+1 to select tab")
                         
                         
                         reaper.ImGui_BeginGroup(ctx)
@@ -3581,8 +3582,9 @@ local function loop()
 
                         
                         reaper.ImGui_EndTabItem(ctx)
+                    else
+                        setToolTipFunc("Use cmd+shift+1 to select tab")
                     end
-                    setToolTipFunc("Use cmd+shift+1 to select tab")
                     ----------------------------------------------------------------------
                     ----------------------------------------------------------------------
                     ----------------------------------------------------------------------
@@ -3596,6 +3598,7 @@ local function loop()
                     openSettingsTab = checkShortCut("2", true, true)
                     settingsTabFlag = openSettingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
                     if reaper.ImGui_BeginTabItem(ctx, 'Instrument Settings',openSettingsTab, settingsTabFlag) then
+                        setToolTipFunc("Use cmd+shift+2 to select tab")
                         
                         local childSizeW = windowW - 16
                         if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 28)) then 
@@ -3858,8 +3861,9 @@ local function loop()
                         
                             
                         reaper.ImGui_EndTabItem(ctx)
+                    else
+                        setToolTipFunc("Use cmd+shift+2 to select tab")
                     end  
-                    setToolTipFunc("Use cmd+shift+2 to select tab")
                     
                     
                     
@@ -3871,11 +3875,13 @@ local function loop()
                         openNotationTab = checkShortCut("3", true, true)
                         settingsTabFlag = openNotationTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
                         if reaper.ImGui_BeginTabItem(ctx, 'Notation',openNotationTab, settingsTabFlag) then
+                            setToolTipFunc("Use cmd+shift+3 to select tab")
                             reaper.ImGui_TextColored(ctx, 0x777777FF, 'Notation is in developement and will be updated soon')
                             
                             reaper.ImGui_EndTabItem(ctx)
+                        else
+                            setToolTipFunc("Use cmd+shift+3 to select tab")
                         end  
-                        setToolTipFunc("Use cmd+shift+3 to select tab")
                     end
                     
                     local textInputWidth = math.ceil(appSettings.fontSize/100 * minimumsWidth)
@@ -3928,6 +3934,7 @@ local function loop()
                         openSharingTab = checkShortCut("4", true, true)
                         settingsTabFlag = openSharingTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
                         if reaper.ImGui_BeginTabItem(ctx, 'Sharing',openSharingTab, settingsTabFlag) then
+                            setToolTipFunc("Use cmd+shift+4 to select tab")
                             local childSizeW = windowW - 16
                             if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 28)) then 
                                 reaper.ImGui_NewLine(ctx) 
@@ -3965,8 +3972,9 @@ local function loop()
                             end
                             
                             reaper.ImGui_EndTabItem(ctx)
+                        else
+                            setToolTipFunc("Use cmd+shift+4 to select tab")
                         end  
-                        setToolTipFunc("Use cmd+shift+4 to select tab")
                     end
                     
                     
