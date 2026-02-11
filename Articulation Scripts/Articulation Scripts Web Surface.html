@@ -102,7 +102,7 @@
                 var buttonLabel = dataParts[b]
                 group = buttonLabel.split(':')[0]
                 title = buttonLabel.split(":")[1]
-                group = buttonLabel.split(":")[2]                
+                layer = buttonLabel.split(":")[2]                
                 if (layer) {
                     if (layer && title && colorsAssigned[group + layer] == undefined) {
                         colorsAssigned[group + layer] = colorSpectrum[Object.keys(colorsAssigned).length % colorSpectrum.length]
@@ -166,7 +166,7 @@
             button.innerText = "Start Script";
             button.style.width = window.innerWidth / 2 + "px";
             button.style.height = window.innerHeight / 2 + "px";
-            button.onclick = mouseDownEventHandler('SET/EXTSTATEPERSIST/articulationMapOnDevice/useOnlyOnDevice/1;_RSeaedcc5257225ad318bf80f43589fdfcc0b535a0');
+            button.onclick = mouseDownEventHandler('SET/EXTSTATEPERSIST/articulationMapOnDevice/useOnlyOnDevice/1;_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386');
             button.style.border = "6px solid #0f0";
             button.style.color = "#0f0";
             button.style["font-size"] = "50px";
