@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.6.1
+-- @version 0.6.2
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,10 +15,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + re-wrote some parts regarding layers, to have cleaner and more stable articulations names
---   + added read and write to articaultion script library capabilities
---   + Fixed when no item is selected to use midi editor take, if focus is on main window, that's the focus of articulation map then
---   + Close Articulation script if auto floating
---   + In articulations surfaces, Holding shift selects articulation, adding ctrl will add to selection 
---   + Auto add articulations to new notes in midi editor
---   + Tablet surface now supports layers
+--   + fixed filterspeed maxing at 127

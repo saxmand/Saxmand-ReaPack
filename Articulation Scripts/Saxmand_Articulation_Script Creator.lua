@@ -2522,26 +2522,27 @@ local function loop()
                                 local _16 = math.ceil(appSettings.fontSize/100 * 16)
                                 local _14 = math.ceil(appSettings.fontSize/100 * 14)
                                 local _2 = math.ceil(appSettings.fontSize/100 * 2)
+                                local callback = max == 127 and filterFunction3Characters or nil
                                 
                                 if modify == "Within" then -- or modify == "Outside" then 
                                     reaper.ImGui_SetNextItemWidth(ctx, itemWidth/2)
-                                    ret, stringInput = reaper.ImGui_InputText(ctx, "##1 - " .. id, title, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction3Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                    ret, stringInput = reaper.ImGui_InputText(ctx, "##1 - " .. id, title, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), callback) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
                                     updateItemFocus(row, column, itemNumber,0.1) 
                                     
-                                    reaper.ImGui_SameLine(ctx,itemWidth/2-_8)
+                                    reaper.ImGui_SameLine(ctx,itemWidth/2 - _8)
                                     reaper.ImGui_SetNextItemWidth(ctx, _20)
                                     reaper.ImGui_Text(ctx, "<>")
                                     reaper.ImGui_SameLine(ctx, itemWidth/2+_14) 
                                     
-                                    reaper.ImGui_SetNextItemWidth(ctx, itemWidth/2-_10)
-                                    ret2, stringInput2 = reaper.ImGui_InputText(ctx, "##2 - " .. id, title2, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction3Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                    reaper.ImGui_SetNextItemWidth(ctx, itemWidth/2 - _10)
+                                    ret2, stringInput2 = reaper.ImGui_InputText(ctx, "##2 - " .. id, title2, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), callback) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
                                 elseif modify == "Outside" then 
                                     reaper.ImGui_SetNextItemWidth(ctx, _8)
                                     reaper.ImGui_Text(ctx, "<")
                                     reaper.ImGui_SameLine(ctx, _8)
                                     
                                     reaper.ImGui_SetNextItemWidth(ctx, itemWidth/2 - _8)
-                                    ret, stringInput = reaper.ImGui_InputText(ctx, "##1 - " .. id, title, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction3Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                    ret, stringInput = reaper.ImGui_InputText(ctx, "##1 - " .. id, title, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), callback) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
                                     updateItemFocus(row, column, itemNumber, 0.1)
                                     
                                     --reaper.ImGui_SameLine(ctx,tableSizes.Velocity/2)
@@ -2557,14 +2558,14 @@ local function loop()
                                     
                                     reaper.ImGui_SameLine(ctx, itemWidth/2) 
                                     reaper.ImGui_SetNextItemWidth(ctx, itemWidth/2)
-                                    ret2, stringInput2 = reaper.ImGui_InputText(ctx, "##2 - " .. id, title2, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction3Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue()) 
+                                    ret2, stringInput2 = reaper.ImGui_InputText(ctx, "##2 - " .. id, title2, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), callback) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue()) 
                                     
                                 else  
                                     reaper.ImGui_SetNextItemWidth(ctx, _10)
                                     reaper.ImGui_Text(ctx, prefix)
                                     reaper.ImGui_SameLine(ctx, _10)
                                     reaper.ImGui_SetNextItemWidth(ctx, itemWidth)
-                                    ret, stringInput = reaper.ImGui_InputText(ctx, "##1 - " .. id, title, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction3Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                    ret, stringInput = reaper.ImGui_InputText(ctx, "##1 - " .. id, title, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_CallbackEdit(), callback) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
                                 end
                             
                                 if ret then 
@@ -3422,7 +3423,7 @@ local function loop()
                                             elseif columnName == "FilterVelocity" then  
                                                 modifyVelocity(id, columnName, row, column, 0, 127, tableSizes.FilterVelocity)    
                                             elseif columnName == "FilterSpeed" then  
-                                                modifyVelocity(id, columnName, row, column, 0, 2000, tableSizes.FilterSpeed, nil)
+                                                modifyVelocity(id, columnName, row, column, 0, 4000, tableSizes.FilterSpeed, nil)
                                             elseif columnName == "FilterInterval" then  
                                                 modifyVelocity(id, columnName, row, column, 0, 127, tableSizes.FilterInterval, nil)
                                             elseif columnName == "FilterCount" then  
