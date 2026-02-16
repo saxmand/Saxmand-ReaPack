@@ -1,5 +1,24 @@
 -- @noindex
 
+ retval, filename, sectionID, cmdID, mode, resolution, val = reaper.get_action_context()
+
+if cmdID == 70667 then 
+    
+    if 1 == reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386")) then --Script: Saxmand_Articulation_Background Server.lua
+    --    reaper.Main_OnCommand(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0) --Script: Saxmand_Articulation_Background Server.lua
+    end
+    
+    if 0 == reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RS841db956c42cd98894e1219da2c9184f5909a15e"), 0) then --Script: Saxmand_Articulation_Background Server.lua
+        reaper.Main_OnCommand(reaper.NamedCommandLookup("_RS841db956c42cd98894e1219da2c9184f5909a15e"), 0) --Script: Saxmand_Articulation_Keyboard Trigger Surface.lua
+    end
+    
+    reaper.Main_OnCommand(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0) --Script: Saxmand_Articulation_Background Server.lua
+    reaper.SetToggleCommandState(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0, 1)
+    return
+else
+
+end
+
 local contextName = "ArticulationControls_ListOverview"
 --[[ 
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
@@ -30,13 +49,7 @@ end
  ]]
 local export = {}
 
-function getTrackColor(track)
-    local color  = reaper.GetTrackColor(track) 
-    --reaper.ShowConsoleMsg(tostring((reaper.ImGui_ColorConvertNative(color) << 8) | 0xFF) .. "\n")
 
-     -- shift 0x00RRGGBB to 0xRRGGBB00 then add 0xFF for 100% opacity
-    return color & 0x1000000 ~= 0 and (reaper.ImGui_ColorConvertNative(color) << 8) | 0xFF or colorTransparent 
-end
 
 function GetTextColorForBackground(u32_color)
     -- Extract 8-bit R, G, B from U32 (ImGui format: 0xAABBGGRR)
@@ -53,17 +66,23 @@ function GetTextColorForBackground(u32_color)
     end
 end
 
-function export.listOverviewSurface()
+function export.listOverviewSurface(focusIsOn)
     EnsureValidContext(ctx)    
     draw_list = reaper.ImGui_GetWindowDrawList(ctx)
-
-
+    modern_ui.apply(ctx)
+    
     local windowIsFocused      
-
-    reaper.ImGui_PushFont(ctx, font,  14)
-    local windowColorBg = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0, (100 - settings.listOverview_transparency)/100)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), windowColorBg)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBgActive(), colorBlack)
+    local menuOpen = false
+    local articulationChange = false
+    
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), (120 - settings.listOverview_transparency)/100)
+    --local windowColorBg = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0, (100 - settings.listOverview_transparency)/100)
+    --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), windowColorBg)
+    --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBgActive(), colorBlack)
+    
+    reaper.ImGui_PushFont(ctx, fontFat,  13)
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
+    --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), 8, 7)
 
     reaper.ImGui_SetNextWindowSize(ctx, 200, 600, reaper.ImGui_Cond_FirstUseEver())
     local visible, open =  reaper.ImGui_Begin(ctx, "Articulations List", true,
@@ -74,7 +93,10 @@ function export.listOverviewSurface()
             | reaper.ImGui_WindowFlags_MenuBar()
             
             )
-
+    --reaper.ImGui_PopStyleVar(ctx)
+    reaper.ImGui_PopFont(ctx)
+    
+    reaper.ImGui_PopStyleVar(ctx)
     if visible then    
 
       --[[
@@ -85,76 +107,52 @@ function export.listOverviewSurface()
         if waitForFocused > -1 then waitForFocused = waitForFocused + 1 end
 
 ]]      
+        
+        --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), 8, 4)
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), colorDarkGrey)
 
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), colorDarkGrey)
-        reaper.ImGui_PushFont(ctx, font,  12)
+        reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), 1)
+        reaper.ImGui_PushFont(ctx, font,  13)
         if reaper.ImGui_BeginMenuBar(ctx) then 
             --reaper.ImGui_PushFont(ctx, font,  12)
             
             --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), 0, 4)
-            if reaper.ImGui_BeginMenu(ctx, "Options") then
-                
-                local midi_editor = reaper.MIDIEditor_GetActive()
-                
-                if midi_editor then
-                    if reaper.ImGui_BeginMenu(ctx, "View") then
-                        
-                        local show = reaper.GetToggleCommandStateEx(32060, 42101) == 1
-                        if reaper.ImGui_Checkbox(ctx, "Show notation text on notes", show) then
-                            reaper.MIDIEditor_OnCommand(midi_editor, 42101) --View: Show notation text on notes 
-                        end
-                        
-                        local show = reaper.GetToggleCommandStateEx(32060, 40040) == 1
-                        if reaper.ImGui_Checkbox(ctx, "Show velocity handles on notes", show) then
-                            reaper.MIDIEditor_OnCommand(midi_editor, 40040) --View: Show velocity handles on notes
-                        end
-                        
-                        local show = reaper.GetToggleCommandStateEx(32060, 40045) == 1
-                        if reaper.ImGui_Checkbox(ctx, "Show note names on notes", show) then
-                            reaper.MIDIEditor_OnCommand(midi_editor, 40045) --View: Show note names on notes
-                        end
-                        
-                        
-                        local show = reaper.GetToggleCommandStateEx(32060, 40632) == 1
-                        if reaper.ImGui_Checkbox(ctx, "Show velocity numbers on notes", show) then
-                            reaper.MIDIEditor_OnCommand(midi_editor, 40632) --View: Show velocity numbers on notes
-                        end
-                        
-                        reaper.ImGui_Separator(ctx)
-                        
-                        
-                        local show = reaper.GetToggleCommandStateEx(32060, 42472) == 1
-                        if reaper.ImGui_Checkbox(ctx, "Only show CCs on channels of selected notes (MPE mode)", show) then
-                            reaper.MIDIEditor_OnCommand(midi_editor, 42472) --Options: only show CCs on channels of selected notes (MPE mode) 
-                        end
-                    
-                    
-                        reaper.ImGui_EndMenu(ctx)
-                    end
-                
-                
-                    if reaper.ImGui_BeginMenu(ctx, "Notation") then   
-                        if reaper.ImGui_Selectable(ctx, "Remove all notation for selected notes", false) then
-                            reaper.MIDIEditor_OnCommand(midi_editor, 41298) --Notation: Remove all notation for selected notes 
-                        end
-                        
-                        reaper.ImGui_EndMenu(ctx)
-                    end
-                else
-                    reaper.ImGui_Text(ctx, "Open midi editor to see midi editor options")
-                end
-                
-                reaper.ImGui_EndMenu(ctx)
-            end
+            
+            notation_events.options()
+            
             
             --local posX1 = reaper.ImGui_GetCursorPosX(ctx)
             if reaper.ImGui_BeginMenu(ctx, "Settings") then
-                
-                if reaper.ImGui_Checkbox(ctx, "Open/close list overview together with midi editor", settings.listOverview_onlyShowOnMidiEditor) then
-                    settings.listOverview_onlyShowOnMidiEditor = not settings.listOverview_onlyShowOnMidiEditor
+                menuOpen = true
+                if reaper.ImGui_Checkbox(ctx, "Show Layer text", settings.listOverview_showLayerText) then
+                    settings.listOverview_showLayerText = not settings.listOverview_showLayerText
+                    saveSettings()
+                end
+
+                reaper.ImGui_Indent(ctx)
+                if reaper.ImGui_Checkbox(ctx, "Show Layer text on layers with a single articulation", settings.listOverview_showLayerTextWithSingleArticulation) then
+                    settings.listOverview_showLayerTextWithSingleArticulation = not settings.listOverview_showLayerTextWithSingleArticulation
+                    saveSettings()
+                end
+                reaper.ImGui_Unindent(ctx)
+
+                if reaper.ImGui_Checkbox(ctx, "Organize buttons in group names", settings.listOverview_organizeButtonsInGroupNames) then
+                    settings.listOverview_organizeButtonsInGroupNames = not settings.listOverview_organizeButtonsInGroupNames
                     saveSettings()
                 end
                 
+                reaper.ImGui_Indent(ctx)
+                    if reaper.ImGui_Checkbox(ctx, "Show group name as header", settings.listOverview_showGroupNameAsHeader) then
+                        settings.listOverview_showGroupNameAsHeader = not settings.listOverview_showGroupNameAsHeader
+                        if settings.listOverview_showGroupNameAsHeader then 
+                            settings.listOverview_organizeButtonsInGroupNames = true
+                        end
+                        saveSettings()
+                    end
+                reaper.ImGui_Unindent(ctx)
+
+
+                reaper.ImGui_Separator(ctx)
                 if reaper.ImGui_Checkbox(ctx, "Only show list overview when there's a map", settings.listOverview_onlyShowWhenTheresAMap) then
                     settings.listOverview_onlyShowWhenTheresAMap = not settings.listOverview_onlyShowWhenTheresAMap
                     saveSettings()
@@ -169,15 +167,17 @@ function export.listOverviewSurface()
                 
 
                 reaper.ImGui_SetNextItemWidth(ctx, 150)
-                ret, settings.listOverview_transparency = reaper.ImGui_SliderInt(ctx, "Window transparency", settings.listOverview_transparency, 0, 100)
+                ret, settings.listOverview_transparency = reaper.ImGui_SliderInt(ctx, "Window transparency", settings.listOverview_transparency, 0, 80)
                 if ret then                 
                     saveSettings()
                 end
 
-                require("notation_event_settings").notation_event_settings()
+                notation_events.others()
 
                 reaper.ImGui_EndMenu(ctx)
             end
+            
+            reaper.ImGui_Text(ctx, (focusIsOn and " [" .. focusIsOn .. "]" or ""))
             --local posX2 = reaper.ImGui_GetCursorPosX(ctx)
             --reaper.ImGui_SetCursorPosX(ctx, 4)
             --if buttons.cogwheel(ctx, "listOverview_settings",  math.ceil(settings.listOverview_size/100 * 18), colorGrey, "Settings", colorGrey, colorWhite, colorTransparent, colorDarkGrey, colorDarkGrey, colorBlack) then
@@ -191,15 +191,26 @@ function export.listOverviewSurface()
         end
 
 
-        reaper.ImGui_PopStyleColor(ctx,1)
+        --reaper.ImGui_PopStyleColor(ctx,1)
         reaper.ImGui_PopFont(ctx)
+        
+        reaper.ImGui_PopStyleVar(ctx)
         --if reaper.ImGui_BeginPopup(ctx, "listOverview_settings") then
             
         
         --    reaper.ImGui_EndPopup(ctx)
         --end
-        
+        --[[
         windowIsFocused = reaper.ImGui_IsWindowFocused(ctx)
+        local forgroundHwnd = reaper.JS_Window_GetForeground()
+        local mainHwnd = reaper.GetMainHwnd()
+        
+        if reaper.ImGui_IsWindowHovered(ctx) and not windowIsFocused then
+            if forgroundHwnd == mainHwnd then 
+                last_window_focus = forgroundHwnd
+            end
+        end
+        ]]
         
         reaper.ImGui_PushFont(ctx, font,  math.ceil(settings.listOverview_size/100 * 12))
 
@@ -218,7 +229,7 @@ function export.listOverviewSurface()
         
         
         reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_SelectableTextAlign(), isLayerCollabsed and 0 or 0.5, 0) 
-        local trackColor = getTrackColor(track) or 0x222222FF 
+        local trackColor = modern_ui.getTrackColor(track) or 0x222222FF 
         local textColor = GetTextColorForBackground(trackColor)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), textColor)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), trackColor )
@@ -232,90 +243,152 @@ function export.listOverviewSurface()
         reaper.ImGui_PopStyleColor(ctx,4)
         reaper.ImGui_PopStyleVar(ctx)
 
-
-        reaper.ImGui_Separator(ctx)
-
-        local layerAmount = 0
-        for layerNumber, layer in pairs(triggerTableLayers) do
-            layerAmount = layerAmount + 1
+        if #triggerTableLayers == 1 then
+            reaper.ImGui_Separator(ctx)
         end
+        reaper.ImGui_Spacing(ctx)
         
+        local posX, posY = reaper.ImGui_GetItemRectMin(ctx)
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), 0x444444FF )
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), 0x555555FF)
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), 0x666666FF)
         
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), 0x444444FF )
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), 0x555555FF)
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), 0x666666FF)
-        
-
 
         local colorText = true
         local layerColor
-        local layerX, layerY, layerX2, layerY2
-        for layerNumber, layer in pairs(triggerTableLayers) do 
+        for layerNumber, layer in ipairs(triggerTableLayers) do 
+            local layerX, layerY, layerX2, layerY2
             local isLayerCollabsed = layerCollabsed[layerNumber]
-            if layerAmount > 1 then
+            if #triggerTableLayers > 1 then
                 layerColor = layer[1].layerColor and tonumber(layer[1].layerColor) or  0x000000FF
                 
-                
-                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xAAAAAAFF)
-                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), 0x222222FF )
-                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), 0x000000FF)
-                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), 0x000000FF)
-                
-                reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_SelectableTextAlign(), isLayerCollabsed and 0 or 0.5, 0) 
-                local layerName = "Layer " .. layerNumber .. (isLayerCollabsed and (": " .. layer[artSelected[layerNumber] + 1].articulation) or "")
-                if reaper.ImGui_Selectable(ctx,layerName, true, selectflag) then 
-                    reaper.TrackFX_SetParam(track, fxNumber, artSliders[layerNumber].param + 1, layerCollabsed[layerNumber] and 0 or 1) 
-                end
-                reaper.ImGui_PopStyleVar(ctx)
-                
-                layerX, layerY = reaper.ImGui_GetItemRectMin(ctx) 
-                
-                if not layerCollabsed[layerNumber] then
-                    reaper.ImGui_Separator(ctx)
-                end
-                
-                reaper.ImGui_PopStyleColor(ctx,4)
-            end
-            if not isLayerCollabsed then
-                for artNum, key in ipairs(layer) do
-                    isSelected = artNum - 1 == artSelected[layerNumber]
-                    local buttonTitle
-                    if #key.group > 0 then
-                        buttonTitle = key.group ..
-                        ": " .. -- \n" ..
-                        key.title:gsub("+ ", "+")--:gsub(" ", "\n")                                                    -- .. " " .. colorGradient
-                    else
-                        buttonTitle = key.title:gsub("+ ", "+")--:gsub(" ", "\n")                                      -- .. " " .. colorGradient
+                if (layerCollabsed[layerNumber]) or (settings.listOverview_showLayerText and (#layer > 1 or settings.listOverview_showLayerTextWithSingleArticulation))  then 
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xAAAAAAFF)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), 0x222222FF )
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), 0x000000FF)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), 0x000000FF)
+                    
+                    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_SelectableTextAlign(), isLayerCollabsed and 0 or 0.5, 0) 
+                    local layerName = "Layer " .. layerNumber .. (isLayerCollabsed and (": " .. layer[artSelected[layerNumber] + 1].articulation) or "")
+                    if reaper.ImGui_Selectable(ctx,layerName, true, selectflag) then 
+                        reaper.TrackFX_SetParam(track, fxNumber, artSliders[layerNumber].param + 1, layerCollabsed[layerNumber] and 0 or 1) 
                     end
+                    reaper.ImGui_PopStyleColor(ctx,4)
+                    reaper.ImGui_PopStyleVar(ctx)
+                    layerX, layerY = reaper.ImGui_GetItemRectMin(ctx) 
+
+                    if not layerCollabsed[layerNumber] then
+                        reaper.ImGui_Separator(ctx)
+                    end
+                end             
+            end
+
+            if not isLayerCollabsed or #triggerTableLayers == 1 then
+
+                local sortedGroups = {}
+                local groupFound = {}
+                local groupIndexCount = 1
+                local layerOrganized = {}
+                if settings.listOverview_organizeButtonsInGroupNames then 
+                    for artNum, key in ipairs(layer) do  
+                        local group = (key.group and key.group ~= "") and key.group or "NOGROUPTAG"
+                        if not groupFound[group] then 
+                            groupFound[group] = groupIndexCount
+                            sortedGroups[groupFound[group]] = {}
+                            groupIndexCount = groupIndexCount + 1
+                        end
+                        table.insert(sortedGroups[groupFound[group]], key)
+                    end         
+                    for artNum, gr in ipairs(sortedGroups) do
+                        for _, art in ipairs(gr) do
+                            table.insert(layerOrganized, art)
+                        end
+                    end   
+                else
+                    layerOrganized = layer
+                end
+              
+
+                local groupHeaderShown = {}
+                local groupAmountTbl = {}
+                local groupAmount = 0
+                for artNum, key in ipairs(layerOrganized) do        
+                    if key.group and not groupAmountTbl[key.group] then
+                        groupAmountTbl[key.group] = true
+                        groupAmount = groupAmount + 1
+                    end                
+                end
+                for artNum, key in ipairs(layerOrganized) do        
+                    if settings.listOverview_showGroupNameAsHeader then --#triggerTableLayers > 1 then
+                        if key.group and not groupHeaderShown[key.group] and groupAmount > 1 then
+                            groupHeaderShown[key.group] = true
+                            groupColor = key.groupColor and tonumber(key.groupColor) or  0x000000FF
+                        
+                        --if (layerCollabsed[layerNumber]) or (settings.listOverview_showLayerText and (#layer > 1 or settings.listOverview_showLayerTextWithSingleArticulation))  then 
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xAAAAAAFF)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), 0x00000000 )
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), 0x00000000)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), 0x00000000)
+                            
+                            reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_SeparatorTextAlign(), 0.5, 0.5) 
+                            local layerName = key.group
+                            
+                            reaper.ImGui_SeparatorText(ctx, key.group)
+                            --if reaper.ImGui_Selectable(ctx,layerName, true) then 
+                                --reaper.TrackFX_SetParam(track, fxNumber, artSliders[layerNumber].param + 1, layerCollabsed[layerNumber] and 0 or 1) 
+                            --end
+                            reaper.ImGui_PopStyleColor(ctx,4)
+                            reaper.ImGui_PopStyleVar(ctx)
+                            groupX, groupY = reaper.ImGui_GetItemRectMin(ctx) 
+
+                            if not groupCollabsed[layerNumber] then
+                                --reaper.ImGui_Separator(ctx)
+                            end
+                        end             
+                    end      
+                    
+                    isSelected = key.artInLayer == artSelected[layerNumber]
+                    local buttonTitle
+                    --if #key.group > 0 then
+                        buttonTitle = ((not settings.listOverview_showGroupNameAsHeader and key.group and key.group ~= "") and (key.group .. ": " ) or "") 
+                        .. key.title--:gsub("+ ", "+")--:gsub(" ", "\n")                                                    -- .. " " .. colorGradient
+                    --else
+                    ----    buttonTitle = key.title:gsub("+ ", "+")--:gsub(" ", "\n")                                      -- .. " " .. colorGradient
+                    --end
                     if reaper.ImGui_Selectable(ctx, buttonTitle .. "##" .. layerNumber .. ":".. artNum, isSelected) then 
-                        changeArticulation(key.programChange, key.articulation)
+                        changeArticulation(nil, key.articulation, focusIsOn)
+                        articulationChange = true
+                    end
+                    notation_events.buttons_tooltip()
+                    if not layerX then 
+                        layerX, layerY = reaper.ImGui_GetItemRectMin(ctx) 
                     end
                 end
                 
             end
             
-            if layerColor then 
+            if layerColor and layerX then 
                 layerX2, layerY2 = reaper.ImGui_GetItemRectMax(ctx)
-                reaper.ImGui_DrawList_AddRect(draw_list, layerX, layerY, layerX2, layerY2, layerColor)
+                reaper.ImGui_DrawList_AddRect(draw_list, layerX, layerY, layerX2, layerY2, layerColor, 6)
                 reaper.ImGui_Spacing(ctx)
             end
         end
         
-        reaper.ImGui_PopStyleColor(ctx,3)
+        --reaper.ImGui_PopStyleColor(ctx,3)
                 
         reaper.ImGui_PopFont(ctx)
         
         reaper.ImGui_End(ctx)
     end
-
-    reaper.ImGui_PopStyleColor(ctx,2)
-    reaper.ImGui_PopFont(ctx)
+    reaper.ImGui_PopStyleVar(ctx)
+    --reaper.ImGui_PopStyleColor(ctx,2)
+    modern_ui.ending(ctx)
 
     if not open then 
         setToggleCommandState(listOverview_command_id)
     end
 
-    return windowIsFocused
+    return articulationChange -- not menuOpen and windowIsFocused
 end
 
 

@@ -21,6 +21,7 @@ package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. sepera
 
 
 local addMapToInstruments = require("add_script_to_instrument").addMapToInstruments
+local modern_ui = require("modern_ui")
 
 -- Load pathes
 require("pathes")
@@ -30,20 +31,51 @@ local file_handling = require("file_handling")
 local mapping_handling = require("mapping_handling")
 local midi_note_names = require("midi_note_names")
 json = require("json")
+local export = require("export")
 require("imgui_colors")
+local articulation_scripts_library = require("articulation_scripts_library")
 
 local columnsToNotUseLanes = mapping_handling.columnsToNotUseLanes()
 
 local articulation_scripts_list_currentVersion = {}
-for i, script in ipairs(articulation_scripts_list) do 
-    local jsonString = file_handling.readFileForJsonLine(script.path)
-            
-    if jsonString then
-        if file_handling.importJsonString(jsonString) then 
-            table.insert(articulation_scripts_list_currentVersion, script)
+
+--function readLocalScripts()
+    --articulation_scripts_list_currentVersion = {}
+    for i, script in ipairs(articulation_scripts_list) do 
+        --local jsonString = file_handling.readFileForJsonLine(script.path) 
+        --if jsonString then 
+            --local foundJson, tbl = file_handling.importJsonString(jsonString)
+            --if foundJson then -- file_handling.importJsonString(jsonString) then 
+                table.insert(articulation_scripts_list_currentVersion, script)
+            --end
+        --end
+    end
+--end
+
+local database_path = scriptPath .. "articulation_scripts_library.txt"
+local database_articulation_scripts = {}
+
+local function readCloudDatabase()
+    local lines = file_handling.readFileLines(database_path, "//json:") 
+    for _, line in ipairs(lines) do
+        local foundJson, tbl = file_handling.importJsonString(line)
+        if foundJson then 
+            table.insert(database_articulation_scripts, tbl)
         end
     end
 end
+
+function updateCloudLibrary()
+    local text = articulation_scripts_library.readSharedText()
+    export.writeFile(database_path, text)
+    database_articulation_scripts = {}
+    readCloudDatabase()
+end
+
+--if reaper.file_exists(database_path) then 
+--updateCloudLibrary()
+readCloudDatabase()
+--end
 
 --[[ 
 local license = require("check_license")
@@ -74,15 +106,16 @@ end
 
 local ctx = reaper.ImGui_CreateContext('Articulation Script - Browser')
 
-
+local database_focus = "Local"
+local focusedScript, focusedScriptIndex
 ------------------------------------------------------------
 -- UI loop
 ------------------------------------------------------------
 local function loop()
-    
+    modern_ui.apply(ctx)
     reaper.ImGui_SetNextWindowSize(ctx, 600, 456, reaper.ImGui_Cond_Appearing())
     
-    local visible, open = reaper.ImGui_Begin(ctx, 'Articulation scripts - Scripts Browser Window', true, 
+    local visible, open = reaper.ImGui_Begin(ctx, 'Articulation Scripts Browser Window', true, 
     reaper.ImGui_WindowFlags_TopMost() 
     --| reaper.ImGui_WindowFlags_AlwaysAutoResize()
     
@@ -90,24 +123,67 @@ local function loop()
     )
     if visible then
         
-        if not focusedScriptIndex then focusedScriptIndex = 10 end
+        if not focusedScriptIndex then focusedScriptIndex = 1 end
                 
         modifierSettings = nil
         --local isEscape = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape())
         
+        
+        local btns = {"Local", "Database"}
+        for _, b in ipairs(btns) do
+            
+            if reaper.ImGui_RadioButton(ctx, b, database_focus == b) then
+                database_focus = b
+                focusedScriptIndex = nil
+            end
+            reaper.ImGui_SameLine(ctx)
+        end
+
+        local scripts_to_use =  database_focus == "Local" and articulation_scripts_list_currentVersion or database_articulation_scripts
+
+        if reaper.ImGui_Button(ctx, "UPDATE DATABASE") then
+            updateCloudLibrary()
+        end
+        
+        if focusedScriptIndex then 
+            -- on local we only read the file if we have it selected
+            if database_focus == "Local" then 
+                local jsonString = file_handling.readFileForJsonLine(scripts_to_use[focusedScriptIndex].path)
+                        
+                if jsonString then
+                    local foundJson, tbl = file_handling.importJsonString(jsonString) 
+                    if foundJson then 
+                        focusedScript = tbl
+                    end
+                end
+            else
+                focusedScript = scripts_to_use[focusedScriptIndex]
+            end
+        end
+
+        if focusedScript then 
+            reaper.ImGui_SameLine(ctx)
+            mapping = focusedScript.mapping
+            tableInfo = focusedScript.tableInfo
+            instrumentSettings = focusedScript.instrumentSettings
+            mapName = focusedScript.mapName
+            if reaper.ImGui_Button(ctx, "Add script to selected tracks") then
+                addMapToInstruments(mapName) 
+            end
+        end
+
         reaper.ImGui_BeginGroup(ctx)
         reaper.ImGui_TextColored(ctx, colorGrey, "ARTICULATION SCRIPTS")
         reaper.ImGui_Separator(ctx)
-        if reaper.ImGui_BeginChild(ctx, "Script name", 300) then
-            
-            
-            for i, script in ipairs(articulation_scripts_list_currentVersion) do 
+        
+        if reaper.ImGui_BeginChild(ctx, "Script name", 300) then 
+            for i, tbl in ipairs(scripts_to_use) do 
                 --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xAAAAAAFF)
                 --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), 0x222222FF )
                 --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), 0x000000FF)
                 --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), 0x000000FF)
-                
-                 if reaper.ImGui_Selectable(ctx,script.name .. "##" .. i, focusedScriptIndex == i) then  
+                local name = database_focus == "Local"  and tbl.name or tbl.mapName
+                if reaper.ImGui_Selectable(ctx, name .. "##" .. i, focusedScriptIndex == i) then  
                     focusedScriptIndex = i
                     --scriptAdded = addMapToInstruments(script)
                 end
@@ -124,142 +200,145 @@ local function loop()
         end
         
         if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_DownArrow()) then 
-            if focusedScriptIndex < #articulation_scripts_list_currentVersion then 
+            if focusedScriptIndex < #scripts_to_use then 
                 focusedScriptIndex = focusedScriptIndex + 1 
             end
         end
+        if focusedScriptIndex and focusedScriptIndex > #scripts_to_use then
+            focusedScriptIndex = 1
+        end
         
-        focusedScript = articulation_scripts_list_currentVersion[focusedScriptIndex]
+
         
         reaper.ImGui_SameLine(ctx)
         reaper.ImGui_BeginGroup(ctx)
         
-        function infoButtons(value, forceText) 
-            reaper.ImGui_TextColored(ctx, colorGrey, value ..":")
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_TextWrapped(ctx, forceText and forceText or instrumentSettings[value])
-        end
+        
         
         if focusedScript then 
-            local jsonString = file_handling.readFileForJsonLine(focusedScript.path)
-                    
-            if jsonString then
-                if file_handling.importJsonString(jsonString) then 
+            local mapping = focusedScript.mapping
+            local tableInfo = focusedScript.tableInfo
+            local instrumentSettings = focusedScript.instrumentSettings
+            local mapName = focusedScript.mapName
+            
+            function infoButtons(value, forceText) 
+                reaper.ImGui_TextColored(ctx, colorGrey, value ..":")
+                reaper.ImGui_SameLine(ctx)
+                reaper.ImGui_TextWrapped(ctx, forceText and forceText or (instrumentSettings and instrumentSettings[value]))
+            end
+            
+            reaper.ImGui_TextColored(ctx, colorGrey, "PREVIEW")
+            reaper.ImGui_Separator(ctx)
+            reaper.ImGui_TextColored(ctx, colorGrey, "Name:")
+            reaper.ImGui_SameLine(ctx)
+            reaper.ImGui_Text(ctx, mapName)
+            
+            infoButtons("Name", mapName) 
+            infoButtons("Creator") 
+            infoButtons("Vendor") 
+            infoButtons("Product") 
+            infoButtons("Patch") 
+            infoButtons("Info") 
+            
+            mappingType = mapping_handling.createTableOrderFromUsedMappings(mapping)  
+            local columnAmount = #mappingType 
+            totalItemAmount = (#tableInfo) * (columnAmount)
+            
+            local totalArticulations = 0
+            local totalLayers = 0
+            local layersUsed = {}
+            -- WE COULD ADD FILTERS, KEYSWITCHES ETC HERE
+            for _, t in ipairs(tableInfo) do
+                if t.Layer and not layersUsed[t.Layer] then 
+                    layersUsed[t.Layer] = true
+                    totalLayers = totalLayers + 1
+                elseif not layersUsed[1] then
+                    layersUsed[1] = true
+                    totalLayers = totalLayers + 1
+                end
+                if not t.isLane then
+                    totalArticulations = totalArticulations + 1 
+                end
+            end
+            
+            
+            reaper.ImGui_TextColored(ctx, colorGrey, "Articulations: " .. totalArticulations .. " / Layers: " .. totalLayers)
+            
+            --if reaper.ImGui_BeginChild(ctx, "tablechild2") then
+                                        
+            tableFlags = --
+                       
+                       reaper.ImGui_TableFlags_RowBg() 
+                       | reaper.ImGui_TableFlags_ScrollX()
+                       | reaper.ImGui_TableFlags_ScrollY()
+                       | reaper.ImGui_TableFlags_Borders()
+                       | reaper.ImGui_TableFlags_NoHostExtendX()
+                       | reaper.ImGui_TableFlags_NoHostExtendY()
+                       --| reaper.ImGui_TableFlags_SizingFixedFit()
+                       --| reaper.ImGui_TableFlags_Resizable()
+                       
+            if reaper.ImGui_BeginTable(ctx, 'table1', columnAmount, tableFlags) then
                 
-                    reaper.ImGui_TextColored(ctx, colorGrey, "PREVIEW")
-                    reaper.ImGui_Separator(ctx)
-                    reaper.ImGui_TextColored(ctx, colorGrey, "Name:")
-                    reaper.ImGui_SameLine(ctx)
-                    reaper.ImGui_Text(ctx, mapName)
-                    
-                    infoButtons("Name", mapName) 
-                    infoButtons("Creator") 
-                    infoButtons("Vendor") 
-                    infoButtons("Product") 
-                    infoButtons("Patch") 
-                    infoButtons("Info") 
-                    
-                    mappingType = mapping_handling.createTableOrderFromUsedMappings(mapping)  
-                    local columnAmount = #mappingType 
-                    totalItemAmount = (#tableInfo) * (columnAmount)
-                    
-                    local totalArticulations = 0
-                    local totalLayers = 0
-                    local layersUsed = {}
-                    -- WE COULD ADD FILTERS, KEYSWITCHES ETC HERE
-                    for _, t in ipairs(tableInfo) do
-                        if t.Layer and not layersUsed[t.Layer] then 
-                            layersUsed[t.Layer] = true
-                            totalLayers = totalLayers + 1
-                        elseif not layersUsed[1] then
-                            layersUsed[1] = true
-                            totalLayers = totalLayers + 1
-                        end
-                        if not t.isLane then
-                            totalArticulations = totalArticulations + 1 
+                reaper.ImGui_TableSetupScrollFreeze(ctx, 1, 1)
+                
+                for _, mappingName in ipairs(mappingType) do 
+                    local tbSize = _G["tableSize" .. mappingName]
+                    if not tbSize then                                             
+                        if mapping_handling.getNoteNumber(mappingName) then                                                
+                            tbSize = tableSizeNote                                                                                
+                        elseif mapping_handling.getCCNumber(mappingName) then                                                
+                            tbSize = tableSizeCC   
+                        --else
+                        --    tbSize = tableSizeOthers 
                         end
                     end
                     
-                    
-                    reaper.ImGui_TextColored(ctx, colorGrey, "Articulations: " .. totalArticulations .. " / Layers: " .. totalLayers)
-                    
-                    --if reaper.ImGui_BeginChild(ctx, "tablechild2") then
+                    --reaper.ImGui_TableSetupColumn(ctx, mappingName, reaper.ImGui_TableColumnFlags_WidthFixed(), tbSize)
+                end
                                                     
-                        tableFlags = --
-                                   
-                                   reaper.ImGui_TableFlags_RowBg() 
-                                   | reaper.ImGui_TableFlags_ScrollX()
-                                   | reaper.ImGui_TableFlags_ScrollY()
-                                   | reaper.ImGui_TableFlags_Borders()
-                                   | reaper.ImGui_TableFlags_NoHostExtendX()
-                                   | reaper.ImGui_TableFlags_NoHostExtendY()
-                                   --| reaper.ImGui_TableFlags_SizingFixedFit()
-                                   --| reaper.ImGui_TableFlags_Resizable()
-                                   
-                        if reaper.ImGui_BeginTable(ctx, 'table1', columnAmount, tableFlags) then
                             
-                            reaper.ImGui_TableSetupScrollFreeze(ctx, 1, 1)
-                            
-                            for _, mappingName in ipairs(mappingType) do 
-                                local tbSize = _G["tableSize" .. mappingName]
-                                if not tbSize then                                             
-                                    if mapping_handling.getNoteNumber(mappingName) then                                                
-                                        tbSize = tableSizeNote                                                                                
-                                    elseif mapping_handling.getCCNumber(mappingName) then                                                
-                                        tbSize = tableSizeCC   
-                                    --else
-                                    --    tbSize = tableSizeOthers 
-                                    end
-                                end
-                                
-                                --reaper.ImGui_TableSetupColumn(ctx, mappingName, reaper.ImGui_TableColumnFlags_WidthFixed(), tbSize)
-                            end
-                                                                
-                                        
-                                        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_TableBgTarget_CellBg(), colorGrey) 
-                            reaper.ImGui_TableNextRow(ctx)--, reaper.ImGui_TableRowFlags_Headers())
-                            --reaper.ImGui_TableHeadersRow(ctx)
-                            for column = 1, columnAmount  do
-                                reaper.ImGui_TableSetColumnIndex(ctx, column - 1)
-                                local column_name = mappingType[column]
-        
-                                visualColumnName = mapping_handling.getVisualColumnName(column_name)
-                                
-                                reaper.ImGui_Text(ctx, visualColumnName)
-                                reaper.ImGui_TableSetBgColor(ctx, reaper.ImGui_TableBgTarget_CellBg(), colorDarkGrey)  
-                            end
-                            
-                            --reaper.ImGui_PopStyleColor(ctx)
-                            
-                            for row = 1, #tableInfo do
-                                
-                                --reaper.ImGui_TableNextRow(ctx) 
-                                
-                                reaper.ImGui_TableNextRow(ctx) 
-                                for column = 1, columnAmount do
-                                    reaper.ImGui_TableSetColumnIndex(ctx, column - 1)
-                                    local columnName = mappingType[column]
-                                    local text = tableInfo[row][columnName]
-                                    if tostring(text):match("!!Lane") ~= nil then 
-                                        if columnsToNotUseLanes[columnName] then 
-                                            local mainLaneRow = mapping_handling.getMainLaneRow(tableInfo, columnName, row)
-                                            if tableInfo[mainLaneRow][columnName] then 
-                                                reaper.ImGui_TextColored(ctx, colorGrey, tableInfo[mainLaneRow][columnName])
-                                            end
-                                        end
-                                    else
-                                        reaper.ImGui_Text(ctx, text)
-                                    end
+                            --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_TableBgTarget_CellBg(), colorGrey) 
+                reaper.ImGui_TableNextRow(ctx)--, reaper.ImGui_TableRowFlags_Headers())
+                --reaper.ImGui_TableHeadersRow(ctx)
+                for column = 1, columnAmount  do
+                    reaper.ImGui_TableSetColumnIndex(ctx, column - 1)
+                    local column_name = mappingType[column]
+
+                    visualColumnName = mapping_handling.getVisualColumnName(column_name)
+                    
+                    reaper.ImGui_Text(ctx, visualColumnName)
+                    reaper.ImGui_TableSetBgColor(ctx, reaper.ImGui_TableBgTarget_CellBg(), colorDarkGrey)  
+                end
+                
+                --reaper.ImGui_PopStyleColor(ctx)
+                
+                for row = 1, #tableInfo do
+                    
+                    --reaper.ImGui_TableNextRow(ctx) 
+                    
+                    reaper.ImGui_TableNextRow(ctx) 
+                    for column = 1, columnAmount do
+                        reaper.ImGui_TableSetColumnIndex(ctx, column - 1)
+                        local columnName = mappingType[column]
+                        local text = tableInfo[row][columnName]
+                        if tostring(text):match("!!Lane") ~= nil then 
+                            if columnsToNotUseLanes[columnName] then 
+                                local mainLaneRow = mapping_handling.getMainLaneRow(tableInfo, columnName, row)
+                                if tableInfo[mainLaneRow][columnName] then 
+                                    reaper.ImGui_TextColored(ctx, colorGrey, tableInfo[mainLaneRow][columnName])
                                 end
                             end
-                                    
-                                
-                            
-                            reaper.ImGui_EndTable(ctx)
-                        --end
-                        --reaper.ImGui_EndChild(ctx)
+                        else
+                            reaper.ImGui_Text(ctx, text)
+                        end
                     end
                 end
+                        
+                    
+                
+                reaper.ImGui_EndTable(ctx)
+            --end
+            --reaper.ImGui_EndChild(ctx)
             end
         else
             reaper.ImGui_Text(ctx, "PREVIEW")
@@ -277,6 +356,8 @@ local function loop()
         reaper.ImGui_End(ctx)
     end
     
+    modern_ui.ending(ctx)
+
     if not toolbarSet then 
         setToolbarState(true) 
         toolbarSet = true

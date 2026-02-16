@@ -49,11 +49,16 @@ end
 function export.createTableOrderFromUsedMappings(mapping)
     -- WE DO THIS TO FORCE THE ORDER in our table
     local mappingType = {}
-    table.insert(mappingType, "Title")
-
+    
+    
     if mapping.Group then table.insert(mappingType, "Group") end
-
-
+    
+    table.insert(mappingType, "Title")
+    
+    if mapping.Color then table.insert(mappingType, "Color") end
+    
+    if mapping.Layer then table.insert(mappingType, "Layer") end
+    
     if mapping.Notation then table.insert(mappingType, "Notation") end
 
     local noteMappings = {}
@@ -95,7 +100,6 @@ function export.createTableOrderFromUsedMappings(mapping)
 
     ]]
 
-    if mapping.Layer then table.insert(mappingType, "Layer") end
     if mapping.Velocity then table.insert(mappingType, "Velocity") end
     if mapping.Channel then table.insert(mappingType, "Channel") end
     if mapping.Delay then table.insert(mappingType, "Delay") end
@@ -120,6 +124,7 @@ end
 function export.getTableSizes(fontSize, tableSizeTitle, tableSizeGroup)
     local tableSizes = {}
     tableSizes.Play = math.ceil(fontSize / 100 * 20)
+    tableSizes.Color = math.ceil(fontSize / 100 * 20)
     tableSizes.Title = math.ceil(fontSize / 100 * tableSizeTitle)
     tableSizes.Group = math.ceil(fontSize / 100 * tableSizeGroup)
     tableSizes.Others = math.ceil(fontSize / 100 * 90)
@@ -153,6 +158,8 @@ function export.getTableSizes(fontSize, tableSizeTitle, tableSizeGroup)
             tableWidth = tableWidth + tableSizes.Title
             --elseif mappingName == "PlayArticulation" then
             --    tableWidth = tableWidth + tableSizes.Group
+        elseif mappingName == "Color" then
+            tableWidth = tableWidth + tableSizes.Color
         elseif mappingName == "Group" then
             tableWidth = tableWidth + tableSizes.Group
         elseif export.getCCNumber(mappingName) then

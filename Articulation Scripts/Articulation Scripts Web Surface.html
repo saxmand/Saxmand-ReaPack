@@ -226,8 +226,13 @@
                                 //setTextForObject(document.getElementById("buttons"), dataPart);
                             }
                             if (tok[2] == "selectedArticulationIdx") {
-                                if (tok[3] >= 0 && document.getElementById(Math.floor(tok[3])) && articulationsFound) {
-                                    document.getElementById(Math.floor(tok[3])).style.background = "#ccc";
+                                const dataParts = tok[3].split(';')
+                                
+                                for (var b = 0; b < dataParts.length; ++b) {
+                                    const buttonNumber = dataParts[b]
+                                    if (buttonNumber != "" && buttonNumber >= 0 && document.getElementById(Math.floor(buttonNumber)) && articulationsFound) {
+                                        document.getElementById(Math.floor(buttonNumber)).style.background = "#ccc";
+                                    }
                                 }
                                 //document.getElementById(Math.floor(tok[3]) + 1).style["border-radius"] = "30px";
                                 //document.getElementById(Math.floor(tok[3]) + 1).style["border"] = "6px solid #222";

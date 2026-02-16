@@ -1,7 +1,6 @@
 -- @noindex
 
-version = 0.5
-
+version = 0.6
 
 local stateName = "ArticulationScripts"
 
@@ -45,6 +44,10 @@ local musicxml = require("musicxml")
 local addMap = require("add_script_to_instrument")
 local buttons = require("special_buttons")
 local midi_note_names = require("midi_note_names")
+local articulation_scripts_library = require("articulation_scripts_library")
+local json_text = require("json_text")
+local modern_ui = require("modern_ui")
+track_depending_on_selection = require("track_depending_on_selection")
 
 
 local embed_ui = require("embed_ui")
@@ -335,6 +338,8 @@ function importTable(specificFilePath)
             if not file_handling.importJsonString(jsonString) then
                 -- in case we could not import the json, we remove the undo point.
                 undo_redo.undo()
+            else
+                json_text.clearForKeyswitchInfo(tableInfo)
             end
         end
         -- modifierSettings,mappingType,mapping.CC, mapping.NoteH, mapping.NoteM, tableInfo, #tableInfo, mapName = unpickle(fileText)
@@ -423,16 +428,17 @@ end
 
 function deleteRows()
     if selectedArticulationsCountKeys and #selectedArticulationsCountKeys > 0 then  
+        undo_redo.commit({tableInfo, mapping})
         for i = #selectedArticulationsCountKeys, 1, -1 do
             local rowKey = selectedArticulationsCountKeys[i]
             table.remove(tableInfo, rowKey) 
         end
-        undo_redo.commit({tableInfo, mapping})
     end 
 end
 
 function makeArticulationALaneOrNot()
     if selectedArticulationsCountKeys and #selectedArticulationsCountKeys > 0 then  
+        undo_redo.commit({tableInfo, mapping})
         for i = #selectedArticulationsCountKeys, 1, -1 do
             local rowKey = selectedArticulationsCountKeys[i]
             if tableInfo[rowKey].isLane then
@@ -441,12 +447,12 @@ function makeArticulationALaneOrNot()
                 tableInfo[rowKey].isLane = true
             end
         end
-        undo_redo.commit({tableInfo, mapping})
     end 
 end
 
 function duplicateRows() 
     if (selectedArticulationsCountKeys and #selectedArticulationsCountKeys > 0) then  
+        undo_redo.commit({tableInfo, mapping})
         local rowsToDuplicate = {}
         for i, row in ipairs(selectedArticulationsCountKeys) do
             rowsToDuplicate[i] = {}
@@ -469,12 +475,12 @@ function duplicateRows()
         selectedArticulationsCountKeys = newSelectedArticulationsCountKeys
         focusNextRow = true
         setFocusOnNewMapping = true
-        undo_redo.commit({tableInfo, mapping})
     end
 end
 
 
 function addArticulation(multi)
+    undo_redo.commit({tableInfo, mapping})
     local insertRowFromSelection = (selectedArticulationsCountKeys and #selectedArticulationsCountKeys > 0)
     local insertRow =  (insertRowFromSelection and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 and (tableInfo and selectedArticulationsCountKeys[#selectedArticulationsCountKeys]) <= #tableInfo) and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 or #tableInfo + 1
     
@@ -496,15 +502,16 @@ function addArticulation(multi)
     --lastSelectedRow = nil 
     --updateItemFocus(insertRow, focusedColumn, 0, 0)
     addNewArticulation = true
-    undo_redo.commit({tableInfo, mapping})
 end
 
 
 function addLane()
+    undo_redo.commit({tableInfo, mapping})
     local insertRow = (selectedArticulationsCountKeys and #selectedArticulationsCountKeys > 0) and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 or #tableInfo + 1
     table.insert(tableInfo, insertRow, {["isLane"] = true}) 
-    undo_redo.commit({tableInfo, mapping})
+    selectSpecificArt = insertRow
     selectNewArt = true -- fix to not select last only
+    addNewArticulation = true
 end
 
 
@@ -637,7 +644,7 @@ autoFitWindow = true
 colorTransparent = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0,0)
 colorBlack = reaper.ImGui_ColorConvertDouble4ToU32(0.0,0,0,1)
 colorDarkGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.2,0.2,0.2,1)
-colorGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.4,0.4,1)
+colorGrey = theme.text_dim -- reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.4,0.4,1)
 colorLightGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.6,0.6,0.6,1)
 colorWhite = reaper.ImGui_ColorConvertDouble4ToU32(1, 1, 1,1)
 colorBlue = reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.2, 1,1)
@@ -1103,9 +1110,11 @@ local function loop()
     local minimumsWidth = math.ceil(appSettings.fontSize/100 * 680)
     reaper.ImGui_SetNextWindowBgAlpha(ctx, 1) -- Transparent background
     
+    modern_ui.apply(ctx)
+    --modern_ui.ApplyReaperThemeToImGui()
+    
     
     reaper.ImGui_SetNextWindowSize(ctx, minimumsWidth + 8, minimumsWidth*1.5, reaper.ImGui_Cond_FirstUseEver())
-
     local visible, open = reaper.ImGui_Begin(ctx, 'Articulation Creator', true,
     -- reaper.ImGui_WindowFlags_NoDecoration() |
                                              reaper.ImGui_WindowFlags_TopMost() -- | reaper.ImGui_WindowFlags_NoMove()
@@ -1181,7 +1190,7 @@ local function loop()
         
         reaper.ImGui_SameLine(ctx)
         
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), 100000)
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), 100000)
         
         
         reaper.ImGui_PushFont(ctx, font, math.ceil(appSettings.fontSize/100 * 34))
@@ -1285,9 +1294,9 @@ local function loop()
         --end
         
         
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabSelected(), colorTabSelected)
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabHovered(), colorTabHovered)
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Tab(), colorTab)
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabSelected(), colorTabSelected)
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabHovered(), colorTabHovered)
+        --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Tab(), colorTab)
 
         --reaper.ImGui_SameLine(ctx)
         --reaper.ImGui_InvisibleButton(ctx, "close", 30, 30) 
@@ -1397,9 +1406,22 @@ local function loop()
                     focusNameInput = 0
                 end
                 reaper.ImGui_SetNextItemWidth(ctx, math.ceil(appSettings.fontSize/100 * 540))
-                ret, stringInput = reaper.ImGui_InputText(ctx, "##nameinput", nil, reaper.ImGui_InputTextFlags_EnterReturnsTrue())
-                if ret and stringInput ~= "" then mapName = stringInput end
+                if not initialMapName then initialMapName = "" end
+                ret, initialMapName = reaper.ImGui_InputText(ctx, "##nameinput", initialMapName)--, reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                
                 dropFiles("mapName")
+                
+                local disable = not initialMapName or initialMapName == ""
+                if disable then reaper.ImGui_BeginDisabled(ctx) end
+                if reaper.ImGui_Button(ctx, 'Continue##name') or enter then  
+                    mapName = initialMapName; 
+                    initialMapName = nil
+                    enter = false
+                end
+                reaper.ImGui_SameLine(ctx)
+                reaper.ImGui_TextColored(ctx, colorGrey, "(enter)")
+                if disable then reaper.ImGui_EndDisabled(ctx) end
+            
                 
                 if not reaper.ImGui_IsItemFocused(ctx) and not popupOkCancelTitle and focusNameInput then
                     --focusNameInput = focusNameInput + 1
@@ -1409,7 +1431,7 @@ local function loop()
                 -- reaper.ImGui_SameLine(ctx)
                 
                 reaper.ImGui_PushFont(ctx, font, math.ceil(appSettings.fontSize/100 * 30))
-                if reaper.ImGui_Button(ctx, mapName, math.ceil(appSettings.fontSize/100 * 540)) or checkShortCut("R", true) then
+                if reaper.ImGui_Button(ctx, mapName .. "##mapname", math.ceil(appSettings.fontSize/100 * 540)) or checkShortCut("R", true) then
                     popup = "Name"
                     mapNameButton = ""
                     popupStringName = mapName or ""
@@ -1504,9 +1526,11 @@ local function loop()
             
             
             local firstArticulationPath = getFirstArticulationMapFXJsonLine(true)
-            local buttonsData = {{
-              name = "New", key = "N", shift = true, cmd = true, sameLine = false, func = function() newMap() end,
-              tip = 'Create a new map', disabled = not mapName --#tableInfo == 0
+            
+            
+            local buttonsData = {
+            {
+              name = "New", key = "N", shift = true, cmd = true, sameLine = false, func = function() newMap() end, tip = 'Create a new map', hide = not mapName 
             },{
               name = "Edit first selected", key = "E", cmd = true, sameLine = true, func = function() editFirstSelected(firstArticulationPath) end,
               tip = "Edit articulation map on first selected track.", 
@@ -1633,12 +1657,25 @@ local function loop()
                     reaper.ImGui_SetKeyboardFocusHere(ctx);
                     focusTrackAmountInput = true
                 end
-                ret, stringInput = reaper.ImGui_InputText(ctx, "##art", 1, reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
-                if ret and tonumber(stringInput) then
-                    --#tableInfo = tonumber(stringInput)
-                    addArticulation(tonumber(stringInput))
-                end
+                if not initialArticulationAmount then initialArticulationAmount = 1 end
+                ret, initialArticulationAmount = reaper.ImGui_InputText(ctx, "##art", initialArticulationAmount, reaper.ImGui_InputTextFlags_CharsDecimal())-- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                
                 dropFiles("articulation")
+                if reaper.ImGui_Button(ctx, 'Continue##artAmount') or (enter) then  
+                   if initialArticulationAmount and initialArticulationAmount ~= "" and tonumber(initialArticulationAmount) then
+                        --#tableInfo = tonumber(stringInput)
+                        addArticulation(tonumber(initialArticulationAmount))
+                        initialArticulationAmount = nil
+                    end
+                end
+
+                reaper.ImGui_SameLine(ctx)
+                reaper.ImGui_TextColored(ctx, colorGrey, "(enter)")
+
+                
+
+                
+
             else  
                 if reaper.ImGui_BeginTabBar(ctx, 'MyTabBar') then  
                     
@@ -1663,7 +1700,7 @@ local function loop()
                     settingsTabFlag = openMappingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
                     if reaper.ImGui_BeginTabItem(ctx, 'Mappings', openMappingsTab, settingsTabFlag) then
                         setToolTipFunc("Use cmd+shift+1 to select tab")
-                        
+                        scriptShared = false
                         
                         reaper.ImGui_BeginGroup(ctx)
                         --
@@ -2261,7 +2298,12 @@ local function loop()
                             if cmd and mouseDown then toggleSelectMouse = true end
                     
                             if selectNewArt then
-                                setFocus = (#tableInfo - 1) * columnAmount
+                                if selectSpecificArt then 
+                                    setFocus = (selectSpecificArt - 1) * columnAmount
+                                    selectSpecificArt = nil
+                                else
+                                    setFocus = (#tableInfo - 1) * columnAmount
+                                end
                                 selectNewArt = false
                             end
                     
@@ -2410,7 +2452,7 @@ local function loop()
                                 
                                 if mainLaneRow then reaper.ImGui_PopStyleColor(ctx) end
                                 
-                                if ret then  
+                                if ret and not mainLaneRow then  
                                     stringFix = numberWithinMinMax(stringInput,min,max, default) 
                                     local counter = 0
                                     for _, rowKey in ipairs(selectedArticulationsCountKeys) do
@@ -2903,7 +2945,7 @@ local function loop()
                             
                             local childSizeW = windowW - 16 < tableWidth and windowW - 16 or tableWidth
                             tableHeight = windowH - tableY  - (math.ceil(appSettings.fontSize / 100 * 40) + 30)
-                            if reaper.ImGui_BeginChild(ctx, "tablechild2", nil, tableHeight) then
+                            if reaper.ImGui_BeginChild(ctx, "tablechild2", childSizeW, tableHeight) then
                                 
                                 tableFlags = 
                                                 reaper.ImGui_TableFlags_ScrollY()
@@ -3599,7 +3641,8 @@ local function loop()
                     settingsTabFlag = openSettingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
                     if reaper.ImGui_BeginTabItem(ctx, 'Instrument Settings',openSettingsTab, settingsTabFlag) then
                         setToolTipFunc("Use cmd+shift+2 to select tab")
-                        
+                        scriptShared = false
+
                         local childSizeW = windowW - 16
                         if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 28)) then 
                             local width = 200
@@ -3708,7 +3751,15 @@ local function loop()
                             _, instrumentSettings.recognizeArticulationsKeyswitches = reaper.ImGui_Checkbox(ctx, "Recognize articulation triggers", instrumentSettings.recognizeArticulationsKeyswitches)
                             setToolTipFunc("If you want to the script to update when pressing articulations keyswitches or CC's manually")
                             
+                            --reaper.ImGui_Indent(ctx)
+                               -- _, instrumentSettings.organizeGroupsInFolders = reaper.ImGui_Checkbox(ctx, "Organize Groups with header in list overview surface", instrumentSettings.organizeGroupsInFolders)
+                               -- setToolTipFunc("Enabling this will use Groups only on the surfaces, and not as notation data.\nYou can use this for organizing, but without making notation data longer")
+                            --reaper.ImGui_Unindent(ctx)
+
+                            _, instrumentSettings.onlyUseGroupsVisually = reaper.ImGui_Checkbox(ctx, "Only use Groups visually and not in note names", instrumentSettings.onlyUseGroupsVisually)
+                            setToolTipFunc("Enabling this will use Groups only on the surfaces, and not as notation data.\nYou can use this for organizing, but without making notation data longer")
                             
+
                             if instrumentSettings.usePDC == nil then instrumentSettings.usePDC = true end 
                             _, instrumentSettings.usePDC = reaper.ImGui_Checkbox(ctx, "Use PDC", instrumentSettings.usePDC)
                             setToolTipFunc("Use script PDC timer delay instead of Track's media playback offset.\nThis option is only relevant if you script contains Delay")
@@ -3876,6 +3927,8 @@ local function loop()
                         settingsTabFlag = openNotationTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
                         if reaper.ImGui_BeginTabItem(ctx, 'Notation',openNotationTab, settingsTabFlag) then
                             setToolTipFunc("Use cmd+shift+3 to select tab")
+                            scriptShared = false
+
                             reaper.ImGui_TextColored(ctx, 0x777777FF, 'Notation is in developement and will be updated soon')
                             
                             reaper.ImGui_EndTabItem(ctx)
@@ -3964,9 +4017,20 @@ local function loop()
                                 reaper.ImGui_NewLine(ctx)
                                 reaper.ImGui_SameLine(ctx, infoTextOffset)
                                 
-                                if reaper.ImGui_Button(ctx, "SHARE SCRIPT TO DATABASE", textInputWidth, textInputWidth / 7) then
-                                
+                                local disable = scriptShared --last_shared_text and text == last_shared_text
+                                if disable then reaper.ImGui_BeginDisabled(ctx) end
+                                local btnName = disable and "SCRIPT SHARED!" or "SHARE SCRIPT TO DATABASE"
+                                if reaper.ImGui_Button(ctx, btnName, textInputWidth, textInputWidth / 7) then
+                                    local text = json_text.getSimple()
+                                    export.createObjectForExport()
+                                    reaper.CF_SetClipboard(text)
+                                    if articulation_scripts_library.appendSharedLibraryInChunks(text) then
+                                        --reaper.ShowConsoleMsg("HEJ\n")
+                                        scriptShared = true
+                                        --last_shared_text = text
+                                    end
                                 end 
+                                if disable then reaper.ImGui_BeginDisabled(ctx) end
                             
                                 reaper.ImGui_EndChild(ctx)
                             end
@@ -4211,8 +4275,9 @@ local function loop()
 
         windowW, windowH = reaper.ImGui_GetWindowSize(ctx)
         
+        local min_tableHeight = math.ceil(appSettings.fontSize / 100 * 130)
         if appSettings.autoResizeWindowHeight then
-            if tableEndPosY and tableHeight and math.abs(tableHeight - tableEndPosY) > 0 then
+            if tableEndPosY and tableHeight and math.abs(tableHeight - tableEndPosY) > min_tableHeight then
                 --if tableHeight > tableEndPosY then
                     windowH = windowH - (tableHeight - tableEndPosY)
                 --else
@@ -4226,7 +4291,6 @@ local function loop()
         else 
         end
         
-        local min_tableHeight = math.ceil(appSettings.fontSize / 100 * 130)
         if not hideTableButtons and tableHeight and tableHeight < min_tableHeight then 
             windowH = windowH + (min_tableHeight - tableHeight)
             reaper.ImGui_SetWindowSize(ctx, windowW, windowH)
@@ -4244,7 +4308,7 @@ local function loop()
             end
         end
 
-        reaper.ImGui_PopStyleColor(ctx, 4)
+        --reaper.ImGui_PopStyleColor(ctx, 4)
         reaper.ImGui_PopStyleVar(ctx, varAmount)
         reaper.ImGui_PopFont(ctx)
         reaper.ImGui_End(ctx)
@@ -4271,6 +4335,9 @@ local function loop()
         tableInfo = undo_redo.redo(tableInfo)
     end
     ]]
+
+    --modern_ui.ApplyReaperThemeToImGui_end()
+    modern_ui.ending(ctx)
     
     if firstLoop then 
         --editFirstSelected()

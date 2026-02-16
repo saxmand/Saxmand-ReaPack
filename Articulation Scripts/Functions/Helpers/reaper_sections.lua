@@ -1,3 +1,4 @@
+-- @noindex
 return {
     ["Main"] = 0,
     ["MIDI Editor"] = 32060,

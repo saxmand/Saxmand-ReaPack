@@ -1,4 +1,3 @@
--- @version 1.0
 -- @noindex
 
 local ex = {}
@@ -33,7 +32,7 @@ local function findLargestDelay(luaTable)
 end
 
 
-
+--[[ 
 
 local stateName = "ArticulationScripts"
 if not appSettings then 
@@ -44,23 +43,26 @@ if not appSettings then
         appSettings = {}
     end
 end
+ ]]
+
+
 
 function export.addMapToTrack(track, mapName)
-    local fxNumber
-    local fxFound = false
-    local fxAmount = reaper.TrackFX_GetCount(track)
-    for i = 0, fxAmount - 1 do
-        local _, fxName = reaper.TrackFX_GetFXName(track, i)
-        if fxName:match("Articulation Script") ~= nil then
-            fxFound = true -- , articulationMap = reaper.BR_TrackFX_GetFXModuleName(track,i+1,"FILE")
-            fxNumber = i
-            reaper.TrackFX_Delete(track, i)                    
-            break
-        end
+    if not track then return end
+    local fxNumber = track_depending_on_selection.findArticulationScript(track)
+    if fxNumber then 
+        reaper.TrackFX_Delete(track, fxNumber)
     end
-    local fxIndex = reaper.TrackFX_AddByName(track, mapName, false, -1)
+
+    --local fxIndex = reaper.TrackFX_AddByName(track, (mapName), false, -1)
+    local fxIndex = reaper.TrackFX_AddByName(track, ("JS: " .. mapName .. " (Articulation Script)"), false, -1)
+    --reaper.ShowConsoleMsg(fxIndex .. "\n")
     if fxIndex ~= -1 then
-        if not fxFound then fxNumber = 0 end
+        -- in case the articulation map is auto floating
+        local val = reaper.TrackFX_GetFloatingWindow(track, fxIndex)
+        if val then reaper.TrackFX_Show(track, fxIndex, 2) end
+
+        if not fxNumber then fxNumber = 0 end
         reaper.TrackFX_CopyToTrack(track, fxIndex, track, fxNumber, true)
         
         if appSettings.alwaysEmbedUi then
@@ -146,7 +148,7 @@ local function setArticulationScriptSettings(track, fxIndex, articulationScriptS
     local param_count = reaper.TrackFX_GetNumParams(track, fxIndex)
     for p = 0, param_count - 1 do
         local retval, param_name = reaper.TrackFX_GetParamName(track, fxIndex, p)
-        if articulationScriptSettings[param_name] then
+        if articulationScriptSettings[param_name] and param_name ~= "PDC delay" then
             reaper.TrackFX_SetParam(track, fxIndex, p, articulationScriptSettings[param_name])
         end
     end
@@ -161,7 +163,6 @@ function ex.updateOrAddMapAfterWait()
 end
 
 function ex.updateMapOnInstrumentsWithMap(mapName)       
-
     if not overWriteFile_Wait then 
         export.createObjectForExport() -- generate script
     else
@@ -176,7 +177,7 @@ function ex.updateMapOnInstrumentsWithMap(mapName)
             local fxAmount = reaper.TrackFX_GetCount(track)
             for fxIndex = 0, fxAmount - 1 do
                 local _, fxName = reaper.TrackFX_GetFXName(track, fxIndex)
-                if fxName:match("Articulation Script") ~= nil and fxName:match(mapName) ~= nil then
+                if fxName:find(" (Articulation Script)", 1, true) and fxName:find(mapName, 1, true) ~= nil then
                     local articulationScriptSettings = getArticulationScriptSettings(track, fxIndex)
                     export.addMapToTrack(track, mapName)
                     setArticulationScriptSettings(track, fxIndex, articulationScriptSettings) 
@@ -201,13 +202,21 @@ function ex.addMapToInstruments(mapName, doNotOverwrite)
         overWriteFile_Wait = false
     end
 
-    if not overWriteFile_Wait then 
-        local somethingAdded = false
-        for i = 0, reaper.GetNumTracks() - 1 do
-            local track = reaper.GetTrack(0, i)
-            if reaper.IsTrackSelected(track) then
-                export.addMapToTrack(track, mapName)-- .. " (Articulation script)")
-            end
+    if not overWriteFile_Wait then         
+        local midiEditor = reaper.MIDIEditor_GetActive()
+        local forgroundHwnd = reaper.JS_Window_GetForeground()
+        if forgroundHwnd == midiEditor then 
+            local take = reaper.MIDIEditor_GetTake(midiEditor)            
+            local track = reaper.GetMediaItemTake_Track(take)
+            export.addMapToTrack(track, mapName)-- .. " (Articulation script)")
+        else        
+            local somethingAdded = false
+            for i = 0, reaper.GetNumTracks() - 1 do
+                local track = reaper.GetTrack(0, i)
+                if reaper.IsTrackSelected(track) then
+                    export.addMapToTrack(track, mapName)-- .. " (Articulation script)")
+                end
+            end        
         end
         reaper.SetExtState(contextName, "ReloadArticulation", "1", true) 
         --return somethingAdded

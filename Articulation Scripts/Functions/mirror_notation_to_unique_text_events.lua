@@ -83,7 +83,7 @@ function export.mirror_notation_to_unique_text_events(take)
                     local noteType = tokens[4]
                     if noteType == "text" then 
                         local articulation = tokens[5]
-                        textEventText = articulation:sub(0,-4) 
+                        textEventText = articulation--:sub(0,-4) 
                     end  
                     if noteType == "articulation" then 
                         local articulation = tokens[5]

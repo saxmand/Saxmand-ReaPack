@@ -5,8 +5,8 @@ local retval, filename, sectionID, cmdID, mode, resolution, val = reaper.get_act
 -- If cmdID is non-zero → script was triggered as an action (user)
 -- If cmdID is 0 → usually run via another script (Main_OnCommandEx / NamedCommandLookup)
 
-if cmdID == 70649 then 
-    reaper.ShowConsoleMsg(tostring(reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0)).." hej\n")
+if cmdID == 70642 then 
+    --reaper.ShowConsoleMsg(tostring(reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0)).." hej\n")
     
     if 1 == reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386")) then --Script: Saxmand_Articulation_Background Server.lua
     --    reaper.Main_OnCommand(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0) --Script: Saxmand_Articulation_Background Server.lua
@@ -23,6 +23,7 @@ else
 
 end
     
+local ImGui = require 'imgui' '0.10'
 local edit_keyboard_layout = false
     
 local contextName = "Articulation_Scripts"
@@ -86,6 +87,13 @@ function EnsureValidContext(ctx)
   end
 end
 
+function toggleButtonColor(on)
+
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), on and theme.button_active or theme.button)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), color)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), on and theme.button)
+end
+
 function selectedButton(on)
     if on then
         return 0x666666FF
@@ -97,6 +105,14 @@ end
 function selectedButtonBlue(on)
     if on then
         return 0x222288FF
+    else
+        return 0x222222FF
+    end
+end
+
+function buttenSelectedColor(on)
+    if on then
+        return theme.button
     else
         return 0x222222FF
     end
@@ -115,10 +131,12 @@ local edit_keyboard_layout
 local edit_key_index
 local edit_key_row
 local resetNeeded = false
+local cache = {}
 
 local export = {}
-function export.keyboardTriggerSurface()
+function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
     EnsureValidContext(ctx)
+    modern_ui.apply(ctx)
     local buttonWidth = settings.keyboardTrigger_size
     local buttonHeight = buttonWidth 
     local buttonSpacer = math.ceil(buttonWidth/10)
@@ -126,18 +144,27 @@ function export.keyboardTriggerSurface()
     local keep_open = settings.keyboard_trigger_keep_open --getExtState("keyboard_trigger_keep_open", "false")
     local keep_focused = settings.keyboard_trigger_keep_focused--getExtState("keyboard_trigger_keep_focused", "true")
     draw_list = reaper.ImGui_GetWindowDrawList(ctx)
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), (100 - settings.keyboardTrigger_transparency)/100)
     
-    local windowColorBg = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0, (100 - settings.keyboardTrigger_transparency)/100)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), windowColorBg)
+    --local windowColorBg = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0, (100 - settings.keyboardTrigger_transparency)/100)
     
-    if reaper.ImGui_Begin(ctx, contextName .. "_Keyboard_Trigger", nil,
-                reaper.ImGui_WindowFlags_NoDecoration() |
+    --reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), windowColorBg)
+    
+    reaper.ImGui_PushFont(ctx, fontFat,  13)
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
+
+    local visible, open =  reaper.ImGui_Begin(ctx, "Keyboard Trigger Articulation Control", true,
+                --reaper.ImGui_WindowFlags_NoDecoration() |
                 reaper.ImGui_WindowFlags_NoDocking() |
                 reaper.ImGui_WindowFlags_TopMost()                 -- | reaper.ImGui_WindowFlags_NoMove()
             -- | reaper.ImGui_WindowFlags_NoBackground()
             -- | reaper.ImGui_FocusedFlags_None()
+            | reaper.ImGui_WindowFlags_MenuBar()
             )
-    then    
+    reaper.ImGui_PopFont(ctx)    
+    reaper.ImGui_PopStyleVar(ctx)
+
+    if visible then    
         reaper.ImGui_SetWindowSize(ctx, 0, 0)
         if firstFrame then
             windowHeight = buttonHeight * (#(allRows) + 0.5) + margin * 1
@@ -173,9 +200,81 @@ function export.keyboardTriggerSurface()
         delete = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Delete())
         enter = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter())
         
+        function getAllImguiKeys()
+            local enum = "Key"
+            local enum_cache = cache[enum]
+            if not enum_cache then
+                enum_cache = {}
+                cache[enum] = enum_cache
+
+                for func_name, value in pairs(ImGui) do
+                local enum_name = func_name:match(('^%s_(.+)$'):format(enum))
+                if enum_name then
+                    enum_cache[#enum_cache + 1] = {value, enum_name}
+                end
+                end
+                table.sort(enum_cache, function(a, b) return a[1] < b[1] end)
+            end
+
+            local i = 0
+            return function()
+                i = i + 1
+                if not enum_cache[i] then return end
+                return table.unpack(enum_cache[i])
+            end
+        end
+        local imgui_key_pressed
+        for key, name in getAllImguiKeys() do
+            if reaper.ImGui_IsKeyPressed(ctx, key) then
+                if name:match("Shift") == nil and name:match("Alt") == nil and name:match("Super") == nil and name:match("Ctrl") == nil then 
+                    imgui_key_pressed = name
+                end
+            end
+        end
         
         if retval then 
-            if unicode_char == 167 then keyInput = "§"
+            if unicode_char == 32 then keyInput = " "
+            elseif unicode_char == 33 then keyInput = "!"
+            elseif unicode_char == 34 then keyInput = "\""
+            elseif unicode_char == 35 then keyInput = "#"
+            elseif unicode_char == 36 then keyInput = "$"
+            elseif unicode_char == 37 then keyInput = "%"
+            elseif unicode_char == 38 then keyInput = "&"
+            elseif unicode_char == 39 then keyInput = "'"
+            elseif unicode_char == 40 then keyInput = "("
+            elseif unicode_char == 41 then keyInput = ")"
+            elseif unicode_char == 42 then keyInput = "*"
+            elseif unicode_char == 43 then keyInput = "+"
+            elseif unicode_char == 44 then keyInput = ","
+            elseif unicode_char == 45 then keyInput = "-"
+            elseif unicode_char == 46 then keyInput = "."
+            elseif unicode_char == 47 then keyInput = "/"
+
+            elseif unicode_char >= 48 and unicode_char <= 57 then
+                keyInput = string.char(unicode_char) -- 0–9
+
+            elseif unicode_char == 58 then keyInput = ":"
+            elseif unicode_char == 59 then keyInput = ";"
+            elseif unicode_char == 60 then keyInput = "<"
+            elseif unicode_char == 61 then keyInput = "="
+            elseif unicode_char == 62 then keyInput = ">"
+            elseif unicode_char == 63 then keyInput = "?"
+            elseif unicode_char == 64 then keyInput = "@"
+
+            elseif unicode_char >= 65 and unicode_char <= 90 then
+                keyInput = string.char(unicode_char) -- A–Z
+
+            elseif unicode_char == 91 then keyInput = "["
+            elseif unicode_char == 92 then keyInput = "\\"
+            elseif unicode_char == 93 then keyInput = "]"
+            elseif unicode_char == 94 then keyInput = "^"
+            elseif unicode_char == 95 then keyInput = "_"
+            elseif unicode_char == 96 then keyInput = "`"
+
+            elseif unicode_char >= 97 and unicode_char <= 122 then
+                keyInput = string.char(unicode_char) -- a–z
+            
+            elseif unicode_char == 167 then keyInput = "§"
             elseif unicode_char == 192 then keyInput = "À"
             elseif unicode_char == 193 then keyInput = "Á"
             elseif unicode_char == 194 then keyInput = "Â"
@@ -243,6 +342,9 @@ function export.keyboardTriggerSurface()
             elseif unicode_char == 255 then keyInput = "ÿ"
             end
             
+            if not imgui_key_pressed then 
+                imgui_key_pressed = keyInput
+            end
         end
         keyInput = keyInput:upper()
         --[[
@@ -263,148 +365,203 @@ function export.keyboardTriggerSurface()
       ]] --
       
       
-        posX = startPosX
-        posY = startPosY
 
-        if buttons.cogwheel(ctx, "keyboardTriggerSettings",  math.ceil(buttonWidth/100 * 30), colorGrey, "Settings", colorGrey, colorWhite, colorTransparent, colorDarkGrey, colorDarkGrey, colorBlack) then
-            reaper.ImGui_OpenPopup(ctx, "keyboardTriggerSettings")
-        end
-        
-        if reaper.ImGui_BeginPopup(ctx, "keyboardTriggerSettings") then
-            if reaper.ImGui_Button(ctx, "Edit keyboard layout") then
-                edit_keyboard_layout = not edit_keyboard_layout 
-                if not edit_keyboard_layout then
+
+        reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), 1)
+        reaper.ImGui_PushFont(ctx, font,  13)
+        if reaper.ImGui_BeginMenuBar(ctx) then 
+            --reaper.ImGui_PushFont(ctx, font,  12)
+            
+            --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), 0, 4)
+            
+            notation_events.options()
+            
+            
+            --local posX1 = reaper.ImGui_GetCursorPosX(ctx)
+            if reaper.ImGui_BeginMenu(ctx, "Settings") then
+
+                if reaper.ImGui_Checkbox(ctx, "Show group name", settings.keyboardTrigger_showGroupText) then
+                    settings.keyboardTrigger_showGroupText = not settings.keyboardTrigger_showGroupText
+                    saveSettings()
+                end
+
+
+                if reaper.ImGui_Checkbox(ctx, "Passthrough keys that don't have articulations", settings.keyboardTrigger_passthroughKeys) then
+                    settings.keyboardTrigger_passthroughKeys = not settings.keyboardTrigger_passthroughKeys
+                    saveSettings()
+                end
+                
+                reaper.ImGui_Indent(ctx)
+                    if reaper.ImGui_Checkbox(ctx, "Only non articulations keys", settings.keyboardTrigger_passthroughKeys_only_non) then
+                        settings.keyboardTrigger_passthroughKeys_only_non = not settings.keyboardTrigger_passthroughKeys_only_non
+                        saveSettings()
+                    end
+                    setToolTipFunc("This will omit any keys that can be used as articulation triggers.\nYou can which keys to use in the settings.")
+                reaper.ImGui_Unindent(ctx)
+
+                reaper.ImGui_Separator(ctx)
+                
+                if reaper.ImGui_Button(ctx, "Edit keyboard layout") then
+                    edit_keyboard_layout = not edit_keyboard_layout 
+                    if not edit_keyboard_layout then
+                        --reaper.SetExtState(contextName, "ReloadArticulation", "1", true)
+                        resetNeeded = true
+                    end
+                    reaper.ImGui_CloseCurrentPopup(ctx)
+                end
+                
+                reaper.ImGui_SameLine(ctx) 
+                reaper.ImGui_Text(ctx, "Reset to default:")
+                reaper.ImGui_SameLine(ctx) 
+                if reaper.ImGui_Button(ctx, "US") then
+                    keyboard_functions.resetKeyboard("US")
                     --reaper.SetExtState(contextName, "ReloadArticulation", "1", true)
+                    reaper.ImGui_CloseCurrentPopup(ctx)
                     resetNeeded = true
                 end
-                reaper.ImGui_CloseCurrentPopup(ctx)
+                reaper.ImGui_SameLine(ctx) 
+                if reaper.ImGui_Button(ctx, "DA") then
+                    keyboard_functions.resetKeyboard("DA")
+                    --reaper.SetExtState(contextName, "ReloadArticulation", "1", true)
+                    reaper.ImGui_CloseCurrentPopup(ctx)
+                    resetNeeded = true
+                end
+                reaper.ImGui_SameLine(ctx) 
+                if reaper.ImGui_Button(ctx, "AZERTY") then
+                    keyboard_functions.resetKeyboard("AZERTY")
+                    --reaper.SetExtState(contextName, "ReloadArticulation", "1", true)
+                    reaper.ImGui_CloseCurrentPopup(ctx)
+                    resetNeeded = true
+                end
+                
+                
+                ret, settings.keyboardTrigger_size = reaper.ImGui_SliderInt(ctx, "Size", settings.keyboardTrigger_size, 10, 200)
+                if ret then  
+                    saveSettings()
+                end
+                
+                ret, settings.keyboardTrigger_transparency = reaper.ImGui_SliderInt(ctx, "Window transparency", settings.keyboardTrigger_transparency, 0, 80)
+                if ret then
+                    saveSettings()
+                end
+                
+                
+                ret, settings.keyboardTrigger_textSize = reaper.ImGui_SliderInt(ctx, "Text Size", settings.keyboardTrigger_textSize, 4, 40)
+                if ret then
+                    saveSettings()
+                end
+                
+
+                notation_events.others()
+
+                reaper.ImGui_EndMenu(ctx)
             end
-            
-            reaper.ImGui_SameLine(ctx) 
-            reaper.ImGui_Text(ctx, "Reset to default:")
-            reaper.ImGui_SameLine(ctx) 
-            if reaper.ImGui_Button(ctx, "US") then
-                keyboard_functions.resetKeyboard("US")
-                --reaper.SetExtState(contextName, "ReloadArticulation", "1", true)
-                reaper.ImGui_CloseCurrentPopup(ctx)
-                resetNeeded = true
+
+            ---------- OTHER BUTTONS ON MENU LINE
+            ---
+            reaper.ImGui_AlignTextToFramePadding(ctx)   
+            reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 0)
+
+            reaper.ImGui_Text(ctx, (focusIsOn and " [" .. focusIsOn .. "]" or ""))
+
+            local trackColor = modern_ui.getTrackColor(track) or 0x222222FF 
+            local textColor = GetTextColorForBackground(trackColor)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), textColor)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), trackColor )
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), trackColor)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), trackColor)
+            --reaper.ImGui_Text(ctx, tostring(trackName))
+            if reaper.ImGui_Button(ctx,trackName) then 
+                local val = reaper.TrackFX_GetFloatingWindow(track, fxNumber)
+                reaper.TrackFX_Show(track, fxNumber, not val and 3 or 2)
             end
-            reaper.ImGui_SameLine(ctx) 
-            if reaper.ImGui_Button(ctx, "DA") then
-                keyboard_functions.resetKeyboard("DA")
-                --reaper.SetExtState(contextName, "ReloadArticulation", "1", true)
-                reaper.ImGui_CloseCurrentPopup(ctx)
-                resetNeeded = true
+            reaper.ImGui_PopStyleColor(ctx,4)
+
+
+            if resetNeeded or edit_keyboard_layout then 
+                reaper.ImGui_Text(ctx, "Edit keyboard layout   |   Press key on your keyboard to remap the selected key   |   Use arrows to navigate   |   Delete or backspace to remove   |   Press escape to finish")            
+            else      
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), keep_open and theme.accent or theme.button)
+                if reaper.ImGui_Button(ctx,"Keep open: " .. (keep_open and "On" or "Off")) then        
+                    settings.keyboard_trigger_keep_open = not settings.keyboard_trigger_keep_open
+                    saveSettings()
+                end
+                reaper.ImGui_PopStyleColor(ctx, 1)
+                
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), keep_focused and theme.accent or theme.button)
+                if reaper.ImGui_Button(ctx,"Keep focused: " .. (keep_focused and "On" or "Off")) then        
+                    settings.keyboard_trigger_keep_focused = not settings.keyboard_trigger_keep_focused
+                    saveSettings()                
+                end
+                reaper.ImGui_PopStyleColor(ctx, 1)
+
+                if reaper.ImGui_IsWindowFocused(ctx) then 
+                     --reaper.ImGui_Text(ctx, (focusIsOn and " [" .. focusIsOn .. "]" or ""))
+                end
+                
+                if lastChar and lastCommand then
+                    reaper.ImGui_SameLine(ctx)
+                    reaper.ImGui_Text(ctx, "Passthrough: " .. lastChar .. " (" .. lastCommand .. ")")
+                end
             end
-            reaper.ImGui_SameLine(ctx) 
-            if reaper.ImGui_Button(ctx, "AZERTY") then
-                keyboard_functions.resetKeyboard("AZERTY")
-                --reaper.SetExtState(contextName, "ReloadArticulation", "1", true)
-                reaper.ImGui_CloseCurrentPopup(ctx)
-                resetNeeded = true
-            end
+            reaper.ImGui_PopStyleVar(ctx)
+
             
-            
-            ret, settings.keyboardTrigger_size = reaper.ImGui_SliderInt(ctx, "Size", settings.keyboardTrigger_size, 10, 200)
-            if ret then  
-                saveSettings()
-            end
-            
-            ret, settings.keyboardTrigger_transparency = reaper.ImGui_SliderInt(ctx, "Window transparency", settings.keyboardTrigger_transparency, 0, 100)
-            if ret then
-                saveSettings()
-            end
-            
-            require("notation_event_settings").notation_event_settings()
-            
-            reaper.ImGui_EndPopup(ctx)
+            --local posX2 = reaper.ImGui_GetCursorPosX(ctx)
+            --reaper.ImGui_SetCursorPosX(ctx, 4)
+            --if buttons.cogwheel(ctx, "listOverview_settings",  math.ceil(settings.listOverview_size/100 * 18), colorGrey, "Settings", colorGrey, colorWhite, colorTransparent, colorDarkGrey, colorDarkGrey, colorBlack) then
+                --reaper.ImGui_OpenPopup(ctx, "listOverview_settings")
+            --end
+            --reaper.ImGui_SetCursorPosX(ctx, posX2)
+
+            --reaper.ImGui_PopStyleVar(ctx)
+            --reaper.ImGui_PopFont(ctx)
+            reaper.ImGui_EndMenuBar(ctx)
         end
+
+
+        --reaper.ImGui_PopStyleColor(ctx,1)
+        reaper.ImGui_PopFont(ctx)
+        
+        reaper.ImGui_PopStyleVar(ctx)
+
+        posX = startPosX
+        posY = startPosY
+        --if buttons.cogwheel(ctx, "keyboardTriggerSettings",  math.ceil(buttonWidth/100 * 30), colorGrey, "Settings", colorGrey, colorWhite, colorTransparent, colorDarkGrey, colorDarkGrey, colorBlack) then
+        --    reaper.ImGui_OpenPopup(ctx, "keyboardTriggerSettings")
+        --end
+        
+        --if reaper.ImGui_BeginPopup(ctx, "keyboardTriggerSettings") then
+            
+            
+           -- reaper.ImGui_EndPopup(ctx)
+       -- end
+
         if edit_keyboard_layout and (not edit_key_row or not edit_key_index) then 
             edit_key_row = 1
             edit_key_index = 1
         end
-        
-        reaper.ImGui_SameLine(ctx)
+        --reaper.ImGui_SameLine(ctx)
         
 
         mainText = (resetNeeded or edit_keyboard_layout) and "Edit keyboard layout" or "Keyboard Trigger Articulation Control"
-        mainText = mainText -- .. " - click a letter to color"
+        --mainText = mainText -- .. " - click a letter to color"
         -- reaper.ImGui_DrawList_AddTextEx(draw_list,font,font_size,posX, posY, 0xFFFFFFFF, mainText, 0.0)
 
         
 
-        reaper.ImGui_PushFont(ctx, font,  math.ceil(buttonWidth/100 * 20))
+        --reaper.ImGui_PushFont(ctx, font,  math.ceil(buttonWidth/100 * 20))
         --reaper.ImGui_SetCursorPos(ctx, posX, posY)
-        reaper.ImGui_Text(ctx, mainText)
-        reaper.ImGui_PopFont(ctx)
+        --reaper.ImGui_Text(ctx, mainText)
+        --reaper.ImGui_PopFont(ctx)
         
         
-        posY = posY + buttonHeight / 2
-        if resetNeeded or edit_keyboard_layout then 
-            reaper.ImGui_AlignTextToFramePadding(ctx)   
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_SetCursorPosY(ctx, 12)
-            reaper.ImGui_Text(ctx, " |   Press key on your keyboard to remap the selected key   |   Use arrows to navigate   |   Delete or backspace to remove   |   Press escape to finish")            
-        else
-            --[[
-          
-    
-          local currentDeviceShow = reaper.GetExtState("articulationMapOnDevice","useOnlyOnDevice")
-          if not currentDeviceShow or currentDeviceShow == "0" then
-            newValue = "1"
-          else
-            newValue = "0"
-          end
-    
-          if reaper.ImGui_Button(ctx,newValue == "1" and "show" or "hide") then
-            reaper.SetExtState("articulationMapOnDevice","useOnlyOnDevice",newValue,true)
-          end
-          ]]
-    
-            
-            
-            reaper.ImGui_SameLine(ctx)
-            
-            
-            reaper.ImGui_AlignTextToFramePadding(ctx)
-            reaper.ImGui_PushFont(ctx, font,  math.ceil(buttonWidth/100 * 18))
-            local color = selectedButton(keep_open)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), color)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), color)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), color - hoverDifference)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), keep_open and 0xFFFFFFFF or 0x999999FF)
-            if reaper.ImGui_Button(ctx,"Keep open: " .. (keep_open and "On" or "Off")) then        
-                settings.keyboard_trigger_keep_open = not settings.keyboard_trigger_keep_open
-                saveSettings()
-            end
-            reaper.ImGui_PopStyleColor(ctx, 4)
-            
-            
-            reaper.ImGui_SameLine(ctx)
-            local color = selectedButton(keep_focused)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), color)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), color)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), color - hoverDifference)
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), keep_focused and 0xFFFFFFFF or 0x999999FF)
-            if reaper.ImGui_Button(ctx,"Keep focused: " .. (keep_focused and "On" or "Off")) then        
-                settings.keyboard_trigger_keep_focused = not settings.keyboard_trigger_keep_focused
-                saveSettings()                
-            end
-            reaper.ImGui_PopStyleColor(ctx, 4)
-            
-            reaper.ImGui_PopFont(ctx)
-              
-    
-            --if retval and keyInput then lastKeyInput = keyInput end
-            reaper.ImGui_PushFont(ctx, font, fontSize)
-            if lastChar and lastCommand then
-                reaper.ImGui_Text(ctx, "Passthrough: " .. lastChar .. " (" .. lastCommand .. ")")
-            end
-            reaper.ImGui_PopFont(ctx)
-        end
+        posY = posY + 36--buttonHeight / 2 --+ 8
+
         
         
-        
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorDarkGrey)
+        reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
         -- Evaluate the JSFX slider value
         if track and fxNumber then
             --selectedArticulationIdx, minval, maxval = reaper.TrackFX_GetParam(track, fxNumber, 0) -- 0 is the parameter index, 0 is the parameter value
@@ -419,7 +576,7 @@ function export.keyboardTriggerSurface()
                     -- currentFont = reaper.ImGui_GetFont(ctx)
                     -- currentFont.FontSize = font_size
                     
-                    buttonTitle = " "
+                    buttonTitle = ""
                     color = 0x00000040
                     textColor = 0x444444FF
                     if resetNeeded or edit_keyboard_layout then
@@ -430,22 +587,19 @@ function export.keyboardTriggerSurface()
                             color = pulsatingColor(colorGrey, speed)
                         end
                     else
+
                         if triggerTableKeys[key] then
-                            if #triggerTableKeys[key].group > 0 then
+                            if #triggerTableKeys[key].group > 0 and lol then
                                 buttonTitle = triggerTableKeys[key].group ..
                                 ":\n" ..
                                 triggerTableKeys[key].title:gsub("+ ", "+"):gsub(" ", "\n")                                                    -- .. " " .. colorGradient
                             else
-                                buttonTitle = triggerTableKeys[key].title:gsub("+ ", "+"):gsub(" ", "\n")                                      -- .. " " .. colorGradient
+                                buttonTitle = triggerTableKeys[key].title--:gsub("+ ", "+"):gsub(" ", "\n")                                      -- .. " " .. colorGradient
                             end
                             colorTitle = buttonTitle
-                            isSelected = triggerTableKeys[key].programChange == selectedArticulationIdx
-                            color = selectedButtonBlue(isSelected) -- 0x222222FF or 0
+                            isSelected = triggerTableKeys[key].artInLayer == artSelected[triggerTableKeys[key].layer]
+                            color = buttenSelectedColor(isSelected) -- 0x222222FF or 0
                             textColor = 0xFFFFFFFF
-                        --[[elseif key == "<" then
-                            color = selectedButton(keep_open)
-                            buttonTitle = "Keep\nOpen"
-                            textColor = 0x444444FF]]
                         else
                             buttonTitle = " "
                             color = 0x00000040
@@ -464,32 +618,60 @@ function export.keyboardTriggerSurface()
                     buttonSizeH = buttonHeight - buttonSpacer
 
                     -- if triggerTableKeys[key].title  or key == "K" or key == "<"   or key == "J" or key == "I"  or key == "0" or key == "+" or key == "-" then
-                    
-                    if (not resetNeeded and not edit_keyboard_layout and not shift and (retval and keyInput and key == keyInput)) or
-                        --if (key == keyInput) or
-                        (reaper.ImGui_Button(ctx, buttonTitle .. "##" .. r .. ":" .. k, buttonSizeW, buttonSizeH)) then
+                    function clickingArticulation()
                         if edit_keyboard_layout then
                             edit_key_row = r
                             edit_key_index = k
                         else
                             if triggerTableKeys[key] then
-                                changeArticulation(triggerTableKeys[key].programChange, triggerTableKeys[key].articulation)
+                                changeArticulation(triggerTableKeys[key].programChange, triggerTableKeys[key].articulation, focusIsOn)
                                 finish = true
                                 lastClickedColor = buttonTitle
-                                reaper.SetExtState(contextName, "lastClickedArticulation", buttonTitle, true)
-                            elseif key == "<" then
-                                --reaper.ShowConsoleMsg(tostring(keep_open))
-                                --keep_open = not keep_open
-                                --reaper.SetExtState(contextName, "keep_open", tostring(keep_open), true)
-                                --elseif key == "," then
-                                --passThroughCommand(9900)
-                                --elseif key == "." then
-                                --passThroughCommand(9901)
-                            else
-                            
+                                reaper.SetExtState(contextName, "lastClickedArticulation", buttonTitle, true)                            
                             end
                         end
                     end
+                        --if (key == keyInput) or
+                    if (reaper.ImGui_Button(ctx,  "##" .. r .. ":" .. k, buttonSizeW, buttonSizeH)) then
+                        clickingArticulation()
+                    end
+                    if (not resetNeeded and not edit_keyboard_layout and (retval and imgui_key_pressed and key == imgui_key_pressed)) then
+                        clickingArticulation()
+                    end
+
+                    if not edit_keyboard_layout then 
+                        notation_events.buttons_tooltip()   
+                    end
+
+                    btnX1, btnY1 = reaper.ImGui_GetItemRectMin(ctx)
+                    btnW, btnH = reaper.ImGui_GetItemRectSize(ctx)
+                    btnX1 = btnX1 + 8
+                    btnW = btnW - 16
+                    
+                    reaper.ImGui_PushFont(ctx, font, settings.keyboardTrigger_textSize)
+                    local btnGroupTextW = 0
+                    local btnGroupTextH = 0
+                    local groupText = triggerTableKeys[key] and triggerTableKeys[key].group or ""
+                    if settings.keyboardTrigger_showGroupText then 
+                        if groupText ~= "" then 
+                            groupText = groupText .. ":"
+                            btnGroupTextW, btnGroupTextH = reaper.ImGui_CalcTextSize(ctx, groupText, 0, 0, nil, btnW) 
+                        end
+                    end
+                    local btnTextW, btnTextH = reaper.ImGui_CalcTextSize(ctx, buttonTitle, 0, 0, nil, btnW)
+                    reaper.ImGui_PopFont(ctx)
+                    
+                    if settings.keyboardTrigger_showGroupText then 
+                        reaper.ImGui_DrawList_AddTextEx(draw_list, font, settings.keyboardTrigger_textSize, 
+                        btnX1 + btnW/2 - btnGroupTextW/2, 
+                        btnY1 + btnH/2 - (btnTextH + btnGroupTextH) / 2, 
+                        textColor, groupText, btnW) 
+                    end
+                    
+                    reaper.ImGui_DrawList_AddTextEx(draw_list, font, settings.keyboardTrigger_textSize, 
+                      btnX1 + btnW/2 - btnTextW/2, 
+                      btnY1 + btnH/2 - (btnTextH + btnGroupTextH) / 2  + btnGroupTextH, 
+                      textColor, buttonTitle, btnW) 
                     
                     reaper.ImGui_PopFont(ctx)
                     reaper.ImGui_PopStyleColor(ctx, 3)
@@ -501,6 +683,7 @@ function export.keyboardTriggerSurface()
                     
                     
                         -- end
+                        
                     if resetNeeded or edit_keyboard_layout then
                         
                     else
@@ -512,7 +695,7 @@ function export.keyboardTriggerSurface()
                         end
                         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), textColor)
                         
-                        reaper.ImGui_SetCursorPos(ctx, posX + 2, posY + 2) -- + buttonWidth - buttonSpacer- textWidth -4,posY + buttonHeight / 2 - textHeight/2)
+                        reaper.ImGui_SetCursorPos(ctx, posX + 5, posY + 4) -- + buttonWidth - buttonSpacer- textWidth -4,posY + buttonHeight / 2 - textHeight/2)
                         reaper.ImGui_PushFont(ctx, font, fontSize)
                         -- reaper.ImGui_DrawList_AddTextEx(draw_list,font,25,posX, posY, textColor, buttonTitle)
                         keyTitle = key
@@ -525,6 +708,7 @@ function export.keyboardTriggerSurface()
                         reaper.ImGui_PopStyleColor(ctx)
                     end
                     
+
                     reaper.ImGui_Spacing(ctx)
                     posX = posX + buttonWidth
                 end
@@ -542,8 +726,7 @@ function export.keyboardTriggerSurface()
             end
             key = keyInput
             
-            
-            if not triggerTableKeys[key] then
+            if not triggerTableKeys[key] and settings.keyboardTrigger_passthroughKeys and (not settings.keyboardTrigger_passthroughKeys_only_non or not keyboardTableKeys[key]) then
                 if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_LeftArrow()) then
                     unicode_char = 1
                     key = "Left"
@@ -563,26 +746,6 @@ function export.keyboardTriggerSurface()
                 if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter()) then
                     unicode_char = 1
                     key = "Return"
-                end
-                if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Period()) then
-                    unicode_char = 1
-                    if not shift then
-                        key = "."
-                    else
-                        key = ":"
-                    end
-                end
-                if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Comma()) then
-                    unicode_char = 1
-                    if not shift then
-                        key = ","
-                    else
-                        key = ";"
-                    end
-                end
-                if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Z()) then
-                    unicode_char = 1
-                    key = "Z"
                 end
                 
                 if key == " " then key = "Space" end
@@ -645,8 +808,9 @@ function export.keyboardTriggerSurface()
                 end
             end
         end
-        
+        reaper.ImGui_PopStyleVar(ctx, 2)
         reaper.ImGui_PopStyleColor(ctx)
+        --reaper.ImGui_PopStyleColor(ctx)
         --[[
       -- fix for arrows
       if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_LeftArrow()) then
@@ -684,12 +848,16 @@ function export.keyboardTriggerSurface()
             reaper.ImGui_EndPopup(ctx)
         end
 
+        keyboard_trigger_is_focusing_main = false
         if not reaper.ImGui_IsWindowFocused(ctx) and keep_focused then
+            local main_hwnd = reaper.GetMainHwnd()  
+            local focused_hwnd = reaper.JS_Window_GetForeground()
             reaper.JS_Window_SetFocus(focusedPopupWindow)
+            keyboard_trigger_is_focusing_main = main_hwnd == focused_hwnd
         end
 
         reaper.ImGui_End(ctx)
-        
+        if not open then closeWindow = true end
         if edit_keyboard_layout then
             if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape()) then 
                 edit_keyboard_layout = false
@@ -706,15 +874,16 @@ function export.keyboardTriggerSurface()
                     resetNeeded = false
                 end
                 reaper.RefreshToolbar(0)
-                --stopScript = true
+                reaper.JS_Window_SetFocus(focusHwnd)
             end
         end
-
+        
         --if key == "<" then
         --    keep_open = not keep_open
         --    reaper.SetExtState(contextName, "keep_open", tostring(keep_open), true)
         --end
     end
+    modern_ui.ending(ctx)
 end
 
 return export

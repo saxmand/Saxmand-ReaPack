@@ -57,14 +57,18 @@ json = require("json")
 
 file_handling = require("file_handling")
 -- Load the articulation map export function
-local export = require("export")
+exportFunc = require("export")
+modern_ui = require("modern_ui")
 
+-- Load the articulation map export function
+track_depending_on_selection = require("track_depending_on_selection")
+notation_events = require("notation_events")
 
-local addMapToInstruments = require("add_script_to_instrument").addMapToInstruments
+--add_script_to_instrument = require("add_script_to_instrument")
 -- Load pathes
 require("pathes")
 
-local readArticulationScript = require("read_articulation_script").readArticulationScript
+readArticulationScript = require("read_articulation_script").readArticulationScript
 if not readArticulationScript then
     reaper.ShowConsoleMsg("Somethings wrong!")
     --return
@@ -79,8 +83,6 @@ local listOfArticulationsScripts = require("scripts_list").listOfArticulationsSc
 
 local listOverviewSurface = require("list_overview").listOverviewSurface
 
--- Load the articulation map export function
-local trackDependingOnSelection = require("track_depending_on_selection").trackDependingOnSelection
 
 
 mirror_notation_to_unique_text_events = require("mirror_notation_to_unique_text_events").mirror_notation_to_unique_text_events
@@ -93,10 +95,19 @@ local reaper_sections = dofile(scriptPath .. "/Functions/Helpers/reaper_sections
 local defaultSettings = { 
     listOverview_onlyShowOnMidiEditor = false,
     listOverview_onlyShowWhenTheresAMap = false,
+    listOverview_showLayerText = true,
+    listOverview_showLayerTextWithSingleArticulation = true,
+    listOverview_organizeButtonsInGroupNames = true,
+    listOverview_showGroupNameAsHeader = true,
     listOverview_size = 100,
     listOverview_transparency = 20,
     keyboardTrigger_size = 100,
     keyboardTrigger_transparency = 30,
+    keyboardTrigger_textSize = 14,
+    keyboardTrigger_showGroupText = true,
+    keyboardTrigger_passthroughKeys = true,
+    keyboardTrigger_passthroughKeys_only_non = true,
+    show_tooltip_for_articaultion_buttons = true,
 }
 
 function saveSettings()
@@ -161,8 +172,10 @@ function setupLocalSurface()
     ctx = reaper.ImGui_CreateContext(contextName)
     -- font = reaper.ImGui_CreateFont('Arial', 30, reaper.ImGui_FontFlags_Bold())
     font = reaper.ImGui_CreateFont('Arial')
+    fontFat = reaper.ImGui_CreateFont('Arial', reaper.ImGui_FontFlags_Bold())
     -- imgui_font
     reaper.ImGui_Attach(ctx, font)
+    reaper.ImGui_Attach(ctx, fontFat)
     return false
 end
 
@@ -257,9 +270,9 @@ local function loop()
     
     
 
-    track, section_id, name, fxNumber, item, take, midi_editor = trackDependingOnSelection()
+    track, section_id, fxName, fxNumber, item, take, midi_editor, focusIsOn, focusHwnd = track_depending_on_selection.trackDependingOnSelection()
     if not lastTrack or lastTrack ~= track or (last_fxNumber ~= fxNumber) then
-        triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam = readArticulationScript(track, name)
+        triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam = readArticulationScript(track, fxName)
         lastTrack = track        
         last_fxNumber = fxNumber        
 
@@ -274,56 +287,83 @@ local function loop()
 
     if track and triggerTables then
         if fxNumber then
-            
             artSelected = {}
             layerCollabsed = {}
-            for _, sl in ipairs(artSliders) do
+            groupCollabsed = {}
+            
+            local selectedArticulationsInLayers = {}
+            for i, sl in ipairs(artSliders) do
                 local selectedArtNumber = reaper.TrackFX_GetParam(track, fxNumber, sl.param)
-                artSelected[sl.layer] = selectedArtNumber
-                local collabsed = reaper.TrackFX_GetParam(track, fxNumber, sl.param + 1) == 1
+                artSelected[sl.layer] = math.floor(selectedArtNumber)
+                local collabsed = math.floor(reaper.TrackFX_GetParam(track, fxNumber, sl.param + 1)) == 1
                 layerCollabsed[sl.layer] = collabsed
+                
+                --if artSelected[1] then
+                --reaper.ShowConsoleMsg(triggerTableLayers[sl.layer][artSelected[sl.layer]+1].programChange .. " - " .. sl.layer .. "  art\n")
+                --if triggerTableLayers[sl.layer] and triggerTableLayers[sl.layer][artSelected[sl.layer]+1] then 
+                local prgNumber = triggerTableLayers[sl.layer] and triggerTableLayers[sl.layer][artSelected[sl.layer]+1] and triggerTableLayers[sl.layer][artSelected[sl.layer]+1].programChange or ""
+                table.insert(selectedArticulationsInLayers, prgNumber)
+                
+                --reaper.SetProjExtState(0, "articulationMapOnDevice", "selectedArticulationIdx" .. sl.layer, triggerTableLayers[sl.layer][artSelected[sl.layer]+1].programChange)
+                --end
+                --[[ 
+                    local retval, newArtFromDevice = reaper.GetProjExtState(0, "articulationMapOnDevice", "setArticulationFromDevice" .. sl.layer)                
+                    if (retval == 1 and newArtFromDevice) and (newArtFromDevice ~= "") then 
+                        reaper.ShowConsoleMsg(newArtFromDevice .. "  art\n")
+                        if triggerTableLayers and triggerTableLayers[sl.layer] and triggerTableLayers[sl.layer][newArtFromDevice + 1] then
+                            changeArticulation(nil, triggerTableLayers[sl.layer][newArtFromDevice + 1].articulation, focusIsOn)
+                        end
+                        reaper.SetProjExtState(0, "articulationMapOnDevice", "setArticulationFromDevice" .. sl.layer, "")
+                    end ]]                    
+            end
+            if #selectedArticulationsInLayers == #artSliders then 
+                local selectedArticulationsInLayersText = table.concat(selectedArticulationsInLayers, ";")  
+                --reaper.ShowConsoleMsg(selectedArticulationsInLayersText .. "\n")
+                reaper.SetProjExtState(0, "articulationMapOnDevice", "selectedArticulationIdx", selectedArticulationsInLayersText)
+            end
+            
+            
+            local retval, newArtFromDevice = reaper.GetProjExtState(0, "articulationMapOnDevice", "setArticulationFromDevice")
+            if (retval == 1 and newArtFromDevice) and (newArtFromDevice ~= "") then
+                if triggerTables and triggerTables[newArtFromDevice + 1] then
+                    changeArticulation(nil, triggerTables[newArtFromDevice + 1].articulation, focusIsOn)
+                end
+                reaper.SetProjExtState(0, "articulationMapOnDevice", "setArticulationFromDevice", "")
             end
 
             --selectedArticulationIdx, minval, maxval = reaper.TrackFX_GetParam(track, fxNumber, 0) -- 0 is the parameter index, 0 is the parameter value
-            if artSelected[1] then
-                reaper.SetProjExtState(0, "articulationMapOnDevice", "selectedArticulationIdx", artSelected[1])
-            end
         end
     else
         reaper.SetProjExtState(0, "articulationMapOnDevice", "trackName", "")
     end
 
-
-    retval, newArtFromDevice = reaper.GetProjExtState(0, "articulationMapOnDevice", "setArticulationFromDevice")
-    if (retval == 1 and newArtFromDevice) and (newArtFromDevice ~= "") and triggerTables and triggerTables[newArtFromDevice + 1] then
-        changeArticulation(newArtFromDevice, triggerTables[newArtFromDevice + 1].articulation)
-        reaper.SetProjExtState(0, "articulationMapOnDevice", "setArticulationFromDevice", "")
-    end
-
-
-    useOnlyOnDevice = reaper.GetExtState("articulationMapOnDevice", "useOnlyOnDevice") == "1"
-
-
+ 
+    
+    
+    --useOnlyOnDevice = reaper.GetExtState("articulationMapOnDevice", "useOnlyOnDevice") == "1"
+    
+    
     --[[
-    if useOnlyOnDevice then
-        --notShowingSurface = true
-        showSurface = false
-    else
-        showSurface = true
-        --notShowingSurface = true
-    end
-    ]]
-    if track and triggerTables then
-
+        if useOnlyOnDevice then
+            --notShowingSurface = true
+            showSurface = false
+        else
+            showSurface = true
+            --notShowingSurface = true
+        end
+        ]]
+    if track and triggerTables then            
 
         local keyboardTrigger_command_state = reaper.GetToggleCommandState(keyboardTrigger_command_id) == 1
+        local listOverview_command_state = reaper.GetToggleCommandState(listOverview_command_id) == 1
+        --if not last_listOverview_command_state then last_listOverview_command_state = listOverview_command_state end 
         if keyboardTrigger_command_state then
             if fxNumber then
-                keyboardTriggerSurface()
-            else
+                keyboardTriggerSurface(focusIsOn, focusHwnd)
+            --else
                 --local keyboardTrigger_command_state = reaper.GetToggleCommandState(keyboardTrigger_command_id) == 1
                 --if settings.showScriptsListIfNoArticulations then
-                
+                --keyboard_trigger_is_focusing_main = false
             end
         end
         
@@ -334,10 +374,14 @@ local function loop()
             end
         end
 
-        local listOverview_command_state = reaper.GetToggleCommandState(listOverview_command_id) == 1
         if listOverview_command_state and (not settings.listOverview_onlyShowWhenTheresAMap or fxNumber) then
             if midi_editor or not settings.listOverview_onlyShowOnMidiEditor then
-                local windowIsFocused = listOverviewSurface() -- show the list overview
+
+                local windowIsFocused = listOverviewSurface(focusIsOn) -- show the list overview
+                if windowIsFocused and focusHwnd and not keyboardTrigger_command_state then
+                    reaper.JS_Window_SetFocus(focusHwnd)
+                end
+                --[[
                 if midi_editor then
                     -- trying is mouse not down to make sure we focus midi editor even when opening the window
                     if (windowIsFocused) and not isMouseDown then -- and isMouseWasReleased) then
@@ -348,8 +392,15 @@ local function loop()
                         reaper.JS_Window_SetFocus(reaper.GetMainHwnd())
                     end
                 end
+                ]]
             end
         end
+
+        last_listOverview_command_state = listOverview_command_state
+        last_keyboardTrigger_command_state = keyboardTrigger_command_state
+
+        --last_focused_hwnd = reaper.JS_Window_GetForeground()
+        --reaper.JS_Window_SetFocus(reaper.GetMainHwnd())
 
         if take then
             if last_take and last_midi_editor and not midi_editor then 
@@ -361,7 +412,9 @@ local function loop()
         end
 
         if midi_editor and take then
-            updateArticulationJSFX(take)     
+            if not isMouseDown then 
+                updateArticulationJSFX(take)     
+            end
             last_midi_editor = midi_editor       
         end
     end

@@ -1,3 +1,4 @@
+-- @noindex
 local function getScreenSize()
     local osname = reaper.GetOS()
     if osname:find("OSX") or osname:find("macOS") then apple = true end

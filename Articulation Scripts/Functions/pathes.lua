@@ -1,4 +1,3 @@
--- @version 1.0
 -- @noindex
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows

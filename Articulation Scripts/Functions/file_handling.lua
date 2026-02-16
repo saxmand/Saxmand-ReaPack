@@ -1,6 +1,23 @@
 -- @noindex
 
 local export = {}
+
+function export.readFileLines(path, remove)
+    local lines = {}
+
+    local f = io.open(path, "r")
+    if not f then
+        return nil, "Could not open file: " .. path
+    end
+
+    for line in f:lines() do
+        lines[#lines+1] = line:gsub(remove and remove or "", "")
+    end
+
+    f:close()
+    return lines
+end
+
 function export.readFileForJsonLine(filePath)
     local file = io.open(filePath)
     if not file then
@@ -301,6 +318,7 @@ function export.importJsonString(jsonString)
                 return false, ("Script not supported from version: " .. tostring(articulationMapCreatorVersion))
             end
             
+            -- for backwards compatability
             if articulationMapCreatorVersion <= 0.4 then   
                 for i, t in ipairs(tableInfo) do
                     if t.Delay then
@@ -311,7 +329,7 @@ function export.importJsonString(jsonString)
 
             --#tableInfo = #tableInfo -- luaTable.tableInfo.Title and #luaTable.tableInfo.Title or 0
             instrumentSettings = luaTable.instrumentSettings and luaTable.instrumentSettings or instrumentSettingsDefault
-            return true
+            return true, {tableInfo = tableInfo, mapping = mapping, instrumentSettings = instrumentSettings, mapName = mapName}
         end
     end
 end

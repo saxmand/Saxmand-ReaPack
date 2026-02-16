@@ -1,3 +1,4 @@
+-- @noindex
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
 
 -- Load the reaper sections id number, used for 
