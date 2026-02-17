@@ -56,7 +56,13 @@ function export.addMapToTrack(track, mapName)
 
     --local fxIndex = reaper.TrackFX_AddByName(track, (mapName), false, -1)
     local fxIndex = reaper.TrackFX_AddByName(track, ("JS: " .. mapName .. " (Articulation Script)"), false, -1)
-    --reaper.ShowConsoleMsg(fxIndex .. "\n")
+    if fxIndex == -1 then
+        fxIndex = reaper.TrackFX_AddByName(track, (mapName), false, -1)
+        if fxIndex ~= -1 then 
+            reaper.TrackFX_Delete(track, fxIndex)
+            fxIndex = reaper.TrackFX_AddByName(track, ("JS: " .. mapName .. " (Articulation Script)"), false, -1)
+        end
+    end
     if fxIndex ~= -1 then
         -- in case the articulation map is auto floating
         local val = reaper.TrackFX_GetFloatingWindow(track, fxIndex)
