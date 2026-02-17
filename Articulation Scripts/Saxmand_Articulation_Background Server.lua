@@ -15,6 +15,9 @@ local function setToolbarState(isActive)
 end
 
 local function exit()
+    reaper.SetProjExtState(0, "articulationMapOnDevice", "trackName", "")
+    reaper.SetProjExtState(0, "articulationMapOnDevice", "articulations", "")
+    reaper.SetExtState("articulationMap", "running", "0", true)
     setToolbarState(false)
 end
 
@@ -284,9 +287,17 @@ local function loop()
         end
     end
     --reaper.StuffMIDIMessage(0, 0xF0, msgBytes)
-
+    
+    fx_is_bypassed = (track and fxNumber) and not reaper.TrackFX_GetEnabled(track, fxNumber) or false
+    reaper.SetProjExtState(0, "articulationMapOnDevice", "fx_is_bypassed", fx_is_bypassed and "1" or "0")
+    
     if track and triggerTables then
         if fxNumber then
+            local ret, val = reaper.GetProjExtState(0, "articulationMapOnDevice", "enable_fx")
+            if ret and val == "1" then
+                reaper.SetProjExtState(0, "articulationMapOnDevice", "enable_fx", "0")
+                reaper.TrackFX_SetEnabled(track, fxNumber, true)
+            end
             artSelected = {}
             layerCollabsed = {}
             groupCollabsed = {}
@@ -425,7 +436,6 @@ local function loop()
         setToolbarState(true)
         toolbarSet = true
     end
-    reaper.atexit(exit)
     ---------------
     -- FINISHED ---
     ---------------
@@ -439,14 +449,14 @@ local function loop()
     end
 
     if stopScript then
-        reaper.SetExtState("articulationMap", "running", "0", true)
-        reaper.JS_Window_SetFocus(focusedWindow)
+        reaper.JS_Window_SetFocus(focusedWindow)        
         reaper.DeleteExtState("articulationMap", "stopScript", true)
-        return
+        --return
     else
         reaper.SetExtState("articulationMap", "running", "1", false)
         reaper.defer(loop)
     end
+    reaper.atexit(exit)
 end
 
 reaper.defer(loop)

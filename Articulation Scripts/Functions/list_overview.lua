@@ -6,6 +6,11 @@ if cmdID == 70667 then
     
     if 1 == reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386")) then --Script: Saxmand_Articulation_Background Server.lua
     --    reaper.Main_OnCommand(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0) --Script: Saxmand_Articulation_Background Server.lua
+    else
+    
+    --if reaper.GetExtState("articulationMap", "running") == "1" then 
+        reaper.JS_Window_SetFocus(reaper.GetMainHwnd())
+    --end
     end
     
     if 0 == reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RS841db956c42cd98894e1219da2c9184f5909a15e"), 0) then --Script: Saxmand_Articulation_Background Server.lua
@@ -14,6 +19,7 @@ if cmdID == 70667 then
     
     reaper.Main_OnCommand(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0) --Script: Saxmand_Articulation_Background Server.lua
     reaper.SetToggleCommandState(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0, 1)
+    
     return
 else
 
@@ -71,9 +77,11 @@ function export.listOverviewSurface(focusIsOn)
     draw_list = reaper.ImGui_GetWindowDrawList(ctx)
     modern_ui.apply(ctx)
     
+    
     local windowIsFocused      
     local menuOpen = false
     local articulationChange = false
+    
     
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(), (120 - settings.listOverview_transparency)/100)
     --local windowColorBg = reaper.ImGui_ColorConvertDouble4ToU32(0,0,0, (100 - settings.listOverview_transparency)/100)
@@ -211,6 +219,7 @@ function export.listOverviewSurface(focusIsOn)
             end
         end
         ]]
+        modern_ui.bypassed_begin(ctx)
         
         reaper.ImGui_PushFont(ctx, font,  math.ceil(settings.listOverview_size/100 * 12))
 
@@ -237,8 +246,10 @@ function export.listOverviewSurface(focusIsOn)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), trackColor)
         --reaper.ImGui_Text(ctx, tostring(trackName))
         if reaper.ImGui_Selectable(ctx,trackName, true) then 
-            local val = reaper.TrackFX_GetFloatingWindow(track, fxNumber)
-            reaper.TrackFX_Show(track, fxNumber, not val and 3 or 2)
+            if track and fxNumber then 
+                local val = reaper.TrackFX_GetFloatingWindow(track, fxNumber)
+                reaper.TrackFX_Show(track, fxNumber, not val and 3 or 2)
+            end
         end
         reaper.ImGui_PopStyleColor(ctx,4)
         reaper.ImGui_PopStyleVar(ctx)
@@ -372,11 +383,11 @@ function export.listOverviewSurface(focusIsOn)
                 reaper.ImGui_DrawList_AddRect(draw_list, layerX, layerY, layerX2, layerY2, layerColor, 6)
                 reaper.ImGui_Spacing(ctx)
             end
-        end
-        
+        end 
         --reaper.ImGui_PopStyleColor(ctx,3)
-                
+        modern_ui.bypassed_end(ctx)        
         reaper.ImGui_PopFont(ctx)
+        
         
         reaper.ImGui_End(ctx)
     end

@@ -39,10 +39,44 @@
             border-radius: 10px;
             background: #888;
         }
+        
+        
+        /* ===== BYPASS OVERLAY ===== */
+
+        bypassOverlay {
+            color: white;
+            font-size: 52px;
+            letter-spacing: 3px;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.6);
+            display: flex;                /* ← add */
+            flex-direction: column;      /* ← add */
+            justify-content: flex-start;
+            z-index: 9999;
+            cursor: pointer;
+            align-items: center;
+            padding-top: 35vh;
+            pointer-events: auto;
+        }
+
+
+        div {
+            color: white;
+            font-size: 52px;
+            letter-spacing: 3px;
+            pointer-events: none;
+        }
 
         buttons {
             cursor: pointer;
         }
+
 
 
 
@@ -54,6 +88,21 @@
     <script src="main.js"></script>
 
     <script type="text/javascript">
+        function overlayClick() {
+            if (!scriptIsRunning) {                
+                wwr_req('_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386');
+            } else {
+                wwr_req('SET/PROJEXTSTATE/articulationMapOnDevice/enable_fx/1')
+            }
+        }
+
+        function setOverlayHTML(html) {
+            document.getElementById("bypassOverlay").innerHTML = html;
+        }
+
+        function setBypassOverlay(active) {
+            document.getElementById("bypassOverlay").style.display = active ? "flex" : "none";
+        }
 
         function setTextForObject(obj, text) { // thx cfillion
             if (obj.lastChild) obj.lastChild.nodeValue = text;
@@ -155,6 +204,21 @@
             };
         }
 
+        function createBypassOverlay() {
+            const buttonContainer = document.getElementById("bypass");
+            //buttonContainer.innerHTML = "";
+            const button = document.createElement("bypassOverlay");
+            button.innerText = "Bypassed2";
+            button.style.top = 0;
+            //button.left = 0;
+            //button.style.width = window.innerWidth/2 + "px";
+            //button.style.height = window.innerHeight/2 + "px";
+            button.onclick = mouseDownEventHandler('SET/EXTSTATEPERSIST/articulationMap/enable_fx');
+            //button.style.border = "6px solid #0f0";
+            //button.style.color = "#0f0";
+            button.style["font-size"] = "60px";            
+            buttonContainer.appendChild(button);
+        }
 
 
         function createStartButton() {
@@ -193,25 +257,35 @@
                     if (tok[1] == "articulationMap") {
                         if (tok[2] == "running") {
                             scriptIsRunning = tok[3] == "1"
-                            if (scriptIsRunning == false) {
-                                createStartButton()
+                            
+                            if (scriptIsRunning == false) {  
+                                document.getElementById("buttons").innerHTML = "";                              
+                                setBypassOverlay(true);
+                                setOverlayHTML('Start background server<br><span style="font-size:22px;opacity:0.7;">(tap to start)</span>');
+                                /* createStartButton()
                                 // not the best way, but "hides" the stop button when not running
                                 setTextForObject(document.getElementById("stop"), "");
-                                document.getElementById("stop").style.border = "0px solid #000";
+                                document.getElementById("stop").style.border = "0px solid #000"; */
                             }
                             else {
-
+/* 
                                 // not the best way, but "sets" the stop button when not running
                                 setTextForObject(document.getElementById("stop"), "Stop");
                                 document.getElementById("stop").style.float = "right";
                                 document.getElementById("stop").style.color = "#600";
                                 document.getElementById("stop").style.border = "2px solid #f00";
-                                document.getElementById("stop").style["border-radius"] = "3px";
+                                document.getElementById("stop").style["border-radius"] = "3px"; */
                             }
                         }
                     }
                     if (scriptIsRunning) {
                         if (tok[1] == "articulationMapOnDevice") {
+                            if (tok[2] == "fx_is_bypassed") {
+                                setBypassOverlay(tok[3] === "1");
+                                if (tok[3] === "1") {
+                                    setOverlayHTML('Articulation Script Bypassed<br><span style="font-size:22px;opacity:0.7;">(tap to enable)</span>');                                    
+                                }
+                            }
                             if (tok[2] == "articulations") {
                                 if (tok[3]) {
                                     createButtonsFromResponse(tok[3])
@@ -246,6 +320,7 @@
                             if (tok[2] == "trackName") {
                                 trackName = tok[3]
                             }
+                            
                         }
                     }
                 }
@@ -261,23 +336,41 @@
                 }
             }
             else {
-                fullname = "Articulation Map Surface"
+                fullname = "The MOST Advanced Articulation System"
             }
             setTextForObject(document.getElementById("trackName"), fullname);
+
+            //setTextForObject(document.getElementById("bypassOverlay"),"Start background server");
         }
 
 
         scriptIsRunning = true;
         wwr_start();
-        wwr_req_recur("GET/EXTSTATE/articulationMap/running;GET/PROJEXTSTATE/articulationMapOnDevice/articulations;GET/PROJEXTSTATE/articulationMapOnDevice/selectedArticulationIdx;GET/PROJEXTSTATE/articulationMapOnDevice/mapName;GET/PROJEXTSTATE/articulationMapOnDevice/trackName", 10);
+        
+        wwr_req_recur(
+        "GET/EXTSTATE/articulationMap/running;" +
+        "GET/PROJEXTSTATE/articulationMapOnDevice/fx_is_bypassed;" +
+        "GET/PROJEXTSTATE/articulationMapOnDevice/articulations;" +
+        "GET/PROJEXTSTATE/articulationMapOnDevice/selectedArticulationIdx;" +
+        "GET/PROJEXTSTATE/articulationMapOnDevice/mapName;" +
+        "GET/PROJEXTSTATE/articulationMapOnDevice/trackName",
+        10
+        );
+
     </script>
 
 </head>
 
 <body>
+    <bypassOverlay id="bypassOverlay" 
+        onclick="overlayClick()"
+        ontouchstart="overlayClick()">
+        <!-- <div>Articulation Script<br><span style="font-size:22px;opacity:0.7;">(tap to enable)</span></div> -->
+    </bypassOverlay>
+
     <instrumentText id="trackName"></instrumentText>
-    <button id="stop" onclick="stopScript()">Stop Script</button>
-    <br>
+    <!-- <button id="stop" onclick="stopScript()">Stop Script</button> -->
+    <!-- <br> -->
     <br>
     <buttons id="buttons"></buttons>
 

@@ -524,7 +524,8 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
         reaper.ImGui_PopFont(ctx)
         
         reaper.ImGui_PopStyleVar(ctx)
-
+                
+        modern_ui.bypassed_begin(ctx)
         posX = startPosX
         posY = startPosY
         --if buttons.cogwheel(ctx, "keyboardTriggerSettings",  math.ceil(buttonWidth/100 * 30), colorGrey, "Settings", colorGrey, colorWhite, colorTransparent, colorDarkGrey, colorDarkGrey, colorBlack) then
@@ -856,7 +857,7 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
             keyboard_trigger_is_focusing_main = main_hwnd == focused_hwnd
         end
 
-        reaper.ImGui_End(ctx)
+                
         if not open then closeWindow = true end
         if edit_keyboard_layout then
             if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape()) then 
@@ -878,6 +879,8 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
             end
         end
         
+        modern_ui.bypassed_end(ctx)       
+        reaper.ImGui_End(ctx)
         --if key == "<" then
         --    keep_open = not keep_open
         --    reaper.SetExtState(contextName, "keep_open", tostring(keep_open), true)

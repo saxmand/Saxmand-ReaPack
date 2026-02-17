@@ -176,6 +176,38 @@ function export.ending(ctx)
     reaper.ImGui_PopStyleColor(ctx, 26)
 end
 
+function export.bypassed_begin(ctx)
+    if fx_is_bypassed then 
+        reaper.ImGui_BeginDisabled(ctx)  
+    end
+end
+
+function export.bypassed_end(ctx)
+    if fx_is_bypassed then 
+        reaper.ImGui_EndDisabled(ctx) 
+        reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ButtonTextAlign(), 0.5,0.5)
+        reaper.ImGui_PushFont(ctx, font,  20)
+        local winW, winH = reaper.ImGui_GetWindowSize(ctx)
+        local winX, winY = reaper.ImGui_GetWindowPos(ctx)
+        local mouseHover = reaper.ImGui_IsWindowHovered(ctx)
+        local text = "Articulation Script Bypassed"--mouseHover and "Enable FX" or "FX Bypassed"
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, winX, winY, winX + winW, winY+ winH, 0x00000077)
+        local textW, textH = reaper.ImGui_CalcTextSize(ctx, text, 0, 0, true, winW)
+        reaper.ImGui_DrawList_AddTextEx(draw_list, font, 20, winX + winW/2-textW/2, winY+ winH/2-textH/2, 0xFFFFFFFF, text, winW) 
+        reaper.ImGui_PopFont(ctx)
+
+        reaper.ImGui_PushFont(ctx, font,  14)
+        text = "(click to enable)"
+        local textW2, textH2 = reaper.ImGui_CalcTextSize(ctx, text, 0, 0, nil, winW)
+        reaper.ImGui_DrawList_AddTextEx(draw_list, font, 14, winX + winW/2-textW2/2, winY+ winH/2 -textH2/2 + textH, 0x666666FF, text, winW) 
+        if mouseHover and reaper.ImGui_IsMouseClicked(ctx, 0) and fxNumber then 
+            reaper.TrackFX_SetEnabled(track, fxNumber, true)
+        end
+        reaper.ImGui_PopFont(ctx)
+        reaper.ImGui_PopStyleVar(ctx)
+    end
+end
+
 function export.getTrackColor(track)
     local color  = reaper.GetTrackColor(track) 
     --reaper.ShowConsoleMsg(tostring((reaper.ImGui_ColorConvertNative(color) << 8) | 0xFF) .. "\n")

@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.6.3
+-- @version 0.6.4
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,4 +15,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + updated web server version number
+--   + all articulation surfaces reflects bypass state of articulation script
+--   + updated web surface to have clear buttons when no server is running 

@@ -1,6 +1,6 @@
 @description Articulation Scripts Web Surface
 @author saxmand
-@version 0.0.5
+@version 0.0.6
 @provides Articulation Scripts Web Surface.html
 @changelog
-   updated to support layers 
+   updated to have bypass overlay
