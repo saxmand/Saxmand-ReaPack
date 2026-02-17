@@ -1,6 +1,6 @@
 @description Articulation Scripts Web Surface
 @author saxmand
-@version 0.0.4
+@version 0.0.5
 @provides Articulation Scripts Web Surface.html
 @changelog
-   fixed error where groups re-write had not been completed 
+   updated to support layers 
