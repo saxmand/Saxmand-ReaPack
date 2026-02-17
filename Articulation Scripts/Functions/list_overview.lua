@@ -56,6 +56,33 @@ end
 local export = {}
 
 
+function export.openCreatorWindow(path, save)    
+
+    if save then 
+        reaper.SetExtState("articulationMap", "saveScript", "1", false)
+        --if reaper.GetToggleCommandState(command_id) == 1 then 
+        --    reaper.Main_OnCommand(command_id, 0)  
+        --end
+    else
+        reaper.SetExtState("articulationMap", "openScript", path, false)
+
+        local sep = package.config:sub(1,1)
+        local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
+        local devMode = scriptPath:match("jesperankarfeldt") ~= nil
+        local path =
+        reaper.GetResourcePath()
+        .. sep .. "Scripts"
+        .. sep .. (devMode and "Saxmand-ReaPack" or "Saxmand ReaPack")
+        .. sep .. "Articulation Scripts"
+        .. sep .. "Saxmand_Articulation_Script Creator.lua"
+
+        local command_id = reaper.AddRemoveReaScript(true, 0, path, false)
+
+        if reaper.GetToggleCommandState(command_id) < 1 then 
+            reaper.Main_OnCommand(command_id, 0)    
+        end
+    end
+end
 
 function GetTextColorForBackground(u32_color)
     -- Extract 8-bit R, G, B from U32 (ImGui format: 0xAABBGGRR)
@@ -245,12 +272,23 @@ function export.listOverviewSurface(focusIsOn)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), trackColor)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), trackColor)
         --reaper.ImGui_Text(ctx, tostring(trackName))
-        if reaper.ImGui_Selectable(ctx,trackName, true) then 
-            if track and fxNumber then 
-                local val = reaper.TrackFX_GetFloatingWindow(track, fxNumber)
-                reaper.TrackFX_Show(track, fxNumber, not val and 3 or 2)
-            end
+        local btnName = trackName
+        if fxName then 
+            local scriptThatIsOpen = reaper.GetExtState("articulationMap", "scriptThatIsOpen")
+            local fxNumber, fxName = track_depending_on_selection.findArticulationScript(track) 
+            path = reaper.GetResourcePath() .. "/Effects/Articulation Scripts/" .. fxName .. ".jsfx"
+            scriptAlreadyOpen = scriptThatIsOpen == path
+            btnName = trackNameIsHovered and (scriptAlreadyOpen and "Save and update" or "Click to edit") or trackName
         end
+        if reaper.ImGui_Selectable(ctx,btnName, true) then 
+            export.openCreatorWindow(path, scriptAlreadyOpen) 
+            --if track and fxNumber then 
+                --local val = reaper.TrackFX_GetFloatingWindow(track, fxNumber)
+                --reaper.TrackFX_Show(track, fxNumber, not val and 3 or 2)
+            --end
+        end        
+        trackNameIsHovered = reaper.ImGui_IsItemHovered(ctx)
+        
         reaper.ImGui_PopStyleColor(ctx,4)
         reaper.ImGui_PopStyleVar(ctx)
 

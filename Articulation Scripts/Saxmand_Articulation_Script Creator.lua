@@ -4,6 +4,17 @@ version = 0.6
 
 local stateName = "ArticulationScripts"
 
+local is_new_value, filename, sectionID, cmdID, mode, resolution, val, contextstr = reaper.get_action_context()
+
+local function setToolbarState(isActive)
+    -- Set the command state to 1 for active, 0 for inactive
+    reaper.SetToggleCommandState(0, cmdID, isActive and 1 or 0)
+    reaper.RefreshToolbar(0) -- Refresh the toolbar to update the icon
+end
+local function exit()
+    reaper.DeleteExtState("articulationMap", "scriptThatIsOpen", true)
+    setToolbarState(false)
+end
 
 local inDevMappings = {
     --["Position (Legato)"] = true, 
@@ -1105,6 +1116,43 @@ function checkShortCut(shortcut_key, isCmd, isShift, isCtrl, isAlt)
     end
 end
 
+function editFirstSelected(firstArticulationScriptOnFirstSelectedTrack)
+    if firstArticulationScriptOnFirstSelectedTrack then
+        if #tableInfo > 0 then   
+            popupOkCancelTitle = 'Edit other articulation script?'
+            popupOkCancelDescription = 'Edit articulation script from first selected track?\n\nAll non-saved settings will be lost!!'
+            popupOkCancelFunc = importTable
+            popupOkCancelFuncVal = firstArticulationScriptOnFirstSelectedTrack
+            reaper.ImGui_OpenPopup(ctx, popupOkCancelTitle) 
+        else
+            importTable(firstArticulationScriptOnFirstSelectedTrack)
+        end
+    end
+end
+
+
+function addmapToSelectedTracks()
+    --local focusedWindow = reaper.JS_Window_GetFocus() 
+    --addMap.updateMapOnInstrumentsWithMap(mapName, true)  
+    --if not overWriteFile_Wait then 
+        addMap.addMapToInstruments(mapName) 
+    --end
+    --reaper.JS_Window_SetFocus(focusedWindow)
+end
+
+function updateMapOnTracks()
+    --local focusedWindow = reaper.JS_Window_GetFocus() 
+    --if not overWriteFile_Wait then 
+        addMap.updateMapOnInstrumentsWithMap(mapName) 
+    --end
+    --reaper.JS_Window_SetFocus(focusedWindow)
+    -- RESET TRACK SELECTION HERE TO ENSURE WE UPDATE MAP. MAYBE VIA EXT STATE
+end
+
+function closeApp()
+    closeAppWindow = true -- workaround for some reason needed
+end
+
 
 local function loop()
     local minimumsWidth = math.ceil(appSettings.fontSize/100 * 680)
@@ -1113,6 +1161,17 @@ local function loop()
     modern_ui.apply(ctx)
     --modern_ui.ApplyReaperThemeToImGui()
     
+    openPath = reaper.GetExtState("articulationMap", "openScript")
+    if openPath and openPath ~= "" then 
+        reaper.DeleteExtState("articulationMap", "openScript", true)        
+        editFirstSelected(openPath)
+    end
+    saveScript = reaper.GetExtState("articulationMap", "saveScript")
+    if saveScript and saveScript ~= "" then 
+        reaper.DeleteExtState("articulationMap", "saveScript", true)
+        addmapToSelectedTracks()
+        closeApp()
+    end
     
     reaper.ImGui_SetNextWindowSize(ctx, minimumsWidth + 8, minimumsWidth*1.5, reaper.ImGui_Cond_FirstUseEver())
     local visible, open = reaper.ImGui_Begin(ctx, 'Articulation Creator', true,
@@ -1153,8 +1212,10 @@ local function loop()
         
         local varAmount = 3
         --reaper.ImGui_SetCursorPosX(ctx,windowWidth / 2 - 440/2)
-        function closeApp()
-            closeAppWindow = true -- workaround for some reason needed
+
+
+        if not windowW then 
+            windowW, windowH = reaper.ImGui_GetWindowSize(ctx)
         end
         
         reaper.ImGui_BeginGroup(ctx)
@@ -1456,19 +1517,7 @@ local function loop()
                 end
             end
     
-            function editFirstSelected(firstArticulationScriptOnFirstSelectedTrack)
-                if firstArticulationScriptOnFirstSelectedTrack then
-                    if #tableInfo > 0 then   
-                        popupOkCancelTitle = 'Edit other articulation script?'
-                        popupOkCancelDescription = 'Edit articulation script from first selected track?\n\nAll non-saved settings will be lost!!'
-                        popupOkCancelFunc = importTable
-                        popupOkCancelFuncVal = firstArticulationScriptOnFirstSelectedTrack
-                        reaper.ImGui_OpenPopup(ctx, popupOkCancelTitle) 
-                    else
-                        importTable(firstArticulationScriptOnFirstSelectedTrack)
-                    end
-                end
-            end
+
             
             function popupOkCancel(title, message, func, funcVal)
                 -- Always center this window when appearing
@@ -1527,7 +1576,7 @@ local function loop()
             
             local firstArticulationPath = getFirstArticulationMapFXJsonLine(true)
             
-            
+             
             local buttonsData = {
             {
               name = "New", key = "N", shift = true, cmd = true, sameLine = false, func = function() newMap() end, tip = 'Create a new map', hide = not mapName 
@@ -1649,6 +1698,10 @@ local function loop()
         local legatoKeys = {"F", "L", "R", "X", "A"}
 
         if mapName then
+            -- for bidirectional call to articualtion list
+            local path = reaper.GetResourcePath() .. "/Effects/Articulation Scripts/" .. mapName .. ".jsfx"
+            reaper.SetExtState("articulationMap", "scriptThatIsOpen", path, false)
+
             --reaper.ImGui_Separator(ctx)
             reaper.ImGui_Spacing(ctx)
             if #tableInfo == 0 then
@@ -2942,7 +2995,7 @@ local function loop()
                             --reaper.ImGui_SetCursorPosY(ctx, tableY)
                             --reaper.ImGui_SetCursorPosX(ctx, tableX + 30)
                             
-                            
+                            if not windowW then windowW = 200; windowH = 1 end
                             
                             local childSizeW = windowW - 16 < tableWidth and windowW - 16 or tableWidth
                             tableHeight = windowH - tableY  - (math.ceil(appSettings.fontSize / 100 * 40) + 30)
@@ -4060,23 +4113,6 @@ local function loop()
                     reaper.ImGui_EndTabBar(ctx)           
                 end
                 
-                function addmapToSelectedTracks()
-                    --local focusedWindow = reaper.JS_Window_GetFocus() 
-                    --addMap.updateMapOnInstrumentsWithMap(mapName, true)  
-                    --if not overWriteFile_Wait then 
-                        addMap.addMapToInstruments(mapName) 
-                    --end
-                    --reaper.JS_Window_SetFocus(focusedWindow)
-                end
-                
-                function updateMapOnTracks()
-                    --local focusedWindow = reaper.JS_Window_GetFocus() 
-                    --if not overWriteFile_Wait then 
-                        addMap.updateMapOnInstrumentsWithMap(mapName) 
-                    --end
-                    --reaper.JS_Window_SetFocus(focusedWindow)
-                    -- RESET TRACK SELECTION HERE TO ENSURE WE UPDATE MAP. MAYBE VIA EXT STATE
-                end
                 
                 
                 reaper.ImGui_SetCursorPosY(ctx, windowH - (math.ceil(appSettings.fontSize / 100 * 40) + 20))
@@ -4344,8 +4380,20 @@ local function loop()
         --editFirstSelected()
         firstLoop = false
     end
+    ----------------------
+    -- toolbar settings --
+    ----------------------
+    if not toolbarSet then
+        setToolbarState(true)
+        toolbarSet = true
+    end
 
-    if open and not closeAppWindow then reaper.defer(loop) end
+    if open and not closeAppWindow then 
+        reaper.defer(loop) 
+    else
+    end
 end
 
 reaper.defer(loop)
+
+reaper.atexit(exit)

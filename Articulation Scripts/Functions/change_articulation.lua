@@ -70,7 +70,7 @@ local function updateSliderFromArticulation(track, articulation)
         end
         return existsInScript, triggerTableLayers, artSliders, isAToggle, isToggleOn
     else
-        return true, triggerTableLayers, artSliders
+        return {}, triggerTableLayers, artSliders
     end
 end
 
@@ -117,20 +117,32 @@ local function setNotationText(take, articulation, allNotes)
                         local newArtsTbl = {}
                         for layerIndex, layer in ipairs(triggerTableLayers) do
                             local found = false
-                            if existsInScript.layer == layerIndex then
-                                newArtsTbl[layerIndex] = (not isAToggle or not isToggleOn) and articulation or ""
+                            if existsInScript and existsInScript.layer == layerIndex then
+                                if not isAToggle or not isToggleOn then 
+                                    table.insert(newArtsTbl, articulation)
+                                end
+                                --newArtsTbl[layerIndex] = (not isAToggle or not isToggleOn) and articulation or ""
                             else
                                 for artIndexInLayer, art in ipairs(layer) do
                                     for i, a in ipairs(arts) do                                         
                                         if art.articulation == a then 
-                                            newArtsTbl[layerIndex] = a
+                                            table.insert(newArtsTbl, a)
+                                            --newArtsTbl[layerIndex] = a
                                             found = true
                                             break                     
                                         end
                                     end
                                 end    
                                 if not found then 
-                                    newArtsTbl[layerIndex] = #layer > 1 and layer[1].articulation or ""
+                                    if #layer > 1 then 
+                                        table.insert(newArtsTbl, layer[1].articulation)
+                                        --newArtsTbl[layerIndex] = layer[1].articulation
+                                    else
+                                        if #triggerTableLayers == layerIndex then 
+                                            table.insert(newArtsTbl, "")
+                                            --newArtsTbl[layerIndex] = ""
+                                        end
+                                    end
                                 end
                             end
                         end

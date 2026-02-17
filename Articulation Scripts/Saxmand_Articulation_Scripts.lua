@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.6.5
+-- @version 0.6.6
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,4 +15,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + forcing "scanning fx" when adding plugins (by readding with simpler name), in case it does not respond with " (articulation script)" added to the name
+--   + Reverted back to use "ext_noinit = 1.0;" again in jsfx, to ensure variables are kept on start and stop (caused hanging notes)
+--   + Added option to open and close script from list overview

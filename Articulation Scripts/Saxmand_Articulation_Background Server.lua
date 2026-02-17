@@ -456,7 +456,7 @@ local function loop()
         reaper.SetExtState("articulationMap", "running", "1", false)
         reaper.defer(loop)
     end
-    reaper.atexit(exit)
 end
 
 reaper.defer(loop)
+reaper.atexit(exit)
