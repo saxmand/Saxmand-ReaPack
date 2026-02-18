@@ -66,19 +66,37 @@ end
 
 function export.trackDependingOnSelection()
     local midiEditor = reaper.MIDIEditor_GetActive()
+    local midiEditor_is_docked, midiEditor_parent, midiEditor_parent_title, midiEditor_is_focused
+    if midiEditor then
+        midiEditor_parent = reaper.JS_Window_GetParent(midiEditor)
+        midiEditor_parent_title = reaper.JS_Window_GetTitle(midiEditor_parent)
+        midiEditor_is_docked = midiEditor_parent_title == "REAPER_dock"
+    end
     local track, section_id, fxName, fxNumber, item, take, trackIsFocused
     local isRecording = reaper.GetPlayState() & 4 == 4 
     local firstSelectedTrack = reaper.GetSelectedTrack(0, 0)
 
     local focusIsOn, focusHwnd
     local forgroundHwnd = reaper.JS_Window_GetForeground()
+    local focusHwnd = reaper.JS_Window_GetFocus()
+    local focusHwnd_parent = reaper.JS_Window_GetParent(focusHwnd)
+    local focusHwnd_parent_title = reaper.JS_Window_GetTitle(focusHwnd_parent)
+    if midiEditor_is_docked and focusHwnd_parent_title:match("MIDI take") ~= nil then 
+        midiEditor_is_focused = true
+    end
+    
     local mainHwnd = reaper.GetMainHwnd()
-    if forgroundHwnd == mainHwnd then
+    if not midiEditor_is_focused and (forgroundHwnd == mainHwnd or focusHwnd_parent == mainHwnd) then
         focusIsOn = "take"
         focusHwnd = mainHwnd
-    elseif midiEditor and forgroundHwnd == midiEditor then 
+    elseif midiEditor and (forgroundHwnd == midiEditor or midiEditor_is_focused) then 
         focusIsOn = "editor"
-        focusHwnd = midiEditor
+        if midiEditor_is_focused then 
+            
+            focusHwnd = focusHwnd
+        else
+            focusHwnd = midiEditor
+        end
     end
 
     if isRecording then
@@ -88,7 +106,7 @@ function export.trackDependingOnSelection()
             focusIsOn = "track"
         end
     else
-        if midiEditor and forgroundHwnd == midiEditor then
+        if midiEditor and (forgroundHwnd == midiEditor or midiEditor_is_focused) then
             take = reaper.MIDIEditor_GetTake(midiEditor)
             if take then 
                 item = reaper.GetMediaItemTake_Item(take)

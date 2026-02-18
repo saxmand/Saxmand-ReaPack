@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.6.7
+-- @version 0.6.9
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,8 +15,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + (mapping) pitch and filter pitch now uses note names
---   + Changed filtering of used mappings on export to ensure excluding unused CC etc
---   + Changed KeyboardTrigger to KT the places it was missing
---   + Fixed crash when trying to edit a map that is not there
---   + Fixed mirror of text events when deleting notes
+--   + added workaround for docked midi editor
