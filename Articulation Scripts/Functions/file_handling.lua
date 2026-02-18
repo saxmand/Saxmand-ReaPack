@@ -113,7 +113,7 @@ function export.importJsonString(jsonString)
     if not luaTable then 
         reaper.ShowConsoleMsg("json parsing error: " .. error .. "\n")
     else
-        local articulationMapCreatorVersion = luaTable.articulationMapCreatorVersion and tonumber(luaTable.articulationMapCreatorVersion) or 0
+        articulationMapCreatorVersion = luaTable.articulationMapCreatorVersion and tonumber(luaTable.articulationMapCreatorVersion) or 0
         mapName = luaTable.mapName
         if mapName then 
             if articulationMapCreatorVersion < 0.4 then
@@ -311,6 +311,13 @@ function export.importJsonString(jsonString)
             elseif articulationMapCreatorVersion >= 0.4 then   
                 tableInfo = luaTable.tableInfo
                 if luaTable.mapping then
+                    if articulationMapCreatorVersion < 0.7 then 
+                        if luaTable.mapping.KeyboardTrigger then 
+                            --luaTable.mapping.KeyboardTrigger = nil
+                            luaTable.mapping.KT = true
+                        end
+                    end
+
                     mapping = luaTable.mapping
                 end
             else
@@ -329,7 +336,7 @@ function export.importJsonString(jsonString)
 
             --#tableInfo = #tableInfo -- luaTable.tableInfo.Title and #luaTable.tableInfo.Title or 0
             instrumentSettings = luaTable.instrumentSettings and luaTable.instrumentSettings or instrumentSettingsDefault
-            return true, {tableInfo = tableInfo, mapping = mapping, instrumentSettings = instrumentSettings, mapName = mapName}
+            return true, {tableInfo = tableInfo, mapping = mapping, instrumentSettings = instrumentSettings, mapName = mapName, articulationMapCreatorVersion = articulationMapCreatorVersion}
         end
     end
 end

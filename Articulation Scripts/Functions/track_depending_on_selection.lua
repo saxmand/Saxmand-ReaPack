@@ -99,6 +99,8 @@ function export.trackDependingOnSelection()
                     local _, numNotes = reaper.MIDI_CountEvts(take)
                     if last_numNotes and numNotes - last_numNotes == 1 then
                         changeArticulation(nil, nil, focusIsOn, true)
+                    elseif last_numNotes and last_numNotes > numNotes then 
+                        mirror_notation_to_unique_text_events(take)
                     end
                     last_numNotes = numNotes
                 end

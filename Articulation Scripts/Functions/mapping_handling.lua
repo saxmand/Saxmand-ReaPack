@@ -115,7 +115,7 @@ function export.createTableOrderFromUsedMappings(mapping)
     if mapping.FilterInterval then table.insert(mappingType, "FilterInterval") end
     if mapping.FilterCount then table.insert(mappingType, "FilterCount") end
 
-    if mapping.KeyboardTrigger then table.insert(mappingType, "KT") end
+    if mapping.KT then table.insert(mappingType, "KT") end
 
     if mapping.UIText then table.insert(mappingType, "UIText") end
     return mappingType
@@ -150,7 +150,7 @@ function export.getTableSizes(fontSize, tableSizeTitle, tableSizeGroup)
     tableSizes.Pitch = tableSizes.FilterVelocity
     tableSizes.FilterPitch = tableSizes.FilterVelocity
     tableSizes.Velocity = tableSizes.FilterVelocity
-    tableSizes.Note = reaper.ImGui_CalcTextSize(ctx, "Note (M)     X", 0, 0)
+    tableSizes.Note = reaper.ImGui_CalcTextSize(ctx, "Note (M)      X", 0, 0)
 
     local tableWidth = 0
     for _, mappingName in ipairs(mappingType) do

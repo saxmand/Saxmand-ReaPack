@@ -117,6 +117,8 @@ theme = {
     success       = reaper.ImGui_ColorConvertDouble4ToU32(0.20, 0.70, 0.40, 1.00),
     warning       = reaper.ImGui_ColorConvertDouble4ToU32(0.90, 0.60, 0.10, 1.00),
     error         = reaper.ImGui_ColorConvertDouble4ToU32(0.90, 0.20, 0.20, 1.00),
+    overlay         = reaper.ImGui_ColorConvertDouble4ToU32(0.0, 0.0, 0.0, 0.6),
+    rounding         = 4,
 }
 
 function export.apply(ctx)

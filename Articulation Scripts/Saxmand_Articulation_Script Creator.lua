@@ -1,6 +1,6 @@
 -- @noindex
 
-version = 0.6
+version = 0.7
 
 local stateName = "ArticulationScripts"
 
@@ -365,7 +365,7 @@ end
 
 
 -- FROM CLIPBOARD
-function importArticulationSet()
+function importArticulationSet(onlyJson)
     function splitString(inputstr, sep)
         sep = sep or "%s"
     
@@ -390,7 +390,7 @@ function importArticulationSet()
                 -- in case we could not import the json, we remove the undo point.
                 undo_redo.undo()
             end
-        elseif focusedColumn then
+        elseif focusedColumn and not onlyJson then
             local row = focusedRow and focusedRow or 0
             for line in string.gmatch(clipboard, "([^\n]*)\n?") do
                 if line ~= "" then -- To avoid adding empty strings if the string ends with a newline
@@ -1161,10 +1161,18 @@ local function loop()
     modern_ui.apply(ctx)
     --modern_ui.ApplyReaperThemeToImGui()
     
+    reaper.SetExtState("articulationMap", "currentMapName", mapName and mapName or "", false)
     openPath = reaper.GetExtState("articulationMap", "openScript")
     if openPath and openPath ~= "" then 
         reaper.DeleteExtState("articulationMap", "openScript", true)        
-        editFirstSelected(openPath)
+        tableInfo = {}
+        trackNameRet, trackName = reaper.GetTrackName(reaper.GetSelectedTrack(0, 0))
+        if trackNameRet then 
+            mapName = trackName
+        end
+        if openPath ~= "[EMPTY]" then 
+            editFirstSelected(openPath)
+        end
     end
     saveScript = reaper.GetExtState("articulationMap", "saveScript")
     if saveScript and saveScript ~= "" then 
@@ -1574,6 +1582,7 @@ local function loop()
             end
             
             
+            
             local firstArticulationPath = getFirstArticulationMapFXJsonLine(true)
             
              
@@ -1597,6 +1606,15 @@ local function loop()
             }}
             for _, data in ipairs(buttonsData) do
                 createMappingButton(data) 
+            end
+            
+            if not mapName or #tableInfo == 0 then 
+                reaper.ImGui_SameLine(ctx)
+                local importBtn = {
+                name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet(true) end,
+                tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12\n\nCan also import "//json:{...}" string from Articulation Script JSFX'
+                }
+                createMappingButton(importBtn) 
             end
 
             -- OLD EEL
@@ -1872,10 +1890,10 @@ local function loop()
                                 name = "Transpose", key = "T", ctrl = true, triggerName = "Transpose",
                                 tip = "Transpose notes when articulation is selected."
                                 },{
-                                name = "Interval Trigger", key = "I", ctrl = true, focusName = "Interval", triggerName = "Interval",
+                                name = "Interval Trigger", key = "I", ctrl = true, triggerName = "Interval", -- focusName = "Interval", 
                                 tip = "Add trill note to articulations."
                                 },{
-                                name = "Keyboard Trigger", key = "K", ctrl = true, focusName = "KT", triggerName = "KeyboardTrigger",
+                                name = "Keyboard Trigger", key = "K", ctrl = true, triggerName = "KT", --focusName = "KeyboardTrigger", 
                                 tip = "Set Computer Keyboard Articulation controller keys how you like."
                                 },{
                                 name = "Live Articulation", key = "Q", ctrl = true,triggerName = "LiveArticulation", 
@@ -2638,6 +2656,171 @@ local function loop()
                                 end
                             end
                             
+                            function parenteseTitleOverlay(column, row, ret, stringInput, title, parenteseTitle, inputX, inputY)
+                                if column == focusedColumn and row == focusedRow and parenteseTitle and parenteseTitle ~= "" then
+                                    if ret and stringInput then  
+                                        if stringInput ~= title then 
+                                            if title and tonumber(stringInput) then
+                                                local offsetX = reaper.ImGui_CalcTextSize(ctx, title, 0,0)
+                                                local stringW, stringH = reaper.ImGui_CalcTextSize(ctx, parenteseTitle, 0,0)
+                                                offsetX = offsetX + 8
+                                                stringW = stringW + 6
+                                                inputY = inputY + 2
+                                                --reaper.ImGui_SameLine(ctx, stringSize + 8)
+                                                --reaper.ImGui_TextColored(ctx,colorGrey, parenteseTitle)
+                                                reaper.ImGui_DrawList_AddRectFilled(draw_list, inputX + offsetX, inputY, inputX + offsetX + stringW, inputY + stringH + 2, theme.overlay, theme.rounding)
+                                                reaper.ImGui_DrawList_AddText(draw_list, inputX + offsetX + 2, inputY, theme.text, parenteseTitle)
+                                            end
+                                        
+                                        end
+                                    end
+                                end
+                            end
+                            
+                            function modifyPitchRange(id, columnName, row, column, min, max, itemWidth, lane, defaultModifyType)
+                                local title = getArticulationTextFromLane(columnName, row, defaultValue) 
+                                
+                                textInputIsFocused = (column == focusedColumn and row == focusedRow)
+                                
+                                visualTitle = allNoteValuesMap[title] -- Only using sharps 
+                                
+                                parenteseTitle = ""
+                                if not visualTitle then 
+                                else
+                                    parenteseTitle = "(" .. visualTitle .. ")"
+                                end
+                                
+                                local prefix
+                                local modify
+                                if not tableInfo[row] then
+                                    tableInfo[row] = {}
+                                end
+                                
+                             
+                                if tableInfo[row] and tableInfo[row][columnName .. "Type"] and tableInfo[row][columnName .. "Type"] ~= "" then
+                                    modify = tableInfo[row][columnName .. "Type"]
+                                else
+                                    modify = defaultModifyType and defaultModifyType or "Fixed"
+                                end
+                            
+                                if modify == "Fixed" then
+                                    prefix = "="
+                                elseif modify == "Minimum" then
+                                    prefix = ">"
+                                elseif modify == "Maximum" then
+                                    prefix = "<" 
+                                end
+                            
+                                
+                                
+                                -- add value to both values
+                                if modify == "Within" or modify == "Outside" then 
+                                    title2 = getArticulationTextFromLane(columnName .. "2", row, defaultValue)  
+                                    visualTitle2 = allNoteValuesMap[title2]
+                                    parenteseTitle2 = ""
+                                    if not visualTitle2 then 
+                                    else
+                                        parenteseTitle2 = "(" .. visualTitle2 .. ")"
+                                    end
+                                end
+                                local _20 = math.ceil(appSettings.fontSize/100 * 20)
+                                local _10 = math.ceil(appSettings.fontSize/100 * 10)
+                                local _8 = math.ceil(appSettings.fontSize/100 * 8)
+                                local _4 = math.ceil(appSettings.fontSize/100 * 4)
+                                local _16 = math.ceil(appSettings.fontSize/100 * 16)
+                                local _14 = math.ceil(appSettings.fontSize/100 * 14)
+                                local _2 = math.ceil(appSettings.fontSize/100 * 2)
+                                local callback = max == 127 and filterFunction3Characters or nil
+                                local input1X, input1Y
+                                local input2X, input2Y
+                                
+                                if modify == "Within" then -- or modify == "Outside" then 
+                                    reaper.ImGui_SetNextItemWidth(ctx, itemWidth/2)
+                                    ret, stringInput = reaper.ImGui_InputText(ctx, "##1 - " .. id, visualTitle, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction4Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                    input1X, input1Y = reaper.ImGui_GetItemRectMin(ctx)
+                                    updateItemFocus(row, column, itemNumber,0.1) 
+                                    
+                                    reaper.ImGui_SameLine(ctx,itemWidth/2 - _8)
+                                    reaper.ImGui_SetNextItemWidth(ctx, _20)
+                                    reaper.ImGui_Text(ctx, "<>")
+                                    reaper.ImGui_SameLine(ctx, itemWidth/2+_14) 
+                                    
+                                    reaper.ImGui_SetNextItemWidth(ctx, itemWidth/2 - _10)
+                                    ret2, stringInput2 = reaper.ImGui_InputText(ctx, "##2 - " .. id, visualTitle2, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction4Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                    input2X, input2Y = reaper.ImGui_GetItemRectMin(ctx)
+                                elseif modify == "Outside" then 
+                                    reaper.ImGui_SetNextItemWidth(ctx, _8)
+                                    reaper.ImGui_Text(ctx, "<")
+                                    reaper.ImGui_SameLine(ctx, _8)
+                                    
+                                    reaper.ImGui_SetNextItemWidth(ctx, itemWidth/2 - _8)
+                                    ret, stringInput = reaper.ImGui_InputText(ctx, "##1 - " .. id, visualTitle, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction4Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                    input1X, input1Y = reaper.ImGui_GetItemRectMin(ctx) 
+                                    updateItemFocus(row, column, itemNumber, 0.1)
+                                    
+                                    --reaper.ImGui_SameLine(ctx,tableSizes.Velocity/2)
+                                    --reaper.ImGui_SetNextItemWidth(ctx, 5)
+                                    --reaper.ImGui_Text(ctx, "-")
+                                    
+                                    reaper.ImGui_SameLine(ctx,itemWidth-_8)
+                                    reaper.ImGui_SetNextItemWidth(ctx, _8)
+                                    reaper.ImGui_Text(ctx, ">") 
+                                    
+                                    reaper.ImGui_SameLine(ctx, itemWidth/2 - _2) 
+                                    reaper.ImGui_TextColored(ctx, 0x555555FF, "|")
+                                    
+                                    reaper.ImGui_SameLine(ctx, itemWidth/2) 
+                                    reaper.ImGui_SetNextItemWidth(ctx, itemWidth/2)
+                                    ret2, stringInput2 = reaper.ImGui_InputText(ctx, "##2 - " .. id, visualTitle2, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction4Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue()) 
+                                    input2X, input2Y = reaper.ImGui_GetItemRectMin(ctx)
+                                else  
+                                    reaper.ImGui_SetNextItemWidth(ctx, _10)
+                                    reaper.ImGui_Text(ctx, prefix)
+                                    reaper.ImGui_SameLine(ctx, _10)
+                                    reaper.ImGui_SetNextItemWidth(ctx, itemWidth)
+                                    ret, stringInput = reaper.ImGui_InputText(ctx, "##1 - " .. id, visualTitle, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction4Characters) -- | reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                    input1X, input1Y = reaper.ImGui_GetItemRectMin(ctx)
+                                end
+                                
+                                
+                                parenteseTitleOverlay(column, row, ret, stringInput, title, parenteseTitle, input1X, input1Y)
+                                parenteseTitleOverlay(column, row, ret2, stringInput2, title2, parenteseTitle2, input2X, input2Y)
+                            
+                                if ret then 
+                                    if tonumber(stringInput) ~= nil and
+                                        allNoteValuesMap[tonumber(stringInput)] then
+                                        startNote = tonumber(stringInput)
+                                    elseif noteNameValues[stringInput] then
+                                        startNote = tonumber(noteNameValues[stringInput])
+                                    else
+                                        startNote = nil
+                                    end
+                                    
+                                    local newNumber = numberWithinMinMax(startNote,min,max)
+                                    for rowKey, counter in pairs(selectedArticulations) do  
+                                        setNewTableValue(rowKey, columnName, newNumber)
+                                    end
+                                end
+                                if ret2 then
+                                    if tonumber(stringInput2) ~= nil and
+                                        allNoteValuesMap[tonumber(stringInput2)] then
+                                        startNote2 = tonumber(stringInput2)
+                                    elseif noteNameValues[stringInput2] then
+                                        startNote2 = tonumber(noteNameValues[stringInput2])
+                                    else
+                                        startNote2 = nil
+                                    end
+                                    
+                                    local newNumber = numberWithinMinMax(startNote2,min,max) 
+                                    for rowKey, counter in pairs(selectedArticulations) do
+                                        setNewTableValue(rowKey, columnName .. "2", newNumber or "") 
+                                    end
+                                end
+                                if modify == "Within" or modify == "Outside" then 
+                                    return true
+                                end
+                            end
+                            
                             
                             function modifyNotes(id, columnName, row, column, modify, defaultValue) 
                                 local title = getArticulationTextFromLane(columnName, row, defaultValue) 
@@ -3083,41 +3266,41 @@ local function loop()
                                             if reaper.ImGui_SmallButton(ctx, "X##" .. column) then
                                                 undo_redo.commit({tableInfo, mapping})
                                                 if column_name == "Group" then
-                                                    mapping.Group = false
+                                                    mapping.Group = nil
                                                 elseif column_name == "Channel" then
-                                                    mapping.Channel = false
+                                                    mapping.Channel = nil
                                                 elseif column_name == "Velocity" then
-                                                    mapping.Velocity = false
+                                                    mapping.Velocity = nil
                                                 elseif column_name == "Delay" then
-                                                    mapping.Delay = false  
+                                                    mapping.Delay = nil  
                                                 elseif column_name == "Pitch" then
-                                                    mapping.Pitch = false 
+                                                    mapping.Pitch = nil 
                                                 elseif column_name == "Position" then
-                                                    mapping.Position = false
+                                                    mapping.Position = nil
                                                 elseif column_name == "FilterChannel" then
-                                                    mapping.FilterChannel = false  
+                                                    mapping.FilterChannel = nil  
                                                 elseif column_name == "FilterPitch" then
-                                                    mapping.FilterPitch = false 
+                                                    mapping.FilterPitch = nil 
                                                 elseif column_name == "FilterVelocity" then
-                                                    mapping.FilterVelocity = false 
+                                                    mapping.FilterVelocity = nil 
                                                 elseif column_name == "FilterSpeed" then
-                                                    mapping.FilterSpeed = false 
+                                                    mapping.FilterSpeed = nil 
                                                 elseif column_name == "FilterInterval" then
-                                                    mapping.FilterInterval = false 
+                                                    mapping.FilterInterval = nil 
                                                 elseif column_name == "FilterCount" then
-                                                    mapping.FilterCount = false                                                                                                
+                                                    mapping.FilterCount = nil                                                                                                
                                                 elseif column_name == "Layer" then
-                                                    mapping.Layer = false  
+                                                    mapping.Layer = nil  
                                                 elseif column_name == "Transpose" then 
-                                                    mapping.Transpose = false 
+                                                    mapping.Transpose = nil 
                                                 elseif column_name == "Interval" then
-                                                    mapping.Interval = false 
+                                                    mapping.Interval = nil 
                                                 elseif column_name == "KT" then
-                                                    mapping.KeyboardTrigger = false 
+                                                    mapping.KT = nil 
                                                 elseif column_name == "Notation" then
-                                                    mapping.Notation = false
+                                                    mapping.Notation = nil
                                                 elseif column_name == "UIText" then
-                                                    mapping.UIText = false
+                                                    mapping.UIText = nil
                                                 elseif mapping_handling.getCCNumber(column_name) then
                                                     mapping[column_name] = nil 
                                                 elseif mapping_handling.getNoteNumber(column_name) then  
@@ -3442,7 +3625,7 @@ local function loop()
                                                 end
                                             elseif columnName == "Pitch" then   
                                                 --modifyNotes(id, columnName, row, column, modify) 
-                                                modifyVelocity(id, columnName, row, column, 0, 127, tableSizes.Pitch)
+                                                modifyPitchRange(id, columnName, row, column, 0, 127, tableSizes.Pitch)
                                             elseif columnName == "Velocity" then  
                                                 --reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Velocity)
                                                 modifyVelocity(id, columnName, row, column, 0, 127,tableSizes.Velocity) 
@@ -3484,7 +3667,7 @@ local function loop()
                                             elseif columnName == "FilterChannel" then  
                                                 modifyVelocity(id, columnName, row, column, 1, 16, tableSizes.FilterChannel) 
                                             elseif columnName == "FilterPitch" then  
-                                                modifyVelocity(id, columnName, row, column, 0, 127, tableSizes.FilterPitch)
+                                                modifyPitchRange(id, columnName, row, column, 0, 127, tableSizes.FilterPitch)
                                                 
                                             elseif columnName == "Transpose" then 
                                                 reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Transpose)
@@ -4137,7 +4320,12 @@ local function loop()
                 for _, data in ipairs(buttonsData) do
                     createMappingButton(data) 
                 end
-            
+                
+                if devMode then 
+                    reaper.ImGui_SameLine(ctx)
+                    reaper.ImGui_TextColored(ctx, colorGrey, articulationMapCreatorVersion)
+                end
+                
             end
         end
         

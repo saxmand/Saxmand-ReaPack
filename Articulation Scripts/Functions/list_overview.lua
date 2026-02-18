@@ -55,8 +55,22 @@ end
  ]]
 local export = {}
 
+function getCreatorScriptId()
+    local sep = package.config:sub(1,1)
+    local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
+    local devMode = scriptPath:match("jesperankarfeldt") ~= nil
+    local creatorScriptPath = reaper.GetResourcePath()
+    .. sep .. "Scripts"
+    .. sep .. (devMode and "Saxmand-ReaPack" or "Saxmand ReaPack")
+    .. sep .. "Articulation Scripts"
+    .. sep .. "Saxmand_Articulation_Script Creator.lua"
+    local command_id = reaper.AddRemoveReaScript(true, 0, creatorScriptPath, false)
+    local creatorIsOpen = reaper.GetToggleCommandState(command_id) > 0
+    return command_id, creatorIsOpen
+end
 
 function export.openCreatorWindow(path, save)    
+    local command_id, creatorIsOpen = getCreatorScriptId()
 
     if save then 
         reaper.SetExtState("articulationMap", "saveScript", "1", false)
@@ -64,21 +78,11 @@ function export.openCreatorWindow(path, save)
         --    reaper.Main_OnCommand(command_id, 0)  
         --end
     else
-        reaper.SetExtState("articulationMap", "openScript", path, false)
+        if path then 
+            reaper.SetExtState("articulationMap", "openScript", path, false)
+        end
 
-        local sep = package.config:sub(1,1)
-        local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
-        local devMode = scriptPath:match("jesperankarfeldt") ~= nil
-        local path =
-        reaper.GetResourcePath()
-        .. sep .. "Scripts"
-        .. sep .. (devMode and "Saxmand-ReaPack" or "Saxmand ReaPack")
-        .. sep .. "Articulation Scripts"
-        .. sep .. "Saxmand_Articulation_Script Creator.lua"
-
-        local command_id = reaper.AddRemoveReaScript(true, 0, path, false)
-
-        if reaper.GetToggleCommandState(command_id) < 1 then 
+        if not creatorIsOpen then 
             reaper.Main_OnCommand(command_id, 0)    
         end
     end
@@ -273,14 +277,21 @@ function export.listOverviewSurface(focusIsOn)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), trackColor)
         --reaper.ImGui_Text(ctx, tostring(trackName))
         local btnName = trackName
+        local path, scriptAlreadyOpen, creatorIsOpen
         if fxName then 
             local scriptThatIsOpen = reaper.GetExtState("articulationMap", "scriptThatIsOpen")
-            local fxNumber, fxName = track_depending_on_selection.findArticulationScript(track) 
+            --local fxNumber, fxName = track_depending_on_selection.findArticulationScript(track) 
             path = reaper.GetResourcePath() .. "/Effects/Articulation Scripts/" .. fxName .. ".jsfx"
             scriptAlreadyOpen = scriptThatIsOpen == path
-            btnName = trackNameIsHovered and (scriptAlreadyOpen and "Save and update" or "Click to edit") or trackName
         end
+        if trackNameIsHovered then 
+            _, creatorIsOpen = getCreatorScriptId()            
+        end
+        btnName = trackNameIsHovered and (scriptAlreadyOpen and "Save script and update" or (path and "Click to edit script" or (creatorIsOpen and "Create new script" or "Open Script Creator"))) or trackName
         if reaper.ImGui_Selectable(ctx,btnName, true) then 
+            if creatorIsOpen then 
+                if not path then path = "[EMPTY]" end
+            end
             export.openCreatorWindow(path, scriptAlreadyOpen) 
             --if track and fxNumber then 
                 --local val = reaper.TrackFX_GetFloatingWindow(track, fxNumber)
