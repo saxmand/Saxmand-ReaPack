@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.6.9
+-- @version 0.7.0
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,4 +15,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + added workaround for docked midi editor
+--   + added workaround for docked midi editor, so it still works for non docked

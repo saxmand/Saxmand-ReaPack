@@ -86,13 +86,12 @@ function export.trackDependingOnSelection()
     end
     
     local mainHwnd = reaper.GetMainHwnd()
-    if not midiEditor_is_focused and (forgroundHwnd == mainHwnd or focusHwnd_parent == mainHwnd) then
+    if not midiEditor_is_focused and (forgroundHwnd == mainHwnd) then-- or focusHwnd_parent == mainHwnd) then
         focusIsOn = "take"
-        focusHwnd = mainHwnd
+        focusHwnd = focusHwnd
     elseif midiEditor and (forgroundHwnd == midiEditor or midiEditor_is_focused) then 
         focusIsOn = "editor"
-        if midiEditor_is_focused then 
-            
+        if midiEditor_is_focused then             
             focusHwnd = focusHwnd
         else
             focusHwnd = midiEditor
