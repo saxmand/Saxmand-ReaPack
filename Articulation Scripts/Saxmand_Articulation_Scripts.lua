@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.7.3
+-- @version 0.7.4
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,4 +15,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + added "pdc_on_last = -1;" to init, to see if it can ensure pdcOn if effect was offline. 
+--   + removed check for pdc_on_last in jsfx, as it shouldn't affect performance 
