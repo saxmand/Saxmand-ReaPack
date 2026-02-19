@@ -78,110 +78,118 @@ function export.trackDependingOnSelection()
 
     local focusIsOn, focusHwnd
     local forgroundHwnd = reaper.JS_Window_GetForeground()
+    --local forgroundHwnd_parent = reaper.JS_Window_GetParent(forgroundHwnd)
+    --local forgroundHwnd_parent_title = reaper.JS_Window_GetTitle(forgroundHwnd_parent)
     local focusHwnd = reaper.JS_Window_GetFocus()
     local focusHwnd_parent = reaper.JS_Window_GetParent(focusHwnd)
     local focusHwnd_parent_title = reaper.JS_Window_GetTitle(focusHwnd_parent)
-    if midiEditor_is_docked and focusHwnd_parent_title:match("MIDI take") ~= nil then 
-        midiEditor_is_focused = true
-    end
     
-    local mainHwnd = reaper.GetMainHwnd()
-    if not midiEditor_is_focused and (forgroundHwnd == mainHwnd) then-- or focusHwnd_parent == mainHwnd) then
-        focusIsOn = "take"
-        focusHwnd = focusHwnd
-    elseif midiEditor and (forgroundHwnd == midiEditor or midiEditor_is_focused) then 
-        focusIsOn = "editor"
-        if midiEditor_is_focused then             
-            focusHwnd = focusHwnd
-        else
-            focusHwnd = midiEditor
-        end
-    end
+    -- ensure we do not change focus when we focus our list overview 
+    if focusHwnd_parent_title == "Articulation_Scripts" then 
 
-    if isRecording then
-        if firstSelectedTrack then 
-            track = firstSelectedTrack
-            section_id = reaper_sections["Main"] 
-            focusIsOn = "track"
-        end
     else
-        if midiEditor and (forgroundHwnd == midiEditor or midiEditor_is_focused) then
-            take = reaper.MIDIEditor_GetTake(midiEditor)
-            if take then 
-                item = reaper.GetMediaItemTake_Item(take)
-                track = reaper.GetMediaItemTrack(item)
-                section_id = reaper_sections["MIDI Editor"]
-
-                if settings.add_current_articulation_to_new_notes and isMouseReleased then 
-                    local _, numNotes = reaper.MIDI_CountEvts(take)
-                    if last_numNotes and numNotes - last_numNotes == 1 then
-                        changeArticulation(nil, nil, focusIsOn, true)
-                    elseif last_numNotes and last_numNotes > numNotes then 
-                        mirror_notation_to_unique_text_events(take)
-                    end
-                    last_numNotes = numNotes
-                end
+        if midiEditor_is_docked and focusHwnd_parent_title:match("MIDI take") ~= nil then 
+            midiEditor_is_focused = true
+        end
+        
+        local mainHwnd = reaper.GetMainHwnd()
+        if not midiEditor_is_focused and (forgroundHwnd == mainHwnd) then-- or focusHwnd_parent == mainHwnd) then
+            focusIsOn = "take"
+            focusHwnd = focusHwnd
+        elseif midiEditor and (forgroundHwnd == midiEditor or midiEditor_is_focused) then 
+            focusIsOn = "editor"
+            if midiEditor_is_focused then             
+                focusHwnd = focusHwnd
+            else
+                focusHwnd = midiEditor
             end
         end
-            -- inline editor = 32061
-        if not section_id and forgroundHwnd == mainHwnd then
-            local selectedMediaItemsCount = reaper.CountSelectedMediaItems(0)
-            if selectedMediaItemsCount > 0 then
-                item = reaper.GetSelectedMediaItem(0, 0)
-                take = reaper.GetActiveTake(item)
-                track = reaper.GetMediaItemTrack(item)
-            end
-            section_id = reaper_sections["Main"]
-            
-            
-            local GetCursorContext = reaper.GetCursorContext()
-            if GetCursorContext == -1 then 
-                GetCursorContext = last_GetCursorContext
-            else
-                last_GetCursorContext = GetCursorContext
-            end
 
-            local trackIsFocused = GetCursorContext == 0
-            
-            if (not track or trackIsFocused) and firstSelectedTrack then 
+        if isRecording then
+            if firstSelectedTrack then 
                 track = firstSelectedTrack
-                take = nil
-                trackIsFocused = true    
+                section_id = reaper_sections["Main"] 
                 focusIsOn = "track"
             end
-            
-            --[[
-            if cursorContext ~= last_cursorContext then
-                last_cursorContext = cursorContext
-                if cursorContext == 0 then 
-                    last_firstSelectedTrack = nil
-                elseif cursorContext == 1 then
-                    last_take_selection = nil                    
-                end
-            end
-                -- if last defer track was focused, we stay here, by keep reseting last selected track
-                if trackIsFocused then 
-                    -- unless we have a different take than last time
-                    if last_take_selection ~= take then                    
-                        last_take_selection = take
-                        if take then 
-                            takeIsFocused = true
-                            trackIsFocused = false
+        else
+            if midiEditor and (forgroundHwnd == midiEditor or midiEditor_is_focused) then
+                take = reaper.MIDIEditor_GetTake(midiEditor)
+                if take then 
+                    item = reaper.GetMediaItemTake_Item(take)
+                    track = reaper.GetMediaItemTrack(item)
+                    section_id = reaper_sections["MIDI Editor"]
+
+                    if settings.add_current_articulation_to_new_notes and isMouseReleased then 
+                        local _, numNotes = reaper.MIDI_CountEvts(take)
+                        if last_numNotes and numNotes - last_numNotes == 1 then
+                            changeArticulation(nil, nil, focusIsOn, true)
+                        elseif last_numNotes and last_numNotes > numNotes then 
+                            mirror_notation_to_unique_text_events(take)
                         end
-                    else
-                        if not takeIsFocused then 
-                            last_firstSelectedTrack = nil
-                        end
+                        last_numNotes = numNotes
                     end
                 end
-                
-                if firstSelectedTrack and last_firstSelectedTrack ~= firstSelectedTrack then
-                    track = firstSelectedTrack
-                    last_firstSelectedTrack = firstSelectedTrack
-                    trackIsFocused = true
-                    takeIsFocused = false
+            end
+                -- inline editor = 32061
+            if not section_id and forgroundHwnd == mainHwnd then
+                local selectedMediaItemsCount = reaper.CountSelectedMediaItems(0)
+                if selectedMediaItemsCount > 0 then
+                    item = reaper.GetSelectedMediaItem(0, 0)
+                    take = reaper.GetActiveTake(item)
+                    track = reaper.GetMediaItemTrack(item)
                 end
-                ]]
+                section_id = reaper_sections["Main"]
+                
+                
+                local GetCursorContext = reaper.GetCursorContext()
+                if GetCursorContext == -1 then 
+                    GetCursorContext = last_GetCursorContext
+                else
+                    last_GetCursorContext = GetCursorContext
+                end
+
+                local trackIsFocused = GetCursorContext == 0
+                
+                if (not track or trackIsFocused) and firstSelectedTrack then 
+                    track = firstSelectedTrack
+                    take = nil
+                    trackIsFocused = true    
+                    focusIsOn = "track"
+                end
+                
+                --[[
+                if cursorContext ~= last_cursorContext then
+                    last_cursorContext = cursorContext
+                    if cursorContext == 0 then 
+                        last_firstSelectedTrack = nil
+                    elseif cursorContext == 1 then
+                        last_take_selection = nil                    
+                    end
+                end
+                    -- if last defer track was focused, we stay here, by keep reseting last selected track
+                    if trackIsFocused then 
+                        -- unless we have a different take than last time
+                        if last_take_selection ~= take then                    
+                            last_take_selection = take
+                            if take then 
+                                takeIsFocused = true
+                                trackIsFocused = false
+                            end
+                        else
+                            if not takeIsFocused then 
+                                last_firstSelectedTrack = nil
+                            end
+                        end
+                    end
+                    
+                    if firstSelectedTrack and last_firstSelectedTrack ~= firstSelectedTrack then
+                        track = firstSelectedTrack
+                        last_firstSelectedTrack = firstSelectedTrack
+                        trackIsFocused = true
+                        takeIsFocused = false
+                    end
+                    ]]
+            end
         end
     end
 
