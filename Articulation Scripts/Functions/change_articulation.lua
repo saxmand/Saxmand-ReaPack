@@ -82,7 +82,7 @@ local function updateSlidersOnAllTrack(articulation)
 end
 
 -- Function to set notation text for selected notes
-local function setNotationText(take, articulation, allNotes)
+local function setNotationText(take, articulation, allNotes, forceInsert)
     
     local takeTrack = reaper.GetMediaItemTake_Track(take)
     local existsInScript, triggerTableLayers, artSliders, isAToggle, isToggleOn = updateSliderFromArticulation(track, articulation)
@@ -97,8 +97,9 @@ local function setNotationText(take, articulation, allNotes)
                 local newName = ""
                 local artLayer
                 -- look more at this
-                if not cmd then
-                    local currentText = getNoteText(take, noteChannel, notePpqpos, notePitch)
+                local currentText = getNoteText(take, noteChannel, notePpqpos, notePitch)
+                
+                if not cmd and not forceInsert then
                     if currentText then
                         local arts = split_exact(currentText)
                         --[[ for i, a in ipairs(arts) do
@@ -153,7 +154,7 @@ local function setNotationText(take, articulation, allNotes)
                         --end
                         --if #arts < #artSliders then 
                         --    for i = 1, #artSliders - #arts do
-                               -- table.insert(arts, "")                            
+                            -- table.insert(arts, "")                            
                         --    end
                         --end
                         
@@ -162,10 +163,17 @@ local function setNotationText(take, articulation, allNotes)
                         newName = getArtNameFromSliders(takeTrack, artSliders)
                     end
                 else
-                    newName = getArtNameFromSliders(takeTrack, artSliders)
+                    -- incase we force an articulation on a new note, we do not do it if it already has a note on it.
+                    if forceInsert and currentText then 
+                        newName = nil
+                    else
+                        newName = getArtNameFromSliders(takeTrack, artSliders)
+                    end
                 end
-                local text = "NOTE " .. noteChannel .. " " .. notePitch .. " text " .. '"' .. newName .. '"'
-                reaper.MIDI_InsertTextSysexEvt(take, selected, muted, notePpqpos, 15, text, true)
+                if newName then 
+                    local text = "NOTE " .. noteChannel .. " " .. notePitch .. " text " .. '"' .. newName .. '"'
+                    reaper.MIDI_InsertTextSysexEvt(take, selected, muted, notePpqpos, 15, text, true)
+                end
             end
         end
         -- Resync the MIDI editor to update the changes
@@ -220,7 +228,7 @@ local function setNotationOrSelectNotes(take, articulation, allNotes, forceInser
     if shift and not forceInsert then 
         selectArticulationContaining(take, articulation)
     else
-        setNotationText(take, articulation, allNotes)
+        setNotationText(take, articulation, allNotes, forceInsert)
     end
 end
 

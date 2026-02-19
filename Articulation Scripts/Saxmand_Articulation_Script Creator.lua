@@ -2902,37 +2902,38 @@ local function loop()
                                     else
                                         startNote = nil
                                     end
-                            
-                                    extraCounter = 0
-                                    for rowKey, counter in pairs(selectedArticulations) do
-                                        if modify == "Same" or not startNote then
-                                            noteIndexValue = startNote
-                                        elseif modify == "Increment" then
-                                            noteIndexValue = startNote + math.floor((counter - 1) * modifierSettings[columnName .. "Increment"])
-                                        elseif modify == "Chromatic" then
-                                            noteIndexValue = startNote + (counter - 1)
-                                        elseif modify == "White Keys" then
-                                            noteIndexValue = startNote + (counter - 1) + extraCounter
-                                            if allWhiteNoteValuesMap[noteIndexValue] ==
-                                                false then
-                                                extraCounter = extraCounter + 1
-                                                noteIndexValue = noteIndexValue + 1
+                                    if startNote then 
+                                        extraCounter = 0
+                                        for rowKey, counter in pairs(selectedArticulations) do
+                                            if modify == "Same" or not startNote then
+                                                noteIndexValue = startNote
+                                            elseif modify == "Increment" then
+                                                noteIndexValue = startNote + math.floor((counter - 1) * modifierSettings[columnName .. "Increment"])
+                                            elseif modify == "Chromatic" then
+                                                noteIndexValue = startNote + (counter - 1)
+                                            elseif modify == "White Keys" then
+                                                noteIndexValue = startNote + (counter - 1) + extraCounter
+                                                if allWhiteNoteValuesMap[noteIndexValue] ==
+                                                    false then
+                                                    extraCounter = extraCounter + 1
+                                                    noteIndexValue = noteIndexValue + 1
+                                                end
+                                            elseif modify == "Black Keys" then
+                                                noteIndexValue = startNote + (counter - 1) + extraCounter
+                                                while allBlackNoteValuesMap[noteIndexValue] == false do
+                                                    extraCounter = extraCounter + 1
+                                                    noteIndexValue = noteIndexValue + 1
+                                                end
                                             end
-                                        elseif modify == "Black Keys" then
-                                            noteIndexValue = startNote + (counter - 1) + extraCounter
-                                            while allBlackNoteValuesMap[noteIndexValue] == false do
-                                                extraCounter = extraCounter + 1
-                                                noteIndexValue = noteIndexValue + 1
+                                            if noteIndexValue and noteIndexValue > 127 then
+                                                noteIndexValue = 127
                                             end
+                                            if noteIndexValue and noteIndexValue < 0 then
+                                                noteIndexValue = 0
+                                            end
+                                            
+                                            setNewTableValue(rowKey, columnName, tonumber( noteIndexValue))
                                         end
-                                        if noteIndexValue and noteIndexValue > 127 then
-                                            noteIndexValue = 127
-                                        end
-                                        if noteIndexValue and noteIndexValue < 0 then
-                                            noteIndexValue = 0
-                                        end
-                                        
-                                        setNewTableValue(rowKey, columnName, tonumber( noteIndexValue))
                                     end
                                 end
                             end

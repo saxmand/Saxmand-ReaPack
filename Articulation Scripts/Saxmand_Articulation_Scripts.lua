@@ -15,4 +15,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + added workaround for docked midi editor, so it still works for non docked
+--   + bug fix, always ensure a start note
+--   + bug fix, ensure we don't automatically write articulation on newly created notes in case they have an articulation
