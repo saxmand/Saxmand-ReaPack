@@ -55,7 +55,7 @@ function export.createTableOrderFromUsedMappings(mapping)
     
     table.insert(mappingType, "Title")
     
-    if mapping.Color then table.insert(mappingType, "Color") end
+    --if mapping.Color then table.insert(mappingType, "Color") end
     
     if mapping.Layer then table.insert(mappingType, "Layer") end
     
@@ -119,6 +119,17 @@ function export.createTableOrderFromUsedMappings(mapping)
 
     if mapping.UIText then table.insert(mappingType, "UIText") end
     return mappingType
+end
+
+function export.createMappingsFromTable(tableInfo)
+    local mappings = {}
+    for _, t in ipairs(tableInfo) do
+        local mappingsInT = export.createTableOrderFromUsedMappings(t)
+        for _, v in ipairs(mappingsInT) do
+            mappings[v] = true
+        end
+    end
+    return mappings
 end
 
 function export.getTableSizes(fontSize, tableSizeTitle, tableSizeGroup)

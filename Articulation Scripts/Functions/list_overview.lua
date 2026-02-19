@@ -273,7 +273,7 @@ function export.listOverviewSurface(focusIsOn)
         
         
         reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_SelectableTextAlign(), isLayerCollabsed and 0 or 0.5, 0) 
-        local trackColor = modern_ui.getTrackColor(track) or 0x222222FF 
+        local trackColor = track and modern_ui.getTrackColor(track) or 0x222222FF 
         local textColor = GetTextColorForBackground(trackColor)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), textColor)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), trackColor )
@@ -449,7 +449,7 @@ function export.listOverviewSurface(focusIsOn)
     modern_ui.ending(ctx)
 
     if not open then 
-        setToggleCommandState(listOverview_command_id)
+        --setToggleCommandState(listOverview_command_id)
     end
 
     return articulationChange -- not menuOpen and windowIsFocused

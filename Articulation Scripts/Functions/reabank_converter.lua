@@ -3,22 +3,26 @@
 --
 --  Returns an ARRAY of instrument tables. Each entry:
 --  {
---    mapName   = "...",
---    Vendor    = "...",
---    Product   = "...",
---    Info      = "...",   -- optional, from bank-level m=
---    tableInfo = { ... }  -- articulation entries
+--    mapName            = "...",
+--    instrumentSettings = {
+--      Vendor   = "...",
+--      Product  = "...",
+--      Patch    = "...",
+--      Info     = "...",    -- from bank-level m=
+--      Creator  = "...",    -- from "Creator/CREATOR:" header comment
+--      Source   = "...",    -- from "Source:" header comment
+--      Notes    = "...",    -- from "Note/Notes/NOTE/NOTES:" header comments (joined)
+--      From     = "reabank"
+--    },
+--    tableInfo = { ... }    -- articulation entries
 --  }
 --
 --  Usage inside REAPER:
---    dofile(reaper.GetResourcePath() .. "/Scripts/reabank_converter.lua")
---    local banks = ConvertReabank("/path/to/file.reabank")
+--    local conv  = dofile(reaper.GetResourcePath() .. "/Scripts/reabank_converter.lua")
+--    local banks = conv.ConvertReabank("/path/to/file.reabank")
 --    for i, bank in ipairs(banks) do
---      reaper.ShowConsoleMsg("Bank " .. i .. ": " .. bank.mapName .. "\n")
---      reaper.ShowConsoleMsg(SerializeTable(bank) .. "\n")
+--      reaper.ShowConsoleMsg(bank.mapName .. "\n")
 --    end
---
---  Standalone:  lua reabank_converter.lua myfile.reabank
 -- ============================================================
 
 --------------------------------------------------------------------------------
@@ -38,7 +42,6 @@ local function split(s, delim)
 end
 
 -- Parse a //! line into a flat key=value table.
--- Handles  key=value,  key="quoted value",  and bare boolean keys.
 local function parseAnnotation(line)
   line = line:match("^//!%s*(.-)%s*$") or ""
   local attrs = {}
@@ -47,7 +50,6 @@ local function parseAnnotation(line)
     while i <= #line and line:sub(i,i):match("%s") do i = i + 1 end
     if i > #line then break end
 
-    -- read key
     local keyStart = i
     while i <= #line and line:sub(i,i) ~= "=" and not line:sub(i,i):match("%s") do
       i = i + 1
@@ -59,7 +61,7 @@ local function parseAnnotation(line)
       attrs[key] = true
       goto continue
     end
-    i = i + 1  -- skip '='
+    i = i + 1
 
     local value
     if line:sub(i,i) == '"' then
@@ -84,9 +86,9 @@ end
 local function parseOutputEvents(oStr, entry)
   local noteCount = 0
   for _, ev in ipairs(split(oStr, "/")) do
-    ev = ev:gsub("^%-", "")       -- strip leading '-' (non-routing prefix)
-    ev = ev:gsub("%%[^/]*$", "")  -- strip %filter_program suffix
-    ev = ev:gsub("@[^:]*", "")    -- strip @channel[.bus]
+    ev = ev:gsub("^%-", "")
+    ev = ev:gsub("%%[^/]*$", "")
+    ev = ev:gsub("@[^:]*", "")
 
     local evType, argStr = ev:match("^([^:]+):?(.*)$")
     evType = evType and trim(evType) or ""
@@ -101,98 +103,140 @@ local function parseOutputEvents(oStr, entry)
 
     if evType == "cc" then
       if arg1 then entry["CC" .. arg1] = arg2 end
-
     elseif evType == "note" then
       noteCount = noteCount + 1
       local key = "Note" .. noteCount
       entry[key] = arg1
       if arg2 then entry[key .. "Velocity"] = arg2 end
-
     elseif evType == "note-hold" then
       noteCount = noteCount + 1
       local key = "Note" .. noteCount
       entry[key]           = arg1
       entry[key .. "Held"] = true
       if arg2 then entry[key .. "Velocity"] = arg2 end
-
     elseif evType == "pitch" then
       entry["Pitchbend"] = arg1
-
     elseif evType == "art" then
       entry["Art"] = arg1
-
     elseif evType == "program" then
       entry["Program"] = arg1
     end
-    -- @channel-only routing (evType == "") → silently ignored
   end
 end
 
--- Build a fresh bank table from accumulated bank-level //! attrs.
-local function makeBankTable(bankAttrs, bankLineName)
-  local bank = { tableInfo = {} }
+-- Append a note sentence to an existing notes string.
+local function appendNote(existing, newText)
+  newText = trim(newText)
+  if newText == "" then return existing end
+  if existing == "" then return newText end
+  return existing .. ".\n" .. newText
+end
 
-  -- mapName: n= overrides the name on the Bank line
+-- Build a fresh bank table from accumulated pending state.
+local function makeBankTable(bankAttrs, headerMeta, bankLineName)
+  local bank = {
+    mapName            = "",
+    instrumentSettings = { From = "reabank" },
+    tableInfo          = {},
+  }
+
   bank.mapName = bankAttrs["n"] or bankLineName
 
-  -- Vendor / Product from g="Vendor/Product"
+  local s = bank.instrumentSettings
+
   if bankAttrs["g"] then
     local parts = split(bankAttrs["g"], "/")
-    bank.Vendor  = parts[1] or ""
-    bank.Product = parts[2] or ""
+    s.Vendor  = parts[1] or ""
+    s.Product = parts[2] or ""
   else
-    bank.Vendor  = ""
-    bank.Product = ""
+    s.Vendor  = ""
+    s.Product = ""
   end
 
-  if bankAttrs["m"] then bank.Info = bankAttrs["m"] end
+  s.Patch = bankAttrs["n"] or bankLineName
+
+  if bankAttrs["m"] then s.Info = bankAttrs["m"] end
+
+  if headerMeta.Creator ~= "" then s.Creator = headerMeta.Creator end
+  if headerMeta.Source  ~= "" then s.Source  = headerMeta.Source  end
+  if headerMeta.Notes   ~= "" then s.Notes   = headerMeta.Notes   end
 
   return bank
 end
 
 --------------------------------------------------------------------------------
--- Main converter — returns an ARRAY of bank tables
+-- Main converter
 --------------------------------------------------------------------------------
 
-function ConvertReabank(filePath)
+local export = {}
+
+function export.ConvertReabank(filePath)
   local file, err = io.open(filePath, "r")
   if not file then error("Could not open file: " .. tostring(err)) end
   local lines = {}
   for line in file:lines() do lines[#lines + 1] = line end
   file:close()
 
-  local banks        = {}   -- result array
-  local currentBank  = nil  -- bank table currently being filled
-  local pendingAttrs = {}   -- //! attrs waiting for their target line
+  local banks        = {}
+  local currentBank  = nil
+  local pendingAttrs = {}
+  local headerMeta   = { Creator = "", Source = "", Notes = "" }
 
   local function flushPending()
-    local a = pendingAttrs
+    local a, h = pendingAttrs, headerMeta
     pendingAttrs = {}
-    return a
+    headerMeta   = { Creator = "", Source = "", Notes = "" }
+    return a, h
+  end
+
+  local function tryParseHeaderComment(raw)
+    -- Strip the leading "//" to get the comment content
+    local content = raw:match("^//%s*(.-)%s*$")
+    if not content then return end
+
+    -- Separator line (//-----) resets the header accumulator for a clean block
+    if content:match("^%-%-%-") then
+      headerMeta = { Creator = "", Source = "", Notes = "" }
+      return
+    end
+
+    -- Creator / CREATOR:
+    local val = content:match("^[Cc][Rr][Ee][Aa][Tt][Oo][Rr]%s*:%s*(.+)$")
+    if val then headerMeta.Creator = trim(val) ; return end
+
+    -- Source:
+    val = content:match("^[Ss][Oo][Uu][Rr][Cc][Ee]%s*:%s*(.+)$")
+    if val then headerMeta.Source = trim(val) ; return end
+
+    -- Note / Notes / NOTE / NOTES:
+    val = content:match("^[Nn][Oo][Tt][Ee][Ss]?%s*:%s*(.+)$")
+    if val then headerMeta.Notes = appendNote(headerMeta.Notes, val) ; return end
   end
 
   for _, rawLine in ipairs(lines) do
     local line = trim(rawLine)
 
-    -- Blank lines are fine between articulations; leave pending attrs intact
     if line == "" then goto continue end
 
-    -- Plain comments (not annotations)
-    if line:match("^//[^!]") or line == "//" then goto continue end
-
-    -- Annotation line — merge into pending
+    -- Annotation line (//!)
     if line:match("^//!") then
       local attrs = parseAnnotation(line)
       for k, v in pairs(attrs) do pendingAttrs[k] = v end
       goto continue
     end
 
-    -- Bank declaration — starts a new instrument
+    -- Plain comment line (//)
+    if line:match("^//") then
+      tryParseHeaderComment(line)
+      goto continue
+    end
+
+    -- Bank declaration — start a new instrument
     if line:match("^Bank%s") then
-      local bankAttrs    = flushPending()
-      local bankLineName = line:match("^Bank%s+%S+%s+%S+%s+(.+)$") or ""
-      currentBank        = makeBankTable(bankAttrs, bankLineName)
-      banks[#banks + 1]  = currentBank
+      local bankAttrs, hMeta = flushPending()
+      local bankLineName     = line:match("^Bank%s+%S+%s+%S+%s+(.+)$") or ""
+      currentBank            = makeBankTable(bankAttrs, hMeta, bankLineName)
+      banks[#banks + 1]      = currentBank
       goto continue
     end
 
@@ -244,14 +288,17 @@ function ConvertReabank(filePath)
   return banks
 end
 
+return export
+
+--[[
 --------------------------------------------------------------------------------
--- Pretty-printer
+-- Pretty-printer (useful for debugging in the REAPER console)
 --------------------------------------------------------------------------------
 
-function SerializeTable(tbl, indent)
+local function SerializeTable(tbl, indent)
   indent = indent or 0
-  local pad   = string.rep("  ", indent)
-  local out   = { "{" }
+  local pad = string.rep("  ", indent)
+  local out = { "{" }
   for k, v in pairs(tbl) do
     local keyStr = type(k) == "string" and (k .. " = ") or ("[" .. k .. "] = ")
     if type(v) == "table" then
@@ -266,31 +313,11 @@ function SerializeTable(tbl, indent)
   return table.concat(out, "\n")
 end
 
---------------------------------------------------------------------------------
--- REAPER usage example (uncomment and adapt path):
---------------------------------------------------------------------------------
-
-local banks = ConvertReabank("/Users/jesperankarfeldt/Downloads/reaticulate-master/banks/70-01-Cinematic_Series-Cinematic_Studio_Strings.reabank")
+-- REAPER usage example:
+local conv  = dofile(reaper.GetResourcePath() .. "/Scripts/reabank_converter.lua")
+local banks = conv.ConvertReabank("/path/to/file.reabank")
 for i, bank in ipairs(banks) do
   reaper.ShowConsoleMsg("=== [" .. i .. "] " .. bank.mapName .. " ===\n")
   reaper.ShowConsoleMsg(SerializeTable(bank) .. "\n\n")
 end
-
---[[
---------------------------------------------------------------------------------
--- Standalone entry point:  lua reabank_converter.lua myfile.reabank
---------------------------------------------------------------------------------
-if arg and arg[1] then
-  local ok, res = pcall(ConvertReabank, arg[1])
-  if ok then
-    print("-- " .. #res .. " bank(s) found\n")
-    for i, bank in ipairs(res) do
-      print("-- [" .. i .. "] " .. bank.mapName)
-      print(SerializeTable(bank))
-      print()
-    end
-  else
-    print("ERROR: " .. res)
-  end
-end
-]]
+--]]

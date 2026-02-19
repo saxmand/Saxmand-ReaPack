@@ -65,6 +65,7 @@ local embed_ui = require("embed_ui")
 local columnsToNotUseLanes = mapping_handling.columnsToNotUseLanes()
 
 local undo_redo = require("undo_redo")
+local reabank_converter = require("reabank_converter")
 
 -- Load the keyboard tables
 --local keyboard_tables = require(scriptPath .."/Functions/Helpers/keyboard_tables")
@@ -1424,6 +1425,23 @@ local function loop()
             reaper.ImGui_PopStyleColor(ctx)
         end
         
+        function importReabank(path)
+            local banks = reabank_converter.ConvertReabank(path)
+            if #banks == 0 then 
+                return false
+            else
+                if #banks == 1 then 
+                    local bank = banks[1]
+                    mapName = bank.mapName
+                    instrumentSettings = bank.instrumentSettings
+                    tableInfo = bank.tableInfo
+                    mapping = mapping_handling.createMappingsFromTable(tableInfo)
+                else
+
+                end
+                return true
+            end
+        end
         
         
         
@@ -1440,45 +1458,48 @@ local function loop()
               if rv then
                 local filePathes = {}
                 for i = 0, count - 1 do 
-                  local rv, fileName = reaper.ImGui_GetDragDropPayloadFile(ctx, i)
-                  if rv and fileName then
-                      if whereToInsert == "mapName" then 
-                          if not mapName then mapName = "" end
-                          if cmd then  
-                              if shift then
-                                  mapName = file_handling.get_last_path_component(fileName) .. " - " .. mapName  
-                              else
-                                  mapName = mapName .. " - " .. file_handling.get_last_path_component(fileName)
-                              end
-                          else
-                              mapName = file_handling.get_last_path_component(fileName)
-                          end
-                          
-                          if ctrl then 
-                              if file_handling.path_is_directory(fileName) then 
-                                  whereToInsert = "articulation" 
-                                  tableInfo = {}
-                              end
-                          else
-                              break;
-                          end
-                      end
-                      if whereToInsert == "articulation" then
-                          if file_handling.path_is_directory(fileName) then 
-                              local i = 0 
-                              while true do
-                                  local file = reaper.EnumerateFiles(fileName, i)
-                                  if not file then break end
-                                  if not file_handling.path_is_directory(file) then 
-                                      table.insert(filePathes, file)
-                                  end
-                                  i = i + 1
-                              end
-                          else
-                              table.insert(filePathes, file_handling.get_last_path_component(fileName)) 
-                          end
-                      end 
-                  end
+                    local rv, fileName = reaper.ImGui_GetDragDropPayloadFile(ctx, i)
+                    if rv and fileName then
+                        if importReabank(fileName) then 
+                            whereToInsert = nil
+                        end
+                        if whereToInsert == "mapName" then 
+                            if not mapName then mapName = "" end
+                            if cmd then  
+                                if shift then
+                                    mapName = file_handling.get_last_path_component(fileName) .. " - " .. mapName  
+                                else
+                                    mapName = mapName .. " - " .. file_handling.get_last_path_component(fileName)
+                                end
+                            else
+                                mapName = file_handling.get_last_path_component(fileName)
+                            end
+                            
+                            if ctrl then 
+                                if file_handling.path_is_directory(fileName) then 
+                                    whereToInsert = "articulation" 
+                                    tableInfo = {}
+                                end
+                            else
+                                break;
+                            end
+                        end
+                        if whereToInsert == "articulation" then
+                            if file_handling.path_is_directory(fileName) then 
+                                local i = 0 
+                                while true do
+                                    local file = reaper.EnumerateFiles(fileName, i)
+                                    if not file then break end
+                                    if not file_handling.path_is_directory(file) then 
+                                        table.insert(filePathes, file)
+                                    end
+                                    i = i + 1
+                                end
+                            else
+                                table.insert(filePathes, file_handling.get_last_path_component(fileName)) 
+                            end
+                        end 
+                    end
                   --table.insert(widgets.dragdrop.files, filename)
                 end
                 if whereToInsert == "articulation" then 
@@ -4313,7 +4334,7 @@ local function loop()
                                 local btnName = disable and "SCRIPT SHARED!" or "SHARE SCRIPT TO DATABASE"
                                 if reaper.ImGui_Button(ctx, btnName, textInputWidth, textInputWidth / 7) then
                                     local text = json_text.getSimple()
-                                    export.createObjectForExport()
+                                    export.createObjectForExport() -- saves the file
                                     reaper.CF_SetClipboard(text)
                                     if articulation_scripts_library.appendSharedLibraryInChunks(text) then
                                         --reaper.ShowConsoleMsg("HEJ\n")

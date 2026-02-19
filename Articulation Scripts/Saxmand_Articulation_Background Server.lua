@@ -363,10 +363,37 @@ local function loop()
             --notShowingSurface = true
         end
         ]]
+    if not track then trackName = "[No Track]"; triggerTableLayers = {} end
+
+    local listOverview_command_state = reaper.GetToggleCommandState(listOverview_command_id) == 1
+    if listOverview_command_state and (not settings.listOverview_onlyShowWhenTheresAMap or fxNumber) then
+        if midi_editor or not settings.listOverview_onlyShowOnMidiEditor then
+
+            local windowIsFocused = listOverviewSurface(focusIsOn) -- show the list overview
+            if windowIsFocused and focusHwnd and not keyboardTrigger_command_state then
+                reaper.JS_Window_SetFocus(focusHwnd)
+            end
+            --[[
+            if midi_editor then
+                -- trying is mouse not down to make sure we focus midi editor even when opening the window
+                if (windowIsFocused) and not isMouseDown then -- and isMouseWasReleased) then
+                    reaper.JS_Window_SetFocus(midi_editor)
+                end
+            else
+                if windowIsFocused and isMouseWasReleased then
+                    reaper.JS_Window_SetFocus(reaper.GetMainHwnd())
+                end
+            end
+            ]]
+        end
+    end
+
+    last_listOverview_command_state = listOverview_command_state
+
+
     if track and triggerTables then            
 
         local keyboardTrigger_command_state = reaper.GetToggleCommandState(keyboardTrigger_command_id) == 1
-        local listOverview_command_state = reaper.GetToggleCommandState(listOverview_command_id) == 1
         --if not last_listOverview_command_state then last_listOverview_command_state = listOverview_command_state end 
         if keyboardTrigger_command_state then
             if fxNumber then
@@ -385,29 +412,6 @@ local function loop()
             end
         end
 
-        if listOverview_command_state and (not settings.listOverview_onlyShowWhenTheresAMap or fxNumber) then
-            if midi_editor or not settings.listOverview_onlyShowOnMidiEditor then
-
-                local windowIsFocused = listOverviewSurface(focusIsOn) -- show the list overview
-                if windowIsFocused and focusHwnd and not keyboardTrigger_command_state then
-                    reaper.JS_Window_SetFocus(focusHwnd)
-                end
-                --[[
-                if midi_editor then
-                    -- trying is mouse not down to make sure we focus midi editor even when opening the window
-                    if (windowIsFocused) and not isMouseDown then -- and isMouseWasReleased) then
-                        reaper.JS_Window_SetFocus(midi_editor)
-                    end
-                else
-                    if windowIsFocused and isMouseWasReleased then
-                        reaper.JS_Window_SetFocus(reaper.GetMainHwnd())
-                    end
-                end
-                ]]
-            end
-        end
-
-        last_listOverview_command_state = listOverview_command_state
         last_keyboardTrigger_command_state = keyboardTrigger_command_state
 
         --last_focused_hwnd = reaper.JS_Window_GetForeground()
