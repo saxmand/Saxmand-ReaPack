@@ -196,6 +196,10 @@ function export.listOverviewSurface(focusIsOn)
                     settings.listOverview_onlyShowWhenTheresAMap = not settings.listOverview_onlyShowWhenTheresAMap
                     saveSettings()
                 end
+                if reaper.ImGui_Checkbox(ctx, "Only show list overview when MIDI editor is open", settings.listOverview_onlyShowOnMidiEditor) then
+                    settings.listOverview_onlyShowOnMidiEditor = not settings.listOverview_onlyShowOnMidiEditor
+                    saveSettings()
+                end
 
                 
                 reaper.ImGui_SetNextItemWidth(ctx, 150)
