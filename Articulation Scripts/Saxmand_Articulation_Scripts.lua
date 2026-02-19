@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.7.1
+-- @version 0.7.2
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,5 +15,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + bug fix, always ensure a start note
---   + bug fix, ensure we don't automatically write articulation on newly created notes in case they have an articulation
+--   + bug fix, always ensure a start note a few more places
+--   + shortcuts can now be used on collapsed areas in Creator script

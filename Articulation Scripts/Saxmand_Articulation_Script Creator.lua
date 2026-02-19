@@ -976,7 +976,7 @@ local keyNameTranslation = {
 ["plus"] = reaper.ImGui_Key_KeypadAdd(),
 }
 
-function createMappingButton(data)   
+function createMappingButton(data, dontCreateButtons)   
     local disable = (not devMode and inDevMappings[data.name]) or data.disabled
     if disable then 
         reaper.ImGui_BeginDisabled(ctx) 
@@ -996,7 +996,7 @@ function createMappingButton(data)
     end
     
     if not data.hide then
-        if data.sameLine then reaper.ImGui_SameLine(ctx) end
+        if data.sameLine and not dontCreateButtons then reaper.ImGui_SameLine(ctx) end
         local triggerName = data.triggerName and data.triggerName or data.name:gsub("%s", "")
         
         local keyTrigger = nil 
@@ -1023,8 +1023,17 @@ function createMappingButton(data)
         
         local keyTriggerTrigger = not disable and keyTrigger and reaper.ImGui_IsKeyPressed(ctx, keyTrigger, false) -- (data.quickKeyTrigger and reaper.ImGui_IsKeyPressed(ctx, keyTrigger) or reaper.ImGui_IsKeyReleased(ctx, keyTrigger)) or nil
         
+        local doTrigger
         if data.func then
-            if reaper.ImGui_Button(ctx, data.name) or (keyTrigger and (not data.ctrl and not ctrl or data.ctrl == ctrl) and (not data.shift and not shift or data.shift == shift) and (not data.alt and not alt or data.alt == alt) and (not data.cmd and not cmd or data.cmd == cmd) and keyTriggerTrigger) then 
+            if not dontCreateButtons then 
+                if reaper.ImGui_Button(ctx, data.name) then 
+                    doTrigger = true
+                end
+            end
+            if (keyTrigger and (not data.ctrl and not ctrl or data.ctrl == ctrl) and (not data.shift and not shift or data.shift == shift) and (not data.alt and not alt or data.alt == alt) and (not data.cmd and not cmd or data.cmd == cmd) and keyTriggerTrigger) then 
+                doTrigger = true
+            end
+            if doTrigger then 
                 if data.refocus then 
                     reaper.ImGui_SetKeyboardFocusHere(ctx)
                     refocusActionData = data 
@@ -1039,11 +1048,27 @@ function createMappingButton(data)
         --       #tableInfo = #tableInfo + 1
         --    end
         elseif data.buttonType == "popup" then
-            if reaper.ImGui_Button(ctx, data.name) or ((not data.ctrl and not ctrl or data.ctrl == ctrl) and (not data.shift and not shift or data.shift == shift) and (not data.alt and not alt or data.alt == alt) and (not data.cmd and not cmd or data.cmd == cmd) and keyTriggerTrigger) then 
+            if not dontCreateButtons then 
+                if reaper.ImGui_Button(ctx, data.name) then                     
+                    doTrigger = true                    
+                end
+            end
+            if ((not data.ctrl and not ctrl or data.ctrl == ctrl) and (not data.shift and not shift or data.shift == shift) and (not data.alt and not alt or data.alt == alt) and (not data.cmd and not cmd or data.cmd == cmd) and keyTriggerTrigger) then 
+                doTrigger = true                    
+            end
+            if doTrigger then 
                 popup = triggerName
             end
         elseif data.buttonType == "multi" then
-            if reaper.ImGui_Button(ctx, data.name) or ((not data.ctrl and not ctrl or data.ctrl == ctrl) and (not data.shift and not shift or data.shift == shift) and (not data.alt and not alt or data.alt == alt) and (not data.cmd and not cmd or data.cmd == cmd) and keyTriggerTrigger) then 
+            if not dontCreateButtons then 
+                if reaper.ImGui_Button(ctx, data.name) then 
+                    doTrigger = true                    
+                end
+            end
+            if ((not data.ctrl and not ctrl or data.ctrl == ctrl) and (not data.shift and not shift or data.shift == shift) and (not data.alt and not alt or data.alt == alt) and (not data.cmd and not cmd or data.cmd == cmd) and keyTriggerTrigger) then 
+                doTrigger = true
+            end
+            if doTrigger then 
                 if triggerName == "Note realtime" then
                     table.insert(instrumentSettings.realtimeTrigger, {"Note", "", "", ""})
                 elseif triggerName == "Channel realtime" then 
@@ -1073,23 +1098,35 @@ function createMappingButton(data)
             end
         else
             if not mapping[triggerName] then
-                if reaper.ImGui_Button(ctx, data.name) or ((not data.ctrl and not ctrl or data.ctrl == ctrl) and (not data.shift and not shift or data.shift == shift) and (not data.alt and not alt or data.alt == alt) and (not data.cmd and not cmd or data.cmd == cmd) and keyTriggerTrigger) then 
+                if not dontCreateButtons then 
+                    if reaper.ImGui_Button(ctx, data.name) then
+                        doTrigger = true
+                    end
+                end
+                if ((not data.ctrl and not ctrl or data.ctrl == ctrl) and (not data.shift and not shift or data.shift == shift) and (not data.alt and not alt or data.alt == alt) and (not data.cmd and not cmd or data.cmd == cmd) and keyTriggerTrigger) then 
+                    doTrigger = true
+                end
+                if doTrigger then 
                     mapping[triggerName] = true
                     setFocusOnNewMapping = data.focusName and data.focusName or data.name
                 end
             else
-                if redCross(triggerName .. "Remove", 20) then
-                    undo_redo.commit({tableInfo, mapping})
-                    mapping[triggerName] = nil
-                end 
-                setToolTipFunc("Remove " .. data.name .. " from mapping")
-                reaper.ImGui_SameLine(ctx, 20)
-                reaper.ImGui_Text(ctx, data.name)
+                if not dontCreateButtons then 
+                    if redCross(triggerName .. "Remove", 20) then
+                        undo_redo.commit({tableInfo, mapping})
+                        mapping[triggerName] = nil
+                    end 
+                    setToolTipFunc("Remove " .. data.name .. " from mapping")
+                    reaper.ImGui_SameLine(ctx, 20)
+                    reaper.ImGui_Text(ctx, data.name)
+                end
             end  
         end
-        setToolTipFunc(data.tip)
+        if not dontCreateButtons then 
+            setToolTipFunc(data.tip)    
+        end
         
-        if keyTrigger and not data.doNotshowShortCut then
+        if keyTrigger and not data.doNotshowShortCut and not dontCreateButtons then
             reaper.ImGui_SameLine(ctx)  
             local shortcut = (data.ctrl and "ctrl+" or "") .. (data.shift and "shift+" or "") .. (data.alt and "alt+" or "") .. (data.cmd and "cmd+" or "") .. string.lower(data.key)  
             reaper.ImGui_TextColored(ctx, 0x777777FF, "(".. shortcut .. ")")
@@ -1464,7 +1501,7 @@ local function loop()
         local separatorText = (hideInstrumentButtons and mapName) and mapName or "Instruments"
         separatorLine(separatorText, "hideInstrumentButtons")
         
-        if not hideInstrumentButtons or not mapName then 
+        if true then 
             -- mapName = "test"
             -- reaper.ImGui_Text(ctx, 'Map name: ' .. mapName) 
             -- Infinite Brass Trumpet
@@ -1495,7 +1532,7 @@ local function loop()
                 if not reaper.ImGui_IsItemFocused(ctx) and not popupOkCancelTitle and focusNameInput then
                     --focusNameInput = focusNameInput + 1
                 end
-            else
+            elseif not hideInstrumentButtons then 
                 -- reaper.ImGui_TextColored(ctx,0x777777FF,"Map name:")
                 -- reaper.ImGui_SameLine(ctx)
                 
@@ -1605,7 +1642,7 @@ local function loop()
               tip = "Save the current map", hide = #tableInfo == 0, buttonType = "action"
             }}
             for _, data in ipairs(buttonsData) do
-                createMappingButton(data) 
+                createMappingButton(data, hideInstrumentButtons and mapName) 
             end
             
             if not mapName or #tableInfo == 0 then 
@@ -1614,7 +1651,7 @@ local function loop()
                 name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet(true) end,
                 tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12\n\nCan also import "//json:{...}" string from Articulation Script JSFX'
                 }
-                createMappingButton(importBtn) 
+                createMappingButton(importBtn, hideInstrumentButtons and mapName) 
             end
 
             -- OLD EEL
@@ -1777,7 +1814,7 @@ local function loop()
                         --
                         separatorLine("Mappings & filters", "hideMappingsButtons")
                         
-                        if not hideMappingsButtons then 
+                        --if not hideMappingsButtons then 
                             --reaper.ImGui_Separator(ctx)
                             --if reaper.ImGui_BeginChild(ctx, 'mappingChild', 300, 320, reaper.ImGui_ChildFlags_Border() | reaper.ImGui_ChildFlags_ResizeY()) then
                             mappingX, MappingY = reaper.ImGui_GetCursorPos(ctx)
@@ -1805,113 +1842,124 @@ local function loop()
                             }}
                             
                             
-                            reaper.ImGui_BeginGroup(ctx)
-                                
+                            if not hideMappingsButtons then 
+                                reaper.ImGui_BeginGroup(ctx)
                                 reaper.ImGui_TextColored(ctx, 0x777777FF, "Mappings:")
-                                
-                                for _, data in ipairs(buttonsData) do
-                                    createMappingButton(data) 
-                                    tipTable[data.triggerName] = data.tip
-                                end
+                            end
                             
-                            reaper.ImGui_EndGroup(ctx)
-                            reaper.ImGui_SameLine(ctx)
-                            MappingEndsX, MappingEndsY = reaper.ImGui_GetCursorPos(ctx)
+                            for _, data in ipairs(buttonsData) do
+                                createMappingButton(data, hideMappingsButtons) 
+                                tipTable[data.triggerName] = data.tip
+                            end
+                            
+                                
+                            if not hideMappingsButtons then 
+                                reaper.ImGui_EndGroup(ctx)
+                                reaper.ImGui_SameLine(ctx)
+                                MappingEndsX, MappingEndsY = reaper.ImGui_GetCursorPos(ctx)
+                            end
                             
                             --reaper.ImGui_SameLine(ctx)
                             --reaper.ImGui_SetCursorPos(ctx, mappingX + 160, MappingY)
                             
-                            reaper.ImGui_BeginGroup(ctx)
-                                --reaper.ImGui_Separator(ctx) 
+                            --reaper.ImGui_Separator(ctx) 
+                            if not hideMappingsButtons then 
+                                reaper.ImGui_BeginGroup(ctx)
                                 reaper.ImGui_TextColored(ctx, 0x777777FF, "Filter incoming:")  
-                                
-                                local buttonsData = {{
-                                name = "Position (Legato)", triggerName = "Position", key = "P", ctrl = true, shift = true,
-                                tip = "Filter articulation based on position in legato phrase." -- could extend to numbers in phrase maybe
-                                },{
-                                name = "Filter Channel", triggerName = "FilterChannel", key = "C", ctrl = true, shift = true,
-                                tip = "Filter based on incoming channel"
-                                },{
-                                name = "Filter Pitch", triggerName = "FilterPitch", key = "P", ctrl = true, shift = true,
-                                tip = "Filter based on incoming velocity"
-                                },{
-                                name = "Filter Velocity", triggerName = "FilterVelocity", key = "V", ctrl = true, shift = true,
-                                tip = "Filter based on incoming velocity"
-                                },{
-                                name = "Filter Speed", triggerName = "FilterSpeed", key = "S", ctrl = true, shift = true,
-                                tip = "Filter based on speed of notes, from last note to the next"
-                                },{
-                                name = "Filter Interval", triggerName = "FilterInterval", key = "I", ctrl = true, shift = true,
-                                tip = "Filter based on inteval of notes, from last note to the next"
-                                },{
-                                name = "Filter Note Count", triggerName = "FilterCount", key = "N", ctrl = true, shift = true,
-                                tip = "Filter based on note count pressed"
-                                }}
-    
-                                for _, data in ipairs(buttonsData) do
-                                    createMappingButton(data) 
-                                    --table.insert(filterNames, data.triggerName)
-                                    tipTable[data.triggerName] = data.tip
-                                end 
-                                
-                                
-                                function findMainRowForArticulationLane(laneName)
-                                    local newTable = {}
-                                    local laneAmount = 0
-                                    local typeTable = tableInfo.Title 
-                                    rowFromName = laneName:gsub("!!Lane:","")
-                                    for i = 1, #tableInfo do
-                                        if typeTable[i] and typeTable[i]:match("!!Lane") ~= nil then
-                                            laneAmount = laneAmount + 1
-                                        end
-                                        if tostring(i - laneAmount) == tostring(rowFromName) then
-                                            return i
-                                        end
+                            end
+                            
+                            local buttonsData = {{
+                            name = "Position (Legato)", triggerName = "Position", key = "P", ctrl = true, shift = true,
+                            tip = "Filter articulation based on position in legato phrase." -- could extend to numbers in phrase maybe
+                            },{
+                            name = "Filter Channel", triggerName = "FilterChannel", key = "C", ctrl = true, shift = true,
+                            tip = "Filter based on incoming channel"
+                            },{
+                            name = "Filter Pitch", triggerName = "FilterPitch", key = "P", ctrl = true, shift = true,
+                            tip = "Filter based on incoming velocity"
+                            },{
+                            name = "Filter Velocity", triggerName = "FilterVelocity", key = "V", ctrl = true, shift = true,
+                            tip = "Filter based on incoming velocity"
+                            },{
+                            name = "Filter Speed", triggerName = "FilterSpeed", key = "S", ctrl = true, shift = true,
+                            tip = "Filter based on speed of notes, from last note to the next"
+                            },{
+                            name = "Filter Interval", triggerName = "FilterInterval", key = "I", ctrl = true, shift = true,
+                            tip = "Filter based on inteval of notes, from last note to the next"
+                            },{
+                            name = "Filter Note Count", triggerName = "FilterCount", key = "N", ctrl = true, shift = true,
+                            tip = "Filter based on note count pressed"
+                            }}
+
+                            for _, data in ipairs(buttonsData) do
+                                createMappingButton(data, hideMappingsButtons) 
+                                --table.insert(filterNames, data.triggerName)
+                                tipTable[data.triggerName] = data.tip
+                            end 
+                            
+                            
+                            function findMainRowForArticulationLane(laneName)
+                                local newTable = {}
+                                local laneAmount = 0
+                                local typeTable = tableInfo.Title 
+                                rowFromName = laneName:gsub("!!Lane:","")
+                                for i = 1, #tableInfo do
+                                    if typeTable[i] and typeTable[i]:match("!!Lane") ~= nil then
+                                        laneAmount = laneAmount + 1
+                                    end
+                                    if tostring(i - laneAmount) == tostring(rowFromName) then
+                                        return i
                                     end
                                 end
+                            end
                                 
                                 
-                            reaper.ImGui_EndGroup(ctx)
-                            
-                            reaper.ImGui_SameLine(ctx) 
+                                
+                            if not hideMappingsButtons then 
+                                reaper.ImGui_EndGroup(ctx)
+                                reaper.ImGui_SameLine(ctx) 
+                                reaper.ImGui_BeginGroup(ctx)
+                                reaper.ImGui_TextColored(ctx, 0x777777FF, "Extras:")  
+                            end
                             --reaper.ImGui_SetCursorPos(ctx, mappingX + 430, MappingY)
                             
-                            reaper.ImGui_BeginGroup(ctx)
-                                --reaper.ImGui_Separator(ctx) 
-                                reaper.ImGui_TextColored(ctx, 0x777777FF, "Extras:")  
+                            --reaper.ImGui_Separator(ctx) 
                                 
-                                local buttonsData = {{
-                                name = "Group", key = "G", ctrl = true, triggerName = "Group",
-                                tip = "Add a Group name to the front of the articulations.\nCan also be used to group articulations types across a script, like; long, shorts ect."
-                                },{
-                                name = "Layer", key = "L", ctrl = true,triggerName = "Layer", 
-                                tip = "Add Layers to triggers, to have multilayered articulations.\nMultiple layers will be triggered based on articulation name."
-                                },{
-                                name = "Transpose", key = "T", ctrl = true, triggerName = "Transpose",
-                                tip = "Transpose notes when articulation is selected."
-                                },{
-                                name = "Interval Trigger", key = "I", ctrl = true, triggerName = "Interval", -- focusName = "Interval", 
-                                tip = "Add trill note to articulations."
-                                },{
-                                name = "Keyboard Trigger", key = "K", ctrl = true, triggerName = "KT", --focusName = "KeyboardTrigger", 
-                                tip = "Set Computer Keyboard Articulation controller keys how you like."
-                                },{
-                                name = "Live Articulation", key = "Q", ctrl = true,triggerName = "LiveArticulation", 
-                                tip = "Send note keyswitches and CCs when clicking articulation instead of attaching it to a note.\nThis will not use 'Delay' and 'Layer' or mappings who's relate to incoming notes"
-                                },{
-                                name = "Notation", key = "O", ctrl = true,triggerName = "Notation", 
-                                tip = "Use notation articulations for triggering"
-                                },{
-                                name = "UI Text", key = "U", ctrl = true,triggerName = "UIText", 
-                                tip = "Add user defined text on the script UI"
-                                }}
                                 
-                                for _, data in ipairs(buttonsData) do
-                                    createMappingButton(data) 
-                                    tipTable[data.triggerName] = data.tip
-                                end
+                            local buttonsData = {{
+                            name = "Group", key = "G", ctrl = true, triggerName = "Group",
+                            tip = "Add a Group name to the front of the articulations.\nCan also be used to group articulations types across a script, like; long, shorts ect."
+                            },{
+                            name = "Layer", key = "L", ctrl = true,triggerName = "Layer", 
+                            tip = "Add Layers to triggers, to have multilayered articulations.\nMultiple layers will be triggered based on articulation name."
+                            },{
+                            name = "Transpose", key = "T", ctrl = true, triggerName = "Transpose",
+                            tip = "Transpose notes when articulation is selected."
+                            },{
+                            name = "Interval Trigger", key = "I", ctrl = true, triggerName = "Interval", -- focusName = "Interval", 
+                            tip = "Add trill note to articulations."
+                            },{
+                            name = "Keyboard Trigger", key = "K", ctrl = true, triggerName = "KT", --focusName = "KeyboardTrigger", 
+                            tip = "Set Computer Keyboard Articulation controller keys how you like."
+                            },{
+                            name = "Live Articulation", key = "Q", ctrl = true,triggerName = "LiveArticulation", 
+                            tip = "Send note keyswitches and CCs when clicking articulation instead of attaching it to a note.\nThis will not use 'Delay' and 'Layer' or mappings who's relate to incoming notes"
+                            },{
+                            name = "Notation", key = "O", ctrl = true,triggerName = "Notation", 
+                            tip = "Use notation articulations for triggering"
+                            },{
+                            name = "UI Text", key = "U", ctrl = true,triggerName = "UIText", 
+                            tip = "Add user defined text on the script UI"
+                            }}
+                            
+                            for _, data in ipairs(buttonsData) do
+                                createMappingButton(data, hideMappingsButtons) 
+                                tipTable[data.triggerName] = data.tip
+                            end
                                 
-                            reaper.ImGui_EndGroup(ctx)
+                            if not hideMappingsButtons then 
+                                reaper.ImGui_EndGroup(ctx)
+                            end
                             
                             --reaper.ImGui_SameLine(ctx)
                             --headerWidth = reaper.ImGui_GetCursorPosX(ctx)
@@ -1919,7 +1967,7 @@ local function loop()
                             
                             
                             --reaper.ImGui_SetCursorPos(ctx, mappingX, MappingEndsY + 50)
-                        end
+                        --end
                         
                         reaper.ImGui_EndGroup(ctx)
                         
@@ -1927,97 +1975,99 @@ local function loop()
                         
                         separatorLine("Edit", "hideEditButtons")
                         
-                        if not hideEditButtons then 
-                            function selectAllRows()
-                                for r = 1, #tableInfo do
-                                    selectedArticulations[r] = r
-                                end
-                            end
-          
-          
-                            if deleteRowsAction then
-                                if deleteRowsAction > 4 then
-                                    deleteRows()
-                                    deleteRowsAction = nil
-                                else
-                                    deleteRowsAction = deleteRowsAction + 1
-                                end
-                            end
-                            
-                            if moveRowsAction then
-                                if moveRowsAction > 4 then
-                                    moveRows(moveRowsDirection)
-                                    moveRowsAction = nil
-                                else
-                                    moveRowsAction = moveRowsAction + 1
-                                end
-                            end
-                            
-                            --reaper.ImGui_Spacing(ctx)
-                            local buttonsData = {{
-                                name = "Add Articulation", key = "A", cmd = true, func = function() addArticulation() end,
-                            },{
-                                name = "Add Multiple Articulations", triggerName = "Art", key = "A",cmd = true, ctrl = true, buttonType = "popup", sameLine = true
-                            },{
-                                name = "Duplicate", key = "D",cmd = true, func = function() duplicateRows() end, sameLine = false
-                            }}
-                            
-                            if hasFilterMapping then
-                                table.insert(buttonsData, {
-                                    name = "Add Filter Lane", key = "L",cmd = true, func = function() addLane() end, sameLine = true
-                                })
-                                table.insert(buttonsData, {
-                                    name = "Articulation <> Lane", key = "L", cmd = true, ctrl = true, func = function()  makeArticulationALaneOrNot() end, sameLine = true, 
-                                    tip = "Swap row between being an articulation or lane"
-                                })
-                            end
-                            
-                            
-                            for _, data in ipairs(buttonsData) do
-                                createMappingButton(data) 
-                            end
-                            
-                            reaper.ImGui_Separator(ctx) 
-                            
-                            local buttonsData = {{
-                            name = "Select all rows", key = "A", cmd = true, shift = true, sameLine = false, func = function() selectAllRows(true) end,
-                            tip = 'Select all rows'
-                            },{
-                            name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet() end,
-                            tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12\n\nCan also import "//json:{...}" string from Articulation Script JSFX'
-                            },{
-                            name = "Move up rows", key = "up", cmd = true, alt = true, sameLine = false, func = function() moveRowStart(true) end,
-                            tip = "Move selected articulations rows up"
-                            },{
-                            name = "Move down rows", key = "down", cmd = true, alt = true, sameLine = true, func = function() moveRowStart(false) end,
-                            tip = "Move selected articulations rows up"
-                            },{
-                            name = "Delete rows", key = "delete", cmd = true, sameLine = false, func = function() deleteRowsStart() end,
-                            tip = "Deleted selected articulations rows"
-                            },{
-                            name = "Delete column", key = "delete",shift = true, cmd = true, sameLine = true, func = function() deleteColumn() end,
-                            tip = "Deleted selected focused column"
-                            },{
-                            name = "Undo", cmd = true, ctrl = true, key = "Z",
-                            tip = "Undo last action", sameLine = false,
-                            func = function() 
-                                local t = undo_redo.undo({tableInfo, mapping}) 
-                                tableInfo = t[1]
-                                mapping = t[2]
-                            end, quickKeyTrigger = true
-                            },{
-                            name = "Redo", cmd = true, ctrl = true, shift = true, key = "Z",
-                            tip = "Redo last action", sameLine = true,
-                            func = function() 
-                                local t = undo_redo.redo({tableInfo, mapping}) 
-                                tableInfo = t[1]
-                                mapping = t[2]
-                            end, quickKeyTrigger = true
-                            }}
-                            for _, data in ipairs(buttonsData) do
-                                createMappingButton(data) 
+                        --if not hideEditButtons then 
+                        function selectAllRows()
+                            for r = 1, #tableInfo do
+                                selectedArticulations[r] = r
                             end
                         end
+        
+        
+                        if deleteRowsAction then
+                            if deleteRowsAction > 4 then
+                                deleteRows()
+                                deleteRowsAction = nil
+                            else
+                                deleteRowsAction = deleteRowsAction + 1
+                            end
+                        end
+                        
+                        if moveRowsAction then
+                            if moveRowsAction > 4 then
+                                moveRows(moveRowsDirection)
+                                moveRowsAction = nil
+                            else
+                                moveRowsAction = moveRowsAction + 1
+                            end
+                        end
+                        
+                        --reaper.ImGui_Spacing(ctx)
+                        local buttonsData = {{
+                            name = "Add Articulation", key = "A", cmd = true, func = function() addArticulation() end,
+                        },{
+                            name = "Add Multiple Articulations", triggerName = "Art", key = "A",cmd = true, ctrl = true, buttonType = "popup", sameLine = true
+                        },{
+                            name = "Duplicate", key = "D",cmd = true, func = function() duplicateRows() end, sameLine = false
+                        }}
+                        
+                        if hasFilterMapping then
+                            table.insert(buttonsData, {
+                                name = "Add Filter Lane", key = "L",cmd = true, func = function() addLane() end, sameLine = true
+                            })
+                            table.insert(buttonsData, {
+                                name = "Articulation <> Lane", key = "L", cmd = true, ctrl = true, func = function()  makeArticulationALaneOrNot() end, sameLine = true, 
+                                tip = "Swap row between being an articulation or lane"
+                            })
+                        end
+                        
+                        
+                        for _, data in ipairs(buttonsData) do
+                            createMappingButton(data, hideEditButtons) 
+                        end
+                        
+                        if not hideEditButtons then 
+                            reaper.ImGui_Separator(ctx) 
+                        end
+                        
+                        local buttonsData = {{
+                        name = "Select all rows", key = "A", cmd = true, shift = true, sameLine = false, func = function() selectAllRows(true) end,
+                        tip = 'Select all rows'
+                        },{
+                        name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet() end,
+                        tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12\n\nCan also import "//json:{...}" string from Articulation Script JSFX'
+                        },{
+                        name = "Move up rows", key = "up", cmd = true, alt = true, sameLine = false, func = function() moveRowStart(true) end,
+                        tip = "Move selected articulations rows up"
+                        },{
+                        name = "Move down rows", key = "down", cmd = true, alt = true, sameLine = true, func = function() moveRowStart(false) end,
+                        tip = "Move selected articulations rows up"
+                        },{
+                        name = "Delete rows", key = "delete", cmd = true, sameLine = false, func = function() deleteRowsStart() end,
+                        tip = "Deleted selected articulations rows"
+                        },{
+                        name = "Delete column", key = "delete",shift = true, cmd = true, sameLine = true, func = function() deleteColumn() end,
+                        tip = "Deleted selected focused column"
+                        },{
+                        name = "Undo", cmd = true, ctrl = true, key = "Z",
+                        tip = "Undo last action", sameLine = false,
+                        func = function() 
+                            local t = undo_redo.undo({tableInfo, mapping}) 
+                            tableInfo = t[1]
+                            mapping = t[2]
+                        end, quickKeyTrigger = true
+                        },{
+                        name = "Redo", cmd = true, ctrl = true, shift = true, key = "Z",
+                        tip = "Redo last action", sameLine = true,
+                        func = function() 
+                            local t = undo_redo.redo({tableInfo, mapping}) 
+                            tableInfo = t[1]
+                            mapping = t[2]
+                        end, quickKeyTrigger = true
+                        }}
+                        for _, data in ipairs(buttonsData) do
+                            createMappingButton(data, hideEditButtons) 
+                        end
+                        --end
 
                         --reaper.ImGui_Separator(ctx) 
                         
@@ -2795,10 +2845,11 @@ local function loop()
                                     else
                                         startNote = nil
                                     end
-                                    
-                                    local newNumber = numberWithinMinMax(startNote,min,max)
-                                    for rowKey, counter in pairs(selectedArticulations) do  
-                                        setNewTableValue(rowKey, columnName, newNumber)
+                                    if startNote then 
+                                        local newNumber = numberWithinMinMax(startNote,min,max)
+                                        for rowKey, counter in pairs(selectedArticulations) do  
+                                            setNewTableValue(rowKey, columnName, newNumber)
+                                        end
                                     end
                                 end
                                 if ret2 then
@@ -4125,8 +4176,10 @@ local function loop()
                                                     else
                                                         startNote = nil
                                                     end
-                                                
-                                                    instrumentSettings.realtimeTrigger[n][i+1] = tonumber( startNote)
+                                                    
+                                                    if startNote then 
+                                                        instrumentSettings.realtimeTrigger[n][i+1] = tonumber(startNote)
+                                                    end
                                                 end
                                             else
                                                 newInput, inputString = reaper.ImGui_InputText(ctx, id, t[ i + 1], reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal())
