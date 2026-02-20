@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.8.3
+-- @version 0.8.4
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,5 +15,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + added program change support
---   + added channel support for reabank import
+--   + fix for windows when both list overview and piano roll is docked

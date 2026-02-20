@@ -84,11 +84,12 @@ function export.trackDependingOnSelection()
     --local forgroundHwnd_parent = reaper.JS_Window_GetParent(forgroundHwnd)
     --local forgroundHwnd_parent_title = reaper.JS_Window_GetTitle(forgroundHwnd_parent)
     local focusHwnd = reaper.JS_Window_GetFocus()
+    local focusHwnd_title = reaper.JS_Window_GetTitle(focusHwnd)
     local focusHwnd_parent = reaper.JS_Window_GetParent(focusHwnd)
     local focusHwnd_parent_title = reaper.JS_Window_GetTitle(focusHwnd_parent)
     
     -- ensure we do not change focus when we focus our list overview 
-    if focusHwnd_parent_title == "Articulation_Scripts" then 
+    if focusHwnd_title == "Articulation_Scripts" or focusHwnd_parent_title == "Articulation_Scripts" then 
 
     else
         if midiEditor_is_docked and focusHwnd_parent_title:match("MIDI take") ~= nil then 
