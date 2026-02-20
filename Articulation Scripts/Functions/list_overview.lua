@@ -270,6 +270,7 @@ function export.listOverviewSurface(focusIsOn)
         cmd = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl())
         alt = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Alt())
         shift = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift())
+        escape = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_Escape())
         
         
         reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_SelectableTextAlign(), isLayerCollabsed and 0 or 0.5, 0) 
@@ -448,11 +449,12 @@ function export.listOverviewSurface(focusIsOn)
     --reaper.ImGui_PopStyleColor(ctx,2)
     modern_ui.ending(ctx)
 
-    if not open then 
-        --setToggleCommandState(listOverview_command_id)
+    local close
+    if not open or escape then 
+        close = true
     end
 
-    return articulationChange -- not menuOpen and windowIsFocused
+    return articulationChange, close -- not menuOpen and windowIsFocused
 end
 
 

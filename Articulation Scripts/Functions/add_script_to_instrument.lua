@@ -57,10 +57,10 @@ function export.addMapToTrack(track, mapName)
     --local fxIndex = reaper.TrackFX_AddByName(track, (mapName), false, -1)
     local fxIndex = reaper.TrackFX_AddByName(track, ("JS: " .. mapName .. " (Articulation Script)"), false, -1)
     if fxIndex == -1 then
-        fxIndex = reaper.TrackFX_AddByName(track, (mapName), false, -1)
+        --fxIndex = reaper.TrackFX_AddByName(track, "MIDI Note Filter", false, -1)
+        fxIndex = reaper.TrackFX_AddByName(track, mapName, false, -1)
         if fxIndex ~= -1 then 
-            reaper.TrackFX_Delete(track, fxIndex)
-            fxIndex = reaper.TrackFX_AddByName(track, ("JS: " .. mapName .. " (Articulation Script)"), false, -1)
+          --  reaper.TrackFX_Delete(track, fxIndex)
         end
     end
     if fxIndex ~= -1 then
@@ -231,5 +231,7 @@ function ex.addMapToInstruments(mapName, doNotOverwrite)
         overWriteFile_Wait = "AddMap"
     end
 end
+
+
 
 return ex

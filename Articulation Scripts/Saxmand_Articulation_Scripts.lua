@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.7.9
+-- @version 0.8.0
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,4 +15,7 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + List overview will always show even when no track
+--   + Fixed not being able to delete note keyswitches
+--   + Fixed articulation scripts not playing if no keyswitch 
+--   + Fix closing Overview list on cross, and on escape if focused 
+--   + Fix missing articulation lanes, also fixed issue with layers. 

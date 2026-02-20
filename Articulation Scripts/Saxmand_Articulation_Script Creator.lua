@@ -23,8 +23,8 @@ local inDevMappings = {
     ["Filter Channel"] = true,
     ["Filter Pitch"] = true,
     ["Notation"] = true,
-    ["Undo"] = true,
-    ["Redo"] = true,
+    --["Undo"] = true,
+    --["Redo"] = true,
     --["Filter Velocity"] = true,
     --["Transpose"] = true, -- would need to keep track of notes, to know proper note off
 }
@@ -129,20 +129,11 @@ readLicense()
 --require(scriptPath .."/Functions/pathes")
 require("pathes")
 
+local default_settings = require("default_settings")
+
 --- SETTINGS STUFF
 
-local defaultAppSettings = { 
-    auditionNote = 64, 
-    auditionVelocity = 100, 
-    tableSizeTitle = 120, 
-    tableSizeGroup = 100, 
-    alwaysOverwriteApps = false,
-    alwaysEmbedUi = false,
-    autoResizeWindowWidth = false,
-    autoResizeWindowHeight = false,
-    
-    fontSize = 100,
-}
+local defaultAppSettings = default_settings.app
 
 local function saveAppSettings()
     local settingsStr = json.encodeToJson(appSettings)
@@ -597,37 +588,19 @@ reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigFlags_NavEnableKeyboard(), 0)
 
 --reaper.ImGui_SetConfigVar(ctx,reaper.ImGui_ConfigVar_MacOSXBehaviors(),0)
 
-defaultModifierSettings = {
-    ["Title"] = "Same",
-    ["Group"] = "Same",
-    ["Channel"] = "Increment",
-    ["Layer"] = "Increment",
-    ["Delay"] = "Same",
-    ["Pitch"] = "Fixed",
-    ["Velocity"] = "Fixed",
-    ["FilterVelocity"] = "Fixed",
-    ["Note"] = "Same",
-    ["CC"] = "Same", 
-}
-
-instrumentSettingsDefault = {
-    usePDC = true, 
-    sustainPedalForcesLegato = true, 
-    addKeyswitchNamesToPianoRoll = true, 
-    addKeyswitchNamesOverwriteAllNotes = true, 
-    addKeyswitchNamesOverwriteAllCC = false, 
-    recognizeArticulationsKeyswitches = true
-}
 
 function resetCreator()
     --#tableInfo = 0
     mapName = nil
     mapping = {}
     selectedArticulations = {}  
-    modifierSettings = defaultModifierSettings
+    modifierSettings = default_settings.column_modifiers
     mappingType = {}
     tableInfo = {}
-    instrumentSettings = instrumentSettingsDefault
+    instrumentSettings = {}
+    for k, v in pairs(default_settings.InstrumentSettings) do
+        instrumentSettings[k] = v
+    end
     mapName = nil
 end
 resetCreator()
@@ -1191,6 +1164,139 @@ function closeApp()
     closeAppWindow = true -- workaround for some reason needed
 end
 
+function getReabankMapName(bank)
+    local name = ""
+    if bank.instrumentSettings.Vendor then 
+        name = name .. bank.instrumentSettings.Vendor .. " - "
+    end
+    if bank.instrumentSettings.Product then 
+        name = name .. bank.instrumentSettings.Product .. " - "
+    end
+    name = name .. bank.mapName
+    return name
+end
+
+function importReabankFromTbl(bank)
+    mapName = getReabankMapName(bank)
+    instrumentSettings = bank.instrumentSettings
+    tableInfo = bank.tableInfo
+    mapping = mapping_handling.createMappingsFromTable(tableInfo)
+end
+
+function importReabank(pathes)
+    local banks = {}
+    for _, path in ipairs(pathes) do
+        local newBanks = reabank_converter.ConvertReabank(path)        
+        for _, bank in ipairs(newBanks) do
+            reaper.ShowConsoleMsg(bank.instrumentSettings.Vendor .. " - " .. getReabankMapName(bank) .. "\n")
+            table.insert(banks, bank)                
+        end
+    end
+    aaa = banks
+
+    if #banks == 0 then 
+        return false
+    else
+        if #banks == 1 then 
+            local bank = banks[1]
+            importReabankFromTbl(bank)
+        else
+            banksForImport = banks
+            ImportScripts = true
+            popup = "Import Articulation Scripts"
+        end
+        return true
+    end
+end
+
+function dropFiles(whereToInsert, rowStart)
+    if reaper.ImGui_BeginDragDropTarget(ctx) then
+        local rv, peak = reaper.ImGui_AcceptDragDropPayloadFiles(ctx, 0, reaper.ImGui_DragDropFlags_AcceptBeforeDelivery())
+        local rv, firstPath = reaper.ImGui_GetDragDropPayloadFile(ctx, 0)
+        local ext = firstPath:match("^.+%.(.+)$") or ""
+        
+        reaper.ImGui_PushFont(ctx, font, math.ceil(appSettings.fontSize/100 * 16))
+        if not whereToInsert and ext == "reabank" then 
+            whereToInsert = ext
+            reaper.ImGui_SetTooltip(ctx,"Release to import and convert reabank file.")
+        elseif whereToInsert == "mapName" then
+            reaper.ImGui_SetTooltip(ctx,"Release to add map name.\n - Hold down Super to add to exisiting file name.\n - Add Shift to add to before file name.\n - Hold Ctrl to use folder content as articulations.")
+        elseif whereToInsert == "articulation" then
+            reaper.ImGui_SetTooltip(ctx,"Release to use files as articulations names.")
+        end
+        reaper.ImGui_PopFont(ctx)
+
+        local rv, count = reaper.ImGui_AcceptDragDropPayloadFiles(ctx)
+        if rv then
+            local filePathes = {}
+            for i = 0, count - 1 do 
+                local rv, fileName = reaper.ImGui_GetDragDropPayloadFile(ctx, i)
+                if rv and fileName then
+                    if whereToInsert == "reabank" then 
+                        local ext = fileName:match("^.+%.(.+)$") or ""
+                        if ext ==  "reabank" then 
+                            table.insert(filePathes, fileName)
+                        end
+                    elseif whereToInsert == "mapName" then 
+                        if not mapName then mapName = "" end
+                        if cmd then  
+                            if shift then
+                                mapName = file_handling.get_last_path_component(fileName) .. " - " .. mapName  
+                            else
+                                mapName = mapName .. " - " .. file_handling.get_last_path_component(fileName)
+                            end
+                        else
+                            mapName = file_handling.get_last_path_component(fileName)
+                        end
+                        
+                        if ctrl then 
+                            if file_handling.path_is_directory(fileName) then 
+                                whereToInsert = "articulation" 
+                                tableInfo = {}
+                            end
+                        else
+                            break;
+                        end
+                    end
+                    if whereToInsert == "articulation" then
+                        if file_handling.path_is_directory(fileName) then 
+                            local i = 0 
+                            while true do
+                                local file = reaper.EnumerateFiles(fileName, i)
+                                if not file then break end
+                                if not file_handling.path_is_directory(file) then 
+                                    table.insert(filePathes, file)
+                                end
+                                i = i + 1
+                            end
+                        else
+                            table.insert(filePathes, file_handling.get_last_path_component(fileName)) 
+                        end
+                    end 
+                end
+                --table.insert(widgets.dragdrop.files, filename)
+            end
+            if whereToInsert == "articulation" then 
+                if not rowStart then rowStart = 1 end
+                local simpleFileNames = file_handling.strip_common_parts(filePathes)
+                for i, p in ipairs(simpleFileNames) do
+                    if #simpleFileNames > 1 then 
+                        tableInfo[i + rowStart - 1] = {["Title"] = p, ["Channel"] = i}
+                    else
+                        tableInfo[i + rowStart - 1] = {["Title"] = p}
+                    end
+                end
+                mapping.Channel = true
+            end
+
+            if whereToInsert == "reabank" and #filePathes > 0 then 
+                importReabank(filePathes)                        
+            end
+        end
+        reaper.ImGui_EndDragDropTarget(ctx)
+    end
+end
+
 
 local function loop()
     local minimumsWidth = math.ceil(appSettings.fontSize/100 * 680)
@@ -1230,6 +1336,7 @@ local function loop()
     )
 
     if visible then
+        reaper.ImGui_BeginChild(ctx, "entireApp")
         ctrl = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Super())
         cmd = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl())
         alt = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Alt())
@@ -1241,6 +1348,10 @@ local function loop()
         mouseRelease = reaper.ImGui_IsMouseReleased(ctx, 0)
         downArrow = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_DownArrow())
         upArrow = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_UpArrow())
+
+        downArrow_pressed = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_DownArrow())
+        upArrow_pressed = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_UpArrow())
+
         leftArrow = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_LeftArrow())
         rightArrow = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_RightArrow())
         tab = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_Tab())
@@ -1424,101 +1535,12 @@ local function loop()
             end
             reaper.ImGui_PopStyleColor(ctx)
         end
-        
-        function importReabank(path)
-            local banks = reabank_converter.ConvertReabank(path)
-            if #banks == 0 then 
-                return false
-            else
-                if #banks == 1 then 
-                    local bank = banks[1]
-                    mapName = bank.mapName
-                    instrumentSettings = bank.instrumentSettings
-                    tableInfo = bank.tableInfo
-                    mapping = mapping_handling.createMappingsFromTable(tableInfo)
-                else
 
-                end
-                return true
-            end
-        end
+
         
         
         
-        function dropFiles(whereToInsert, rowStart)
-            if reaper.ImGui_BeginDragDropTarget(ctx) then
-              local rv, count = reaper.ImGui_AcceptDragDropPayloadFiles(ctx)
-              
-              if whereToInsert == "mapName" then
-                  reaper.ImGui_SetTooltip(ctx,"Release to add map name.\n - Hold down Super to add to exisiting file name.\n - Add Shift to add to before file name.\n - Hold Ctrl to use folder content as articulations.")
-              elseif whereToInsert == "articulation" then
-                  reaper.ImGui_SetTooltip(ctx,"Release to use files as articulations.")
-              end
-              
-              if rv then
-                local filePathes = {}
-                for i = 0, count - 1 do 
-                    local rv, fileName = reaper.ImGui_GetDragDropPayloadFile(ctx, i)
-                    if rv and fileName then
-                        if importReabank(fileName) then 
-                            whereToInsert = nil
-                        end
-                        if whereToInsert == "mapName" then 
-                            if not mapName then mapName = "" end
-                            if cmd then  
-                                if shift then
-                                    mapName = file_handling.get_last_path_component(fileName) .. " - " .. mapName  
-                                else
-                                    mapName = mapName .. " - " .. file_handling.get_last_path_component(fileName)
-                                end
-                            else
-                                mapName = file_handling.get_last_path_component(fileName)
-                            end
-                            
-                            if ctrl then 
-                                if file_handling.path_is_directory(fileName) then 
-                                    whereToInsert = "articulation" 
-                                    tableInfo = {}
-                                end
-                            else
-                                break;
-                            end
-                        end
-                        if whereToInsert == "articulation" then
-                            if file_handling.path_is_directory(fileName) then 
-                                local i = 0 
-                                while true do
-                                    local file = reaper.EnumerateFiles(fileName, i)
-                                    if not file then break end
-                                    if not file_handling.path_is_directory(file) then 
-                                        table.insert(filePathes, file)
-                                    end
-                                    i = i + 1
-                                end
-                            else
-                                table.insert(filePathes, file_handling.get_last_path_component(fileName)) 
-                            end
-                        end 
-                    end
-                  --table.insert(widgets.dragdrop.files, filename)
-                end
-                if whereToInsert == "articulation" then 
-                    if not rowStart then rowStart = 1 end
-                    local simpleFileNames = file_handling.strip_common_parts(filePathes)
-                    for i, p in ipairs(simpleFileNames) do
-                        if #simpleFileNames > 1 then 
-                            tableInfo[i + rowStart - 1] = {["Title"] = p, ["Channel"] = i}
-                        else
-                            tableInfo[i + rowStart - 1] = {["Title"] = p}
-                        end
-                    end
-                    mapping.Channel = true
-                end
-              end
-              reaper.ImGui_EndDragDropTarget(ctx)
-            end
-        end
-        
+
         local separatorText = (hideInstrumentButtons and mapName) and mapName or "Instruments"
         separatorLine(separatorText, "hideInstrumentButtons")
         
@@ -2866,11 +2888,9 @@ local function loop()
                                     else
                                         startNote = nil
                                     end
-                                    if startNote then 
-                                        local newNumber = numberWithinMinMax(startNote,min,max)
-                                        for rowKey, counter in pairs(selectedArticulations) do  
-                                            setNewTableValue(rowKey, columnName, newNumber)
-                                        end
+                                    local newNumber = numberWithinMinMax(startNote,min,max)
+                                    for rowKey, counter in pairs(selectedArticulations) do  
+                                        setNewTableValue(rowKey, columnName, newNumber)
                                     end
                                 end
                                 if ret2 then
@@ -3005,6 +3025,10 @@ local function loop()
                                             end
                                             
                                             setNewTableValue(rowKey, columnName, tonumber( noteIndexValue))
+                                        end
+                                    else
+                                        for rowKey, counter in pairs(selectedArticulations) do  
+                                            setNewTableValue(rowKey, columnName, nil)
                                         end
                                     end
                                 end
@@ -4196,11 +4220,9 @@ local function loop()
                                                         startNote = tonumber(noteNameValues[stringInput])
                                                     else
                                                         startNote = nil
-                                                    end
+                                                    end                                                   
                                                     
-                                                    if startNote then 
-                                                        instrumentSettings.realtimeTrigger[n][i+1] = tonumber(startNote)
-                                                    end
+                                                    instrumentSettings.realtimeTrigger[n][i+1] = tonumber(startNote)                                                    
                                                 end
                                             else
                                                 newInput, inputString = reaper.ImGui_InputText(ctx, id, t[ i + 1], reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsDecimal())
@@ -4271,6 +4293,7 @@ local function loop()
                     
                     function textInputsForSharingInstrumentSettings(value, info, multiline, defaultValue, alsoAppSettings)
                         reaper.ImGui_TextColored(ctx, colorGrey, value)
+                        value = value:gsub(" ", "")
                         --reaper.ImGui_SameLine(ctx, infoTextOffset)
                         local text = instrumentSettings[value]
                         reaper.ImGui_SetNextItemWidth(ctx, textInputWidth)
@@ -4324,7 +4347,10 @@ local function loop()
                                 textInputsForSharingInstrumentSettings("Patch", "Name of the patch. Script name if empty", nil, hasPatchName) -- n, if not N then after Bank 
                                 reaper.ImGui_Spacing(ctx)
                                 textInputsForSharingInstrumentSettings("Info", "Describe the patch, how to use it or other info", true) -- m
-                                
+                                if instrumentSettings.ConvertedFrom then 
+                                    textInputsForSharingInstrumentSettings("Converted From", "Info about where the patch might come from. Remove this if the info is no longer relevant") -- m
+                                end
+
                                 reaper.ImGui_NewLine(ctx)
                                 reaper.ImGui_NewLine(ctx)
                                 reaper.ImGui_SameLine(ctx, infoTextOffset)
@@ -4413,7 +4439,7 @@ local function loop()
             popupOk(popupOkTitle, popupOkDescription)
         end
         
-        if popup then 
+        if popup and popup ~= "Import Articulation Scripts" then 
             reaper.ImGui_OpenPopup(ctx, "popup")
             popupFocus = true
             posX, posY = reaper.ImGui_GetWindowPos(ctx)
@@ -4567,7 +4593,80 @@ local function loop()
             
             reaper.ImGui_EndPopup(ctx)
         end
-        
+
+        if popup == "Import Articulation Scripts" then 
+            reaper.ImGui_OpenPopup(ctx, "Import Articulation Scripts")
+        end
+
+        local center_x, center_y = reaper.ImGui_Viewport_GetCenter(reaper.ImGui_GetWindowViewport(ctx))
+        reaper.ImGui_SetNextWindowPos(ctx, center_x, center_y, reaper.ImGui_Cond_Appearing(), 0.5, 0.5)
+        if reaper.ImGui_BeginPopupModal(ctx, "Import Articulation Scripts", nil, reaper.ImGui_WindowFlags_AlwaysAutoResize()) then
+            local openSelected
+            if not focusedBankToImport then focusedBankToImport = 1 end
+            local w = windowW - 32
+            if reaper.ImGui_BeginChild(ctx, "banksTable", w, 400) then
+                for i, bank in ipairs(banksForImport) do
+                    if reaper.ImGui_Selectable(ctx, getReabankMapName(bank) .. "##" .. i, i == focusedBankToImport, reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                        focusedBankToImport = i
+                        if reaper.ImGui_IsMouseDoubleClicked( ctx, reaper.ImGui_MouseButton_Left() ) then
+                            openSelected = true
+                        end
+                    end
+                    focusedBank = bank
+                end
+                
+                reaper.ImGui_EndChild(ctx)
+            end
+
+            if downArrow_pressed then
+                focusedBankToImport = focusedBankToImport + 1
+                if focusedBankToImport > #banksForImport then 
+                    focusedBankToImport = 1 
+                end
+            end
+            if upArrow_pressed then
+                focusedBankToImport = focusedBankToImport - 1
+                if focusedBankToImport < 1 then 
+                    focusedBankToImport = #banksForImport
+                end
+            end
+
+            if reaper.ImGui_Button(ctx, 'Open selected', 120, 30) or (not cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter(), false)) or openSelected then 
+                importReabankFromTbl(banksForImport[focusedBankToImport])
+                reaper.ImGui_CloseCurrentPopup(ctx) 
+                ImportScripts = false
+                focusedBankToImport = nil
+                popup = false
+            end 
+            reaper.ImGui_SameLine(ctx)
+            setToolTipFunc("Press Enter to open selected")
+
+
+            if reaper.ImGui_Button(ctx, 'Cancel', 120, 30) or escape or reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_C(), false) then
+                reaper.ImGui_CloseCurrentPopup(ctx) 
+                ImportScripts = false
+                focusedBankToImport = nil
+                popup = false
+            end 
+            setToolTipFunc("Press C or escape on keyboard")            
+            reaper.ImGui_SameLine(ctx)
+            
+            if reaper.ImGui_Button(ctx, 'Generate Articulation Scripts for all', 160, 30) or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter(), false)) then
+                for _, bank in ipairs(banksForImport) do
+                    importReabankFromTbl(bank)
+                    export.createObjectForExport()
+                end
+                resetCreator()
+                ImportScripts = false
+                focusedBankToImport = nil
+                popup = false
+                reaper.ImGui_CloseCurrentPopup(ctx) 
+            end 
+            setToolTipFunc("Press Super+enter on keyboard")
+                
+            reaper.ImGui_EndPopup(ctx)
+        end
+
         
         counter = 0
         for _, _ in pairs(selectedArticulations) do counter = counter + 1 end
@@ -4611,6 +4710,10 @@ local function loop()
         --reaper.ImGui_PopStyleColor(ctx, 4)
         reaper.ImGui_PopStyleVar(ctx, varAmount)
         reaper.ImGui_PopFont(ctx)
+
+        reaper.ImGui_EndChild(ctx)
+        dropFiles()
+
         reaper.ImGui_End(ctx)
     end
 

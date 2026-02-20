@@ -369,9 +369,12 @@ local function loop()
     if listOverview_command_state and (not settings.listOverview_onlyShowWhenTheresAMap or fxNumber) then
         if midi_editor or not settings.listOverview_onlyShowOnMidiEditor then
 
-            local windowIsFocused = listOverviewSurface(focusIsOn) -- show the list overview
+            local windowIsFocused, closeWindow = listOverviewSurface(focusIsOn, listOverview_command_id) -- show the list overview
             if windowIsFocused and focusHwnd and not keyboardTrigger_command_state then
                 reaper.JS_Window_SetFocus(focusHwnd)
+            end
+            if closeWindow then 
+                setToggleCommandState(listOverview_command_id, false, false)
             end
             --[[
             if midi_editor then

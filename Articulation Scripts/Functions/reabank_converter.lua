@@ -1,3 +1,5 @@
+-- @noindex
+
 -- ============================================================
 --  Reabank → Lua Table Converter  (multi-bank support)
 --
@@ -136,30 +138,34 @@ end
 local function makeBankTable(bankAttrs, headerMeta, bankLineName)
   local bank = {
     mapName            = "",
-    instrumentSettings = { From = "reabank" },
+    instrumentSettings = {},
     tableInfo          = {},
   }
+  for k, v in pairs(require("default_settings").InstrumentSettings) do
+      bank.instrumentSettings[k] = v
+  end
+  instrumentSettings.ConvertedFrom = "reabank"
 
   bank.mapName = bankAttrs["n"] or bankLineName
 
-  local s = bank.instrumentSettings
+  --local s = bank.instrumentSettings
 
   if bankAttrs["g"] then
     local parts = split(bankAttrs["g"], "/")
-    s.Vendor  = parts[1] or ""
-    s.Product = parts[2] or ""
+    bank.instrumentSettings.Vendor  = parts[1] or ""
+    bank.instrumentSettings.Product = parts[2] or bankLineName
   else
-    s.Vendor  = ""
-    s.Product = ""
+    bank.instrumentSettings.Vendor  = ""
+    bank.instrumentSettings.Product = ""
   end
 
-  s.Patch = bankAttrs["n"] or bankLineName
+  bank.instrumentSettings.Patch = bankAttrs["n"] or bankLineName
 
-  if bankAttrs["m"] then s.Info = bankAttrs["m"] end
+  if bankAttrs["m"] then bank.instrumentSettings.Info = bankAttrs["m"] end
 
-  if headerMeta.Creator ~= "" then s.Creator = headerMeta.Creator end
-  if headerMeta.Source  ~= "" then s.Source  = headerMeta.Source  end
-  if headerMeta.Notes   ~= "" then s.Notes   = headerMeta.Notes   end
+  if headerMeta.Creator ~= "" then bank.instrumentSettings.Creator = headerMeta.Creator end
+  if headerMeta.Source  ~= "" then bank.instrumentSettings.Source  = headerMeta.Source  end
+  if headerMeta.Notes   ~= "" then bank.instrumentSettings.Notes   = headerMeta.Notes   end
 
   return bank
 end
@@ -236,7 +242,8 @@ function export.ConvertReabank(filePath)
       local bankAttrs, hMeta = flushPending()
       local bankLineName     = line:match("^Bank%s+%S+%s+%S+%s+(.+)$") or ""
       currentBank            = makeBankTable(bankAttrs, hMeta, bankLineName)
-      banks[#banks + 1]      = currentBank
+      --banks[#banks + 1]      = currentBank
+      table.insert(banks, currentBank)
       goto continue
     end
 
@@ -278,7 +285,8 @@ function export.ConvertReabank(filePath)
 
         if attrs["o"] then parseOutputEvents(attrs["o"], entry) end
 
-        currentBank.tableInfo[#currentBank.tableInfo + 1] = entry
+        table.insert(currentBank.tableInfo, entry)
+        --currentBank.tableInfo[#currentBank.tableInfo + 1] = entry
       end
     end
 
