@@ -38,4 +38,44 @@ export.column_modifiers = {
     ["CC"] = "Same", 
 }
 
+function export.saveAppSettings()
+    local settingsStr = json.encodeToJson(appSettings)
+    reaper.SetExtState(stateName,"appSettings", settingsStr, true) 
+end
+
+function export.getAppSettings() 
+    local defaultAppSettings = export.app
+    if reaper.HasExtState(stateName, "appSettings") then 
+        local settingsStr = reaper.GetExtState(stateName,"appSettings") 
+        appSettings = json.decodeFromJson(settingsStr)
+    else    
+        appSettings = {}
+    end
+
+
+    -- BACKWARDS COMPATABILITY
+    for key, value in pairs(defaultAppSettings) do
+        if type(value) == "table" then 
+            if appSettings[key] == nil then
+                appSettings[key] = {}
+            end
+            
+            for subKey, subValue in pairs(value) do
+                if appSettings[key][subKey] == nil then
+                    appSettings[key][subKey] = subValue
+                end
+            end
+        else  
+            if appSettings[key] == nil then
+                appSettings[key] = value
+            end
+        end
+    end
+    export.saveAppSettings()
+
+    return appSettings
+end
+
+
+
 return export

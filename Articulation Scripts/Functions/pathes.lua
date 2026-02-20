@@ -5,3 +5,4 @@ resourcePath = reaper.GetResourcePath()
 effectsPath = resourcePath .. seperator .. "Effects"
 userEffectsPath = effectsPath --.. seperator .. "Jesper"
 articulationScriptsPath = userEffectsPath .. seperator .. "Articulation Scripts"
+stateName = "ArticulationScripts"

@@ -2,7 +2,6 @@
 
 version = 0.7
 
-local stateName = "ArticulationScripts"
 
 local is_new_value, filename, sectionID, cmdID, mode, resolution, val, contextstr = reaper.get_action_context()
 
@@ -46,8 +45,11 @@ end
 package.path = package.path .. ";" .. scriptPathSubfolder .. "?.lua"
 package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. seperator  .. "?.lua"
 
+
+
 if not require("dependencies").main() then return end
 json = require("json")
+require("pathes")
 local export = require("export")
 local file_handling = require("file_handling")
 local mapping_handling = require("mapping_handling")
@@ -127,47 +129,15 @@ readLicense()
 
 -- Load pathes
 --require(scriptPath .."/Functions/pathes")
-require("pathes")
+
 
 local default_settings = require("default_settings")
 
 --- SETTINGS STUFF
 
-local defaultAppSettings = default_settings.app
+saveAppSettings = default_settings.saveAppSettings
 
-local function saveAppSettings()
-    local settingsStr = json.encodeToJson(appSettings)
-    reaper.SetExtState(stateName,"appSettings", settingsStr, true) 
-end
-
-
-if reaper.HasExtState(stateName, "appSettings") then 
-    local settingsStr = reaper.GetExtState(stateName,"appSettings") 
-    appSettings = json.decodeFromJson(settingsStr)
-else    
-    appSettings = defaultAppSettings
-    saveAppSettings()
-end
-
-
--- BACKWARDS COMPATABILITY
-for key, value in pairs(defaultAppSettings) do
-    if type(value) == "table" then 
-        if appSettings[key] == nil then
-            appSettings[key] = {}
-        end
-        
-        for subKey, subValue in pairs(value) do
-            if appSettings[key][subKey] == nil then
-                appSettings[key][subKey] = subValue
-            end
-        end
-    else  
-        if appSettings[key] == nil then
-            appSettings[key] = value
-        end
-    end
-end
+appSettings = default_settings.getAppSettings()
 
 -- Function to open a folder in Finder (macOS) or File Explorer (Windows)
 function openFolderInExplorer(folderPath)
@@ -322,7 +292,7 @@ end
 
 function importTable(specificFilePath)
     if not specificFilePath then
-        retval, filePath = reaper.GetUserFileNameForRead( articulationScriptsPath .. seperator, "Select an action main script", "")
+        retval, filePath = reaper.GetUserFileNameForRead( articulationScriptsPath .. seperator, "Select an jsfx Articulation Script", "")
     else
         retval = true
         filePath = specificFilePath
@@ -1188,7 +1158,6 @@ function importReabank(pathes)
     for _, path in ipairs(pathes) do
         local newBanks = reabank_converter.ConvertReabank(path)        
         for _, bank in ipairs(newBanks) do
-            reaper.ShowConsoleMsg(bank.instrumentSettings.Vendor .. " - " .. getReabankMapName(bank) .. "\n")
             table.insert(banks, bank)                
         end
     end
@@ -1216,9 +1185,15 @@ function dropFiles(whereToInsert, rowStart)
         local ext = firstPath:match("^.+%.(.+)$") or ""
         
         reaper.ImGui_PushFont(ctx, font, math.ceil(appSettings.fontSize/100 * 16))
-        if not whereToInsert and ext == "reabank" then 
+        if not whereToInsert and ext == "jsfx" then 
+            local jsonString = file_handling.readFileForJsonLine(firstPath)        
+            if jsonString then
+                whereToInsert = "jsfx"
+                reaper.ImGui_SetTooltip(ctx,"Release to edit Articulation Script.")
+            end
+        elseif not whereToInsert and ext == "reabank" then 
             whereToInsert = ext
-            reaper.ImGui_SetTooltip(ctx,"Release to import and convert reabank file.")
+            reaper.ImGui_SetTooltip(ctx,"Release to import and convert reabank file.")        
         elseif whereToInsert == "mapName" then
             reaper.ImGui_SetTooltip(ctx,"Release to add map name.\n - Hold down Super to add to exisiting file name.\n - Add Shift to add to before file name.\n - Hold Ctrl to use folder content as articulations.")
         elseif whereToInsert == "articulation" then
@@ -1232,7 +1207,10 @@ function dropFiles(whereToInsert, rowStart)
             for i = 0, count - 1 do 
                 local rv, fileName = reaper.ImGui_GetDragDropPayloadFile(ctx, i)
                 if rv and fileName then
-                    if whereToInsert == "reabank" then 
+                    if whereToInsert == "jsfx" then 
+                        importTable(fileName)
+                        break
+                    elseif whereToInsert == "reabank" then 
                         local ext = fileName:match("^.+%.(.+)$") or ""
                         if ext ==  "reabank" then 
                             table.insert(filePathes, fileName)
@@ -1345,7 +1323,8 @@ local function loop()
         enter = reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_Enter())
         escape = reaper.ImGui_IsKeyReleased(ctx, reaper.ImGui_Key_Escape())
         mouseDown = reaper.ImGui_IsMouseClicked(ctx, 0, false)
-        mouseRelease = reaper.ImGui_IsMouseReleased(ctx, 0)
+        mouseRelease = reaper.ImGui_IsMouseReleased(ctx, 0) 
+        isMouseDoubleClickImgui = reaper.ImGui_IsMouseDoubleClicked( ctx,0 )
         downArrow = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_DownArrow())
         upArrow = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_UpArrow())
 
@@ -4318,66 +4297,69 @@ local function loop()
                     ----------------------------------------------------------------------
                     -------------------------NEW TAB--------------------------------------
                     ----------------------------------------------------------------------
-                    if devMode then 
-                        openSharingTab = checkShortCut("4", true, true)
-                        settingsTabFlag = openSharingTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
-                        if reaper.ImGui_BeginTabItem(ctx, 'Sharing',openSharingTab, settingsTabFlag) then
-                            setToolTipFunc("Use cmd+shift+4 to select tab")
-                            local childSizeW = windowW - 16
-                            if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 28)) then 
-                                reaper.ImGui_NewLine(ctx) 
-                                reaper.ImGui_NewLine(ctx) 
-                                reaper.ImGui_SameLine(ctx, infoTextOffset)
-                                reaper.ImGui_Text(ctx, 'Share your script with others!')
-                                
-                                reaper.ImGui_NewLine(ctx) 
-                                reaper.ImGui_SameLine(ctx, infoTextOffset)
-                                reaper.ImGui_TextColored(ctx, colorGrey, 'Add info to make it easier to find in the Articulations Scripts Browser')
-                                
-                                reaper.ImGui_NewLine(ctx) 
-                                
-                                if not instrumentSettings.Creator and appSettings.Creator then instrumentSettings.Creator = appSettings.Creator end
-                                textInputsForSharingInstrumentSettings("Creator", "Your user name", nil, nil, true) -- your name
-                                reaper.ImGui_Spacing(ctx)
-                                textInputsForSharingInstrumentSettings("Vendor", "Library manefactor") -- g[1]
-                                reaper.ImGui_Spacing(ctx)
-                                textInputsForSharingInstrumentSettings("Product", "Name of the library") -- g[2]
-                                reaper.ImGui_Spacing(ctx)
-                                local hasPatchName = instrumentSettings.Patch and instrumentSettings.Patch or mapName
-                                textInputsForSharingInstrumentSettings("Patch", "Name of the patch. Script name if empty", nil, hasPatchName) -- n, if not N then after Bank 
-                                reaper.ImGui_Spacing(ctx)
-                                textInputsForSharingInstrumentSettings("Info", "Describe the patch, how to use it or other info", true) -- m
-                                if instrumentSettings.ConvertedFrom then 
-                                    textInputsForSharingInstrumentSettings("Converted From", "Info about where the patch might come from. Remove this if the info is no longer relevant") -- m
-                                end
-
-                                reaper.ImGui_NewLine(ctx)
-                                reaper.ImGui_NewLine(ctx)
-                                reaper.ImGui_SameLine(ctx, infoTextOffset)
-                                
-                                local disable = scriptShared --last_shared_text and text == last_shared_text
-                                if disable then reaper.ImGui_BeginDisabled(ctx) end
-                                local btnName = disable and "SCRIPT SHARED!" or "SHARE SCRIPT TO DATABASE"
-                                if reaper.ImGui_Button(ctx, btnName, textInputWidth, textInputWidth / 7) then
-                                    local text = json_text.getSimple()
-                                    export.createObjectForExport() -- saves the file
-                                    reaper.CF_SetClipboard(text)
-                                    if articulation_scripts_library.appendSharedLibraryInChunks(text) then
-                                        --reaper.ShowConsoleMsg("HEJ\n")
-                                        scriptShared = true
-                                        --last_shared_text = text
-                                    end
-                                end 
-                                if disable then reaper.ImGui_BeginDisabled(ctx) end
+                    
+                    openSharingTab = checkShortCut("4", true, true)
+                    settingsTabFlag = openSharingTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
+                    if reaper.ImGui_BeginTabItem(ctx, 'Sharing',openSharingTab, settingsTabFlag) then
+                        setToolTipFunc("Use cmd+shift+4 to select tab")
+                        local childSizeW = windowW - 16
+                        if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 28)) then 
+                            reaper.ImGui_NewLine(ctx) 
+                            reaper.ImGui_NewLine(ctx) 
+                            reaper.ImGui_SameLine(ctx, infoTextOffset)
+                            reaper.ImGui_Text(ctx, 'Share your script with others!')
                             
-                                reaper.ImGui_EndChild(ctx)
+                            reaper.ImGui_NewLine(ctx) 
+                            reaper.ImGui_SameLine(ctx, infoTextOffset)
+                            reaper.ImGui_TextColored(ctx, colorGrey, 'Add info to make it easier to find in the Articulations Scripts Browser')
+                            
+                            reaper.ImGui_NewLine(ctx) 
+                            
+                            if not instrumentSettings.Creator and appSettings.Creator then instrumentSettings.Creator = appSettings.Creator end
+                            textInputsForSharingInstrumentSettings("Creator", "Your user name", nil, nil, true) -- your name
+                            reaper.ImGui_Spacing(ctx)
+                            textInputsForSharingInstrumentSettings("Vendor", "Library manefactor") -- g[1]
+                            reaper.ImGui_Spacing(ctx)
+                            textInputsForSharingInstrumentSettings("Product", "Name of the library") -- g[2]
+                            reaper.ImGui_Spacing(ctx)
+                            local hasPatchName = instrumentSettings.Patch and instrumentSettings.Patch or mapName
+                            textInputsForSharingInstrumentSettings("Patch", "Name of the patch. Script name if empty", nil, hasPatchName) -- n, if not N then after Bank 
+                            reaper.ImGui_Spacing(ctx)
+                            textInputsForSharingInstrumentSettings("Info", "Describe the patch, how to use it or other info", true) -- m
+                            if instrumentSettings.ConvertedFrom then 
+                                textInputsForSharingInstrumentSettings("Converted From", "Info about where the patch might come from. Remove this if the info is no longer relevant") -- m
                             end
+
+                            reaper.ImGui_NewLine(ctx)
+                            reaper.ImGui_NewLine(ctx)
+                            reaper.ImGui_SameLine(ctx, infoTextOffset)
                             
-                            reaper.ImGui_EndTabItem(ctx)
-                        else
-                            setToolTipFunc("Use cmd+shift+4 to select tab")
-                        end  
-                    end
+                            local disable = scriptShared --last_shared_text and text == last_shared_text
+                            if not devMode then 
+                                disable = true
+                            end
+                            if disable then reaper.ImGui_BeginDisabled(ctx) end
+                            local btnName = disable and "SCRIPT SHARED!" or "SHARE SCRIPT TO DATABASE"
+                            if reaper.ImGui_Button(ctx, btnName, textInputWidth, textInputWidth / 7) then
+                                local text = json_text.getSimple()
+                                export.createObjectForExport() -- saves the file
+                                if articulation_scripts_library.appendSharedLibraryInChunks(text) then
+                                    scriptShared = true
+                                    --last_shared_text = text
+                                end
+                            end 
+                            if disable then 
+                                reaper.ImGui_EndDisabled(ctx)
+                                setToolTipFunc("This is soon possible!")                                 
+                            end
+                        
+                            reaper.ImGui_EndChild(ctx)
+                        end
+                        
+                        reaper.ImGui_EndTabItem(ctx)
+                    else
+                        setToolTipFunc("Use cmd+shift+4 to select tab")
+                    end  
                     
                     
                     --[[
@@ -4604,13 +4586,16 @@ local function loop()
             local openSelected
             if not focusedBankToImport then focusedBankToImport = 1 end
             local w = windowW - 32
+            
             if reaper.ImGui_BeginChild(ctx, "banksTable", w, 400) then
                 for i, bank in ipairs(banksForImport) do
-                    if reaper.ImGui_Selectable(ctx, getReabankMapName(bank) .. "##" .. i, i == focusedBankToImport, reaper.ImGui_SelectableFlags_AllowDoubleClick()) then 
+                    if reaper.ImGui_Selectable(ctx, getReabankMapName(bank) .. "##" .. i, i == focusedBankToImport, reaper.ImGui_SelectableFlags_AllowDoubleClick()) then
                         focusedBankToImport = i
-                        if reaper.ImGui_IsMouseDoubleClicked( ctx, reaper.ImGui_MouseButton_Left() ) then
+                        
+                        if focusedBankToImport_lasttime_sel and reaper.time_precise() - focusedBankToImport_lasttime_sel < 0.3 then 
                             openSelected = true
                         end
+                        focusedBankToImport_lasttime_sel = reaper.time_precise()
                     end
                     focusedBank = bank
                 end
@@ -4651,12 +4636,13 @@ local function loop()
             setToolTipFunc("Press C or escape on keyboard")            
             reaper.ImGui_SameLine(ctx)
             
-            if reaper.ImGui_Button(ctx, 'Generate Articulation Scripts for all', 160, 30) or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter(), false)) then
+            if reaper.ImGui_Button(ctx, 'Generate Articulation Scripts for all', 240, 30) or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter(), false)) then
                 for _, bank in ipairs(banksForImport) do
                     importReabankFromTbl(bank)
                     export.createObjectForExport()
                 end
                 resetCreator()
+                openArticulationFolder()
                 ImportScripts = false
                 focusedBankToImport = nil
                 popup = false

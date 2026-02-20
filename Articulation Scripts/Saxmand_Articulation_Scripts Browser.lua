@@ -228,11 +228,7 @@ local function loop()
             end
             
             reaper.ImGui_TextColored(ctx, colorGrey, "PREVIEW")
-            reaper.ImGui_Separator(ctx)
-            reaper.ImGui_TextColored(ctx, colorGrey, "Name:")
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_Text(ctx, mapName)
-            
+            reaper.ImGui_Separator(ctx)            
             infoButtons("Name", mapName) 
             infoButtons("Creator") 
             infoButtons("Vendor") 
