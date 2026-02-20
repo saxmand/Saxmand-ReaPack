@@ -60,7 +60,8 @@ function export.addMapToTrack(track, mapName)
         --fxIndex = reaper.TrackFX_AddByName(track, "MIDI Note Filter", false, -1)
         fxIndex = reaper.TrackFX_AddByName(track, mapName, false, -1)
         if fxIndex ~= -1 then 
-          --  reaper.TrackFX_Delete(track, fxIndex)
+            reaper.TrackFX_Delete(track, fxIndex)
+            fxIndex = reaper.TrackFX_AddByName(track, ("JS: " .. mapName .. " (Articulation Script)"), false, -1)
         end
     end
     if fxIndex ~= -1 then
