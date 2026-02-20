@@ -29,13 +29,14 @@ export.column_modifiers = {
     ["Title"] = "Same",
     ["Group"] = "Same",
     ["Channel"] = "Increment",
-    ["Layer"] = "Increment",
+    ["Layer"] = "Same",
     ["Delay"] = "Same",
     ["Pitch"] = "Fixed",
     ["Velocity"] = "Fixed",
     ["FilterVelocity"] = "Fixed",
     ["Note"] = "Same",
     ["CC"] = "Same", 
+    ["Program"] = "Increment",
 }
 
 function export.saveAppSettings()

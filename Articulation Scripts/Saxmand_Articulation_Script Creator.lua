@@ -77,6 +77,22 @@ local keyboardTableXY = kt.xy
 local keyboardTableKeys = kt.keys
 local keyboardTableKeysOrder = kt.keysOrder 
 
+function deepcopy(orig, copies)
+  copies = copies or {}
+  if type(orig) ~= 'table' then
+    return orig
+  elseif copies[orig] then
+    return copies[orig]  -- handle circular references
+  end
+
+  local copy = {}
+  copies[orig] = copy
+  for k, v in next, orig, nil do
+    copy[deepcopy(k, copies)] = deepcopy(v, copies)
+  end
+  setmetatable(copy, deepcopy(getmetatable(orig), copies))
+  return copy
+end
 
 function GenerateSpectrumColors(count, saturation, value)
   local colors = {}
@@ -1847,6 +1863,9 @@ local function loop()
                                 name = "Controller", triggerName = "CC", key = "C", ctrl = true, buttonType = "popup",
                                 tip = "Add a CC switch to the articulation."
                             },{
+                            name = "Program", key = "H", ctrl = true, triggerName = "Program", 
+                            tip = "Send out a program change."
+                            },{
                             --name = "Note Held", triggerName = "NoteH", key = "H", ctrl = true, buttonType = "multi",
                             --tip = "Add a held note keyswitch to the articulation."
                             --},{
@@ -1856,11 +1875,11 @@ local function loop()
                             name = "Channel",key = "X", ctrl = true,triggerName = "Channel", 
                             tip = "Send articulation and note to sepecific channel."
                             },{
-                            name = "Negative Delay", key = "D", ctrl = true,triggerName = "Delay", 
-                            tip = "Delay articulation and note in miliseconds.\nUsually used together with a negative track delay."
-                            },{
                             name = "Pitch", key = "P", ctrl = true, triggerName = "Pitch", 
                             tip = "Make note a specific pitch or pitch range.\nThis is great for remapping notes to a percussion instrument."
+                            },{
+                            name = "Negative Delay", key = "D", ctrl = true,triggerName = "Delay", 
+                            tip = "Delay articulation and note in miliseconds.\nUsually used together with a negative track delay."
                             }}
                             
                             
@@ -2177,6 +2196,9 @@ local function loop()
                                 elseif mappingType[focusedColumn] and  mappingTypeName == "Velocity" then
                                     local modifierNames = {"Fixed", "Minimum", "Maximum", "Within", "Outside"}
                                     multipleSelectionVelocity(mappingTypeName, modifierNames)
+                                elseif mappingType[focusedColumn] and mappingTypeName == "Program" then
+                                    local modifierNames = {"Same", "Increment"}
+                                    multipleSelectionOptions(mappingTypeName, modifierNames)
                                 elseif mappingType[focusedColumn] and mappingTypeName == "Delay" then
                                     local modifierNames = {"Same"}
                                     multipleSelectionOptions(mappingTypeName, modifierNames)
@@ -2233,6 +2255,7 @@ local function loop()
                                 if mappingTypeName 
                                 and mappingTypeName:match("Note") == nil 
                                 and mappingTypeName:match("Velocity") == nil 
+                                
                                 and mappingTypeName:match("FilterVelocity") == nil 
                                 and mappingTypeName:match("FilterSpeed") == nil 
                                 and mappingTypeName:match("FilterInterval") == nil 
@@ -3349,6 +3372,8 @@ local function loop()
                                                     mapping.Velocity = nil
                                                 elseif column_name == "Delay" then
                                                     mapping.Delay = nil  
+                                                elseif column_name == "Program" then
+                                                    mapping.Program = nil  
                                                 elseif column_name == "Pitch" then
                                                     mapping.Pitch = nil 
                                                 elseif column_name == "Position" then
@@ -3686,7 +3711,14 @@ local function loop()
                                                 --end
                                                 
                                                 
-                                                
+                                            
+                                            elseif columnName == "Program" then
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Program)
+                                                if modify == "Same" then
+                                                    modifyIncrement(id, columnName, row, column, true, false, 0, 127, "")
+                                                elseif modify == "Increment" then
+                                                    modifyIncrement(id, columnName, row, column, false, false, 0, 127, "")
+                                                end
                                             elseif columnName == "Channel" then
                                                 reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Channel)
                                                 if modify == "Same" then
@@ -4636,7 +4668,11 @@ local function loop()
             setToolTipFunc("Press C or escape on keyboard")            
             reaper.ImGui_SameLine(ctx)
             
-            if reaper.ImGui_Button(ctx, 'Generate Articulation Scripts for all', 240, 30) or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter(), false)) then
+
+            
+            if reaper.ImGui_Button(ctx, 'Generate Articulation Scripts for all', 240, 30) or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter(), false)) then                
+                local store = deepcopy({tableInfo = tableInfo, mapName = mapName, instrumentSettings = instrumentSettings, mapping = mapping})
+
                 for _, bank in ipairs(banksForImport) do
                     importReabankFromTbl(bank)
                     export.createObjectForExport()
@@ -4646,6 +4682,12 @@ local function loop()
                 ImportScripts = false
                 focusedBankToImport = nil
                 popup = false
+
+                tableInfo = store.tableInfo
+                mapName = store.mapName
+                instrumentSettings = store.instrumentSettings
+                mapping = store.mapping
+                
                 reaper.ImGui_CloseCurrentPopup(ctx) 
             end 
             setToolTipFunc("Press Super+enter on keyboard")

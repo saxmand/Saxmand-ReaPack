@@ -100,6 +100,8 @@ function export.createTableOrderFromUsedMappings(mapping)
 
     ]]
 
+    if mapping.Program then table.insert(mappingType, "Program") end
+
     if mapping.Velocity then table.insert(mappingType, "Velocity") end
     if mapping.Channel then table.insert(mappingType, "Channel") end
     if mapping.Delay then table.insert(mappingType, "Delay") end
@@ -144,6 +146,7 @@ function export.getTableSizes(fontSize, tableSizeTitle, tableSizeGroup)
     tableSizes.Notation = reaper.ImGui_CalcTextSize(ctx, "Notation     X", 0, 0)
     tableSizes.UIText = reaper.ImGui_CalcTextSize(ctx, "UIText  X", 0, 0)
     tableSizes.Delay = reaper.ImGui_CalcTextSize(ctx, "N.Delay  X", 0, 0)
+    tableSizes.Program = reaper.ImGui_CalcTextSize(ctx, "PrgCh X", 0, 0)
     tableSizes.Channel = reaper.ImGui_CalcTextSize(ctx, "Channel X", 0, 0)
     tableSizes.Pitch = reaper.ImGui_CalcTextSize(ctx, "Pitch X", 0, 0)
     tableSizes.Layer = reaper.ImGui_CalcTextSize(ctx, "Layer  X", 0, 0)
@@ -185,6 +188,8 @@ function export.getTableSizes(fontSize, tableSizeTitle, tableSizeGroup)
             tableWidth = tableWidth + tableSizes.Delay
         elseif mappingName == "Pitch" then
             tableWidth = tableWidth + tableSizes.Pitch
+        elseif mappingName == "Program" then
+            tableWidth = tableWidth + tableSizes.Program
         elseif mappingName == "Velocity" then
             tableWidth = tableWidth + tableSizes.Velocity
         elseif mappingName == "Channel" then

@@ -88,8 +88,26 @@ end
 local function parseOutputEvents(oStr, entry)
   local noteCount = 0
   for _, ev in ipairs(split(oStr, "/")) do
+    local nonRouting = ev:match("^%-")        -- leading '-' means don't affect routing
     ev = ev:gsub("^%-", "")
-    ev = ev:gsub("%%[^/]*$", "")
+    ev = ev:gsub("%%[^/]*$", "")             -- strip %filter_program suffix
+
+    -- Channel-only routing: @1, @2, @1.3 etc. (no type, no args)
+    -- Must be checked BEFORE stripping @ so we can detect the pattern.
+    local channelOnly = ev:match("^@([%d%.]+)$")
+    if channelOnly and not nonRouting then
+      local ch, bus = channelOnly:match("^(%d+)%.?(%d*)$")
+      entry["Channel"] = tonumber(ch)
+      if bus and bus ~= "" then entry["Bus"] = tonumber(bus) end
+      goto nextEvent
+    end
+
+    -- For normal events, capture @channel[.bus] before stripping
+    local embeddedChannel, embeddedBus = ev:match("@(%d+)%.?(%d*)")
+    if embeddedChannel and not nonRouting then
+      entry["Channel"] = tonumber(embeddedChannel)
+      if embeddedBus and embeddedBus ~= "" then entry["Bus"] = tonumber(embeddedBus) end
+    end
     ev = ev:gsub("@[^:]*", "")
 
     local evType, argStr = ev:match("^([^:]+):?(.*)$")
@@ -123,6 +141,8 @@ local function parseOutputEvents(oStr, entry)
     elseif evType == "program" then
       entry["Program"] = arg1
     end
+
+    ::nextEvent::
   end
 end
 

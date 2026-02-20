@@ -8,15 +8,18 @@ local reaper_sections = dofile(scriptPath .. "/Helpers/reaper_sections.lua")
 local export = {}
 
 function export.findArticulationScript(track)
-    if not track then return end
-    local fxAmount = reaper.TrackFX_GetCount(track)
-    for i = 0, fxAmount - 1 do
-        local _, fxName = reaper.TrackFX_GetFXName(track, i)
-        if fxName:find(" (Articulation Script)", 1, true) then
-            local name = fxName:gsub(" %(Articulation Script%)", ""):gsub("JS: ", "")
-            local fxNumber = i
-            return fxNumber, name
+    if track then 
+        local fxAmount = reaper.TrackFX_GetCount(track)
+        for i = 0, fxAmount - 1 do
+            local _, fxName = reaper.TrackFX_GetFXName(track, i)
+            if fxName:find(" (Articulation Script)", 1, true) then
+                local name = fxName:gsub(" %(Articulation Script%)", ""):gsub("JS: ", "")
+                local fxNumber = i
+                return fxNumber, name
+            end
         end
+    else 
+        return false
     end
 end
 
