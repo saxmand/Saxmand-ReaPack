@@ -1741,46 +1741,133 @@ local function loop()
                 filterFunction4Characters = reaper.ImGui_CreateFunctionFromEEL([[
                     len = strlen(#Buf);
 
-                    len > 0 ? (
-                        c0 = str_getchar(#Buf, 0, 'cu');
-                        isDigit = (c0 >= 48) && (c0 <= 57);
+len > 0 ? (
+    c0 = str_getchar(#Buf, 0);  // raw, no case conversion
+    isDigit = (c0 >= 48) && (c0 <= 57);
 
-                        isDigit ? (
-                            // ---- manual integer parse ----
-                            val = 0;
-                            i = 0;
+    isDigit ? (
+        // ---- manual integer parse ----
+        val = 0;
+        i = 0;
 
-                            loop(len,
-                                c = str_getchar(#Buf, i, 'cu');
-                                (c >= 48 && c <= 57) ? (
-                                    val = val * 10 + (c - 48);
-                                    i += 1;
-                                ) : (
-                                    i = len; // break loop
-                                );
-                            );
+        loop(len,
+            c = str_getchar(#Buf, i, 'cu');
+            (c >= 48 && c <= 57) ? (
+                val = val * 10 + (c - 48);
+                i += 1;
+            ) : (
+                i = len; // break loop
+            );
+        );
 
-                            // ---- clamp ----
-                            val > 127 ? (
-                                InputTextCallback_DeleteChars(0, len);
-                                InputTextCallback_InsertChars(0, "127");
-                            );
-                        )
-                        : (
-                            // ---- text mode: limit to 4 chars ----
-                            len > 4 ? (
-                                tmp = #;
-                                strcpy(tmp, "");
-                                i = 0;
-                                loop(4,
-                                    tmp += str_getchar(#Buf, i);
-                                    i += 1;
-                                );
-                                InputTextCallback_DeleteChars(0, len);
-                                InputTextCallback_InsertChars(0, tmp);
-                            );
-                        );
-                    );
+        // ---- clamp ----
+        val > 127 ? (
+            InputTextCallback_DeleteChars(0, len);
+            InputTextCallback_InsertChars(0, "127");
+        );
+        val < 10 && len > 1 ? (
+            InputTextCallback_DeleteChars(0, len);
+            InputTextCallback_InsertChars(0, sprintf(#, "%d", val));
+        );
+    )
+    : (
+        // ---- text mode: note name validation ----
+        tmp = #;
+        strcpy(tmp, "");
+        valid = 1;
+        complete = 0;
+
+        // --- Character 0: must be A-G (force uppercase) ---
+        c0u = str_getchar(#Buf, 0, 'cu');  // uppercase version for comparison
+        (c0u >= 97 && c0u <= 122) ? c0u -= 32;
+        (c0u == 65 || c0u == 67 || c0u == 68 || c0u == 69 || c0u == 70 || c0u == 71 ||  // A,C,D,E,F,G
+         c0u == 66) ? (  // B
+            strcat(tmp, sprintf(#, "%c", c0u));  // append uppercase
+        ) : (
+            valid = 0;
+        );
+
+        // --- Character 1: '#', 'b', '-', or digit 0-8 ---
+        (valid && len >= 2) ? (
+            c1 = str_getchar(#Buf, 1);  // raw
+
+            (c1 >= 48 && c1 <= 56) ? (  // digit 0-8 => complete
+                strcat(tmp, sprintf(#, "%c", c1));                 
+                complete = 1;
+            ) :
+            ((c1 == 35 || c1 == 83 || c1 == 115) && // '#'
+            (c0u == 65 || c0u == 67 || c0u == 68 || c0u == 70 || c0u == 71) // A,C,D,F,G              
+            ) ? (  
+                strcat(tmp, "#"); 
+            ) :
+            ((c1 == 98 || c1 == 66 || c1 == 70 || c1 == 102) && // 'b' or 'B' => force lowercase
+            (c0u == 65 || c0u == 66 || c0u == 68 || c0u == 69 || c0u == 71) // A,B,D,E,G              
+            ) ? (  
+                strcat(tmp, "b");
+                c1 = 98;  // normalize c1 so char 2 check works correctly
+            ) :
+            (c1 == 45) ? (  // '-'
+                strcat(tmp, "-");
+            ) : (
+                valid = 0;
+            );
+        );
+
+        // --- Character 2: digit 0-8, or '-' if c1 was '#' or 'b' ---
+        (valid && !complete && len >= 3) ? (
+            c2 = str_getchar(#Buf, 2);  // raw
+
+            (c2 >= 48 && c2 <= 56) ? (  // digit 0-8 => complete
+                strcat(tmp, sprintf(#, "%c", c2));
+                complete = 1;
+            ) :
+            (c2 == 45 && (c1 == 35 || c1 == 98)) ? (  // '-' after '#' or 'b'
+                strcat(tmp, "-");
+            ) : (
+                valid = 0;
+            );
+        );
+
+        // --- Character 3: digit 0-8 only ---
+        (valid && !complete && len >= 4) ? (
+            c3 = str_getchar(#Buf, 3);  // raw
+
+            (c3 >= 48 && c3 <= 56) ? (  // digit 0-8 => complete
+                strcat(tmp, sprintf(#, "%c", c3));
+                complete = 1;
+            ) : (
+                valid = 0;
+            );
+        );
+
+        // --- If complete and user typed more, start over with new char ---
+        (complete && len > strlen(tmp)) ? (
+            newc = str_getchar(#Buf, len - 1, 'cu');  // uppercase for comparison
+            (newc == 65 || newc == 66 || newc == 67 || newc == 68 || newc == 69 || newc == 70 || newc == 71) ? (
+                InputTextCallback_DeleteChars(0, len);
+                strcpy(tmp, "");
+                tmp += newc;
+                InputTextCallback_InsertChars(0, tmp);
+            ) : (
+                // not a valid note start, truncate back to completed note
+                InputTextCallback_DeleteChars(0, len);
+                InputTextCallback_InsertChars(0, tmp);
+            );
+        ) : (
+            // Normal case: replace buffer with validated/corrected string
+            valid ? (
+                //strlen(tmp) != len ? (
+                    InputTextCallback_DeleteChars(0, len);
+                    InputTextCallback_InsertChars(0, tmp);
+                //);
+            ) : (
+                // Invalid: truncate to what was valid so far
+                InputTextCallback_DeleteChars(0, len);
+                InputTextCallback_InsertChars(0, tmp);
+            );
+        );
+    );
+);
                 ]])
                 reaper.ImGui_Function_SetValue_String(filterFunction4Characters, '#allowed', reaper.ImGui_InputTextFlags_CallbackEdit())
             end
@@ -2915,6 +3002,21 @@ local function loop()
                                 end
                             end
                             
+                            function makeNoteInputFit(input)
+                                output = ""
+                                if not isNumber(input:sub(1,2)) then 
+                                    output = input:sub(1,2):upper()
+                                    if not isNumber(input:sub(2,3)) and (input:sub(2,3) == "#" or input:sub(2,3):lower() == "b") then 
+                                        output = output .. input:sub(2,3):lower()
+                                        output = output .. input:sub(3)
+                                    else
+                                        output = output .. input:sub(2)
+                                    end
+                                else
+                                    return input
+                                end
+                                return output 
+                            end
                             
                             function modifyNotes(id, columnName, row, column, modify, defaultValue) 
                                 local title = getArticulationTextFromLane(columnName, row, defaultValue) 
@@ -2937,7 +3039,9 @@ local function loop()
                                 --else
                                 --    reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Note)
                                 --end
-                                ret, stringInput = reaper.ImGui_InputText(ctx, "##" .. id, visualTitle, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CharsUppercase() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction4Characters) -- ,reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                
+
+                                ret, stringInput = reaper.ImGui_InputText(ctx, "##" .. id, visualTitle, reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunction4Characters) -- ,reaper.ImGui_InputTextFlags_EnterReturnsTrue())
                                 updateItemFocus(row, column, itemNumber, 0.1)
                                 
                                 if focusedRow == row and focusedColumn == column and reaper.ImGui_IsItemFocused(ctx) then
