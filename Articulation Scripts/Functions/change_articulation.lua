@@ -58,7 +58,6 @@ local function updateSliderFromArticulation(track, articulation)
         local isToggleOn = false
         for i, art in ipairs(triggerTables) do
             if art.articulation == articulation then
-                --reaper.ShowConsoleMsg(tostring(artSliders[art.layer].fxNumber) .. " - " .. art.layer.."\n")
                 local selectedArticulationIdx, artMin, artMax = reaper.TrackFX_GetParam(track, artSliders[art.layer].fxNumber, artSliders[art.layer].param)
                 isAToggle = math.floor(artMax) == 0
                 isToggleOn = math.floor(selectedArticulationIdx) == math.floor(artMin)
@@ -85,10 +84,9 @@ end
 local function setNotationText(take, articulation, allNotes, forceInsert)
     
     local takeTrack = reaper.GetMediaItemTake_Track(take)
-    local existsInScript, triggerTableLayers, artSliders, isAToggle, isToggleOn = updateSliderFromArticulation(track, articulation)
+    local existsInScript, triggerTableLayers, artSliders, isAToggle, isToggleOn = updateSliderFromArticulation(takeTrack, articulation)
     
-
-    if existsInScript then 
+    if existsInScript and existsInScript.articulation then 
         local _, numNotes = reaper.MIDI_CountEvts(take)
         local nothingSelected = reaper.MIDI_EnumSelNotes(take, 0) == -1
         for noteidx = 0, numNotes - 1 do
