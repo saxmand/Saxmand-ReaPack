@@ -224,7 +224,8 @@ function export.getTableSizes(fontSize, tableSizeTitle, tableSizeGroup)
 end
 
 function export.getMainLaneRow(tableInfo, columnName, row)
-    if tableInfo[row].isLane and export.columnsToNotUseLanes()[columnName] then
+    local columnsToNotUseLanes = export.columnsToNotUseLanes()
+    if tableInfo[row] and tableInfo[row].isLane and columnsToNotUseLanes and columnsToNotUseLanes[columnName] then
         for r = row, 1, -1 do
             if not tableInfo[r].isLane then
                 return r
