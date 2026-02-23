@@ -177,6 +177,28 @@ end
 -------------------------------------------------
 ------------------ HELPERS ----------------------
 -------------------------------------------------
+local function batchUpdateAlljsfxInSession()    
+    local store = deepcopy({tableInfo = tableInfo, mapName = mapName, instrumentSettings = instrumentSettings, mapping = mapping})
+    
+    local alreadyUpdated = {}                    
+    local trackCount = reaper.CountTracks(0)
+    for t = 0, trackCount - 1 do
+        local track = reaper.GetTrack(0, t)        
+        local fx_index, fx_name = track_depending_on_selection.findArticulationScript(track)
+        if fx_index and fx_name and not alreadyUpdated[fx_name] then
+            resetCreator()
+            if importTable(articulationScriptsPath .. seperator .. fx_name .. ".jsfx") then 
+                addMap.updateMapOnInstrumentsWithMap(fx_name) 
+                alreadyUpdated[fx_name] = true
+            end
+        end
+    end
+    resetCreator()
+    tableInfo = store.tableInfo
+    mapName = store.mapName
+    instrumentSettings = store.instrumentSettings
+    mapping = store.mapping
+end
 
 local function changeArticulationScriptEmbedUiTextSize(bigger)
     local sameSize
@@ -329,6 +351,7 @@ function importTable(specificFilePath)
                 undo_redo.undo()
             else
                 json_text.clearForKeyswitchInfo(tableInfo)
+                return true
             end
         end
         -- modifierSettings,mappingType,mapping.CC, mapping.NoteH, mapping.NoteM, tableInfo, #tableInfo, mapName = unpickle(fileText)
@@ -1319,7 +1342,50 @@ local function loop()
         closeApp()
     end
     
-    reaper.ImGui_SetNextWindowSize(ctx, minimumsWidth + 8, minimumsWidth*1.5, reaper.ImGui_Cond_FirstUseEver())
+    if windowW and windowH and minimumsWidth and not mouseDown then 
+        local set = false
+        local min_tableHeight = math.ceil(appSettings.fontSize / 100 * 130)
+        --[[ 
+        if appSettings.autoResizeWindowHeight then
+            if tableEndPosY and tableHeight and math.abs(tableHeight - tableEndPosY) > min_tableHeight then
+                set = true 
+                windowH = windowH - (tableHeight - tableEndPosY)  + 8
+            end
+        else 
+        end
+         ]]
+        if not hideTableButtons and tableHeight and tableHeight < min_tableHeight then 
+            set = true
+            windowH = windowH + (min_tableHeight - tableHeight)
+        end
+        
+        if windowH and windowH < minimumsWidth then 
+            set = true
+            windowH = minimumsWidth
+        end
+        
+        
+        if appSettings.autoResizeWindowWidth then 
+            if tableWidth and tableWidth > minimumsWidth then
+                set = true 
+                windowW = tableWidth+16
+            elseif windowW > minimumsWidth + 8 then
+                set = true 
+                windowW = minimumsWidth + 8
+            end
+        else
+            if windowW < minimumsWidth + 8 then
+                set = true 
+                windowW = minimumsWidth + 8
+            end
+        end
+        
+        if set then
+            reaper.ImGui_SetNextWindowSize(ctx, windowW, windowH +8) 
+        end 
+    end
+    
+    --reaper.ImGui_SetNextWindowSize(ctx, minimumsWidth + 8, minimumsWidth*1.5, reaper.ImGui_Cond_FirstUseEver())
     local visible, open = reaper.ImGui_Begin(ctx, 'Articulation Creator', true,
     -- reaper.ImGui_WindowFlags_NoDecoration() |
                                              reaper.ImGui_WindowFlags_TopMost() -- | reaper.ImGui_WindowFlags_NoMove()
@@ -1354,7 +1420,7 @@ local function loop()
         
         draw_list = reaper.ImGui_GetWindowDrawList(ctx)
 
-        windowWidth = reaper.ImGui_GetWindowSize(ctx) 
+        --windowWidth = reaper.ImGui_GetWindowSize(ctx) 
         
         reaper.ImGui_PushFont(ctx, font, math.ceil(appSettings.fontSize/100 * 16))
         
@@ -1369,6 +1435,8 @@ local function loop()
         if not windowW then 
             windowW, windowH = reaper.ImGui_GetWindowSize(ctx)
         end
+        
+        
         
         reaper.ImGui_BeginGroup(ctx)
         
@@ -1483,13 +1551,20 @@ local function loop()
                 appSettings.autoResizeWindowWidth = val
                 saveAppSettings()
             end 
-            
+            --[[ 
             ret, val = reaper.ImGui_Checkbox(ctx, "Auto resize window height", appSettings.autoResizeWindowHeight)
             if ret then 
                 appSettings.autoResizeWindowHeight = val
                 saveAppSettings()
             end 
+             ]]
+            reaper.ImGui_Separator(ctx)
+
             
+            if reaper.ImGui_Button(ctx, 'Batch update all jsfx used in session.') then  
+                batchUpdateAlljsfxInSession() 
+            end                      
+            setToolTipFunc("This will re-export all jsfx used in the focused session, using the latest script version, and update them on all the tracks.")
         end
         
         
@@ -3381,7 +3456,7 @@ len > 0 ? (
                             --reaper.ImGui_SetCursorPosY(ctx, tableY)
                             --reaper.ImGui_SetCursorPosX(ctx, tableX + 30)
                             
-                            if not windowW then windowW = 200; windowH = 1 end
+                            --if not windowW then windowW = 200; windowH = 1 end
                             
                             local childSizeW = windowW - 16 < tableWidth and windowW - 16 or tableWidth
                             tableHeight = windowH - tableY  - (math.ceil(appSettings.fontSize / 100 * 40) + 30)
@@ -4811,47 +4886,14 @@ len > 0 ? (
                 
             reaper.ImGui_EndPopup(ctx)
         end
-
+        
         
         counter = 0
         for _, _ in pairs(selectedArticulations) do counter = counter + 1 end
         multipleSelected = counter > 1
-
-        windowW, windowH = reaper.ImGui_GetWindowSize(ctx)
-        
-        local min_tableHeight = math.ceil(appSettings.fontSize / 100 * 130)
-        if appSettings.autoResizeWindowHeight then
-            if tableEndPosY and tableHeight and math.abs(tableHeight - tableEndPosY) > min_tableHeight then
-                --if tableHeight > tableEndPosY then
-                    windowH = windowH - (tableHeight - tableEndPosY)
-                --else
-                --    windowH = windowH - (tableEndPosY - tableHeight)
-                --end
-                reaper.ImGui_SetWindowSize(ctx, windowW, windowH)
-                if tableHeight == 0 then 
-                --    tableEndPosY = 0
-                end
-            end
-        else 
-        end
-        
-        if not hideTableButtons and tableHeight and tableHeight < min_tableHeight then 
-            windowH = windowH + (min_tableHeight - tableHeight)
-            reaper.ImGui_SetWindowSize(ctx, windowW, windowH)
-        end
-        
-        if appSettings.autoResizeWindowWidth then
-            if tableWidth and tableWidth > minimumsWidth then
-                reaper.ImGui_SetWindowSize(ctx, tableWidth+16+8, windowH)
-            else
-                reaper.ImGui_SetWindowSize(ctx, minimumsWidth+8, windowH)
-            end
-        else
-            if windowW < minimumsWidth+8 then
-                reaper.ImGui_SetWindowSize(ctx, minimumsWidth+8, windowH)
-            end
-        end
-
+               
+               
+        --windowW, windowH = reaper.ImGui_GetWindowSize(ctx)
         --reaper.ImGui_PopStyleColor(ctx, 4)
         reaper.ImGui_PopStyleVar(ctx, varAmount)
         reaper.ImGui_PopFont(ctx)
@@ -4859,8 +4901,13 @@ len > 0 ? (
         reaper.ImGui_EndChild(ctx)
         dropFiles()
 
+        windowW, windowH = reaper.ImGui_GetWindowSize(ctx)
+        windowH = windowH - 8
         reaper.ImGui_End(ctx)
     end
+
+
+        
 
     if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape()) then
         -- reaper.JS_Window_SetFocus(focusedWindow)
