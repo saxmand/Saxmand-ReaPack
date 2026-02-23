@@ -88,6 +88,20 @@ end
 
 function export.others()
     reaper.ImGui_SeparatorText(ctx, "Others")
+    
+    local sliderName = "enough time" --"Negative delay when not enough time"
+    local firstSelectedTrackValue = change_articulation.findParamWithNameValue(track, fxNumber, sliderName)
+    reaper.ImGui_TextColored(ctx, 0x777777FF, "Negative delay when start playing too close to note")
+    local selectionTypes = {"Full negative delay", "Use playstart to note, amount", "Do not delay"}
+    for i, s in ipairs(selectionTypes) do
+        if reaper.ImGui_RadioButton(ctx, s, firstSelectedTrackValue == i - 1) then
+            change_articulation.setSliderOnArticulationScripts_allTracks(sliderName, i - 1)
+        end
+        setToolTipFunc("If your articulation is using Negative Delay, and you play closer to the note than the negative delay, choose what amount should delay.\nThis option is only relevant if you script contains Delay. This also affects rendering if there's no 'pre-roll' before notes with negative delay.\nThis will set all Articulation scripts")
+        if i < #selectionTypes then reaper.ImGui_SameLine(ctx) end                                
+    end 
+
+    reaper.ImGui_NewLine(ctx)
     if reaper.ImGui_Checkbox(ctx, "Show tooltip for articulation buttons", settings.show_tooltip_for_articaultion_buttons) then
         settings.show_tooltip_for_articaultion_buttons = not settings.show_tooltip_for_articaultion_buttons
         saveSettings()

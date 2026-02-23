@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.8.7
+-- @version 0.8.8
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -15,4 +15,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + fix only being able to write articulation that exists on track 
+--   + added option in creator to set behavior when "Negative delay when start playing too close to note". 
+--   + added option to Settings in list and keyboard surface to set "Negative delay when start playing too close to note" on all articulations scripts

@@ -1,5 +1,71 @@
 -- @noindex
 
+local export = {}
+
+local function findParamWithNameAndSetTo(track, fx_index, name, val)
+    -----------------------------------------------------------
+    -- Find parameter
+    -----------------------------------------------------------
+    local param_count = reaper.TrackFX_GetNumParams(track, fx_index)
+    local param_index = nil
+
+    for p = 0, param_count - 1 do
+        local retval, param_name = reaper.TrackFX_GetParamName(track, fx_index, p, "")
+        if retval and param_name:lower():find(name, 1, true) then
+            param_index = p
+            break
+        end
+    end
+
+    -----------------------------------------------------------
+    -- Set value
+    -----------------------------------------------------------
+    if param_index and val then
+        reaper.TrackFX_SetParam(track, fx_index, param_index, val)
+    end
+end
+
+
+function export.findParamWithNameValue(track, fx_index, name)
+    -----------------------------------------------------------
+    -- Find parameter
+    -----------------------------------------------------------
+    local param_count = reaper.TrackFX_GetNumParams(track, fx_index)
+    local param_index = nil
+
+    for p = 0, param_count - 1 do
+        local retval, param_name = reaper.TrackFX_GetParamName(track, fx_index, p, "")
+        if retval and param_name:lower():find(name, 1, true) then
+            param_index = p
+            break
+        end
+    end
+
+    -----------------------------------------------------------
+    -- Get value
+    -----------------------------------------------------------
+    if param_index then
+        local val, min, max = reaper.TrackFX_GetParam(track, fx_index, param_index)
+        return val, min, max
+    end
+end
+
+function export.setSliderOnArticulationScripts(track, slider_name, value)
+    local fx_index = track_depending_on_selection.findArticulationScript(track)
+    if fx_index and value then
+        findParamWithNameAndSetTo(track, fx_index, slider_name, value)
+    end
+end
+
+function export.setSliderOnArticulationScripts_allTracks(slider_name, value)
+    reaper.Undo_BeginBlock()
+    for i = 0, reaper.CountTracks(0) - 1 do
+        local track = reaper.GetTrack(0, i)
+        export.setSliderOnArticulationScripts(track, slider_name, value)
+    end
+    reaper.Undo_EndBlock(string.format("Set FX slider '%s'", slider_name), -1)
+end
+
 
 function getNoteText(take, noteChannel, notePpqpos, notePitch)
     local i = 0
@@ -39,7 +105,7 @@ end
 local function getArtNameFromSliders(track, artSliders)
     local newName = ""
     for i, slider in ipairs(artSliders) do
-        local selectedArticulationIdx, min, max = reaper.TrackFX_GetParam(track, slider.fxNumber, slider.param)     -- 0 is the parameter index, 0 is the parameter value
+        local selectedArticulationIdx, min, max = reaper.TrackFX_GetParam(track, slider.fxNumber, slider.param) -- 0 is the parameter index, 0 is the parameter value
         if selectedArticulationIdx > -1 and selectedArticulationIdx <= max then
             local artNameFromSlider = triggerTableLayers[i][selectedArticulationIdx + 1].articulation
             newName = newName .. (i > 1 and " / " or "") .. artNameFromSlider
@@ -50,18 +116,20 @@ end
 
 
 local function updateSliderFromArticulation(track, articulation)
-    local triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam = readArticulationScript(track, name)
+    local triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam =
+        readArticulationScript(track, name)
 
-    if articulation then 
+    if articulation then
         local existsInScript
         local isAToggle = false
         local isToggleOn = false
         for i, art in ipairs(triggerTables) do
             if art.articulation == articulation then
-                local selectedArticulationIdx, artMin, artMax = reaper.TrackFX_GetParam(track, artSliders[art.layer].fxNumber, artSliders[art.layer].param)
+                local selectedArticulationIdx, artMin, artMax = reaper.TrackFX_GetParam(track,
+                    artSliders[art.layer].fxNumber, artSliders[art.layer].param)
                 isAToggle = math.floor(artMax) == 0
                 isToggleOn = math.floor(selectedArticulationIdx) == math.floor(artMin)
-                local sliderVal = isAToggle and (isToggleOn and 1 or 0) or art.artInLayer 
+                local sliderVal = isAToggle and (isToggleOn and 1 or 0) or art.artInLayer
                 reaper.TrackFX_SetParam(track, artSliders[art.layer].fxNumber, artSliders[art.layer].param, sliderVal)
                 existsInScript = art
                 break;
@@ -74,70 +142,71 @@ local function updateSliderFromArticulation(track, articulation)
 end
 
 local function updateSlidersOnAllTrack(articulation)
-    for t = 0, reaper.CountSelectedTracks(0)- 1 do
-        local track = reaper.GetSelectedTrack(0,t)
+    for t = 0, reaper.CountSelectedTracks(0) - 1 do
+        local track = reaper.GetSelectedTrack(0, t)
         updateSliderFromArticulation(track, articulation)
     end
 end
 
 -- Function to set notation text for selected notes
 local function setNotationText(take, articulation, allNotes, forceInsert)
-    
     local takeTrack = reaper.GetMediaItemTake_Track(take)
-    local existsInScript, triggerTableLayers, artSliders, isAToggle, isToggleOn = updateSliderFromArticulation(takeTrack, articulation)
-    
-    if existsInScript and existsInScript.articulation then 
+    local existsInScript, triggerTableLayers, artSliders, isAToggle, isToggleOn = updateSliderFromArticulation(takeTrack,
+        articulation)
+
+    if existsInScript and existsInScript.articulation then
         local _, numNotes = reaper.MIDI_CountEvts(take)
         local nothingSelected = reaper.MIDI_EnumSelNotes(take, 0) == -1
         for noteidx = 0, numNotes - 1 do
-            local retval, selected, muted, notePpqpos, endppqpos, noteChannel, notePitch, vel = reaper.MIDI_GetNote(take, noteidx)
+            local retval, selected, muted, notePpqpos, endppqpos, noteChannel, notePitch, vel = reaper.MIDI_GetNote(take,
+                noteidx)
             if allNotes or selected then
                 local newName = ""
                 local artLayer
                 -- look more at this
                 local currentText = getNoteText(take, noteChannel, notePpqpos, notePitch)
-                
+
                 if not cmd and not forceInsert then
                     if currentText then
                         local arts = split_exact(currentText)
                         --[[ for i, a in ipairs(arts) do
                             for _, t in ipairs(triggerTableLayers[existsInScript.layer]) do
                                 if a == t.articulation then
-                                    if isAToggle then 
+                                    if isAToggle then
                                         --table.remove(arts, i)
                                         arts[i] = ""
                                     else
                                         arts[i] = articulation
                                     end
                                     break
-                                end  
+                                end
                             end
                         end ]]
                         local newArtsTbl = {}
                         for layerIndex, layer in ipairs(triggerTableLayers) do
                             local found = false
                             if existsInScript and existsInScript.layer == layerIndex then
-                                if not isAToggle or not isToggleOn then 
+                                if not isAToggle or not isToggleOn then
                                     table.insert(newArtsTbl, articulation)
                                 end
                                 --newArtsTbl[layerIndex] = (not isAToggle or not isToggleOn) and articulation or ""
                             else
                                 for artIndexInLayer, art in ipairs(layer) do
-                                    for i, a in ipairs(arts) do                                         
-                                        if art.articulation == a then 
+                                    for i, a in ipairs(arts) do
+                                        if art.articulation == a then
                                             table.insert(newArtsTbl, a)
                                             --newArtsTbl[layerIndex] = a
                                             found = true
-                                            break                     
+                                            break
                                         end
                                     end
-                                end    
-                                if not found then 
-                                    if #layer > 1 then 
+                                end
+                                if not found then
+                                    if #layer > 1 then
                                         table.insert(newArtsTbl, layer[1].articulation)
                                         --newArtsTbl[layerIndex] = layer[1].articulation
                                     else
-                                        if #triggerTableLayers == layerIndex then 
+                                        if #triggerTableLayers == layerIndex then
                                             table.insert(newArtsTbl, "")
                                             --newArtsTbl[layerIndex] = ""
                                         end
@@ -146,29 +215,29 @@ local function setNotationText(take, articulation, allNotes, forceInsert)
                             end
                         end
 
-                        --if not isToggleOn and isAToggle then                            
+                        --if not isToggleOn and isAToggle then
                         --    local insertIndex = existsInScript.layer--#arts + 1 <= existsInScript.layer and #arts+1 or existsInScript.layer
-                            --table.insert(arts, insertIndex, articulation)
+                        --table.insert(arts, insertIndex, articulation)
                         --end
-                        --if #arts < #artSliders then 
+                        --if #arts < #artSliders then
                         --    for i = 1, #artSliders - #arts do
-                            -- table.insert(arts, "")                            
+                        -- table.insert(arts, "")
                         --    end
                         --end
-                        
+
                         newName = table.concat(newArtsTbl, " / ")
                     else
                         newName = getArtNameFromSliders(takeTrack, artSliders)
                     end
                 else
                     -- incase we force an articulation on a new note, we do not do it if it already has a note on it.
-                    if forceInsert and currentText then 
+                    if forceInsert and currentText then
                         newName = nil
                     else
                         newName = getArtNameFromSliders(takeTrack, artSliders)
                     end
                 end
-                if newName then 
+                if newName then
                     local text = "NOTE " .. noteChannel .. " " .. notePitch .. " text " .. '"' .. newName .. '"'
                     reaper.MIDI_InsertTextSysexEvt(take, selected, muted, notePpqpos, 15, text, true)
                 end
@@ -183,7 +252,8 @@ end
 
 local function selectArticulationContaining(take, articulation)
     local takeTrack = reaper.GetMediaItemTake_Track(take)
-    local triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam = readArticulationScript(track, name)
+    local triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam =
+        readArticulationScript(track, name)
     local _, numNotes = reaper.MIDI_CountEvts(take)
     local nothingSelected = reaper.MIDI_EnumSelNotes(take, 0) == -1
     local selectedAmount = 0
@@ -191,31 +261,32 @@ local function selectArticulationContaining(take, articulation)
     local curSelectedAmount = 0
     local selectIfNothingSelected = {}
     for noteidx = 0, numNotes - 1 do
-        local retval, selected, muted, notePpqpos, endppqpos, noteChannel, notePitch, vel = reaper.MIDI_GetNote(take, noteidx)
+        local retval, selected, muted, notePpqpos, endppqpos, noteChannel, notePitch, vel = reaper.MIDI_GetNote(take,
+            noteidx)
         local currentText = getNoteText(take, noteChannel, notePpqpos, notePitch)
         if currentText then
             local arts = split_exact(currentText)
             for i, a in ipairs(arts) do
-                if selected then 
+                if selected then
                     curSelectedAmount = curSelectedAmount + 1
                 end
                 if a == articulation then
                     table.insert(selectIfNothingSelected, noteidx)
-                    if selected then 
+                    if selected then
                         selectedAmount = selectedAmount + 1
-                        reaper.MIDI_SetNote( take, noteidx, true, nil, nil, nil, nil, nil, nil, true )
+                        reaper.MIDI_SetNote(take, noteidx, true, nil, nil, nil, nil, nil, nil, true)
                         break
                     end
-                elseif not ctrl and selected then 
+                elseif not ctrl and selected then
                     deselected = deselected + 1
-                    reaper.MIDI_SetNote( take, noteidx, false, nil, nil, nil, nil, nil, nil, true )
+                    reaper.MIDI_SetNote(take, noteidx, false, nil, nil, nil, nil, nil, nil, true)
                 end
             end
-        end            
+        end
     end
     if (selectedAmount == 0 and #selectIfNothingSelected > 0) or (deselected == 0 and #selectIfNothingSelected > selectedAmount) then
         for _, noteidx in ipairs(selectIfNothingSelected) do
-            reaper.MIDI_SetNote( take, noteidx, true, nil, nil, nil, nil, nil, nil, true )
+            reaper.MIDI_SetNote(take, noteidx, true, nil, nil, nil, nil, nil, nil, true)
         end
     end
 
@@ -223,7 +294,7 @@ local function selectArticulationContaining(take, articulation)
 end
 
 local function setNotationOrSelectNotes(take, articulation, allNotes, forceInsert)
-    if shift and not forceInsert then 
+    if shift and not forceInsert then
         selectArticulationContaining(take, articulation)
     else
         setNotationText(take, articulation, allNotes, forceInsert)
@@ -233,13 +304,15 @@ end
 -- Function to set notation text for selected notes
 local function setNotationText_OLD(take, articulation, allNotes, isOff)
     local takeTrack = reaper.GetMediaItemTake_Track(take)
-    local triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam = readArticulationScript(track, name)
+    local triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam =
+        readArticulationScript(track, name)
 
 
     local _, numNotes = reaper.MIDI_CountEvts(take)
     local nothingSelected = reaper.MIDI_EnumSelNotes(take, 0) == -1
     for noteidx = 0, numNotes - 1 do
-        local retval, selected, muted, notePpqpos, endppqpos, noteChannel, notePitch, vel = reaper.MIDI_GetNote(take, noteidx)
+        local retval, selected, muted, notePpqpos, endppqpos, noteChannel, notePitch, vel = reaper.MIDI_GetNote(take,
+            noteidx)
         if allNotes or selected then
             local newName = ""
             local artLayer
@@ -270,7 +343,7 @@ local function setNotationText_OLD(take, articulation, allNotes, isOff)
                     if arts[artLayer] then
                         if isOff and arts[artLayer] == articulation then
                             table.remove(arts, artLayer)
-                        else 
+                        else
                             arts[artLayer] = articulation
                         end
                         newName = table.concat(arts, " / ")
@@ -294,7 +367,7 @@ local function setNotationText_OLD(take, articulation, allNotes, isOff)
                         --if slider.layer == artLayer then
                         --    newName = newName .. (i > 1 and " / " or "") .. articulation
                         --else
-                        local selectedArticulationIdx, min, max = reaper.TrackFX_GetParam(track, fxNumber, slider.param)     -- 0 is the parameter index, 0 is the parameter value
+                        local selectedArticulationIdx, min, max = reaper.TrackFX_GetParam(track, fxNumber, slider.param) -- 0 is the parameter index, 0 is the parameter value
                         if selectedArticulationIdx > -1 and selectedArticulationIdx <= max then
                             artNameFromSlider = triggerTableLayers[i][selectedArticulationIdx + 1].articulation
                             newName = newName .. (i > 1 and " / " or "") .. artNameFromSlider
@@ -302,7 +375,7 @@ local function setNotationText_OLD(take, articulation, allNotes, isOff)
                         --end
                     end
                 end
-                newName = newName --.. " / "
+                newName = newName      --.. " / "
             else
                 newName = articulation --.. " / "
             end
@@ -320,7 +393,7 @@ end
 local function setArticulationOnAllSelectedTakes(articulation)
     -- Get the number of selected media items
     local itemCount = reaper.CountSelectedMediaItems(0)
-    if itemCount > 0 then 
+    if itemCount > 0 then
         -- Iterate through selected media items
         for i = 0, itemCount - 1 do
             local item = reaper.GetSelectedMediaItem(0, i)
@@ -338,7 +411,7 @@ end
 
 function setArticulationOnTrack(track, prg)
     local fxNumber, fxName = track_depending_on_selection.findArticulationScript(track)
-    if fxNumber then 
+    if fxNumber then
         local countArts = 0
         for i, slider in ipairs(artSliders) do
             local selectedArticulationIdx, artMin, artMax = reaper.TrackFX_GetParam(track, fxNumber, slider.param)
@@ -358,7 +431,6 @@ function setArticulationOnTrack(track, prg)
     end
 end
 
-local export = {}
 
 -- update when selected new notes in midi editor
 function export.updateArticulationJSFX(take)
@@ -374,24 +446,25 @@ function export.updateArticulationJSFX(take)
                         local arts = split_exact(currentText)
                         local allLayersFound = true
                         for layerNumber, layer in ipairs(triggerTableLayers) do
-                                --reaper.ShowConsoleMsg(tostring(artSelected[layerNumber]) .. " - " ..layerNumber  .. " artsel\n")
+                            --reaper.ShowConsoleMsg(tostring(artSelected[layerNumber]) .. " - " ..layerNumber  .. " artsel\n")
                             local layerFound = false
                             for artNum, key in ipairs(layer) do
                                 if key.articulation == arts[layerNumber] then
-                                    if math.floor(artSelected[layerNumber]) ~= math.floor(artNum - 1) then 
-                                        reaper.TrackFX_SetParam(track, fxNumber, artSliders[layerNumber].param, artNum - 1)
+                                    if math.floor(artSelected[layerNumber]) ~= math.floor(artNum - 1) then
+                                        reaper.TrackFX_SetParam(track, fxNumber, artSliders[layerNumber].param,
+                                            artNum - 1)
                                     end
-                                    if articulationNotFoundParam then 
+                                    if articulationNotFoundParam then
                                         reaper.TrackFX_SetParam(track, fxNumber, articulationNotFoundParam, 0)
                                     end
                                     layerFound = true
-                                --reaper.ShowConsoleMsg(tostring(arts[layerNumber]) .. " - " ..layerNumber  .. " found\n")
+                                    --reaper.ShowConsoleMsg(tostring(arts[layerNumber]) .. " - " ..layerNumber  .. " found\n")
                                     break
-                                end                                
+                                end
                             end
-                            if not layerFound then 
+                            if not layerFound then
                                 --reaper.ShowConsoleMsg(tostring(arts[layerNumber]) .. " - " ..layerNumber  .. " err\n")
-                                allLayersFound = false                                
+                                allLayersFound = false
                             end
                         end
                         if not allLayersFound and articulationNotFoundParam then
@@ -412,11 +485,11 @@ function export.changeArticulation(prg, articulation, focusIsOn, forceInsert)
     -- use this if in recording mode
     -- change this with keyswitches etc
     -- make auto articaultion naming after recording stops
-    if prg and tonumber(prg) < 128 then 
+    if prg and tonumber(prg) < 128 then
         --reaper.StuffMIDIMessage(0, 192, prg, 127)
     end
-    
-    if focusIsOn == "track" then 
+
+    if focusIsOn == "track" then
         updateSlidersOnAllTrack(articulation)
     else
         --end
@@ -426,7 +499,7 @@ function export.changeArticulation(prg, articulation, focusIsOn, forceInsert)
             -- Get the active take in the MIDI editor
             -- local activeTake = reaper.MIDIEditor_GetTake(midiEditor)
             local numItems = reaper.CountSelectedMediaItems(0)
-            if numItems > 0 then 
+            if numItems > 0 then
                 for i = 0, numItems - 1 do
                     local item = reaper.GetSelectedMediaItem(0, i)
                     if reaper.IsMediaItemSelected(item) then

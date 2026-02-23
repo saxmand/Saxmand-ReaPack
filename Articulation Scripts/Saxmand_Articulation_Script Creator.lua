@@ -4209,9 +4209,22 @@ len > 0 ? (
                             setToolTipFunc("Enabling this will use Groups only on the surfaces, and not as notation data.\nYou can use this for organizing, but without making notation data longer")
                             
 
-                            if instrumentSettings.usePDC == nil then instrumentSettings.usePDC = true end 
+                            if instrumentSettings.usePDC == nil then instrumentSettings.usePDC = true end                             
                             _, instrumentSettings.usePDC = reaper.ImGui_Checkbox(ctx, "Use PDC", instrumentSettings.usePDC)
                             setToolTipFunc("Use script PDC timer delay instead of Track's media playback offset.\nThis option is only relevant if you script contains Delay")
+                            
+                            
+                            reaper.ImGui_NewLine(ctx)
+                            reaper.ImGui_TextColored(ctx, 0x777777FF, "Negative delay when start playing too close to note with delay")
+                            if instrumentSettings.onlyDelayPrePlayAmount == nil then instrumentSettings.onlyDelayPrePlayAmount = "Off" end 
+                            local selectionTypes = {"Full negative delay", "Use playstart to note, amount", "Do not delay"}
+                            for i, s in ipairs(selectionTypes) do
+                                if reaper.ImGui_RadioButton(ctx, s, instrumentSettings.onlyDelayPrePlayAmount== s) then
+                                    instrumentSettings.onlyDelayPrePlayAmount = s
+                                end
+                                setToolTipFunc("If your articulation is using Negative Delay, and you play closer to the note than the negative delay, choose what amount should delay.\nThis option is only relevant if you script contains Delay. This also affects rendering if there's no 'pre-roll' before notes with negative delay")
+                                if i < #selectionTypes then reaper.ImGui_SameLine(ctx) end                                
+                            end 
                             
                             
                             reaper.ImGui_NewLine(ctx)

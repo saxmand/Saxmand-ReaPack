@@ -76,9 +76,9 @@ if not readArticulationScript then
     reaper.ShowConsoleMsg("Somethings wrong!")
     --return
 end
-changeArticulationScript = require("change_articulation")
-changeArticulation = changeArticulationScript.changeArticulation
-updateArticulationJSFX = changeArticulationScript.updateArticulationJSFX
+change_articulation = require("change_articulation")
+changeArticulation = change_articulation.changeArticulation
+updateArticulationJSFX = change_articulation.updateArticulationJSFX
 
 local keyboardTriggerSurface = require("keyboard_trigger").keyboardTriggerSurface
 

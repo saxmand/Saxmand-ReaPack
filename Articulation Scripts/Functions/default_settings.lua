@@ -16,6 +16,7 @@ export.app = {
 
 export.InstrumentSettings = {
     usePDC = true, 
+    onlyDelayPrePlayAmount = "Full negative delay", 
     sustainPedalForcesLegato = true, 
     addKeyswitchNamesToPianoRoll = true, 
     addKeyswitchNamesOverwriteAllNotes = true, 
