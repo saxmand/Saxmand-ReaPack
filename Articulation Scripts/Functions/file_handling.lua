@@ -326,16 +326,28 @@ function export.importJsonString(jsonString)
             end
             
             -- for backwards compatability
-            if articulationMapCreatorVersion <= 0.4 then   
-                for i, t in ipairs(tableInfo) do
+            for i, t in ipairs(tableInfo) do
+                if articulationMapCreatorVersion <= 0.4 then   
                     if t.Delay then
                         tableInfo[i].Delay = math.abs(t.Delay)
+                    end
+                end
+                if t.Subtitle then 
+                    tableInfo[i].Group = t.Subtitle
+                    tableInfo[i].Subtitle = nil
+                end
+                if articulationMapCreatorVersion <= 0.6 then   
+                    if t.KT and not tonumber(t.KT) then 
+                        tableInfo[i].KT = t.KT:upper()
                     end
                 end
             end
 
             --#tableInfo = #tableInfo -- luaTable.tableInfo.Title and #luaTable.tableInfo.Title or 0
-            instrumentSettings = luaTable.instrumentSettings and luaTable.instrumentSettings or instrumentSettingsDefault
+            instrumentSettings = luaTable.instrumentSettings and luaTable.instrumentSettings or {}
+            for k, v in pairs(default_settings.InstrumentSettings) do
+                instrumentSettings[k] = v
+            end
             return true, {tableInfo = tableInfo, mapping = mapping, instrumentSettings = instrumentSettings, mapName = mapName, articulationMapCreatorVersion = articulationMapCreatorVersion}
         end
     end

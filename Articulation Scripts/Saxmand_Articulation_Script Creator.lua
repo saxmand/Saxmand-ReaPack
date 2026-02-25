@@ -147,7 +147,7 @@ readLicense()
 --require(scriptPath .."/Functions/pathes")
 
 
-local default_settings = require("default_settings")
+default_settings = require("default_settings")
 
 --- SETTINGS STUFF
 
