@@ -367,7 +367,7 @@ end
 
 
 function importOCR()
-    local row = selectedArticulationsCountKeys and (#selectedArticulationsCountKeys > 1 and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 or selectedArticulationsCountKeys[1]) or 1
+    local row = selectedArticulationsCountKeys and (#selectedArticulationsCountKeys > 1 and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 or (focusedRow and focusedRow or 1)) or 1
     local lines = ocr_capture.main()
     if #lines > 0 then 
         selectedArticulations = {}
@@ -2301,10 +2301,10 @@ len > 0 ? (
 
                         table.insert(buttonsData, 2, importClipboardButton)
 
-                        if devMode and reaper.GetOS():find("OS") then 
+                        if reaper.GetOS():find("OS") then 
                             table.insert(buttonsData, 3, {
                                 name = "OCR", refocus = true, key = "O", cmd = true, shift = true, sameLine = true, func = function() run_ocr = true; first_ocr_run = 0 end,
-                                tip = 'Read screen text'
+                                tip = 'Read screen text. This is a new experimental feature, only for MacOS. You need to install tesseract via the terminal.\nIf you are unsure how to do this, first ask AI for help. Else reach out on the forum.'
                                 })
                         end
 

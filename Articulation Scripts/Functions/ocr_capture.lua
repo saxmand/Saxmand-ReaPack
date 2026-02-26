@@ -1,3 +1,6 @@
+-- @noindex
+
+
 -- Helpers
 local function script_dir()
   local info = debug.getinfo(1, 'S')

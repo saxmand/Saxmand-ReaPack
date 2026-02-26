@@ -72,7 +72,7 @@ function export.addMapToTrack(track, mapName)
         if not fxNumber then fxNumber = 0 end
         reaper.TrackFX_CopyToTrack(track, fxIndex, track, fxNumber, true)
         
-        if appSettings.alwaysEmbedUi then
+        if appSettings and appSettings.alwaysEmbedUi then
             embed_ui(track, fxIndex)
         end
     end

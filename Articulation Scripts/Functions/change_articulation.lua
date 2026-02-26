@@ -3,6 +3,9 @@
 local export = {}
 
 local function findParamWithNameAndSetTo(track, fx_index, name, val)
+    if not track or not fx_index or not name or not val then 
+        return false
+    end
     -----------------------------------------------------------
     -- Find parameter
     -----------------------------------------------------------
@@ -27,6 +30,9 @@ end
 
 
 function export.findParamWithNameValue(track, fx_index, name)
+    if not track or not fx_index or not name then 
+        return false
+    end
     -----------------------------------------------------------
     -- Find parameter
     -----------------------------------------------------------

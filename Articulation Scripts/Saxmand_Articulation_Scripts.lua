@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.9.2
+-- @version 0.9.3
 -- @about
 --   A complete system for the MOST advanced articulation scripts
 -- @provides
@@ -16,3 +16,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
 --   + added OCR for macOS
+--   + fixed 2 bugs
