@@ -1,81 +1,143 @@
--- ===============================
--- REAPER Lua: Fully Bundled OCR
--- ===============================
-
-local os_name = reaper.GetOS():lower() -- "osx64", "win64", "linux64"
-local tmp_dir = os.getenv("TMPDIR") or "/tmp/"
-local img_path = tmp_dir .. "reaper_ocr_capture.png"
-
--- ===== Step 1: Select screen region =====
-if os_name:find("osx") then
-    os.execute('screencapture -i "' .. img_path .. '"')
-elseif os_name:find("win") then
-    -- Windows: assumes ShareX portable or custom capture exe bundled
-    local capture_exe = reaper.GetResourcePath() .. "\\Scripts\\MyOCR\\capture.exe"
-    os.execute('"' .. capture_exe .. '" "' .. img_path .. '"')
-elseif os_name:find("linux") then
-    os.execute('maim -s "' .. img_path .. '"')
+-- Helpers
+local function script_dir()
+  local info = debug.getinfo(1, 'S')
+  local src  = info.source:match('^@(.+)$') or ''
+  return src:match('^(.+)[/\\]') or '.'
 end
 
--- Check if file exists
-local f = io.open(img_path, "rb")
-if not f then
-    reaper.ShowMessageBox("No screenshot captured.", "OCR Cancelled", 0)
-    return
-end
-f:close()
-
--- ===== Step 2: Call bundled Tesseract =====
-local tesseract_bin
-local script_dir = reaper.GetResourcePath() .. "/Scripts/MyOCR/"
-if os_name:find("osx") then
-    tesseract_bin = '"' .. script_dir .. 'tesseract-mac"'
-elseif os_name:find("win") then
-    tesseract_bin = '"' .. script_dir .. 'tesseract-win.exe"'
-elseif os_name:find("linux") then
-    tesseract_bin = '"' .. script_dir .. 'tesseract-linux"'
+local function find_tesserect()
+  local candidates = {
+    '/opt/homebrew/bin/tesseract',
+    '/usr/local/bin/tesseract',
+    '/usr/bin/tesseract',
+  }
+  for _, path in ipairs(candidates) do
+    local f = io.open(path, 'r')
+    if f then f:close() return path end
+  end
+  return 'tesseract'
 end
 
--- OCR command, output to stdout, English only
-local ocr_cmd = tesseract_bin .. ' "' .. img_path .. '" stdout -l eng 2>/dev/null'
 
--- Capture OCR result
-local handle = io.popen(ocr_cmd)
-local raw_text = handle:read("*a")
-handle:close()
 
--- Cleanup temporary image
-os.remove(img_path)
+local export = {}
 
--- ===== Step 3: Clean text =====
-local result = {}
-for line in raw_text:gmatch("[^\r\n]+") do
-    -- Trim
-    line = line:match("^%s*(.-)%s*$")
+local function check_tesseract_mac()
+  local tesseract = find_tesserect()
+  
+  -- If we only got the fallback name, it's not installed
+  if tesseract == 'tesseract' then
+    return false, "Tesseract not found. Install with: brew install tesseract"
+  end
+  
+  -- Verify it actually runs and get version
+  local handle = io.popen(tesseract .. ' --version 2>&1')
+  if not handle then
+    return false, "Tesseract found at " .. tesseract .. " but failed to execute"
+  end
+  
+  local output = handle:read('*a')
+  handle:close()
+  
+  -- Check the output contains "tesseract" to confirm it's really working
+  if output:lower():find('tesseract') then
+    local version = output:match('tesseract%s+([%d%.]+)')
+    return true, version and ("Tesseract " .. version .. " found at " .. tesseract) or ("Tesseract found at " .. tesseract)
+  end
+  
+  return false, "Tesseract found but returned unexpected output: " .. output
+end
 
-    -- Skip empty lines and OCR error lines
-    if line ~= "" and not line:match("^Error in") then
-        -- Remove non-letter at start
-        line = line:gsub("^[^%a]+", "")
+-- macOS Screen OCR Prototype
+local function ocr_mac() 
+    -- Example usage:
+    local ok, msg = check_tesseract_mac()
+    if not ok then
+        reaper.ShowMessageBox(msg, "OCR Setup Required", 0)
+        return {}
+    end
 
-        -- Remove non-letter at end except closing parenthesis if matched opening exists
-        local has_open = line:find("%(")
-        local last_char = line:sub(-1)
-        if last_char == ")" and (not has_open or line:sub(1,-2):find("%(") == nil) then
-            line = line:sub(1,-2)
-            line = line:gsub("[^%a]+$", "")
-        else
-            line = line:gsub("[^%a%)]+$", "")
+    local img_path = script_dir() .. "/reaper_ocr_capture.png"-- tmp_dir .. "reaper_ocr_capture.png"
+    
+    -- 1. Capture interactive screen region
+    local capture_cmd = 'screencapture -i "' .. img_path .. '"'
+    os.execute(capture_cmd)
+    
+    -- Check if file was created
+    local file = io.open(img_path, "rb")
+    if not file then
+        --reaper.ShowMessageBox("No image captured.", "OCR Cancelled", 0)
+        return {}
+    end
+    file:close() 
+    
+    local tesseract = find_tesserect()
+    
+    -- 2. Run Tesseract OCR
+    local ocr_cmd = tesseract .. ' "' .. img_path .. '" stdout 2>&1'
+    
+    local handle = io.popen(ocr_cmd)
+    if not handle then
+        reaper.ShowMessageBox("Failed to run Tesseract.", "OCR Error", 0)
+        return
+    end
+    
+    raw_text = handle:read("*a")
+    handle:close()
+    
+    -- 3. Cleanup (optional)
+    --os.remove(img_path)
+
+    local lines = {}
+    local is_first_line = true
+    
+    for line in raw_text:gmatch("[^\r\n]+") do
+        -- Skip first line
+        if is_first_line then
+            is_first_line = false
+        else 
+            -- Trim whitespace first
+            line = line:match("^%s*(.-)%s*$")
+            
+            if not line:match("^%s*Error") then
+            
+                -- Remove non-letters from start
+                line = line:gsub("^[^%a]+", "")
+                
+                
+                -- Conditional removal at end:
+                -- If the last char is ) AND there is a ( somewhere earlier, keep it
+                local has_open_paren = line:find("%(")
+                local last_char = line:sub(-1)
+                
+                if last_char == ")" and (not has_open_paren or line:sub(1,-2):find("%(") == nil) then
+                    -- Remove it if no matching (
+                    line = line:sub(1, -2)
+                    -- Also remove any other non-letter at end
+                    line = line:gsub("[^%a]+$", "")
+                else
+                    -- Remove non-letter at end except allowed )
+                    line = line:gsub("[^%a%)]+$", "")
+                end
+        
+                -- Skip empty lines
+                if line ~= "" then
+                    table.insert(lines, line)
+                end
+            end
         end
+    end
+    return lines
+end
 
-        if line ~= "" then
-            table.insert(result, line)
-        end
+
+function export.main()
+    local os = reaper.GetOS()
+    if os:find("OS") then
+        return ocr_mac()
+    else
+        return {}
     end
 end
 
--- ===== Step 4: Output =====
-reaper.ShowConsoleMsg("---- OCR Result Table ----\n")
-for i,v in ipairs(result) do
-    reaper.ShowConsoleMsg(i .. ": " .. v .. "\n")
-end
+return export

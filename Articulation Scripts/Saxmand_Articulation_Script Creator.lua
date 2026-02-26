@@ -60,6 +60,7 @@ local midi_note_names = require("midi_note_names")
 local articulation_scripts_library = require("articulation_scripts_library")
 local json_text = require("json_text")
 local modern_ui = require("modern_ui")
+local ocr_capture = require('ocr_capture')
 track_depending_on_selection = require("track_depending_on_selection")
 
 
@@ -364,6 +365,37 @@ function openArticulationFolder()
     openFolderInExplorer(articulationScriptsPath) 
 end
 
+
+function importOCR()
+    local row = selectedArticulationsCountKeys and (#selectedArticulationsCountKeys > 1 and selectedArticulationsCountKeys[#selectedArticulationsCountKeys] + 1 or selectedArticulationsCountKeys[1]) or 1
+    local lines = ocr_capture.main()
+    if #lines > 0 then 
+        selectedArticulations = {}
+        selectedArticulationsCountKeys = {}
+        for i, name in ipairs(lines) do                                 
+            local useRow = row + i - 1
+            local focusedColumnName = focusedColumn and mappingType[focusedColumn] or "Title"
+            if focusedColumnName then
+                if not tableInfo[useRow] then tableInfo[useRow] = {} end                        
+                tableInfo[useRow][focusedColumnName] = name     
+                
+                selectedArticulations[useRow] = true
+                table.insert(selectedArticulationsCountKeys, useRow)
+                focusedRow = useRow
+            end            
+        end        
+    end
+end
+
+
+function start_importOCR()
+    if first_ocr_run < 2 then 
+        first_ocr_run = first_ocr_run + 1
+    else
+        run_ocr = false
+        importOCR()
+    end
+end
 
 -- FROM CLIPBOARD
 function importArticulationSet(onlyJson)
@@ -1607,6 +1639,10 @@ local function loop()
         end
 
 
+        local importClipboardButton = {
+                name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet(true) end,
+                tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12\n\nCan also import "//json:{...}" string from Articulation Script JSFX'
+                }
         
         
         
@@ -1757,14 +1793,12 @@ local function loop()
             for _, data in ipairs(buttonsData) do
                 createMappingButton(data, hideInstrumentButtons and mapName) 
             end
+
             
             if not mapName or #tableInfo == 0 then 
                 reaper.ImGui_SameLine(ctx)
-                local importBtn = {
-                name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet(true) end,
-                tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12\n\nCan also import "//json:{...}" string from Articulation Script JSFX'
-                }
-                createMappingButton(importBtn, hideInstrumentButtons and mapName) 
+                
+                createMappingButton(importClipboardButton, hideInstrumentButtons and mapName) 
             end
 
             -- OLD EEL
@@ -2236,9 +2270,6 @@ len > 0 ? (
                         name = "Select all rows", key = "A", cmd = true, shift = true, sameLine = false, func = function() selectAllRows(true) end,
                         tip = 'Select all rows'
                         },{
-                        name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet() end,
-                        tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12\n\nCan also import "//json:{...}" string from Articulation Script JSFX'
-                        },{
                         name = "Move up rows", key = "up", cmd = true, alt = true, sameLine = false, func = function() moveRowStart(true) end,
                         tip = "Move selected articulations rows up"
                         },{
@@ -2267,6 +2298,31 @@ len > 0 ? (
                             mapping = t[2]
                         end, quickKeyTrigger = true
                         }}
+
+                        table.insert(buttonsData, 2, importClipboardButton)
+
+                        if devMode and reaper.GetOS():find("OS") then 
+                            table.insert(buttonsData, 3, {
+                                name = "OCR", refocus = true, key = "O", cmd = true, shift = true, sameLine = true, func = function() run_ocr = true; first_ocr_run = 0 end,
+                                tip = 'Read screen text'
+                                })
+                        end
+
+                        if run_ocr then      
+                            local ocrHeaderText = "Select area on screen to read"
+                            reaper.ImGui_OpenPopup(ctx, ocrHeaderText)
+
+                            local center_x, center_y = reaper.ImGui_Viewport_GetCenter(reaper.ImGui_GetWindowViewport(ctx))
+                            reaper.ImGui_SetNextWindowPos(ctx, center_x, center_y, reaper.ImGui_Cond_Appearing(), 0.5, 0.5)
+                            
+                            if reaper.ImGui_BeginPopupModal(ctx, ocrHeaderText, nil, reaper.ImGui_WindowFlags_AlwaysAutoResize()) then
+                                reaper.ImGui_Button(ctx, "Press escape to stop OCR", 300, 20)
+                                reaper.ImGui_EndPopup(ctx)
+                            end
+                            start_importOCR()
+                        end
+
+
                         for _, data in ipairs(buttonsData) do
                             createMappingButton(data, hideEditButtons) 
                         end
