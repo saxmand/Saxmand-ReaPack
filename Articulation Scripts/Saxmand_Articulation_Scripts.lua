@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.9.4
+-- @version 0.9.5
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -15,9 +15,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + articulation scripts change articulation immediately when changing via surfaces or on jsfx (so no note on required)
---   + unified version numbering
---   + added creator version to name
---   + internal on dev using same path as users
---   + adding more global switches to settings on articulation surfaces 
---   + changed default of "Trigger articulaion on every note" 
+--   + using buildin dock state reading for midi editor

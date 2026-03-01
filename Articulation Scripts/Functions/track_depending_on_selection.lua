@@ -69,11 +69,12 @@ end
 
 function export.trackDependingOnSelection()
     local midiEditor = reaper.MIDIEditor_GetActive()
-    local midiEditor_is_docked, midiEditor_parent, midiEditor_parent_title, midiEditor_is_focused
-    if midiEditor then
-        midiEditor_parent = reaper.JS_Window_GetParent(midiEditor)
-        midiEditor_parent_title = reaper.JS_Window_GetTitle(midiEditor_parent)
-        midiEditor_is_docked = midiEditor_parent_title == "REAPER_dock"
+    local midiEditor_is_docked, midiEditor_is_docked_id, midiEditor_is_docked_floating, midiEditor_parent, midiEditor_parent_title, midiEditor_is_focused
+    if midiEditor then        
+        --midiEditor_parent = reaper.JS_Window_GetParent(midiEditor)
+        --midiEditor_parent_title = reaper.JS_Window_GetTitle(midiEditor_parent)
+        midiEditor_is_docked_id, midiEditor_is_docked_floating = reaper.DockIsChildOfDock(midiEditor)--midiEditor_parent_title == "REAPER_dock"
+        midiEditor_is_docked = midiEditor_is_docked_id ~= -1
     end
     local track, section_id, fxName, fxNumber, item, take, trackIsFocused
     local isRecording = reaper.GetPlayState() & 4 == 4 
