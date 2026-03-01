@@ -61,9 +61,11 @@ function getCreatorScriptId()
     local devMode = scriptPath:match("jesperankarfeldt") ~= nil
     local creatorScriptPath = reaper.GetResourcePath()
     .. sep .. "Scripts"
-    .. sep .. (devMode and "Saxmand-ReaPack" or "Saxmand ReaPack")
+    .. sep .. "Saxmand ReaPack"
     .. sep .. "Articulation Scripts"
     .. sep .. "Saxmand_Articulation_Script Creator.lua"
+    
+    local creatorScriptPath = articulatioScriptsPath .. "Saxmand_Articulation_Script Creator.lua"
     local command_id = reaper.AddRemoveReaScript(true, 0, creatorScriptPath, false)
     local creatorIsOpen = reaper.GetToggleCommandState(command_id) > 0
     return command_id, creatorIsOpen

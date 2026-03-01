@@ -14,7 +14,7 @@ local function findParamWithNameAndSetTo(track, fx_index, name, val)
 
     for p = 0, param_count - 1 do
         local retval, param_name = reaper.TrackFX_GetParamName(track, fx_index, p, "")
-        if retval and param_name:lower():find(name, 1, true) then
+        if retval and param_name:lower():find(name:lower(), 1, true) then
             param_index = p
             break
         end
@@ -41,7 +41,7 @@ function export.findParamWithNameValue(track, fx_index, name)
 
     for p = 0, param_count - 1 do
         local retval, param_name = reaper.TrackFX_GetParamName(track, fx_index, p, "")
-        if retval and param_name:lower():find(name, 1, true) then
+        if retval and param_name:lower():find(name:lower(), 1, true) then
             param_index = p
             break
         end

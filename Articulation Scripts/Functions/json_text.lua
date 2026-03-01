@@ -2,8 +2,6 @@
 
 local export = {}
 
-version = 0.6
-
 local function minifyJSON(json)
     local out = {}
     local in_string = false
@@ -43,7 +41,7 @@ end
 
 function export.get()
     local allSettings = {
-        articulationMapCreatorVersion = version,
+        creatorVersion = articulationScriptCreatorVersionNumber,
         mapName = mapName,
         modifierSettings = modifierSettings, -- maybe we omit this..
         tableInfo = tableInfo,
@@ -58,7 +56,7 @@ end
 function export.getSimple()
     local allSettings = {
         fromLibrary = true,
-        articulationMapCreatorVersion = version,
+        creatorVersion = articulationScriptCreatorVersionNumber,
         mapName = mapName,
         tableInfo = tableInfo,
         mapping = mapping,

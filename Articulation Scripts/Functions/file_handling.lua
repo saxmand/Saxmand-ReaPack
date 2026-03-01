@@ -113,16 +113,25 @@ function export.importJsonString(jsonString)
     if not luaTable then 
         reaper.ShowConsoleMsg("json parsing error: " .. error .. "\n")
     else
-        articulationMapCreatorVersion = luaTable.articulationMapCreatorVersion and tonumber(luaTable.articulationMapCreatorVersion) or 0
+        creatorVersion = luaTable.creatorVersion
+
+        --reaper.ShowConsoleMsg(tostring(creatorVersion) .. "\n")
+        -- backward compatibale from 0.9.3
+        if not creatorVersion then 
+            creatorVersion = luaTable.articulationMapCreatorVersion and tonumber(luaTable.articulationMapCreatorVersion) or 0
+        end
+
+        creatorVersion = tonumber(creatorVersion)
+        --reaper.ShowConsoleMsg(creatorVersion .. "\n")
         mapName = luaTable.mapName
         if mapName then 
-            if articulationMapCreatorVersion < 0.4 then
+            if creatorVersion < 0.4 then
                 mapping = {}
                 mapping.NoteM = {}
                 mapping.NoteH = {}
                 mapping.CC = {}
             end
-            if articulationMapCreatorVersion > 0 and articulationMapCreatorVersion < 0.2 then 
+            if creatorVersion > 0 and creatorVersion < 0.2 then 
                 modifierSettings = luaTable.modifierSettings or defaultModifierSettings
                 --mappingType = luaTable.mappingType or {}
                 --mapping.CC = luaTable.mapping.CC or {}
@@ -219,7 +228,7 @@ function export.importJsonString(jsonString)
                 end
                 
                 --tableInfo = luaTable.tableInfo
-            elseif articulationMapCreatorVersion == 0.25 then 
+            elseif creatorVersion == 0.25 then 
                 tableInfo = luaTable.tableInfo
                 if luaTable.mapping then
                     mapping = luaTable.mapping
@@ -251,7 +260,7 @@ function export.importJsonString(jsonString)
                         end
                     end
                 end
-            elseif articulationMapCreatorVersion == 0.2 then   
+            elseif creatorVersion == 0.2 then   
                 tableInfo = luaTable.tableInfo
                 if luaTable.mapping then
                     mapping = luaTable.mapping
@@ -294,7 +303,7 @@ function export.importJsonString(jsonString)
                     end
                     tableInfo = newTable
                 --end
-            elseif articulationMapCreatorVersion == 0.3 then   
+            elseif creatorVersion == 0.3 then   
                 tableInfo = luaTable.tableInfo
                 if luaTable.mapping then 
                     mapping = {}
@@ -308,10 +317,10 @@ function export.importJsonString(jsonString)
                         end
                     end 
                 end 
-            elseif articulationMapCreatorVersion >= 0.4 then   
+            elseif creatorVersion >= 0.4 then   
                 tableInfo = luaTable.tableInfo
                 if luaTable.mapping then
-                    if articulationMapCreatorVersion < 0.7 then 
+                    if creatorVersion < 1 then 
                         if luaTable.mapping.KeyboardTrigger then 
                             --luaTable.mapping.KeyboardTrigger = nil
                             luaTable.mapping.KT = true
@@ -321,13 +330,13 @@ function export.importJsonString(jsonString)
                     mapping = luaTable.mapping
                 end
             else
-                --reaper.ShowConsoleMsg("Script not supported from version: " .. tostring(articulationMapCreatorVersion) .. "\n")
-                return false, ("Script not supported from version: " .. tostring(articulationMapCreatorVersion))
+                --reaper.ShowConsoleMsg("Script not supported from version: " .. tostring(creatorVersion) .. "\n")
+                return false, ("Script not supported from version: " .. tostring(creatorVersion))
             end
             
             -- for backwards compatability
             for i, t in ipairs(tableInfo) do
-                if articulationMapCreatorVersion <= 0.4 then   
+                if creatorVersion <= 0.4 then   
                     if t.Delay then
                         tableInfo[i].Delay = math.abs(t.Delay)
                     end
@@ -336,7 +345,7 @@ function export.importJsonString(jsonString)
                     tableInfo[i].Group = t.Subtitle
                     tableInfo[i].Subtitle = nil
                 end
-                if articulationMapCreatorVersion <= 0.6 then   
+                if creatorVersion <= 0.6 then   
                     if t.KT and not tonumber(t.KT) then 
                         tableInfo[i].KT = t.KT:upper()
                     end
@@ -348,7 +357,7 @@ function export.importJsonString(jsonString)
             for k, v in pairs(default_settings.InstrumentSettings) do
                 instrumentSettings[k] = v
             end
-            return true, {tableInfo = tableInfo, mapping = mapping, instrumentSettings = instrumentSettings, mapName = mapName, articulationMapCreatorVersion = articulationMapCreatorVersion}
+            return true, {tableInfo = tableInfo, mapping = mapping, instrumentSettings = instrumentSettings, mapName = mapName, creatorVersion = creatorVersion}
         end
     end
 end

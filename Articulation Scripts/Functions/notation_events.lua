@@ -87,8 +87,32 @@ function export.options()
 end
 
 function export.others()
-    reaper.ImGui_SeparatorText(ctx, "Others")
+    reaper.ImGui_SeparatorText(ctx, "Set all Articulation Scripts")
     
+    local sliderName = "Trigger articulation on every note" --"Negative delay when not enough time"
+    local firstSelectedTrackValue = change_articulation.findParamWithNameValue(track, fxNumber, sliderName)
+    reaper.ImGui_TextColored(ctx, 0x777777FF, sliderName)
+    local selectionTypes = {"Off", "On"}
+    for i, s in ipairs(selectionTypes) do
+        if reaper.ImGui_RadioButton(ctx, s .. "##"..sliderName, firstSelectedTrackValue == i - 1) then
+            change_articulation.setSliderOnArticulationScripts_allTracks(sliderName, i - 1)
+        end
+        setToolTipFunc("You can choose to trigger articulation on every note input. Might be useful for some articulations.")
+        if i < #selectionTypes then reaper.ImGui_SameLine(ctx) end                                
+    end 
+
+    local sliderName = "Force Delay" --"Negative delay when not enough time"
+    local firstSelectedTrackValue = change_articulation.findParamWithNameValue(track, fxNumber, sliderName)
+    reaper.ImGui_TextColored(ctx, 0x777777FF, sliderName)
+    local selectionTypes = {"Off", "On"}
+    for i, s in ipairs(selectionTypes) do
+        if reaper.ImGui_RadioButton(ctx, s .. "##"..sliderName, firstSelectedTrackValue == i - 1) then
+            change_articulation.setSliderOnArticulationScripts_allTracks(sliderName, i - 1)
+        end
+        setToolTipFunc("You can force the delay on all plugins")
+        if i < #selectionTypes then reaper.ImGui_SameLine(ctx) end                                
+    end 
+
     local sliderName = "enough time" --"Negative delay when not enough time"
     local firstSelectedTrackValue = change_articulation.findParamWithNameValue(track, fxNumber, sliderName)
     reaper.ImGui_TextColored(ctx, 0x777777FF, "Negative delay when start playing too close to note")
@@ -100,6 +124,9 @@ function export.others()
         setToolTipFunc("If your articulation is using Negative Delay, and you play closer to the note than the negative delay, choose what amount should delay.\nThis option is only relevant if you script contains Delay. This also affects rendering if there's no 'pre-roll' before notes with negative delay.\nThis will set all Articulation scripts")
         if i < #selectionTypes then reaper.ImGui_SameLine(ctx) end                                
     end 
+
+
+    reaper.ImGui_SeparatorText(ctx, "Others")
 
     reaper.ImGui_NewLine(ctx)
     if reaper.ImGui_Checkbox(ctx, "Show tooltip for articulation buttons", settings.show_tooltip_for_articaultion_buttons) then

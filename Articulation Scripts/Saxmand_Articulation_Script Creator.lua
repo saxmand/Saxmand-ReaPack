@@ -1,8 +1,5 @@
 -- @noindex
 
-version = 0.7
-
-
 local is_new_value, filename, sectionID, cmdID, mode, resolution, val, contextstr = reaper.get_action_context()
 
 local function setToolbarState(isActive)
@@ -1348,7 +1345,7 @@ end
 
 
 local function loop()
-    local minimumsWidth = math.ceil(appSettings.fontSize/100 * 680)
+    local minimumsWidth = math.ceil(appSettings.fontSize/100 * 704)
     reaper.ImGui_SetNextWindowBgAlpha(ctx, 1) -- Transparent background
     
     modern_ui.apply(ctx)
@@ -1359,7 +1356,10 @@ local function loop()
     if openPath and openPath ~= "" then 
         reaper.DeleteExtState("articulationMap", "openScript", true)        
         tableInfo = {}
-        trackNameRet, trackName = reaper.GetTrackName(reaper.GetSelectedTrack(0, 0))
+        local track = reaper.GetSelectedTrack(0, 0)
+        if track then 
+            trackNameRet, trackName = reaper.GetTrackName(track)
+        end
         if trackNameRet then 
             mapName = trackName
         end
@@ -1401,7 +1401,7 @@ local function loop()
             if tableWidth and tableWidth > minimumsWidth then
                 set = true 
                 windowW = tableWidth+16
-            elseif windowW > minimumsWidth + 8 then
+            elseif windowW < minimumsWidth + 8 then
                 set = true 
                 windowW = minimumsWidth + 8
             end
@@ -1516,6 +1516,10 @@ local function loop()
         --end
         reaper.ImGui_PopStyleColor(ctx, 3)
         reaper.ImGui_PopFont(ctx)
+        --if devMode then 
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_TextColored(ctx, colorGrey, "(" .. tostring(articulationScriptCreatorVersionText) .. ")")
+        --end
         
         function appSettingsButtons() 
             local license = require("check_license")
@@ -1668,7 +1672,7 @@ local function loop()
                 
                 local disable = not initialMapName or initialMapName == ""
                 if disable then reaper.ImGui_BeginDisabled(ctx) end
-                if reaper.ImGui_Button(ctx, 'Continue##name') or enter then  
+                if reaper.ImGui_Button(ctx, 'Continue##name') or (enter and not popup and initialMapName ~= "") then  
                     mapName = initialMapName; 
                     initialMapName = nil
                     enter = false
@@ -4684,10 +4688,7 @@ len > 0 ? (
                     createMappingButton(data) 
                 end
                 
-                if devMode then 
-                    reaper.ImGui_SameLine(ctx)
-                    reaper.ImGui_TextColored(ctx, colorGrey, articulationMapCreatorVersion)
-                end
+                
                 
             end
         end

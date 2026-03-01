@@ -1,9 +1,9 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.9.3
+-- @version 0.9.4
 -- @about
---   A complete system for the MOST advanced articulation scripts
+--   A complete system for the MOST advanced articulation system
 -- @provides
 --   Functions/*.lua
 --   Functions/*.dat
@@ -15,5 +15,9 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + added OCR for macOS
---   + fixed 2 bugs
+--   + articulation scripts change articulation immediately when changing via surfaces or on jsfx (so no note on required)
+--   + unified version numbering
+--   + added creator version to name
+--   + internal on dev using same path as users
+--   + adding more global switches to settings on articulation surfaces 
+--   + changed default of "Trigger articulaion on every note" 
