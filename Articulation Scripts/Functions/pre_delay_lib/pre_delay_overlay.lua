@@ -245,7 +245,8 @@ function PreDelayOverlay:_redraw()
                 local sustainPedal = false
                 local distanceBetweenLastEndAndNewStart = last_endppq and
                 math.floor((reaper.MIDI_GetProjTimeFromPPQPos(take, last_endppq) - reaper.MIDI_GetProjTimeFromPPQPos(take, startppq)) * 1000) + max_time_to_reset_legato or nil
-                if (Position == "First" and (not distanceBetweenLastEndAndNewStart or (distanceBetweenLastEndAndNewStart < 0 and not sustainPedal)))
+                if (not Position or Position == "Any" or Position == "")
+                    or (Position == "First" and (not distanceBetweenLastEndAndNewStart or (distanceBetweenLastEndAndNewStart < 0 and not sustainPedal)))
                     or (Position == "Repeated" and (last_pitch and last_pitch == pitch and (distanceBetweenLastEndAndNewStart >= 0 or sustainPedal)))
                     or (Position == "First+Repeated" and ((not distanceBetweenLastEndAndNewStart or (distanceBetweenLastEndAndNewStart <= 0 and not sustainPedal)) or (last_pitch and last_pitch == pitch and (distanceBetweenLastEndAndNewStart >= 0 or sustainPedal))))
                     or (Position == "Legato" and (last_pitch and last_pitch ~= pitch and (distanceBetweenLastEndAndNewStart >= 0 or sustainPedal)))
@@ -255,7 +256,7 @@ function PreDelayOverlay:_redraw()
                   end
                   -- interval
                   if (Position == "First") or (not last_pitch or isWithinType(art, "FilterInterval", math.abs(last_pitch - pitch))) then
-                    --reaper.ShowConsoleMsg(pitch .. " - " .. Position .. " - "  .. tostring(distanceBetweenLastEndAndNewStart) .. "\n")
+                    --reaper.ShowConsoleMsg(pitch .. " - " .. tostring(Position) .. " - "  .. tostring(distanceBetweenLastEndAndNewStart) .. "\n")
                     -- speed
                     if not last_startppq or isWithinType(art, "FilterSpeed", math.floor((reaper.MIDI_GetProjTimeFromPPQPos(take, startppq) - reaper.MIDI_GetProjTimeFromPPQPos(take, last_startppq)) * 1000)) then
                       -- velocity
