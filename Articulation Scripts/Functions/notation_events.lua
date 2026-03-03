@@ -22,6 +22,13 @@ local function notation_events_settings()
         saveSettings()
     end
     setToolTipFunc("This will generate text events that shows in their own lane, whenever there's a new notation dynamic (so you won't see repeated ones).\nThe text events can also be shown on the media item in the main window and offers a simpler overview")
+
+    reaper.ImGui_SeparatorText(ctx, "Overlays")
+    if reaper.ImGui_Checkbox(ctx, "Draw delay lines on Piano Roll", settings.draw_delay_lines_on_piano_roll) then
+        settings.draw_delay_lines_on_piano_roll = not settings.draw_delay_lines_on_piano_roll
+        saveSettings()
+    end
+    setToolTipFunc("This will draw custom lines showing the delay amount of a note, if the articulation attached uses a delay.")
 end
 
 
@@ -125,10 +132,9 @@ function export.others()
         if i < #selectionTypes then reaper.ImGui_SameLine(ctx) end                                
     end 
 
+    reaper.ImGui_NewLine(ctx)
 
     reaper.ImGui_SeparatorText(ctx, "Others")
-
-    reaper.ImGui_NewLine(ctx)
     if reaper.ImGui_Checkbox(ctx, "Show tooltip for articulation buttons", settings.show_tooltip_for_articaultion_buttons) then
         settings.show_tooltip_for_articaultion_buttons = not settings.show_tooltip_for_articaultion_buttons
         saveSettings()

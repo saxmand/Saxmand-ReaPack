@@ -1,13 +1,14 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.9.5
+-- @version 0.9.6
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
 --   Functions/*.lua
 --   Functions/*.dat
 --   Functions/Helpers/*.lua
+--   Functions/pre_delay_lib/*.lua
 --   [main] Saxmand_Articulation_Script Creator.lua
 --   [main] Saxmand_Articulation_License Window.lua
 --   [main] Saxmand_Articulation_Scripts List.lua
@@ -15,4 +16,6 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + using buildin dock state reading for midi editor
+--   + Added delay overlay for piano roll (Thanks Talagan) 
+--   + Added save as default button for instrument settings 
+--   + Changed to only look for "MIDI ", when seeing if the MIDI Editor is docked, to be multi language 

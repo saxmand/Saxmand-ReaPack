@@ -21,7 +21,8 @@ export.InstrumentSettings = {
     addKeyswitchNamesToPianoRoll = true, 
     addKeyswitchNamesOverwriteAllNotes = true, 
     addKeyswitchNamesOverwriteAllCC = false, 
-    recognizeArticulationsKeyswitches = true
+    recognizeArticulationsKeyswitches = true,
+    triggerArticulationOnEveryNote = false,
 }
 
 
@@ -39,6 +40,45 @@ export.column_modifiers = {
     ["CC"] = "Same", 
     ["Program"] = "Increment",
 }
+
+function export.saveSettings(key, tbl)
+    local tblStr = json.encodeToJson(tbl)
+    reaper.SetExtState(stateName,key, tblStr, true) 
+end
+
+function export.getSettings(key, default) 
+    if not default then 
+        default = export[key]
+    end
+    if reaper.HasExtState(stateName, key) then 
+        local tblStr = reaper.GetExtState(stateName,key) 
+        tbl = json.decodeFromJson(tblStr)
+    else    
+        tbl = {}
+    end
+    -- BACKWARDS COMPATABILITY
+    for key, value in pairs(default) do
+        if type(value) == "table" then 
+            if tbl[key] == nil then
+                tbl[key] = {}
+            end
+            
+            for subKey, subValue in pairs(value) do
+                if tbl[key][subKey] == nil then
+                    tbl[key][subKey] = subValue
+                end
+            end
+        else  
+            if tbl[key] == nil then
+                tbl[key] = value
+            end
+        end
+    end
+    export.saveSettings(key, tbl)
+
+    return tbl
+end
+
 
 function export.saveAppSettings()
     local settingsStr = json.encodeToJson(appSettings)

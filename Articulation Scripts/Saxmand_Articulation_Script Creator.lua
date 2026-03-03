@@ -635,10 +635,7 @@ function resetCreator()
     modifierSettings = default_settings.column_modifiers
     mappingType = {}
     tableInfo = {}
-    instrumentSettings = {}
-    for k, v in pairs(default_settings.InstrumentSettings) do
-        instrumentSettings[k] = v
-    end
+    instrumentSettings = default_settings.getSettings("InstrumentSettings") 
     mapName = nil
 end
 resetCreator()
@@ -1799,10 +1796,12 @@ local function loop()
             end
 
             
-            if not mapName or #tableInfo == 0 then 
-                reaper.ImGui_SameLine(ctx)
-                
-                createMappingButton(importClipboardButton, hideInstrumentButtons and mapName) 
+            if devMode then 
+                if not mapName or #tableInfo == 0 then 
+                    reaper.ImGui_SameLine(ctx)
+                    
+                    createMappingButton(importClipboardButton, hideInstrumentButtons and mapName) 
+                end
             end
 
             -- OLD EEL
@@ -4230,6 +4229,8 @@ len > 0 ? (
                         local childSizeW = windowW - 16
                         if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 28)) then 
                             local width = 200
+                            
+
                             reaper.ImGui_TextColored(ctx, 0x777777FF, 'Instrument settings')
                             
                             
@@ -4327,8 +4328,7 @@ len > 0 ? (
                             
                             
                             reaper.ImGui_NewLine(ctx)
-                            reaper.ImGui_TextColored(ctx, 0x777777FF, 'Script settings')
-                            
+                            reaper.ImGui_TextColored(ctx, 0x777777FF, 'Script settings')                                
                             
                             if instrumentSettings.recognizeArticulationsKeyswitches == nil then instrumentSettings.recognizeArticulationsKeyswitches = true end
                             
@@ -4347,6 +4347,10 @@ len > 0 ? (
                             if instrumentSettings.usePDC == nil then instrumentSettings.usePDC = true end                             
                             _, instrumentSettings.usePDC = reaper.ImGui_Checkbox(ctx, "Use PDC", instrumentSettings.usePDC)
                             setToolTipFunc("Use script PDC timer delay instead of Track's media playback offset.\nThis option is only relevant if you script contains Delay")
+                            
+                            if instrumentSettings.usePDC == nil then instrumentSettings.usePDC = true end                             
+                            _, instrumentSettings.triggerArticulationOnEveryNote = reaper.ImGui_Checkbox(ctx, "Trigger articulation on every note", instrumentSettings.triggerArticulationOnEveryNote)
+                            setToolTipFunc("Send out mapped articulation trigger on every note played")
                             
                             
                             reaper.ImGui_NewLine(ctx)
@@ -4501,6 +4505,12 @@ len > 0 ? (
                                     
                                   reaper.ImGui_EndTable(ctx)
                                 end
+
+                                reaper.ImGui_NewLine(ctx)
+                                if reaper.ImGui_Button(ctx, "Save as default for new instruments##scriptsettings") then
+                                    default_settings.saveSettings("instrumentSettings", instrumentSettings)
+                                end
+                                setToolTipFunc("You can change the default instrument setting to your liking, by clicking this button")
                                 --if reaper.ImGui_Button(ctx, "Clear realtime triggers") then
                                 --    instrumentSettings.realtimeTrigger = {}
                                 --end

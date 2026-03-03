@@ -14,12 +14,7 @@ local function setToolbarState(isActive)
     reaper.RefreshToolbar(0) -- Refresh the toolbar to update the icon
 end
 
-local function exit()
-    reaper.SetProjExtState(0, "articulationMapOnDevice", "trackName", "")
-    reaper.SetProjExtState(0, "articulationMapOnDevice", "articulations", "")
-    reaper.SetExtState("articulationMap", "running", "0", true)
-    setToolbarState(false)
-end
+
 
 
 if contextstr and #contextstr > 0 then
@@ -43,12 +38,12 @@ local devMode = scriptPath:match("jesperankarfeldt") ~= nil
 if devMode then
     local devFilesPath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
     package.path = package.path .. ";" .. devFilesPath .. "?.lua"
-    functionsFilePath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
-    functionsFileExtension  = "lua"
+    --functionsFilePath = reaper.GetResourcePath() .. "/Scripts/Saxmand-ReaPack-Private/Articulation Scripts/Functions/"
+    --functionsFileExtension  = "lua"
 else
-    functionsFilePath = scriptPathSubfolder
+    --functionsFilePath = scriptPathSubfolder
     package.path = package.path .. ";" .. scriptPathSubfolder .. "?.dat"
-    functionsFileExtension  = "dat"
+    --functionsFileExtension  = "dat"
 end
 package.path = package.path .. ";" .. scriptPathSubfolder .. "?.lua"
 package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. seperator  .. "?.lua"
@@ -88,6 +83,8 @@ local listOverviewSurface = require("list_overview").listOverviewSurface
 
 
 
+
+
 mirror_notation_to_unique_text_events = require("mirror_notation_to_unique_text_events").mirror_notation_to_unique_text_events
 
 
@@ -111,6 +108,7 @@ local defaultSettings = {
     keyboardTrigger_passthroughKeys = true,
     keyboardTrigger_passthroughKeys_only_non = true,
     show_tooltip_for_articaultion_buttons = true,
+    draw_delay_lines_on_piano_roll = false,
 }
 
 function saveSettings()
@@ -235,6 +233,12 @@ local refocusBasedOnTimer = false
 local timeSinceMouseRelease = 0
 local lastTrack
 
+local PreDelayEngine  = require("pre_delay_lib.pre_delay_engine")
+local engine 
+if settings.draw_delay_lines_on_piano_roll then 
+    engine = PreDelayEngine.new()
+end
+--local art_maps = {}
 
 local function loop()
     state            = reaper.JS_Mouse_GetState(-1)
@@ -274,8 +278,22 @@ local function loop()
     
 
     track, section_id, fxName, fxNumber, item, take, midi_editor, focusIsOn, focusHwnd = track_depending_on_selection.trackDependingOnSelection()
+
+    if settings.draw_delay_lines_on_piano_roll and midi_editor and fxNumber then 
+        max_time_to_reset_legato = change_articulation.findParamWithNameValue(track, fxNumber, "Max time to reset legato") or 0
+        if last_max_time_to_reset_legato and last_max_time_to_reset_legato ~= max_time_to_reset_legato then
+            refreshEngine = true
+        end
+        if refreshEngine then
+            engine:triggerDelayMapRefreshForTrack(track)
+            refreshEngine = false
+        end
+        last_max_time_to_reset_legato = max_time_to_reset_legato
+    end
+
     if not lastTrack or lastTrack ~= track or (last_fxNumber ~= fxNumber) then
-        triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam = readArticulationScript(track, fxName)
+        triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam, delay_map = readArticulationScript(track, fxName)
+        
         lastTrack = track        
         last_fxNumber = fxNumber        
 
@@ -284,8 +302,17 @@ local function loop()
             if trackNameRet then
                 reaper.SetProjExtState(0, "articulationMapOnDevice", "trackName", trackName)
             end
+
+            
+            --
+            if settings.draw_delay_lines_on_piano_roll and delay_map and midi_editor then 
+                engine:setDelayMapProvider(function(track)
+                    return delay_map
+                end)
+            end
         end
     end
+
     --reaper.StuffMIDIMessage(0, 0xF0, msgBytes)
     
     fx_is_bypassed = (track and fxNumber) and not reaper.TrackFX_GetEnabled(track, fxNumber) or false
@@ -447,6 +474,24 @@ local function loop()
     -- FINISHED ---
     ---------------
 
+    if settings.draw_delay_lines_on_piano_roll then 
+        if not engine then 
+            engine = PreDelayEngine.new()
+            if delay_map and midi_editor then 
+                engine:setDelayMapProvider(function(track)
+                    return delay_map
+                end)
+            end            
+        else
+            engine:tick()
+        end
+    else    
+        if engine then 
+            engine:destroy()    
+            engine = nil
+        end
+    end
+    --last_settings_draw_delay_lines_on_piano_roll = settings.draw_delay_lines_on_piano_roll
 
     if reaper.GetExtState("articulationMap", "stopScript") == "1" then
         stopScript = true
@@ -466,4 +511,13 @@ local function loop()
 end
 
 reaper.defer(loop)
+
+local function exit()
+    if engine then engine:destroy() end
+    reaper.SetProjExtState(0, "articulationMapOnDevice", "trackName", "")
+    reaper.SetProjExtState(0, "articulationMapOnDevice", "articulations", "")
+    reaper.SetExtState("articulationMap", "running", "0", true)
+    setToolbarState(false)
+end
+
 reaper.atexit(exit)

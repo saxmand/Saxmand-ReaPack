@@ -93,7 +93,7 @@ function export.trackDependingOnSelection()
     if focusHwnd_title == "Articulation_Scripts" or focusHwnd_parent_title == "Articulation_Scripts" then 
 
     else
-        if midiEditor_is_docked and focusHwnd_parent_title:match("MIDI take") ~= nil then 
+        if midiEditor_is_docked and focusHwnd_parent_title:match("MIDI ") ~= nil then 
             midiEditor_is_focused = true
         end
         
