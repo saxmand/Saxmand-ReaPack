@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.9.6
+-- @version 0.9.7
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -16,6 +16,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + Added delay overlay for piano roll (Thanks Talagan) 
---   + Added save as default button for instrument settings 
---   + Changed to only look for "MIDI ", when seeing if the MIDI Editor is docked, to be multi language 
+--   + Added delay overlay for piano roll (Thanks Talagan) 2
