@@ -1,3 +1,4 @@
+-- @noindex
 -- =============================================================================
 -- MidiEditorCanvas.lua
 -- Canvas library overlaid on the REAPER MIDI Editor using JS_Lice API.
