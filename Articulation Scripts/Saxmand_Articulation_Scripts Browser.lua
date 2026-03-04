@@ -145,14 +145,10 @@ function redoFilter()
 end
 
 function updateCloudLibrary()
-    reaper.ShowConsoleMsg("1\n")
     local text = articulation_scripts_library.readSharedText()
-    reaper.ShowConsoleMsg("2\n")
     export.writeFile(database_path, text)
-    reaper.ShowConsoleMsg("3\n")
     database_articulation_scripts = {}
     readCloudDatabase()
-    reaper.ShowConsoleMsg("4\n")
     redoFilter()
 end
 
