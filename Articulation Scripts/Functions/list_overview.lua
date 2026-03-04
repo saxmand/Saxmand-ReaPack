@@ -315,7 +315,7 @@ function export.listOverviewSurface(focusIsOn)
         end        
         trackNameIsHovered = reaper.ImGui_IsItemHovered(ctx)
 
-        if trackName == "[No Track]" then 
+        if not path then 
             local _, scriptIsOpen = getScriptId("Saxmand_Articulation_Scripts Browser.lua")
             local btnName = scriptIsOpen and "Close Script Browser" or "Open Script Browser"
             reaper.ImGui_NewLine(ctx)
