@@ -4618,9 +4618,6 @@ len > 0 ? (
                             reaper.ImGui_SameLine(ctx, infoTextOffset)
                             
                             local disable = scriptShared --last_shared_text and text == last_shared_text
-                            if not devMode then 
-                                disable = true
-                            end
                             if disable then reaper.ImGui_BeginDisabled(ctx) end
                             local btnName = disable and "SCRIPT SHARED!" or "SHARE SCRIPT TO DATABASE"
                             if reaper.ImGui_Button(ctx, btnName, textInputWidth, textInputWidth / 7) then

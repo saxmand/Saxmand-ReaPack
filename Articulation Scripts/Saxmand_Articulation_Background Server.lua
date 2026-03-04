@@ -10,8 +10,10 @@ local toolbarSet
 -- Function to set the toolbar icon state
 local function setToolbarState(isActive)
     -- Set the command state to 1 for active, 0 for inactive
-    reaper.SetToggleCommandState(0, cmdID, isActive and 1 or 0)
-    reaper.RefreshToolbar(0) -- Refresh the toolbar to update the icon
+    if sectionID ~= -1 and cmdID then
+        reaper.SetToggleCommandState(0, cmdID, isActive and 1 or 0)
+        reaper.RefreshToolbar(0) -- Refresh the toolbar to update the icon
+    end
 end
 
 
@@ -232,6 +234,7 @@ local isMouseWasReleased_Timer = 0
 local refocusBasedOnTimer = false
 local timeSinceMouseRelease = 0
 local lastTrack
+local last_toolbar_state = nil  -- Track the previous toolbar button state
 
 local PreDelayEngine  = require("pre_delay_lib.pre_delay_engine")
 local engine 
@@ -463,13 +466,6 @@ local function loop()
             last_midi_editor = midi_editor       
         end
     end
-    ----------------------
-    -- toolbar settings --
-    ----------------------
-    if not toolbarSet then
-        setToolbarState(true)
-        toolbarSet = true
-    end
     ---------------
     -- FINISHED ---
     ---------------
@@ -496,8 +492,21 @@ local function loop()
     if reaper.GetExtState("articulationMap", "stopScript") == "1" then
         stopScript = true
     end
-    if reaper.GetToggleCommandState(0, background_server_command_id) == 0 then
-        stopScript = true
+    
+
+    ----------------------
+    -- toolbar settings --
+    ----------------------
+    --HIPOX CHANGE: maybe overkill, but it's better to be sure the button was previously on
+    local toolbar_state = reaper.GetToggleCommandStateEx(sectionID, background_server_command_id)
+
+    if toolbar_state ~= -1 then
+        if last_toolbar_state == nil then
+            last_toolbar_state = toolbar_state
+        elseif last_toolbar_state == 1 and toolbar_state == 0 then
+            stopScript = true
+        end
+        last_toolbar_state = toolbar_state
     end
 
     if stopScript then
@@ -510,6 +519,9 @@ local function loop()
     end
 end
 
+--HIPOX CHANGE: moved before the loop
+setToolbarState(true)
+toolbarSet = true
 reaper.defer(loop)
 
 local function exit()

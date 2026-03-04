@@ -356,7 +356,7 @@ function export.importJsonString(jsonString)
                 --#tableInfo = #tableInfo -- luaTable.tableInfo.Title and #luaTable.tableInfo.Title or 0
                 instrumentSettings = luaTable.instrumentSettings and luaTable.instrumentSettings or {}
                 for k, v in pairs(default_settings.InstrumentSettings) do
-                    if not instrumentSettings[k] then 
+                    if instrumentSettings[k] == nil then 
                         instrumentSettings[k] = v
                     end
                 end
