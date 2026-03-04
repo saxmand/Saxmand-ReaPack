@@ -142,6 +142,7 @@ function redoFilter()
     focusedScriptIndex = nil
     searchForPatches = true
     patchesFound = nil
+    focusedScript = nil
 end
 
 function updateCloudLibrary()
@@ -292,7 +293,6 @@ local function loop()
             reloadLocalScript_count = 0
             searchForPatches = true
             if deletedScript then
-                reaper.ShowConsoleMsg("hej\n")
                 focusedScriptIndex = nil
                 deletedScript = nil
             end
@@ -394,7 +394,7 @@ local function loop()
             sort_manually = true
         end 
         --if focusedScriptIndex and scripts_to_use[focusedScriptIndex]
-        if not focusedScriptIndex and not searchForPatches and  patchesFound[1] then focusedScriptIndex = patchesFound[1].index end 
+        --if not focusedScriptIndex and not searchForPatches and  patchesFound[1] then focusedScriptIndex = patchesFound[1].index end 
         
         if focusedScriptIndex and scripts_to_use[focusedScriptIndex] then 
             focusedScript = scripts_to_use[focusedScriptIndex]
@@ -503,9 +503,18 @@ local function loop()
         
         
         reaper.ImGui_BeginGroup(ctx)
-        reaper.ImGui_TextColored(ctx, colorGrey, "ARTICULATION SCRIPTS " .. (isLocal and "LOCAL" or "DATABASE"))
-        reaper.ImGui_SameLine(ctx)
-        reaper.ImGui_TextColored(ctx, colorGrey, "(" .. #patchesFound .. "/" .. #scripts_to_use .. ")")
+        
+        local txt = "ARTICULATION SCRIPTS " .. (isLocal and "LOCAL" or "DATABASE") .. "  (" .. #patchesFound .. "/" .. #scripts_to_use .. ")"
+        if posXOfScriptsTable then 
+            local textW = reaper.ImGui_CalcTextSize(ctx, txt)
+            local startPos = posXOfScriptsTable / 2 - textW/2 - 8
+            if startPos > 8 then 
+                reaper.ImGui_NewLine(ctx)
+                reaper.ImGui_SameLine(ctx, startPos)
+            end
+        end
+        
+        reaper.ImGui_TextColored(ctx, colorGrey, txt)
         reaper.ImGui_Separator(ctx)
         
         
@@ -707,14 +716,15 @@ local function loop()
         
         
         reaper.ImGui_SameLine(ctx)
-        local posX = reaper.ImGui_GetCursorPosX(ctx)
-        local widthOfChild = windowW - posX - 8
+        posXOfScriptsTable = reaper.ImGui_GetCursorPosX(ctx)
+        local widthOfChild = windowW - posXOfScriptsTable - 8
         
         if reaper.ImGui_BeginChild(ctx, "preview name", widthOfChild) then 
         --reaper.ImGui_BeginGroup(ctx)
         
-        
-        
+            local textW = reaper.ImGui_CalcTextSize(ctx, "PREVIEW")
+            reaper.ImGui_SameLine(ctx, widthOfChild / 2 - textW/2 - 8)
+            reaper.ImGui_TextColored(ctx, colorGrey, "PREVIEW")
             if focusedScript then 
                 local mapping = focusedScript.mapping
                 local tableInfo = focusedScript.tableInfo
@@ -731,9 +741,7 @@ local function loop()
                     reaper.ImGui_TextWrapped(ctx, forceText and forceText or (instrumentSettings and instrumentSettings[value]))
                 end
                 
-                reaper.ImGui_AlignTextToFramePadding(ctx)
-                reaper.ImGui_TextColored(ctx, colorGrey, "PREVIEW")
-                
+                reaper.ImGui_AlignTextToFramePadding(ctx) 
                 
                 --reaper.ImGui_Separator(ctx)            
                 local tblFlags = nil--reaper.ImGui_TableFlags_SizingFixedFit()
@@ -872,11 +880,6 @@ local function loop()
                 --end
                 --reaper.ImGui_EndChild(ctx)
                 end
-            else
-                reaper.ImGui_Text(ctx, "PREVIEW")
-                
-                
-                
             end
         
             reaper.ImGui_EndChild(ctx) 
