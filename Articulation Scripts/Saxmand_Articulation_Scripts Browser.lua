@@ -120,19 +120,20 @@ local database_articulation_scripts = {}
 
 local function readCloudDatabase()
     local lines = file_handling.readFileLines(database_path, "//json:") 
-
-    reaper.ShowConsoleMsg("lines: " .. #lines .."\n")
-    for _, line in ipairs(lines) do
-        local foundJson, tbl = file_handling.importJsonString(line)
-        if foundJson then 
-            tbl.index = #database_articulation_scripts + 1
-            tbl.json = "//json:" .. line
-            
-            tbl.name = tbl.mapName or " " 
-            tbl.creator = tbl.instrumentSettings.Creator or " "
-            tbl.vendor = tbl.instrumentSettings.Vendor or " "
-            tbl.time = tbl.genTime and tostring(tbl.genTime) or "0"
-            table.insert(database_articulation_scripts, tbl)
+    database_articulation_scripts = {}
+    if lines then 
+        for _, line in ipairs(lines) do
+            local foundJson, tbl = file_handling.importJsonString(line)
+            if foundJson then 
+                tbl.index = #database_articulation_scripts + 1
+                tbl.json = "//json:" .. line
+                
+                tbl.name = tbl.mapName or " " 
+                tbl.creator = tbl.instrumentSettings.Creator or " "
+                tbl.vendor = tbl.instrumentSettings.Vendor or " "
+                tbl.time = tbl.genTime and tostring(tbl.genTime) or "0"
+                table.insert(database_articulation_scripts, tbl)
+            end
         end
     end
 end
