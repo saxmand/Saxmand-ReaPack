@@ -329,6 +329,7 @@ local function loop()
         escape = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape(), false)
         delete = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Delete(), false)
         mouseDown = reaper.ImGui_IsAnyMouseDown(ctx)
+        isDoubleClick = reaper.ImGui_IsMouseDoubleClicked(ctx, 0)
         mouseReleased = reaper.ImGui_IsMouseReleased(ctx, 0)
         mousePosX, mousePosY = reaper.ImGui_GetMousePos(ctx)
         
@@ -457,23 +458,29 @@ local function loop()
         end
         setToolTipFunc("Clear search.\n - Press escape to clear")
         
+        function addScript() 
+            addMapToInstruments(mapName) 
+            if not isLocal then 
+                reloadLocalScript = true
+            end
+            
+            --reaper.ImGui_SetWindowFocus(ctx)
+            setFocusAfterAdding = true
+            if focused_hwnd then 
+                reaper.JS_Window_SetFocus(focused_hwnd)
+            end
+            if not cmd then 
+                open = false
+            end
+        end
+        
         --reaper.ImGui_SameLine(ctx)
         if not focusedScript then reaper.ImGui_BeginDisabled(ctx) end
+            local addMap = false
             if reaper.ImGui_Button(ctx, "Add to selected tracks") or (enter and not popupOpen and focusedScript) then
-                addMapToInstruments(mapName) 
-                if not isLocal then 
-                    reloadLocalScript = true
-                end
-                
-                --reaper.ImGui_SetWindowFocus(ctx)
-                setFocusAfterAdding = true
-                if focused_hwnd then 
-                    reaper.JS_Window_SetFocus(focused_hwnd)
-                end
-                if not cmd then 
-                    open = false
-                end
+                addScript()
             end 
+            
             setToolTipFunc("Press enter to add selected articulation script to selected tracks\n - Add cmd to keep Browser window open")
             
             reaper.ImGui_SameLine(ctx)
@@ -630,7 +637,12 @@ local function loop()
                             local name = tbl.mapName -- database_focus == "Local"  and tbl.name or tbl.mapName
                             if reaper.ImGui_Selectable(ctx, name .. "##" .. patchNumber .. "column1", isFocused) then  
                                 focusedScriptIndex = index
+                                
                                 --scriptAdded = addMapToInstruments(script)
+                            end
+                            
+                            if reaper.ImGui_IsItemHovered(ctx) and isDoubleClick then 
+                                addScript()
                             end
                         elseif v == "Time" then  
                             reaper.ImGui_TableNextColumn(ctx) 
@@ -639,6 +651,10 @@ local function loop()
                             if reaper.ImGui_Selectable(ctx, readable_time .. "##" .. patchNumber .. "column1", isFocused) then  
                                 focusedScriptIndex = index
                               --scriptAdded = addMapToInstruments(script)
+                            end
+                            
+                            if reaper.ImGui_IsItemHovered(ctx) and isDoubleClick then 
+                                addScript()
                             end
                         else
                         

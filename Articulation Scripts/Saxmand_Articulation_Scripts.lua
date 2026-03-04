@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.0.5
+-- @version 1.0.6
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -18,5 +18,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + include hipox fixes
---   + fix wrong import of instrumentSettings
+--   + double click to add scripts from browser

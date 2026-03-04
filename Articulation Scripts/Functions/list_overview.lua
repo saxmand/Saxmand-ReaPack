@@ -55,24 +55,24 @@ end
  ]]
 local export = {}
 
-function getCreatorScriptId()
-    local sep = package.config:sub(1,1)
+function getScriptId(scriptName)
+    --[[ local sep = package.config:sub(1,1)
     local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
     local devMode = scriptPath:match("jesperankarfeldt") ~= nil
     local creatorScriptPath = reaper.GetResourcePath()
     .. sep .. "Scripts"
     .. sep .. "Saxmand ReaPack"
     .. sep .. "Articulation Scripts"
-    .. sep .. "Saxmand_Articulation_Script Creator.lua"
-    
-    local creatorScriptPath = articulatioScriptsPath .. "Saxmand_Articulation_Script Creator.lua"
+    .. sep .. scriptName
+     ]]
+    local creatorScriptPath = articulatioScriptsPath .. scriptName
     local command_id = reaper.AddRemoveReaScript(true, 0, creatorScriptPath, false)
-    local creatorIsOpen = reaper.GetToggleCommandState(command_id) > 0
-    return command_id, creatorIsOpen
+    local scriptIsOpen = reaper.GetToggleCommandState(command_id) > 0
+    return command_id, scriptIsOpen
 end
 
-function export.openCreatorWindow(path, save, jsfx)    
-    local command_id, creatorIsOpen = getCreatorScriptId()
+function export.openCreatorWindow(path, save)    
+    local command_id, scriptIsOpen = getScriptId("Saxmand_Articulation_Script Creator.lua")
 
     if save then 
         reaper.SetExtState("articulationMap", "saveScript", "1", false)
@@ -84,11 +84,19 @@ function export.openCreatorWindow(path, save, jsfx)
             reaper.SetExtState("articulationMap", "openScript", path, false)  
         end
 
-        if not creatorIsOpen then 
+        if not scriptIsOpen then 
             reaper.Main_OnCommand(command_id, 0)    
         end
     end
 end
+
+function export.openBrowserWindow()    
+    local command_id, scriptIsOpen = getScriptId("Saxmand_Articulation_Scripts Browser.lua")
+    --if not scriptIsOpen then 
+        reaper.Main_OnCommand(command_id, 0)    
+    --end
+end
+
 
 function GetTextColorForBackground(u32_color)
     -- Extract 8-bit R, G, B from U32 (ImGui format: 0xAABBGGRR)
@@ -284,7 +292,7 @@ function export.listOverviewSurface(focusIsOn)
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), trackColor)
         --reaper.ImGui_Text(ctx, tostring(trackName))
         local btnName = trackName
-        local path, scriptAlreadyOpen, creatorIsOpen
+        local path, scriptAlreadyOpen, scriptIsOpen
         if fxName then 
             local scriptThatIsOpen = reaper.GetExtState("articulationMap", "scriptThatIsOpen")
             --local fxNumber, fxName = track_depending_on_selection.findArticulationScript(track) 
@@ -292,11 +300,11 @@ function export.listOverviewSurface(focusIsOn)
             scriptAlreadyOpen = scriptThatIsOpen == path
         end
         if trackNameIsHovered then 
-            _, creatorIsOpen = getCreatorScriptId()            
+            _, scriptIsOpen = getScriptId("Saxmand_Articulation_Script Creator.lua")            
         end
-        btnName = trackNameIsHovered and (scriptAlreadyOpen and "Save script and update" or (path and "Click to edit script" or (creatorIsOpen and "Create new script" or "Open Script Creator"))) or trackName
+        btnName = trackNameIsHovered and (scriptAlreadyOpen and "Save script and update" or (path and "Click to edit script" or (scriptIsOpen and "Create new script" or "Open Script Creator"))) or trackName
         if reaper.ImGui_Selectable(ctx,btnName, true) then 
-            if creatorIsOpen then 
+            if scriptIsOpen then 
                 if not path then path = "[EMPTY]" end
             end
             export.openCreatorWindow(path, scriptAlreadyOpen) 
@@ -306,6 +314,15 @@ function export.listOverviewSurface(focusIsOn)
             --end
         end        
         trackNameIsHovered = reaper.ImGui_IsItemHovered(ctx)
+
+        if trackName == "[No Track]" then 
+            local _, scriptIsOpen = getScriptId("Saxmand_Articulation_Scripts Browser.lua")
+            local btnName = scriptIsOpen and "Close Script Browser" or "Open Script Browser"
+            reaper.ImGui_NewLine(ctx)
+            if reaper.ImGui_Selectable(ctx,btnName) then 
+                export.openBrowserWindow()
+            end        
+        end
         
         reaper.ImGui_PopStyleColor(ctx,4)
         reaper.ImGui_PopStyleVar(ctx)
