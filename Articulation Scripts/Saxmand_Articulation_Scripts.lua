@@ -1,10 +1,11 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.0.3
+-- @version 1.0.4
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
+--   articulation_scripts_library.txt
 --   Functions/*.lua
 --   Functions/*.dat
 --   Functions/Helpers/*.lua
@@ -17,4 +18,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + script browser fixes
+--   + include articulation script library
