@@ -153,25 +153,7 @@ saveAppSettings = default_settings.saveAppSettings
 
 appSettings = default_settings.getAppSettings()
 
--- Function to open a folder in Finder (macOS) or File Explorer (Windows)
-function openFolderInExplorer(folderPath)
-    -- Check the operating system
-    local osName = reaper.GetOS()
 
-    reaper.RecursiveCreateDirectory(folderPath, 0)
-    -- Construct and execute the appropriate command based on the OS
-    if osName:find("OS") then
-        -- macOS
-        local command = 'open "' .. folderPath .. '"'
-        os.execute(command)
-    elseif osName:find("Win") then
-        -- Windows
-        local command = 'explorer "' .. folderPath:gsub("/", "\\") .. '"'
-        os.execute(command)
-    else
-        reaper.ShowMessageBox("Unsupported OS: " .. osName, "Error", 0)
-    end
-end
 -------------------------------------------------
 ------------------ HELPERS ----------------------
 -------------------------------------------------
@@ -359,7 +341,7 @@ end
 
 
 function openArticulationFolder() 
-    openFolderInExplorer(articulationScriptsPath) 
+    file_handling.openFolderInExplorer(articulationScriptsPath) 
 end
 
 
@@ -395,7 +377,7 @@ function start_importOCR()
 end
 
 -- FROM CLIPBOARD
-function importArticulationSet(onlyJson)
+function importArticulationSet(onlyJson, openJson)
     function splitString(inputstr, sep)
         sep = sep or "%s"
     
@@ -410,7 +392,7 @@ function importArticulationSet(onlyJson)
     end
     
 
-    clipboard = reaper.CF_GetClipboard()
+    clipboard = openJson and openJson or reaper.CF_GetClipboard()
     if clipboard then
         if clipboard:match("//json") ~= nil then 
             local jsonString = clipboard:gsub("//json:", "") 
@@ -1364,6 +1346,13 @@ local function loop()
             editFirstSelected(openPath)
         end
     end
+
+    openJson = reaper.GetExtState("articulationMap", "openJson")
+    if openJson and openJson ~= "" then 
+        reaper.DeleteExtState("articulationMap", "openJson", true)        
+        importArticulationSet(true, openJson)
+    end
+
     saveScript = reaper.GetExtState("articulationMap", "saveScript")
     if saveScript and saveScript ~= "" then 
         reaper.DeleteExtState("articulationMap", "saveScript", true)
@@ -2041,10 +2030,10 @@ len > 0 ? (
                     
                     --mappingsFlag = reaper.ImGui_TabItemFlags_SetSelected()
                     tipTable = {}
-                    openMappingsTab = checkShortCut("1", true, true)
+                    openMappingsTab = checkShortCut("1", true, false, false, true)
                     settingsTabFlag = openMappingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
                     if reaper.ImGui_BeginTabItem(ctx, 'Mappings', openMappingsTab, settingsTabFlag) then
-                        setToolTipFunc("Use cmd+shift+1 to select tab")
+                        setToolTipFunc("Use cmd+alt+1 to select tab")
                         scriptShared = false
                         
                         reaper.ImGui_BeginGroup(ctx)
@@ -4208,7 +4197,7 @@ len > 0 ? (
                         
                         reaper.ImGui_EndTabItem(ctx)
                     else
-                        setToolTipFunc("Use cmd+shift+1 to select tab")
+                        setToolTipFunc("Use cmd+alt+1 to select tab")
                     end
                     ----------------------------------------------------------------------
                     ----------------------------------------------------------------------
@@ -4220,10 +4209,10 @@ len > 0 ? (
                     -------------------------NEW TAB--------------------------------------
                     ----------------------------------------------------------------------
                     
-                    openSettingsTab = checkShortCut("2", true, true)
+                    openSettingsTab = checkShortCut("2", true, false, false, true)
                     settingsTabFlag = openSettingsTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
                     if reaper.ImGui_BeginTabItem(ctx, 'Instrument Settings',openSettingsTab, settingsTabFlag) then
-                        setToolTipFunc("Use cmd+shift+2 to select tab")
+                        setToolTipFunc("Use cmd+alt+2 to select tab")
                         scriptShared = false
 
                         local childSizeW = windowW - 16
@@ -4520,7 +4509,7 @@ len > 0 ? (
                             
                         reaper.ImGui_EndTabItem(ctx)
                     else
-                        setToolTipFunc("Use cmd+shift+2 to select tab")
+                        setToolTipFunc("Use cmd+alt+2 to select tab")
                     end  
                     
                     
@@ -4530,17 +4519,17 @@ len > 0 ? (
                     ----------------------------------------------------------------------
                     
                     if devMode then 
-                        openNotationTab = checkShortCut("3", true, true)
+                        openNotationTab = checkShortCut("3", true, false, false, true)
                         settingsTabFlag = openNotationTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
                         if reaper.ImGui_BeginTabItem(ctx, 'Notation',openNotationTab, settingsTabFlag) then
-                            setToolTipFunc("Use cmd+shift+3 to select tab")
+                            setToolTipFunc("Use cmd+alt+3 to select tab")
                             scriptShared = false
 
                             reaper.ImGui_TextColored(ctx, 0x777777FF, 'Notation is in developement and will be updated soon')
                             
                             reaper.ImGui_EndTabItem(ctx)
                         else
-                            setToolTipFunc("Use cmd+shift+3 to select tab")
+                            setToolTipFunc("Use cmd+alt+3 to select tab")
                         end  
                     end
                     
@@ -4592,10 +4581,10 @@ len > 0 ? (
                     -------------------------NEW TAB--------------------------------------
                     ----------------------------------------------------------------------
                     
-                    openSharingTab = checkShortCut("4", true, true)
+                    openSharingTab = checkShortCut("4", true, false, false, true)
                     settingsTabFlag = openSharingTab and reaper.ImGui_TabItemFlags_SetSelected() or nil
                     if reaper.ImGui_BeginTabItem(ctx, 'Sharing',openSharingTab, settingsTabFlag) then
-                        setToolTipFunc("Use cmd+shift+4 to select tab")
+                        setToolTipFunc("Use cmd+alt+4 to select tab")
                         local childSizeW = windowW - 16
                         if reaper.ImGui_BeginChild(ctx, "instrument settings", childSizeW, windowH - reaper.ImGui_GetCursorPosY(ctx) - (math.ceil(appSettings.fontSize / 100 * 40) + 28)) then 
                             reaper.ImGui_NewLine(ctx) 
@@ -4652,7 +4641,7 @@ len > 0 ? (
                         
                         reaper.ImGui_EndTabItem(ctx)
                     else
-                        setToolTipFunc("Use cmd+shift+4 to select tab")
+                        setToolTipFunc("Use cmd+alt+4 to select tab")
                     end  
                     
                     

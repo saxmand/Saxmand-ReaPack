@@ -39,15 +39,18 @@ function export.clearForKeyswitchInfo(tableInfo)
     end
 end
 
-function export.get()
+function export.get(importer)    
+    --reaper.ShowConsoleMsg(os.time().."\n")
+    local genTime = os.time()
     local allSettings = {
-        creatorVersion = articulationScriptCreatorVersionNumber,
-        mapName = mapName,
-        modifierSettings = modifierSettings, -- maybe we omit this..
-        tableInfo = tableInfo,
-        mapping = mapping,
-        instrumentSettings = instrumentSettings,
-        layerInfo = layerInfo
+        creatorVersion = importer and importer.creatorVersion or articulationScriptCreatorVersionNumber,
+        genTime = importer and importer.genTime or genTime,
+        mapName = importer and importer.mapName or mapName,
+        modifierSettings = importer and importer.modifierSettings or modifierSettings, -- maybe we omit this..
+        tableInfo = importer and importer.tableInfo or tableInfo,
+        mapping = importer and importer.mapping or mapping,
+        instrumentSettings = importer and importer.instrumentSettings or instrumentSettings,
+        layerInfo = importer and importer.layerInfo or layerInfo,
     }
     --text = "//Exported from Articulation Map Creator version: " .. version
     return "//json:" .. minifyJSON(json.encodeToJson(allSettings))
@@ -57,11 +60,12 @@ function export.getSimple()
     local allSettings = {
         fromLibrary = true,
         creatorVersion = articulationScriptCreatorVersionNumber,
+        genTime = os.time(),
         mapName = mapName,
         tableInfo = tableInfo,
         mapping = mapping,
         instrumentSettings = instrumentSettings,
-        layerInfo = layerInfo
+        layerInfo = layerInfo,
     }
     --text = "//Exported from Articulation Map Creator version: " .. version
     return "//json:" .. minifyJSON(json.encodeToJson(allSettings))

@@ -71,7 +71,7 @@ function getCreatorScriptId()
     return command_id, creatorIsOpen
 end
 
-function export.openCreatorWindow(path, save)    
+function export.openCreatorWindow(path, save, jsfx)    
     local command_id, creatorIsOpen = getCreatorScriptId()
 
     if save then 
@@ -81,7 +81,7 @@ function export.openCreatorWindow(path, save)
         --end
     else
         if path then 
-            reaper.SetExtState("articulationMap", "openScript", path, false)
+            reaper.SetExtState("articulationMap", "openScript", path, false)  
         end
 
         if not creatorIsOpen then 

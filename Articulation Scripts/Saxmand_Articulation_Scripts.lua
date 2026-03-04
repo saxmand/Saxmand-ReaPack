@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 0.9.9
+-- @version 1.0.0
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -13,7 +13,9 @@
 --   [main] Saxmand_Articulation_License Window.lua
 --   [main] Saxmand_Articulation_Scripts List.lua
 --   [main] Saxmand_Articulation_Background Server.lua
+--   [main] Saxmand_Articulation_Scripts Browser.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + Added delay overlay for piano roll (Thanks Talagan) 4
+--   + Added Articulation Script Browser Window
+--   + Allow for sharing test 1

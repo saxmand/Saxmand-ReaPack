@@ -6,8 +6,10 @@
 -- Calls the provided callback when something changes.
 --
 -- Detection strategy:
--- - Take change, resize : every frame (cheap)
--- - Chunk poll : adaptive throttle based on mouse position in view
+-- - Take change      : every frame (cheap, pointer comparison)
+-- - MIDI hash        : every frame (cheap, detects note/text edits immediately)
+-- - Resize           : every frame (cheap, rect comparison)
+-- - Chunk poll       : adaptive throttle (scroll/zoom detection)
 --   - Mouse in view  → every CHUNK_INTERVAL_ACTIVE frames (~50ms)
 --   - Mouse out      → every CHUNK_INTERVAL_IDLE frames (~500ms)
 
@@ -35,7 +37,7 @@ function MidiEditorStateWatcher:_initialize(me, hwnd_view, cb)
   self.view_r      = nil
   self.view_b      = nil
   self.frame_count = 0
-  self._wheel_active_frames = 0
+  self._midi_hash           = nil
   self._last_wheel_time     = nil
   self._last_hwheel_time    = nil
   self._me_l     = nil
@@ -84,11 +86,21 @@ function MidiEditorStateWatcher:tick()
   local take = reaper.MIDIEditor_GetTake(self.me)
   if not (take == self.take) then
     reasons[#reasons+1] = "take"
-    self.take  = take
-    self.chunk = nil
+    self.take       = take
+    self.chunk      = nil
+    self._midi_hash = nil
   end
 
-  -- 2. View bounds — catches resize
+  -- 2. MIDI hash — detects note/text edits immediately, every frame
+  if self.take then
+    local _, hash = reaper.MIDI_GetHash(self.take, false, "")
+    if hash ~= self._midi_hash then
+      self._midi_hash = hash
+      reasons[#reasons+1] = "midi"
+    end
+  end
+
+  -- 3. View bounds — catches resize
   -- Note: on macOS, JS_Window_GetRect returns inverted Y (view_b < view_t)
   local ok, vl, vt, vr, vb = reaper.JS_Window_GetRect(self.hwnd_view)
   if ok then
@@ -102,7 +114,7 @@ function MidiEditorStateWatcher:tick()
     end
   end
 
-  -- 3. WM_MOUSEWHEEL peek — boosts throttle for a few frames after scroll
+  -- 4. WM_MOUSEWHEEL peek — boosts throttle for a few frames after scroll
   local wok, _, _, wtime, _   = reaper.JS_WindowMessage_Peek(self.hwnd_view, "WM_MOUSEWHEEL")
   local hwok, _, _, hwtime, _ = reaper.JS_WindowMessage_Peek(self.hwnd_view, "WM_MOUSEHWHEEL")
   local new_wheel = (wok and wtime ~= self._last_wheel_time) or
@@ -115,7 +127,7 @@ function MidiEditorStateWatcher:tick()
     self._wheel_active_frames = self._wheel_active_frames - 1
   end
 
-  -- 4. Adaptive chunk throttle based on mouse position in ME window (includes piano roll)
+  -- 5. Adaptive chunk throttle based on mouse position in ME window (includes piano roll)
   local mx, my = reaper.GetMousePosition()
   local mouse_in_view = false
   if self._me_l then
@@ -129,7 +141,7 @@ function MidiEditorStateWatcher:tick()
   local interval = (self._wheel_active_frames > 0 or mouse_in_view)
     and CHUNK_INTERVAL_ACTIVE or CHUNK_INTERVAL_IDLE
 
-  -- 5. Chunk poll — throttled
+  -- 6. Chunk poll — throttled
   if self.frame_count % interval == 0 then
     local r = self:_readChunk("chunk(poll)")
     if r then reasons[#reasons+1] = r end
