@@ -45,6 +45,7 @@ end
 
 -- URLs
 local BUY_URL     = "https://www.paypal.com/paypalme/saxmand"
+local BUY_URL2     = "https://saxmaniac28.gumroad.com/coffee"
 local SUPPORT_URL = "https://forum.cockos.com/showthread.php?t=299999"
 
 local function openWebpage(url)
@@ -130,17 +131,12 @@ local function loop()
             end
         if not devMode and wasIsNoteValid then reaper.ImGui_EndDisabled(ctx) end
 
-        reaper.ImGui_SameLine(ctx)
+        --reaper.ImGui_SameLine(ctx)
         
         
         if isDemo then reaper.ImGui_EndDisabled(ctx) end
 
-        if reaper.ImGui_Button(ctx, (isDemo or validLicense) and 'Support development' or 'Buy License') then
-            openWebpage(BUY_URL)
-            --reaper.CF_ShellExecute(BUY_URL)
-        end
 
-        
         reaper.ImGui_SameLine(ctx)
         
         if reaper.ImGui_Button(ctx, 'Website', 60, 0) then
@@ -159,6 +155,20 @@ local function loop()
                 reaper.SetExtState("ArticualtionScripts", "LicenseEmail", "reset", false)
             end
         end
+        
+
+        if reaper.ImGui_Button(ctx, (isDemo or validLicense) and 'Support development (Paypal)' or 'Buy License through Paypal') then
+            openWebpage(BUY_URL)
+            --reaper.CF_ShellExecute(BUY_URL)
+        end
+
+        reaper.ImGui_SameLine(ctx)
+        if reaper.ImGui_Button(ctx, (isDemo or validLicense) and 'Support development (Gumroad)##2' or 'Buy License through Gumroad') then
+            openWebpage(BUY_URL2)
+            --reaper.CF_ShellExecute(BUY_URL)
+        end
+
+        
         
         reaper.ImGui_End(ctx)
     end

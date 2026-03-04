@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.0.8
+-- @version 1.0.9
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -17,4 +17,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + removing script list as it's outdated, by the scripts browser
+--   + added Gumroad support option in the license window
