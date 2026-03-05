@@ -195,7 +195,7 @@ function searchThroughString(search, string)
     return true
 end
 
-local columnsTbl = { "Patch", "Vendor", "Creator" }
+local columnsTbl = { "Patch", "Creator", "Vendor", "Product" }
 function findPatchesMatching(patchesObject)
     local patchesMatching = {}
     for patchNumber = 1, #patchesObject do
