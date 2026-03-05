@@ -19,6 +19,7 @@ package.path = package.path .. ";" .. scriptPathSubfolder .. "?.lua"
 package.path = package.path .. ";" .. scriptPathSubfolder .. "Helpers" .. seperator  .. "?.lua"
 
 
+local ctx = reaper.ImGui_CreateContext('Articulation_Script_Browser')
 
 local addMapToInstruments = require("add_script_to_instrument").addMapToInstruments
 local modern_ui = require("modern_ui")
@@ -26,7 +27,8 @@ local modern_ui = require("modern_ui")
 -- Load pathes
 require("pathes")
 -- load list of articulation scripts
-local articulation_scripts_list = require("get_articulation_scripts").get_articulation_scripts(articulationScriptsPath)
+local get_articulation_scripts = require("get_articulation_scripts").get_articulation_scripts
+local articulation_scripts_list = get_articulation_scripts(articulationScriptsPath)
 local file_handling = require("file_handling")
 local mapping_handling = require("mapping_handling")
 local midi_note_names = require("midi_note_names")
@@ -42,6 +44,8 @@ default_settings = require("default_settings")
 
 appSettings = default_settings.getAppSettings()
 saveAppSettings = default_settings.saveAppSettings
+
+
 
 local columnsToNotUseLanes = mapping_handling.columnsToNotUseLanes()
 
@@ -86,14 +90,7 @@ function readLocalScripts()
                 
                 -- testing if performance is better not having tableInfo loaded
                 tbl.tableInfo = nil
-                if tbl.mapName == "Ample Sound Banjo v2" then 
-                --a1 = reaper.JS_File_Stat(script.path)
                 
-                --if tbl.mapName == "test 3 layers" then 
-                    --reaper.ShowConsoleMsg(tbl.mapName) 
-                    aa = tbl
-                    ab = tbl.genTime or "non" 
-                end
                 if not tbl.genTime then
                     ret, _, _, modifiedTime = reaper.JS_File_Stat( script.path ) 
                     if ret then  
@@ -108,6 +105,7 @@ function readLocalScripts()
                 tbl.name = tbl.mapName or "" 
                 tbl.creator = tbl.instrumentSettings.Creator or ""
                 tbl.vendor = tbl.instrumentSettings.Vendor or ""
+                tbl.product = tbl.instrumentSettings.Product or ""
                 tbl.time = tbl.genTime and tostring(tbl.genTime) or "0"
                 table.insert(articulation_scripts_list_currentVersion, tbl)
             end
@@ -128,9 +126,10 @@ local function readCloudDatabase()
                 tbl.index = #database_articulation_scripts + 1
                 tbl.json = "//json:" .. line
                 
-                tbl.name = tbl.mapName or " " 
-                tbl.creator = tbl.instrumentSettings.Creator or " "
-                tbl.vendor = tbl.instrumentSettings.Vendor or " "
+                tbl.name = tbl.mapName or "" 
+                tbl.creator = tbl.instrumentSettings.Creator or ""
+                tbl.vendor = tbl.instrumentSettings.Vendor or ""
+                tbl.product = tbl.instrumentSettings.Product or ""
                 tbl.time = tbl.genTime and tostring(tbl.genTime) or "0"
                 table.insert(database_articulation_scripts, tbl)
             end
@@ -157,20 +156,6 @@ end
 --updateCloudLibrary()
 readCloudDatabase()
 --end
-
---[[ 
-local license = require("check_license")
-local registeredEmail, registeredCode = license.registered_license()
-local isDemo = license.is_demo_valid()
---local isFree = license.check_articulation_script_list()
--- UI state
-local email_buf = registeredEmail and registeredEmail or ''
-local code_buf  = registeredCode and registeredCode or ''
-local status_msg = (registeredEmail and registeredCode) and 'Active license installed' or ('Activation requires an active internet connection')
-local validLicense = (registeredEmail and registeredCode)
-
-isDemo = not validLicense and isDemo or false
-]]
 
 -- Function to set the toolbar icon state
 local function setToolbarState(isActive)
@@ -261,7 +246,6 @@ colorBlue = reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.2, 1,1)
 colorAlmostWhite = reaper.ImGui_ColorConvertDouble4ToU32(0.8, 0.8, 0.8,1)
 
 
-local ctx = reaper.ImGui_CreateContext('Articulation Script - Browser')
 function setToolTipFunc(text, color)
     if text then  
         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), color and color or colorWhite) 
@@ -279,6 +263,7 @@ end
 local clearSearch = true
 local reloadLocalScript = true
 local reloadLocalScript_count = 10
+
 
         --reaper.parse_timestr(
 --local focusedScript, focusedScriptIndex
@@ -307,8 +292,7 @@ local function loop()
     local windowFlags = reaper.ImGui_WindowFlags_TopMost() 
     --| reaper.ImGui_WindowFlags_AlwaysAutoResize()
     
-    local visible, open = reaper.ImGui_Begin(ctx, 'Articulation Scripts Browser Window', true, 
-    windowFlags
+    local visible, open = reaper.ImGui_Begin(ctx, 'Articulation Scripts Browser Window', true, windowFlags
     
     
     --| reaper.ImGui_WindowFlags_NoCollapse()
@@ -358,6 +342,11 @@ local function loop()
                 if b == "Database" and appSettings.scriptBrowser_auto_update_cloud then
                     updateCloudLibrary()
                 end
+                -- reload scripts overview
+                if b == "Local" then
+                    articulation_scripts_list = get_articulation_scripts(articulationScriptsPath)
+                    readLocalScripts()
+                end
             end
             setToolTipFunc("Press cmd+" .. i .. " to select")
             
@@ -386,6 +375,12 @@ local function loop()
             end
             
             if i < #btns then reaper.ImGui_SameLine(ctx) end
+        end
+
+        if windowW then 
+            reaper.ImGui_AlignTextToFramePadding(ctx)
+            reaper.ImGui_SameLine(ctx, windowW - 40)
+            reaper.ImGui_TextColored(ctx, colorGrey, "(" .. tostring(articulationScriptCreatorVersionText) .. ")")
         end
         
         local isLocal = database_focus == "Local" 
@@ -419,6 +414,7 @@ local function loop()
             tableInfo = focusedScript.tableInfo
             instrumentSettings = focusedScript.instrumentSettings
             mapName = focusedScript.mapName
+            genTime = focusedScript.genTime
         end
         
         reaper.ImGui_Separator(ctx)
@@ -459,9 +455,9 @@ local function loop()
         setToolTipFunc("Clear search.\n - Press escape to clear")
         
         function addScript() 
-            addMapToInstruments(mapName) 
+            addMapToInstruments(mapName, nil, {genTime = genTime}) 
             if not isLocal then 
-                reloadLocalScript = true
+              --  reloadLocalScript = true
             end
             
             --reaper.ImGui_SetWindowFocus(ctx)
@@ -477,9 +473,13 @@ local function loop()
         --reaper.ImGui_SameLine(ctx)
         if not focusedScript then reaper.ImGui_BeginDisabled(ctx) end
             local addMap = false
-            if reaper.ImGui_Button(ctx, "Add to selected tracks") or (enter and not popupOpen and focusedScript) then
+
+            local hasTrackSelection = reaper.CountSelectedTracks(0) > 0
+            if not hasTrackSelection then reaper.ImGui_BeginDisabled(ctx) end
+            if reaper.ImGui_Button(ctx, "Add to selected tracks") or (enter and not popupOpen and focusedScript and hasTrackSelection) then
                 addScript()
             end 
+            if not hasTrackSelection then reaper.ImGui_EndDisabled(ctx) end
             
             setToolTipFunc("Press enter to add selected articulation script to selected tracks\n - Add cmd to keep Browser window open")
             
@@ -499,7 +499,7 @@ local function loop()
             else
                 if reaper.ImGui_Button(ctx, "Import script") or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_I()) and not popupOpen and focusedScript) then 
                      export.createObjectForExport()
-                     reloadLocalScript = true
+                     --reloadLocalScript = true
                 end 
             end
             setToolTipFunc("Import script to harddrive. This will use the latest creator version.\n - press cmd+i to import")
@@ -536,10 +536,12 @@ local function loop()
             local key
             if col_user_id == tableId_Name then
               key = 'mapName'
-            elseif col_user_id == tableId_Vendor then
-              key = 'vendor'
             elseif col_user_id == tableId_Creator then
               key = 'creator'
+            elseif col_user_id == tableId_Vendor then
+              key = 'vendor'
+            elseif col_user_id == tableId_Product then
+              key = 'product'
             elseif col_user_id == tableId_Time then
               key = 'time'
             --elseif col_idx == 3 then -- col_user_id == tableId_Library then
@@ -572,7 +574,7 @@ local function loop()
         
         
         local columns = 3
-        local columnsTbl = {"Name", "Vendor", "Creator", "Time"}
+        local columnsTbl = {"Name", "Creator", "Vendor", "Product", "Time"}
          
         for i, v in ipairs(columnsTbl) do
             _G["tableId_" .. v] = i - 0

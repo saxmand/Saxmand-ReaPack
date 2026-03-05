@@ -166,6 +166,11 @@ scriptsList_script_path = scriptPath .. scriptsList_name
 -- Register (or just retrieve if already added)
 scriptsList_command_id = reaper.AddRemoveReaScript(true, 0, scriptsList_script_path, false)
 
+browserWindow_name = "Saxmand_Articulation_Scripts Browser"
+browserWindow_script_path = scriptPath .. browserWindow_name
+-- Register (or just retrieve if already added)
+browserWindow_command_id = reaper.AddRemoveReaScript(true, 0, browserWindow_script_path, false)
+
 background_server_command_id = cmdID
 
 contextName = "Articulation_Scripts"

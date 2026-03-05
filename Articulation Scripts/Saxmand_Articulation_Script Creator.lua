@@ -4661,15 +4661,19 @@ len > 0 ? (
                 
                 
                 
+                local hasTrackSelection = reaper.CountSelectedTracks(0) > 0
+            
                 reaper.ImGui_SetCursorPosY(ctx, windowH - (math.ceil(appSettings.fontSize / 100 * 40) + 20))
                 buttonsData = {{
                 name = "Add script to selected tracks", key = "P", cmd = true, func = function() addmapToSelectedTracks() end,
+                disabled = not hasTrackSelection,
                 },{
                 name = "Update script", key = "U", cmd = true, func = function() updateMapOnTracks() end, tip = "Update script on all tracks that already have the script", sameLine = true,
                 },{
                 name = "Embed UI in TCP", triggerName = "Position", key = "T", cmd = true,
                 tip = "UI from articulation script can be shown next to the track name.", sameLine = false,
                 func = function() embed_ui.on_selected_tracks() end, -- FX: Show next single FX embedded UI in TCP (selected tracks)
+                disabled = not hasTrackSelection,
                 },{
                 name = "-", triggerName = "EmbedUISize", key = "minus", key2 = "keypadMinus" ,cmd = true, doNotshowShortCut = true,
                 tip = "Make embedded UI text smaller.\nHold shift to make all the same size.\nUse 'cmd+minus' or 'cmd+keypad minus' to change with keyboard shortcut", sameLine = true,

@@ -33,4 +33,5 @@ articulationScriptCreatorVersionText = getVersionFromFile(versionFilePath)
 local a, b, c = articulationScriptCreatorVersionText:match("^(%d+)%.(%d+)%.(%d+)")
 articulationScriptCreatorVersionNumber = tonumber((a and a or 0) .. "." .. b .. c)
 
+
 --reaper.ShowConsoleMsg(tostring(articulationScriptCreatorVersionNumber > 1.6))

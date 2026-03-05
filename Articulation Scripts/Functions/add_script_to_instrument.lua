@@ -8,7 +8,7 @@ local embed_ui = require("embed_ui").main
 local export = require("export")
 
 local contextName = "Articulation_Scripts"
-
+ 
 local function getLuaTable(mapName)
     local specificFilePath = articulationScriptsPath .. seperator .. mapName .. ".jsfx"
     local jsonString = file_handling.readFileForJsonLine(specificFilePath)
@@ -202,9 +202,9 @@ function ex.updateMapOnInstrumentsWithMap(mapName)
     end
 end
 
-function ex.addMapToInstruments(mapName, doNotOverwrite)          
+function ex.addMapToInstruments(mapName, doNotOverwrite, importerVals)          
     if not overWriteFile_Wait and not doNotOverwrite then 
-        export.createObjectForExport() -- generate script
+        export.createObjectForExport(importerVals) -- generate script
     else
         overWriteFile_Wait = false
     end
