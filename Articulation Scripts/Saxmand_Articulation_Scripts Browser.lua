@@ -506,7 +506,7 @@ local function loop()
         setToolTipFunc("Clear search.\n - Press escape to clear")
 
         function addScript()
-            addMapToInstruments(mapName, nil, { genTime = genTime })
+            addMapToInstruments(mapName, nil, { genTime = genTime, overwrite = true })
             if not isLocal then
                 --  reloadLocalScript = true
             end
@@ -550,7 +550,7 @@ local function loop()
             end
         else
             if reaper.ImGui_Button(ctx, "Import script") or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_I()) and not popupOpen and focusedScript) then
-                export.createObjectForExport()
+                export.createObjectForExport({ genTime = genTime, overwrite = true})
                 --reloadLocalScript = true
             end
         end
