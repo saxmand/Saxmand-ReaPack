@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.1.3
+-- @version 1.1.4
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -17,5 +17,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + fixed import clipboard function
---   + fixed crash when layer was not a number
+--   + fixed issue with layer if not string 2
