@@ -1630,7 +1630,7 @@ local function loop()
 
 
         local importClipboardButton = {
-                name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet(true) end,
+                name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet() end,
                 tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12\n\nCan also import "//json:{...}" string from Articulation Script JSFX'
                 }
         
