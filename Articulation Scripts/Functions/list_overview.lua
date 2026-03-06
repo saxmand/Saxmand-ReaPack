@@ -97,6 +97,13 @@ function export.openBrowserWindow()
     --end
 end
 
+function setToolTipFunc(text, color)
+    if text then
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), color and color or colorWhite)
+        reaper.ImGui_SetItemTooltip(ctx, text)
+        reaper.ImGui_PopStyleColor(ctx)
+    end
+end
 
 function GetTextColorForBackground(u32_color)
     -- Extract 8-bit R, G, B from U32 (ImGui format: 0xAABBGGRR)
@@ -112,6 +119,7 @@ function GetTextColorForBackground(u32_color)
         return reaper.ImGui_ColorConvertDouble4ToU32(1, 1, 1, 1) -- white
     end
 end
+
 
 function export.listOverviewSurface(focusIsOn)
     EnsureValidContext(ctx)    
@@ -303,7 +311,7 @@ function export.listOverviewSurface(focusIsOn)
             _, scriptIsOpen = getScriptId("Saxmand_Articulation_Script Creator.lua")            
         end
         btnName = trackNameIsHovered and (scriptAlreadyOpen and "Save script and update" or (path and "Click to edit script" or (scriptIsOpen and "Create new script" or "Open Script Creator"))) or trackName
-        if reaper.ImGui_Selectable(ctx,btnName, true) then 
+        if reaper.ImGui_Selectable(ctx,btnName, true)  or (path and cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_E())) then 
             if scriptIsOpen then 
                 if not path then path = "[EMPTY]" end
             end
@@ -312,16 +320,18 @@ function export.listOverviewSurface(focusIsOn)
                 --local val = reaper.TrackFX_GetFloatingWindow(track, fxNumber)
                 --reaper.TrackFX_Show(track, fxNumber, not val and 3 or 2)
             --end
-        end        
+        end    
+        setToolTipFunc("Use cmd+e to open script creator")    
         trackNameIsHovered = reaper.ImGui_IsItemHovered(ctx)
 
         if not path then 
             local _, scriptIsOpen = getScriptId("Saxmand_Articulation_Scripts Browser.lua")
             local btnName = scriptIsOpen and "Close Script Browser" or "Open Script Browser"
             reaper.ImGui_NewLine(ctx)
-            if reaper.ImGui_Selectable(ctx,btnName) then 
+            if reaper.ImGui_Selectable(ctx,btnName) or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_O())) then 
                 export.openBrowserWindow()
             end        
+            setToolTipFunc("Use cmd+o to open browser window")
         end
         
         reaper.ImGui_PopStyleColor(ctx,4)
@@ -469,7 +479,7 @@ function export.listOverviewSurface(focusIsOn)
     modern_ui.ending(ctx)
 
     local close
-    if not open or escape then 
+    if not open or escape or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_W())) then 
         close = true
     end
 

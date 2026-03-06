@@ -5,26 +5,25 @@ local retval, filename, sectionID, cmdID, mode, resolution, val = reaper.get_act
 -- If cmdID is non-zero → script was triggered as an action (user)
 -- If cmdID is 0 → usually run via another script (Main_OnCommandEx / NamedCommandLookup)
 
-if cmdID == 70642 then 
+if cmdID == 70708 then 
     --reaper.ShowConsoleMsg(tostring(reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0)).." hej\n")
     
-    if 1 == reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386")) then --Script: Saxmand_Articulation_Background Server.lua
+    if 1 == reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RSe0e3c64b11a0b783bee7e405e51707f05d939cab")) then --Script: Saxmand_Articulation_Background Server.lua
     --    reaper.Main_OnCommand(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0) --Script: Saxmand_Articulation_Background Server.lua
     end
     
-    if 0 == reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RS45a019eade443d350f788429a7d9124b0a9ed200"), 0) then --Script: Saxmand_Articulation_Background Server.lua
-        reaper.Main_OnCommand(reaper.NamedCommandLookup("_RS45a019eade443d350f788429a7d9124b0a9ed200"), 0) --Script: Saxmand_Articulation_Keyboard Trigger Surface.lua
+    if 0 == reaper.GetToggleCommandState(reaper.NamedCommandLookup("_RS9c9b11b6e95ed7ae5468db8ab8bda801dcf7a587"), 0) then --Script: Saxmand_Articulation_Background Server.lua
+        reaper.Main_OnCommand(reaper.NamedCommandLookup("_RS9c9b11b6e95ed7ae5468db8ab8bda801dcf7a587"), 0) --Script: Saxmand_Articulation_Keyboard Trigger Surface.lua
     end
     
-    reaper.Main_OnCommand(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0) --Script: Saxmand_Articulation_Background Server.lua
-    reaper.SetToggleCommandState(reaper.NamedCommandLookup("_RSeedd38f0dcb0bb0f0e04e3a6ce2c2d0769246386"), 0, 1)
+    reaper.Main_OnCommand(reaper.NamedCommandLookup("_RSe0e3c64b11a0b783bee7e405e51707f05d939cab"), 0) --Script: Saxmand_Articulation_Background Server.lua
+    reaper.SetToggleCommandState(reaper.NamedCommandLookup("_RSe0e3c64b11a0b783bee7e405e51707f05d939cab"), 0, 1)
     return
 else
 
 end
     
 local ImGui = require 'imgui' '0.10'
-local edit_keyboard_layout = false
     
 local contextName = "Articulation_Scripts"
 --[[ 
@@ -126,6 +125,7 @@ function colorToggleWhiteBlack(on)
     end
 end
 
+local colorGreen = 0x00FF00FF
 
 local edit_keyboard_layout
 local edit_key_index
@@ -160,12 +160,15 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
             -- | reaper.ImGui_WindowFlags_NoBackground()
             -- | reaper.ImGui_FocusedFlags_None()
             | reaper.ImGui_WindowFlags_MenuBar()
+            | reaper.ImGui_WindowFlags_AlwaysAutoResize()
             )
     reaper.ImGui_PopFont(ctx)    
     reaper.ImGui_PopStyleVar(ctx)
 
     if visible then    
-        reaper.ImGui_SetWindowSize(ctx, 0, 0)
+        local isWindowFocused = reaper.ImGui_IsWindowFocused(ctx)
+        
+        --reaper.ImGui_SetWindowSize(ctx, 0, 0)
         if firstFrame then
             windowHeight = buttonHeight * (#(allRows) + 0.5) + margin * 1
             --reaper.ImGui_SetWindowSize(ctx, buttonWidth * 13 + margin * 1,windowHeight )
@@ -182,8 +185,9 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
             waitForFocused = -1
         end
         if waitForFocused > -1 then waitForFocused = waitForFocused + 1 end
-
-
+        local windowW, windowH = reaper.ImGui_GetWindowSize(ctx)
+        local windowX, windowY = reaper.ImGui_GetWindowPos(ctx)
+        
 
 
         reaper.ImGui_SetNextFrameWantCaptureKeyboard(ctx, 1)
@@ -451,8 +455,23 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
                     saveSettings()
                 end
                 
+                
+                ret, settings.keyboardTrigger_unfocus_dimming = reaper.ImGui_SliderInt(ctx, "Unfocus dimming", settings.keyboardTrigger_unfocus_dimming, 0, 90)
+                if ret then  
+                    saveSettings()
+                end 
+                
+                --[[
+                ret, settings.keyboardTrigger_close_window_shortcut = reaper.ImGui_Button(ctx, "Close window shortcut user")
+                if ret then  
+                      
+                --    saveSettings()
+                end
+                ]]
 
                 notation_events.others()
+                
+                
 
                 reaper.ImGui_EndMenu(ctx)
             end
@@ -516,6 +535,21 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
 
             --reaper.ImGui_PopStyleVar(ctx)
             --reaper.ImGui_PopFont(ctx)
+            
+            if windowW then 
+                reaper.ImGui_SameLine(ctx)
+                reaper.ImGui_SetCursorPosX(ctx, windowW - 14)
+                reaper.ImGui_SetCursorPosY(ctx, reaper.ImGui_GetCursorPosY(ctx) + 4)
+                reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameRounding(), 10) 
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), isWindowFocused and colorGreen or colorGrey )
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), isWindowFocused and colorGreen or colorGrey )
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), isWindowFocused and colorGreen or colorGrey )
+                if reaper.ImGui_Button(ctx,"##ISFOCUSED", 6, 6) then                                 
+                end
+                reaper.ImGui_PopStyleColor(ctx, 3)
+                reaper.ImGui_PopStyleVar(ctx)
+            end
+            
             reaper.ImGui_EndMenuBar(ctx)
         end
 
@@ -727,7 +761,7 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
             end
             key = keyInput
             
-            if not triggerTableKeys[key] and settings.keyboardTrigger_passthroughKeys and (not settings.keyboardTrigger_passthroughKeys_only_non or not keyboardTableKeys[key]) then
+            if settings.keyboardTrigger_passthroughKeys and (not settings.keyboardTrigger_passthroughKeys_only_non or not keyboardTableKeys[key]) then
                 if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_LeftArrow()) then
                     unicode_char = 1
                     key = "Left"
@@ -850,7 +884,7 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
         end
 
         keyboard_trigger_is_focusing_main = false
-        if not reaper.ImGui_IsWindowFocused(ctx) and keep_focused then
+        if not isWindowFocused and keep_focused then
             local main_hwnd = reaper.GetMainHwnd()  
             local focused_hwnd = reaper.JS_Window_GetForeground()
             reaper.JS_Window_SetFocus(focusedPopupWindow)
@@ -867,7 +901,7 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
                 resetNeeded = true
             end
         else 
-            if closeWindow or reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape()) or (finish and not keep_open and key ~= "<") then 
+            if closeWindow or reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape()) or (finish and not keep_open and key ~= "<") or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_W())) then 
                 reaper.SetToggleCommandState(0, keyboardTrigger_command_id, 0)
                 if resetNeeded then
                     reaper.SetExtState("articulationMap", "stopScript", "1", true)
@@ -877,6 +911,10 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
                 reaper.RefreshToolbar(0)
                 reaper.JS_Window_SetFocus(focusHwnd)
             end
+        end
+        
+        if not isWindowFocused and windowX then 
+            reaper.ImGui_DrawList_AddRectFilled(draw_list, windowX, windowY, windowX + windowW, windowY + windowH, 0x000000FF & math.floor(0xFF / 100 * settings.keyboardTrigger_unfocus_dimming), nil, nil)
         end
         
         modern_ui.bypassed_end(ctx)       

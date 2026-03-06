@@ -175,8 +175,7 @@ end
 function searchThroughString(search, string)
     if not search or search == "" then
         return true
-    end
-    if search:find("%[") then search = "" end
+    end    
     if #search > 0 then
         for word in search:gmatch("[^,]+") do
             if word:sub(1, 1) == "-" then
@@ -371,7 +370,7 @@ local function loop()
 
         popupOpen = reaper.ImGui_IsPopupOpen(ctx, "Delete articulation script")
 
-        searchFieldAll = appSettings.scriptBrowserSearch
+        searchFieldAll = appSettings.scriptBrowserSearch and tostring(appSettings.scriptBrowserSearch) or ""
 
         modifierSettings = nil
         --local isEscape = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape())
@@ -403,10 +402,10 @@ local function loop()
 
             if b == "Local" then
                 reaper.ImGui_SameLine(ctx)
-                if reaper.ImGui_Button(ctx, "open folder") or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_O(), false)) then
+                if reaper.ImGui_Button(ctx, "Folder") or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_F(), false)) then
                     file_handling.openFolderInExplorer(articulationScriptsPath)
                 end
-                setToolTipFunc("Open articulation scripts folder.\n - Press cmd+o to update")
+                setToolTipFunc("Open articulation scripts folder.\n - Press cmd+f to update")
             end
 
             if database_focus == "Database" and b == "Database" then

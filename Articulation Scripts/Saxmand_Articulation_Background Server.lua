@@ -109,6 +109,7 @@ local defaultSettings = {
     keyboardTrigger_showGroupText = true,
     keyboardTrigger_passthroughKeys = true,
     keyboardTrigger_passthroughKeys_only_non = true,
+    keyboardTrigger_unfocus_dimming = 40,
     show_tooltip_for_articaultion_buttons = true,
     draw_delay_lines_on_piano_roll = false,
 }
