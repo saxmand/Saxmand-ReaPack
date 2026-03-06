@@ -22,7 +22,7 @@ export.InstrumentSettings = {
     addKeyswitchNamesOverwriteAllNotes = true, 
     addKeyswitchNamesOverwriteAllCC = false, 
     recognizeArticulationsKeyswitches = true,
-    triggerArticulationOnEveryNote = false,
+    triggerArticulationOnEveryNote = true,
 }
 
 

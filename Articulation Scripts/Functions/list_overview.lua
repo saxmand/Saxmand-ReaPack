@@ -155,6 +155,7 @@ function export.listOverviewSurface(focusIsOn)
     
     reaper.ImGui_PopStyleVar(ctx)
     if visible then    
+        local isWindowFocused = reaper.ImGui_IsWindowFocused(ctx)
 
       --[[
         if waitForFocused > 10 then
@@ -479,7 +480,7 @@ function export.listOverviewSurface(focusIsOn)
     modern_ui.ending(ctx)
 
     local close
-    if not open or escape or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_W())) then 
+    if not open or (isWindowFocused and escape or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_W()))) then 
         close = true
     end
 

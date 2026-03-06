@@ -30,7 +30,7 @@ function export.Get_Path()
     else
         local retval = reaper.MB("FFMpeg is required for this action. Find the path to your FFmpeg executable now or click Cancel.", "Detect Cuts", 1)
         if retval == 1 then
-            retval, path = reaper.GetUserFileNameForRead(is_windows and "" or "/usr/local/bin/", "Find FFMpeg executable", is_windows and "ffmpeg.exe" or "")
+            retval, path = reaper.GetUserFileNameForRead(is_windows and "" or "/usr/local/bin/", "Find FFMpeg executable", is_windows and "exe" or "")
             if retval then
                 reaper.SetExtState(ffmpegSectionName, FFmpegPathKey, path, true)
                 return export.Get_Path()

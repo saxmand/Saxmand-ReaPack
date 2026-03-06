@@ -2830,7 +2830,8 @@ len > 0 ? (
                                 
                                 if ret and not mainLaneRow then  
                                     stringFix = numberWithinMinMax(stringInput,min,max, default) 
-                                    local counter = 0
+                                    local counter = notNumber and 1 or 0
+                                    
                                     for _, rowKey in ipairs(selectedArticulationsCountKeys) do
                                         if same or #selectedArticulationsCountKeys == 1 then
                                             setNewTableValue(rowKey, columnName, stringFix)

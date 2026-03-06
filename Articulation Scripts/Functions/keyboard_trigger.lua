@@ -134,6 +134,7 @@ local resetNeeded = false
 local cache = {}
 
 local export = {}
+local windowName = "Keyboard Trigger Articulation Control"
 function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
     EnsureValidContext(ctx)
     modern_ui.apply(ctx)
@@ -153,7 +154,7 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
     reaper.ImGui_PushFont(ctx, fontFat,  13)
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
 
-    local visible, open =  reaper.ImGui_Begin(ctx, "Keyboard Trigger Articulation Control", true,
+    local visible, open =  reaper.ImGui_Begin(ctx, windowName, true,
                 --reaper.ImGui_WindowFlags_NoDecoration() |
                 reaper.ImGui_WindowFlags_NoDocking() |
                 reaper.ImGui_WindowFlags_TopMost()                 -- | reaper.ImGui_WindowFlags_NoMove()
@@ -169,22 +170,14 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
         local isWindowFocused = reaper.ImGui_IsWindowFocused(ctx)
         
         --reaper.ImGui_SetWindowSize(ctx, 0, 0)
-        if firstFrame then
-            windowHeight = buttonHeight * (#(allRows) + 0.5) + margin * 1
-            --reaper.ImGui_SetWindowSize(ctx, buttonWidth * 13 + margin * 1,windowHeight )
-
-            --reaper.ImGui_SetWindowPos(ctx, windowStartPosX, windowHeight)
-
-            firstFrame = false
-            focusedPopupWindow = reaper.JS_Window_GetFocus()
+        --windowHeight = buttonHeight * (#(allRows) + 0.5) + margin * 1
+        
+        local foregroundPopupWindow = reaper.JS_Window_GetForeground()
+        local foregroundPopupWindow_Name = reaper.JS_Window_GetTitle(foregroundPopupWindow)
+        if not focusedPopupWindow and foregroundPopupWindow_Name == windowName then
+            focusedPopupWindow = foregroundPopupWindow
         end
-
-
-        if waitForFocused > 10 then
-            focusedPopupWindow = reaper.JS_Window_GetFocus()
-            waitForFocused = -1
-        end
-        if waitForFocused > -1 then waitForFocused = waitForFocused + 1 end
+            
         local windowW, windowH = reaper.ImGui_GetWindowSize(ctx)
         local windowX, windowY = reaper.ImGui_GetWindowPos(ctx)
         
@@ -883,12 +876,13 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
             reaper.ImGui_EndPopup(ctx)
         end
 
-        keyboard_trigger_is_focusing_main = false
+        
+        --keyboard_trigger_is_focusing_main = false
         if not isWindowFocused and keep_focused then
-            local main_hwnd = reaper.GetMainHwnd()  
-            local focused_hwnd = reaper.JS_Window_GetForeground()
+            --local main_hwnd = reaper.GetMainHwnd()  
+            --local focused_hwnd = reaper.JS_Window_GetForeground()
             reaper.JS_Window_SetFocus(focusedPopupWindow)
-            keyboard_trigger_is_focusing_main = main_hwnd == focused_hwnd
+            --keyboard_trigger_is_focusing_main = main_hwnd == focused_hwnd
         end
 
                 
