@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.1.7
+-- @version 1.1.8
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -17,6 +17,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + incrementing not numbers from 1 instead of 0 (like titles)
---   + trigger on every notes gives better user experience I think and is set to true as default again
---   + trigger on every notes instrument settings is respected when creating articulation scripts
+--   + fixed some wrong values in jsfx generation, when stopping playback. 
