@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.1.8
+-- @version 1.1.9
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -17,4 +17,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 -- @changelog
---   + fixed some wrong values in jsfx generation, when stopping playback. 
+--   + fixed not sending 2048 note offs on load of jsfx
