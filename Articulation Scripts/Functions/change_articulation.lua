@@ -122,13 +122,14 @@ end
 
 
 local function updateSliderFromArticulation(track, articulation)
-    local triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam =
-        readArticulationScript(track, name)
+    local triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam = readArticulationScript(track, name)
+
 
     if articulation then
         local existsInScript
         local isAToggle = false
         local isToggleOn = false
+
         for i, art in ipairs(triggerTables) do
             if art.articulation == articulation then
                 local selectedArticulationIdx, artMin, artMax = reaper.TrackFX_GetParam(track,
@@ -157,15 +158,15 @@ end
 -- Function to set notation text for selected notes
 local function setNotationText(take, articulation, allNotes, forceInsert)
     local takeTrack = reaper.GetMediaItemTake_Track(take)
-    local existsInScript, triggerTableLayers, artSliders, isAToggle, isToggleOn = updateSliderFromArticulation(takeTrack,
-        articulation)
-
-    if existsInScript and existsInScript.articulation then
+    
+    local existsInScript, triggerTableLayers, artSliders, isAToggle, isToggleOn = updateSliderFromArticulation(takeTrack, articulation)
+    
+    local noArticaultionProvided = articulation == nil 
+    if (existsInScript and existsInScript.articulation) or noArticaultionProvided then
         local _, numNotes = reaper.MIDI_CountEvts(take)
         local nothingSelected = reaper.MIDI_EnumSelNotes(take, 0) == -1
         for noteidx = 0, numNotes - 1 do
-            local retval, selected, muted, notePpqpos, endppqpos, noteChannel, notePitch, vel = reaper.MIDI_GetNote(take,
-                noteidx)
+            local retval, selected, muted, notePpqpos, endppqpos, noteChannel, notePitch, vel = reaper.MIDI_GetNote(take, noteidx)
             if allNotes or selected then
                 local newName = ""
                 local artLayer

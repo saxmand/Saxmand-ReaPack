@@ -125,9 +125,10 @@ function export.trackDependingOnSelection()
                     section_id = reaper_sections["MIDI Editor"]
 
                     if settings.add_current_articulation_to_new_notes and isMouseReleased then 
+
                         local _, numNotes = reaper.MIDI_CountEvts(take)
-                        if last_numNotes and numNotes - last_numNotes == 1 then
-                            changeArticulation(nil, nil, focusIsOn, true)
+                        if take and (not last_numNotes or numNotes - last_numNotes == 1) then
+                            changeArticulation(nil, nil, "editor", true)
                         elseif last_numNotes and last_numNotes > numNotes then 
                             mirror_notation_to_unique_text_events(take)
                         end
