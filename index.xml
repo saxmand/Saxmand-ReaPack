@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="b32122a67e003c78582d46aa1298fc15577934f9" name="Saxmand ReaPack">
+<index version="1" commit="5d54abd49bd23acb0d265701773c831a438a4c5a" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -10339,6 +10339,9 @@
     <reapack name="Saxmand_Advanced Arrangement View Selection.lua" type="script" desc="Advanced Arrangment View Selection">
       <version name="0.3.2" author="saxmand" time="2025-04-19T03:17:01Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/9456228f9238dffd648aa923bf8ae919189a39bd/Items%20Editing/Saxmand_Advanced%20Arrangement%20View%20Selection.lua</source>
+      </version>
+      <version name="0.3.3" author="saxmand" time="2026-04-20T17:47:53Z">
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/5d54abd49bd23acb0d265701773c831a438a4c5a/Items%20Editing/Saxmand_Advanced%20Arrangement%20View%20Selection.lua</source>
       </version>
     </reapack>
   </category>
