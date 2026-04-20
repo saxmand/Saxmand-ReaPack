@@ -1,6 +1,6 @@
 -- @description Advanced Arrangment View Selection
 -- @author saxmand
--- @version 0.3.2
+-- @version 0.3.3
 
 --[[
 Known issues:
@@ -1070,162 +1070,164 @@ local function checkMouse()
     isMouseClick = isMouseDown and not isMouseDownStart
     if isMouseDown then isMouseDownStart = true end
     
-    
-    selectionChange = false
-    if isMouseClick and cursorInArrWindow then
-        start_x, start_y = mousePosX, mousePosY
-        startTrackIndex, startMouseRelativeToTrack = getPositionOfTrackY()
-        startPosTimeline = getTimePositionOfCursor()
-        state_on_start = current_state
+    if trackCount > 0 then 
+
+        selectionChange = false
+        if isMouseClick and cursorInArrWindow then
+            start_x, start_y = mousePosX, mousePosY
+            startTrackIndex, startMouseRelativeToTrack = getPositionOfTrackY()
+            startPosTimeline = getTimePositionOfCursor()
+            state_on_start = current_state
+            
+            clickElement = anyElementUnderMouse(itemUnderMouse, startTrackIndex, startMouseRelativeToTrack, startPosTimeline)
         
-        clickElement = anyElementUnderMouse(itemUnderMouse, startTrackIndex, startMouseRelativeToTrack, startPosTimeline)
-      
-         
-         
-        if undo_string == "Change media item selection" or 
-            undo_string:match("Change envelope point selection") ~= nil or 
-            undo_string:match("Select automation item") ~= nil 
-            then  
-            -- we undo the marque select to have our function do all the selection and only having one undo point
-            --reaper.Undo_DoUndo2(0)
-            --reaper.ShowConsoleMsg(undo_string.."\n")
-            --selectionChange = true
-            --current_state = get_current_state() 
-        end 
-    end
-    
-    
-    
-    
-    
-    if newSelectionMade then
-        -- focus on envelope lane if no items is selected
-        if cursorContext == 1 and #current_state.selected_items == 0 and current_state.first_envelope_lane and (#current_state.selected_automation_items > 0 or #current_state.selected_envelope_points > 0) then
-            -- could consider make it depending on mouse release
-            reaper.SetCursorContext(2, current_state.first_envelope_lane)
-        end
-        newSelectionMade = false
-    end 
-    
-    
-    
-    
-    
-    if not selectionChange then
-        
-        -- LENGTH 
-        if clickElement then
-            changeLength = state_on_start and aLengthWasChanged(state_on_start, last_state, current_state, changeLength) or false
-            if changeLength then
-                if changeLength.relative ~= 0 then
-                    --isDragging = false
-                    --reaper.ShowConsoleMsg(changeLength.t .. " - " .. changeLength.relative .. " - " .. changeLength.move .. " length\n")
-                end 
-                --changeLengthOnNonChanged(state_on_start, current_state, changeLength) 
+            
+            
+            if undo_string == "Change media item selection" or 
+                undo_string:match("Change envelope point selection") ~= nil or 
+                undo_string:match("Select automation item") ~= nil 
+                then  
+                -- we undo the marque select to have our function do all the selection and only having one undo point
+                --reaper.Undo_DoUndo2(0)
+                --reaper.ShowConsoleMsg(undo_string.."\n")
+                --selectionChange = true
+                --current_state = get_current_state() 
             end 
-        else
-            if ALLOW_CHANGING_LENGTH_WITH_KEY_COMMANDS then
-                changeLengthWithKeyboard = last_state and aLengthWasChanged(last_state, last_state, current_state, nil, true) or false
+        end
+        
+        
+        
+        
+        
+        if newSelectionMade then
+            -- focus on envelope lane if no items is selected
+            if cursorContext == 1 and #current_state.selected_items == 0 and current_state.first_envelope_lane and (#current_state.selected_automation_items > 0 or #current_state.selected_envelope_points > 0) then
+                -- could consider make it depending on mouse release
+                reaper.SetCursorContext(2, current_state.first_envelope_lane)
+            end
+            newSelectionMade = false
+        end 
+        
+        
+        
+        
+        
+        if not selectionChange then
+            
+            -- LENGTH 
+            if clickElement then
+                changeLength = state_on_start and aLengthWasChanged(state_on_start, last_state, current_state, changeLength) or false
                 if changeLength then
                     if changeLength.relative ~= 0 then
                         --isDragging = false
                         --reaper.ShowConsoleMsg(changeLength.t .. " - " .. changeLength.relative .. " - " .. changeLength.move .. " length\n")
                     end 
-                    --changeLengthOnNonChanged(last_state, current_state, changeLength)  
-                    --current_state = get_current_state() 
+                    --changeLengthOnNonChanged(state_on_start, current_state, changeLength) 
                 end 
-            end
-        end
-        
-        -- MOVE
-        -- Aparently undos are not created when moving the items, so we do not need to do anything with that
-        if clickElement then
-            moveThings = (state_on_start and last_state) and somethingWasMoved(state_on_start, last_state, current_state, moveThings) or false
-            if moveThings or changeLength then
-                --if moveThings.relative ~= 0 then
-                    --isDragging = false
-                    --reaper.ShowConsoleMsg(moveThings.t .. " - " .. moveThings.relative .. " - " .. moveThings.move .. " move\n")
-                --end
-                --if changeLength then
-                    --reaper.ShowConsoleMsg(changeLength.move .. "HEEE\n")
-                --end
-                moveNonMoved(state_on_start, current_state, moveThings, changeLength) 
-            end 
-        else
-            if ALLOW_MOVING_WITH_KEY_COMMANDS then
-                moveThingsWithKeyboard = last_state and somethingWasMoved(last_state, last_state, current_state, nil, true) or false
-                if not state_on_start and (moveThingsNotWithMouse or changeLengthWithKeyboard) then
-                    moveNonMoved(last_state, current_state, moveThingsWithKeyboard, changeLengthWithKeyboard) 
-                    current_state = get_current_state() 
-                    moveThingsWithKeyboard = false
-                    changeLengthWithKeyboard = false
+            else
+                if ALLOW_CHANGING_LENGTH_WITH_KEY_COMMANDS then
+                    changeLengthWithKeyboard = last_state and aLengthWasChanged(last_state, last_state, current_state, nil, true) or false
+                    if changeLength then
+                        if changeLength.relative ~= 0 then
+                            --isDragging = false
+                            --reaper.ShowConsoleMsg(changeLength.t .. " - " .. changeLength.relative .. " - " .. changeLength.move .. " length\n")
+                        end 
+                        --changeLengthOnNonChanged(last_state, current_state, changeLength)  
+                        --current_state = get_current_state() 
+                    end 
                 end
             end
-        end 
-    end
-    
-    if isMouseDown then
-        if cursorInArrWindow and not dragRegistered then
-            if (start_x ~= mousePosX or start_y ~= mousePosY) then
-                isDragging = true
-                dragRegistered = true
-            end
+            
+            -- MOVE
+            -- Aparently undos are not created when moving the items, so we do not need to do anything with that
+            if clickElement then
+                moveThings = (state_on_start and last_state) and somethingWasMoved(state_on_start, last_state, current_state, moveThings) or false
+                if moveThings or changeLength then
+                    --if moveThings.relative ~= 0 then
+                        --isDragging = false
+                        --reaper.ShowConsoleMsg(moveThings.t .. " - " .. moveThings.relative .. " - " .. moveThings.move .. " move\n")
+                    --end
+                    --if changeLength then
+                        --reaper.ShowConsoleMsg(changeLength.move .. "HEEE\n")
+                    --end
+                    moveNonMoved(state_on_start, current_state, moveThings, changeLength) 
+                end 
+            else
+                if ALLOW_MOVING_WITH_KEY_COMMANDS then
+                    moveThingsWithKeyboard = last_state and somethingWasMoved(last_state, last_state, current_state, nil, true) or false
+                    if not state_on_start and (moveThingsNotWithMouse or changeLengthWithKeyboard) then
+                        moveNonMoved(last_state, current_state, moveThingsWithKeyboard, changeLengthWithKeyboard) 
+                        current_state = get_current_state() 
+                        moveThingsWithKeyboard = false
+                        changeLengthWithKeyboard = false
+                    end
+                end
+            end 
         end
-    else 
-        if isDragging then 
-            doNotMakeNewSelection = (undo_string:match("Edit envelope") ~= nil or undo_string:match("Draw envelope") ~= nil or undo_string:match("Add points to envelope") ~= nil)
-            if not clickElement and not doNotMakeNewSelection then
-                newSelectionMade = selectEventsInArea(startTrackIndex, startMouseRelativeToTrack, startPosTimeline)
+        
+        if isMouseDown then
+            if cursorInArrWindow and not dragRegistered then
+                if (start_x ~= mousePosX or start_y ~= mousePosY) then
+                    isDragging = true
+                    dragRegistered = true
+                end
             end
         else 
-            -- releasing a not drag mouse click
-            if isMouseDownStart and not dragRegistered then
-                if cursorInArrWindow then 
-                    local itemIsUnderMouse, isInAutomationTop, isInAutomationBottom = (mouseOnEnvelopeLane and automationItemUnderMouse(startTrackIndex, startMouseRelativeToTrack, startPosTimeline)) or false
-                    if not shift and not super and (emptySpotOnTrack or emptyAreaInArrView or (mouseOnEnvelopeLane and not itemIsUnderMouse)) then
-                        unselectAllAutomationItems(nil)
-                    elseif mouseOnEnvelopeLane and itemIsUnderMouse then 
-                        
-                        --((not AUTOMATION_ITEMS_ONLY_REPRESENTED_BY_BOTTOM_STRIP and itemIsInSelection) or (AUTOMATION_ITEMS_ONLY_REPRESENTED_BY_BOTTOM_STRIP and isInAutomationBottom)) then
-                        if not shift and not super then
-                            --unselectAllAutomationItems(nil)
+            if isDragging then 
+                doNotMakeNewSelection = (undo_string:match("Edit envelope") ~= nil or undo_string:match("Draw envelope") ~= nil or undo_string:match("Add points to envelope") ~= nil)
+                if not clickElement and not doNotMakeNewSelection then
+                    newSelectionMade = selectEventsInArea(startTrackIndex, startMouseRelativeToTrack, startPosTimeline)
+                end
+            else 
+                -- releasing a not drag mouse click
+                if isMouseDownStart and not dragRegistered then
+                    if cursorInArrWindow then 
+                        local itemIsUnderMouse, isInAutomationTop, isInAutomationBottom = (mouseOnEnvelopeLane and automationItemUnderMouse(startTrackIndex, startMouseRelativeToTrack, startPosTimeline)) or false
+                        if not shift and not super and (emptySpotOnTrack or emptyAreaInArrView or (mouseOnEnvelopeLane and not itemIsUnderMouse)) then
+                            unselectAllAutomationItems(nil)
+                        elseif mouseOnEnvelopeLane and itemIsUnderMouse then 
+                            
+                            --((not AUTOMATION_ITEMS_ONLY_REPRESENTED_BY_BOTTOM_STRIP and itemIsInSelection) or (AUTOMATION_ITEMS_ONLY_REPRESENTED_BY_BOTTOM_STRIP and isInAutomationBottom)) then
+                            if not shift and not super then
+                                --unselectAllAutomationItems(nil)
+                            end
+                            doNotMakeNewSelection = (undo_string:match("Delete envelope point") ~= nil or undo_string:match("Add points to envelope") ~= nil)
+                            
+                            --if isInAutomationTop and ctrl or cmd then
+                                -- allows for drawing or inserting points. Needs setting for other users
+                            --else
+                            if not doNotMakeNewSelection then
+                                selectAutomationItemUnderMouse(startTrackIndex, startMouseRelativeToTrack, startPosTimeline)
+                            end
+                            --end
                         end
-                        doNotMakeNewSelection = (undo_string:match("Delete envelope point") ~= nil or undo_string:match("Add points to envelope") ~= nil)
                         
-                        --if isInAutomationTop and ctrl or cmd then
-                            -- allows for drawing or inserting points. Needs setting for other users
-                        --else
-                        if not doNotMakeNewSelection then
-                            selectAutomationItemUnderMouse(startTrackIndex, startMouseRelativeToTrack, startPosTimeline)
-                        end
-                        --end
                     end
-                    
                 end
             end
-        end
+            
+            if not dragRegistered then
+                -- DELETE
+                if last_state and last_redo_string == redo_string then 
+                    if was_selected_and_deleted(last_state, current_state) then 
+                        --reaper.ShowConsoleMsg("Delete\n")
+                        deleteAllSelectedEvents(last_state)
+                    end
+                end 
+            end
+            
+            
+            isDragging = false
+            moveThings = false
+            changeLength = false
+            dragRegistered = false
+            state_on_start = false 
+            clickElement = false
+        end  
         
-        if not dragRegistered then
-            -- DELETE
-            if last_state and last_redo_string == redo_string then 
-                if was_selected_and_deleted(last_state, current_state) then 
-                    --reaper.ShowConsoleMsg("Delete\n")
-                    deleteAllSelectedEvents(last_state)
-                end
-            end 
-        end
-        
-        
-        isDragging = false
-        moveThings = false
-        changeLength = false
-        dragRegistered = false
-        state_on_start = false 
-        clickElement = false
-    end  
-    
-    last_redo_string = redo_string
-    last_state = current_state
+        last_redo_string = redo_string
+        last_state = current_state
+    end
     
     
     
