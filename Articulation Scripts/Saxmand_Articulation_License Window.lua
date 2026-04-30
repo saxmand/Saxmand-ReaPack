@@ -22,7 +22,8 @@ local license = require("check_license")
 local ctx = reaper.ImGui_CreateContext('Articulation Script - License')
 
 local registeredEmail, registeredCode = license.registered_license()
-local isDemo = license.is_demo_valid()
+local isDemo_check = license.is_demo(registeredEmail)
+local isDemoValid = license.is_demo_valid()
 --local isFree = license.check_articulation_script_list()
 -- UI state
 local email_buf = registeredEmail and registeredEmail or ''
@@ -30,7 +31,14 @@ local code_buf  = registeredCode and registeredCode or ''
 local status_msg = (registeredEmail and registeredCode) and 'Active license installed' or ('Activation requires an active internet connection')
 local validLicense = (registeredEmail and registeredCode)
 
-isDemo = not validLicense and isDemo or false
+local isDemo = isDemo_check and isDemoValid or false
+if isDemo then 
+    demo_end = email_buf
+    email_buf = ""
+    code_buf = ""
+    validLicense = false
+    status_msg = "Demo mode"
+end
 -- Function to set the toolbar icon state
 local function setToolbarState(isActive)
     -- Set the command state to 1 for active, 0 for inactive
@@ -96,26 +104,27 @@ local function loop()
         local isEscape = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape())
 
         if isDemo then 
-            reaper.ImGui_Text(ctx, "This is a free version of the scripts which will work until " .. email_buf:gsub("DEMO_UNTIL_",""))
+            reaper.ImGui_Text(ctx, "This is a free version of the scripts which will work until " .. demo_end:gsub("DEMO_UNTIL_",""))
             reaper.ImGui_BeginDisabled(ctx) 
         end
-    
+        
         reaper.ImGui_TextColored(ctx, 0x999999FF, text)
         --reaper.ImGui_Text(ctx, 'Enter your license information:')
         reaper.ImGui_Separator(ctx)
+
+        if isDemo then reaper.ImGui_EndDisabled(ctx) end
 
         retval, email_buf = reaper.ImGui_InputText(ctx, 'Email', email_buf, reaper.ImGui_InputTextFlags_CharsNoBlank())
 
         retval, code_buf = reaper.ImGui_InputText(ctx, 'License Code', code_buf)
         
-        local wasIsNoteValid = validLicense
-        if not isDemo and status_msg ~= '' then
+        if status_msg ~= '' then
             reaper.ImGui_TextColored(ctx, 0x999999FF, status_msg)
         end
         
         reaper.ImGui_Spacing(ctx)
         
-        if not devMode and wasIsNoteValid then reaper.ImGui_BeginDisabled(ctx) end
+        if not devMode and validLicense then reaper.ImGui_BeginDisabled(ctx) end
             if reaper.ImGui_Button(ctx, 'Activate', 120, 0) then
                 if license.verify_code(email_buf, code_buf) then
                     if license.save_license(email_buf, code_buf) then
@@ -129,12 +138,11 @@ local function loop()
                     status_msg = 'Invalid license. Please check your details.'
                 end
             end
-        if not devMode and wasIsNoteValid then reaper.ImGui_EndDisabled(ctx) end
+        if not devMode and validLicense then reaper.ImGui_EndDisabled(ctx) end
 
         --reaper.ImGui_SameLine(ctx)
         
         
-        if isDemo then reaper.ImGui_EndDisabled(ctx) end
 
 
         reaper.ImGui_SameLine(ctx)
@@ -157,13 +165,13 @@ local function loop()
         end
         
 
-        if reaper.ImGui_Button(ctx, (isDemo or validLicense) and 'Support development (Paypal)' or 'Buy License through Paypal') then
+        if reaper.ImGui_Button(ctx, (validLicense) and 'Support development (Paypal)' or 'Buy License through Paypal') then
             openWebpage(BUY_URL)
             --reaper.CF_ShellExecute(BUY_URL)
         end
 
         reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, (isDemo or validLicense) and 'Support development (Gumroad)##2' or 'Buy License through Gumroad') then
+        if reaper.ImGui_Button(ctx, (validLicense) and 'Support development (Gumroad)##2' or 'Buy License through Gumroad') then
             openWebpage(BUY_URL2)
             --reaper.CF_ShellExecute(BUY_URL)
         end

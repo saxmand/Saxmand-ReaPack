@@ -4,11 +4,6 @@ local FFmpegPathKey = "FFMPEG_PATH"
 local ffmpegSectionName = "FFMPEG_STATE"
 
 -- Remove at some point
-local function backwardsCompatabilityForVideoCutDetector()
-    if stateName == "Saxmand_VideoCutDetectionEditor" and reaper.HasExtState(stateName, FFmpegPathKey) then
-        reaper.SetExtState(ffmpegSectionName, FFmpegPathKey, reaper.GetExtState(stateName, FFmpegPathKey), true)
-    end
-end
 
 function export.Get_Path()
     local is_windows = package.config:sub(1, 1) == "\\"
@@ -23,7 +18,6 @@ function export.Get_Path()
         return false
     end
 
-    backwardsCompatabilityForVideoCutDetector()
     local path = nil
     if reaper.HasExtState(ffmpegSectionName, FFmpegPathKey) then
         path = reaper.GetExtState(ffmpegSectionName, FFmpegPathKey)

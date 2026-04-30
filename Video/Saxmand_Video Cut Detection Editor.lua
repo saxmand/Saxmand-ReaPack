@@ -1,11 +1,11 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.2.6
+-- @version 0.2.7
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
 -- @changelog
---   + fixed ffmpeg path extension on windows to only be .exe when selecting in popup window
+--   + removed backwards compatability (was only for saxmand anyway), which probably messed with the ffmpeg path.
 
 
 -------- Possible IDEAS TODO

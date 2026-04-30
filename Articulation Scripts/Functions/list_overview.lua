@@ -121,11 +121,13 @@ function GetTextColorForBackground(u32_color)
 end
 
 
-function export.listOverviewSurface(focusIsOn)
+function export.listOverviewSurface(focusIsOn, popup)
+    local close
     EnsureValidContext(ctx)    
     draw_list = reaper.ImGui_GetWindowDrawList(ctx)
     modern_ui.apply(ctx)
     
+    local windowName = popup and "Popup Articulation List" or "Articulations List"
     
     local windowIsFocused      
     local menuOpen = false
@@ -140,26 +142,58 @@ function export.listOverviewSurface(focusIsOn)
     reaper.ImGui_PushFont(ctx, fontFat,  13)
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FrameBorderSize(), 1)
     --reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), 8, 7)
-
+    
+    
     reaper.ImGui_SetNextWindowSize(ctx, 200, 600, reaper.ImGui_Cond_FirstUseEver())
-    local visible, open =  reaper.ImGui_Begin(ctx, "Articulations List", true,
+    
+    -- if we use a popup list view, we move it to the mouse. 
+    if popup then 
+        --
+        if not focusedPopupWindowList then 
+            local mouseX, mouseY = reaper.GetMousePosition()
+            local popupW, popupH = reaper.ImGui_GetWindowSize(ctx)
+            local posY = mouseY
+            -- attempt to fix mac os offset
+            if reaper.GetOS():match("mac") then 
+                local _, avTopMain, _, avBottomMain = reaper.JS_Window_GetViewportFromRect(0, 0, 0, 0, false)
+                local _, avTopHover, _, avBottomHover = reaper.JS_Window_GetViewportFromRect(mouseX, mouseY, mouseX, mouseY, false)
+                posY = avTopMain - posY 
+                reaper.ShowConsoleMsg(avTopHover .. " - " .. avBottomHover .. " - " .. posY .. " - " .. popupW .. " - " .. popupH .. "\n")
+            end
+            reaper.ImGui_SetNextWindowPos(ctx,  mouseX + 10, posY, reaper.ImGui_Cond_Appearing(), nil, 0.5)
+        end
+    end
+    
+    local visible, open =  reaper.ImGui_Begin(ctx, windowName, true,
             --    reaper.ImGui_WindowFlags_NoDecoration() |
                 reaper.ImGui_WindowFlags_TopMost()                 -- | reaper.ImGui_WindowFlags_NoMove()
             -- | reaper.ImGui_WindowFlags_NoBackground()
             -- | reaper.ImGui_FocusedFlags_None()
-            | reaper.ImGui_WindowFlags_MenuBar()
+            | reaper.ImGui_WindowFlags_MenuBar()                    
+            | reaper.ImGui_WindowFlags_NoFocusOnAppearing()
             
             )
     --reaper.ImGui_PopStyleVar(ctx)
     reaper.ImGui_PopFont(ctx)
     
+
     reaper.ImGui_PopStyleVar(ctx)
     if visible then    
         local isWindowFocused = reaper.ImGui_IsWindowFocused(ctx)
+        
+        -- if using popup list view we store the forground, so it will automatically close when clicking outside
+        if popup then
+            local foregroundPopupWindow = reaper.JS_Window_GetForeground()
+            local foregroundPopupWindow_Name = reaper.JS_Window_GetTitle(foregroundPopupWindow)
+            if not focusedPopupWindowList and foregroundPopupWindow_Name == windowName then
+                focusedPopupWindowList = foregroundPopupWindow
+                reaper.JS_Window_SetFocus(focusedPopupWindowList)
+            end
+        end
 
       --[[
         if waitForFocused > 10 then
-            focusedPopupWindow = reaper.JS_Window_GetFocus()
+            focusedPopupWindowList = reaper.JS_Window_GetFocus()
             waitForFocused = -1
         end
         if waitForFocused > -1 then waitForFocused = waitForFocused + 1 end
@@ -468,6 +502,28 @@ function export.listOverviewSurface(focusIsOn)
                 reaper.ImGui_Spacing(ctx)
             end
         end 
+        
+        if not isWindowFocused then
+            --reaper.JS_Window_SetFocus(focusedPopupWindowList) 
+        end
+        
+        
+        -- if the popup list view is not focused or we change then we close the window
+        -- could also close on articulation change, maybe it's an option
+        if popup then
+            if (not isWindowFocused and focusedPopupWindowList) then  --articulationChange or 
+                close = true
+            end
+        end
+        
+        if not open or (isWindowFocused and escape or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_W()))) then 
+            close = true
+        end
+        
+        if close then  
+            focusedPopupWindowList = nil
+        end
+        
         --reaper.ImGui_PopStyleColor(ctx,3)
         modern_ui.bypassed_end(ctx)        
         reaper.ImGui_PopFont(ctx)
@@ -478,11 +534,6 @@ function export.listOverviewSurface(focusIsOn)
     reaper.ImGui_PopStyleVar(ctx)
     --reaper.ImGui_PopStyleColor(ctx,2)
     modern_ui.ending(ctx)
-
-    local close
-    if not open or (isWindowFocused and escape or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_W()))) then 
-        close = true
-    end
 
     return articulationChange, close -- not menuOpen and windowIsFocused
 end

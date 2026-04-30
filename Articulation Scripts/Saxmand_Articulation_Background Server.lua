@@ -32,9 +32,15 @@ end
 
 -- load dependencies
 
+local function isWindows()
+    return reaper.GetOS():match("Win")
+end
+
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*[/\\])")
 local scriptPathSubfolder = scriptPath .. "Functions" .. seperator   
+
+isWin = isWindows()
 
 local devMode = scriptPath:match("jesperankarfeldt") ~= nil
 if devMode then
@@ -161,6 +167,12 @@ listOverview_name = "Saxmand_Articulation_List Overview Surface.lua"
 listOverview_script_path = scriptPath .. listOverview_name
 -- Register (or just retrieve if already added)
 listOverview_command_id = reaper.AddRemoveReaScript(true, 0, listOverview_script_path, false)
+
+popupListOverview_name = "Saxmand_Articulation_Popup List Overview Surface.lua"
+popupListOverview_script_path = scriptPath .. popupListOverview_name
+-- Register (or just retrieve if already added)
+popupListOverview_command_id = reaper.AddRemoveReaScript(true, 0, popupListOverview_script_path, false)
+popupListOverview_command_id_MIDI = reaper.AddRemoveReaScript(true, 32060, popupListOverview_script_path, false)
 
 scriptsList_name = "Saxmand_Articulation_Scripts List.lua"
 scriptsList_script_path = scriptPath .. scriptsList_name
@@ -405,7 +417,7 @@ local function loop()
     if listOverview_command_state and (not settings.listOverview_onlyShowWhenTheresAMap or fxNumber) then
         if midi_editor or not settings.listOverview_onlyShowOnMidiEditor then
 
-            local windowIsFocused, closeWindow = listOverviewSurface(focusIsOn, listOverview_command_id) -- show the list overview
+            local windowIsFocused, closeWindow = listOverviewSurface(focusIsOn, false) -- show the list overview
             if windowIsFocused and focusHwnd and not keyboardTrigger_command_state then
                 reaper.JS_Window_SetFocus(focusHwnd)
             end
@@ -428,6 +440,20 @@ local function loop()
     end
 
     last_listOverview_command_state = listOverview_command_state
+
+    -- POPUP
+    local poupListOverview_command_state = reaper.GetToggleCommandState(popupListOverview_command_id) == 1
+    if (poupListOverview_command_state) and (fxNumber) then
+        local windowIsFocused, closeWindow = listOverviewSurface(focusIsOn, true) -- show the list overview
+        --[[ if windowIsFocused and focusHwnd and not keyboardTrigger_command_state then
+            reaper.JS_Window_SetFocus(focusHwnd)
+        end ]]
+        if closeWindow then 
+            setToggleCommandState(popupListOverview_command_id, false, false)
+        end
+    end
+
+    last_poupListOverview_command_state = poupListOverview_command_state
 
 
     if track and triggerTables then            
