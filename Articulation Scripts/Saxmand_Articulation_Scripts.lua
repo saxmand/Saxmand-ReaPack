@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.2.2
+-- @version 1.2.3
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -18,6 +18,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 -- @changelog
---   + updated WINDOWS registration of license code, so it actually works, pfff. 
---   + Ensured it's more clear when in "demo" mode in the license window, as well as making it possible to register when in demo mode.
---   + extended demo to 2026-05-05
+--   + added "Remove license" button in case the license has not been stored correctly.
+--   + fixed to better check demo license

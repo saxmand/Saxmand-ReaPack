@@ -23,7 +23,7 @@ local ctx = reaper.ImGui_CreateContext('Articulation Script - License')
 
 local registeredEmail, registeredCode = license.registered_license()
 local isDemo_check = license.is_demo(registeredEmail)
-local isDemoValid = license.is_demo_valid()
+local isDemoValid = license.is_demo_valid(registeredEmail)
 --local isFree = license.check_articulation_script_list()
 -- UI state
 local email_buf = registeredEmail and registeredEmail or ''
@@ -104,15 +104,15 @@ local function loop()
         local isEscape = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape())
 
         if isDemo then 
-            reaper.ImGui_Text(ctx, "This is a free version of the scripts which will work until " .. demo_end:gsub("DEMO_UNTIL_",""))
-            reaper.ImGui_BeginDisabled(ctx) 
+            reaper.ImGui_Text(ctx, "This is a free version of the scripts which will work until " .. (#demo_end == 22 and demo_end:gsub("DEMO_UNTIL_","") or "2026-05-05"))
+            --reaper.ImGui_BeginDisabled(ctx) 
         end
         
         reaper.ImGui_TextColored(ctx, 0x999999FF, text)
         --reaper.ImGui_Text(ctx, 'Enter your license information:')
         reaper.ImGui_Separator(ctx)
 
-        if isDemo then reaper.ImGui_EndDisabled(ctx) end
+        --if isDemo then reaper.ImGui_EndDisabled(ctx) end
 
         retval, email_buf = reaper.ImGui_InputText(ctx, 'Email', email_buf, reaper.ImGui_InputTextFlags_CharsNoBlank())
 
@@ -156,13 +156,13 @@ local function loop()
             open = false
         end
         
-        if devMode then 
+        --if devMode then 
             reaper.ImGui_SameLine(ctx)
-            if reaper.ImGui_Button(ctx, 'Remove', 60, 0) then
+            if reaper.ImGui_Button(ctx, 'Remove license') then
                 reaper.SetExtState("ArticualtionScripts", "LicenseCode", "reset", false)
                 reaper.SetExtState("ArticualtionScripts", "LicenseEmail", "reset", false)
             end
-        end
+        --end
         
 
         if reaper.ImGui_Button(ctx, (validLicense) and 'Support development (Paypal)' or 'Buy License through Paypal') then
