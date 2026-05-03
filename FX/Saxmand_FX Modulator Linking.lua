@@ -9859,7 +9859,7 @@ function modulatorMappingItems(minX, minY, maxX, maxY, p, id, padColor, widthAva
         minY = minY + 2
         if p.parameterLinkActive and p.width then
             local nameForText = showingMappings and p.name or p.parameterLinkName
-            local toolTipText = (p.parameterModulationActive and 'Disable' or 'Enable') .. ' "' .. (p.parameterLinkName and p.parameterLinkName or "") .. '" parameter modulation of ' .. (p.name and p.name or "")
+            local toolTipText = (p.parameterModulationActive and 'Disable' or 'Enable') .. ' "' .. ((p.parameterLinkName and type(p.parameterLinkName) ~= "table") and tostring(p.parameterLinkName) or "") .. '" parameter modulation of ' .. ((p.name and type(p.name) ~= "table")  and tostring(p.name) or "")
             local curPosX, curPosY = reaper.ImGui_GetCursorScreenPos(ctx)
             local posYOffset = 1
             local posXOffset = 1
