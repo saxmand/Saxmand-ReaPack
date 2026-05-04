@@ -13,7 +13,7 @@ function export.columnsToNotUseLanes()
 end
 
 function export.getNoteNumber(str)
-    local n = str:match("^Note(%d+)$")
+    local n = str and str:match("^Note(%d+)$")
     if n then
         return tonumber(n)
     else

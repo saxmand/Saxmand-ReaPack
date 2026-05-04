@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.2.4
+-- @version 1.2.5
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -18,4 +18,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 -- @changelog
---   + removed BR_TrackFX_GetFXModuleName from creator to remove SWS dependency.
+--   + fix attempt for "mapping_handling.lua:16: attempt to index a nil value (local 'str')" https://forum.cockos.com/showpost.php?p=2935337&postcount=637
