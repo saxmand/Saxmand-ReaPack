@@ -224,7 +224,7 @@ local function getFirstArticulationMapFX()
         for i = 0, fxAmount - 1 do
             _, fxName = reaper.TrackFX_GetFXName(track, i)
             if fxName:match("Articulation Script") ~= nil then    
-                fxFound, articulationMap = reaper.BR_TrackFX_GetFXModuleName(track, i)
+                fxFound, articulationMap = reaper.TrackFX_GetNamedConfigParm( track, i, "fx_ident" )
                 fxNumber = i
                 break
             end

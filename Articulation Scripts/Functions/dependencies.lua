@@ -23,7 +23,7 @@ function checkDependcies.main()
         "Missing Dependency", 0)
     return false
     end
-
+    
     return true
 end
 return checkDependcies

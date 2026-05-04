@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.2.3
+-- @version 1.2.4
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -18,5 +18,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 -- @changelog
---   + added "Remove license" button in case the license has not been stored correctly.
---   + fixed to better check demo license
+--   + removed BR_TrackFX_GetFXModuleName from creator to remove SWS dependency.
