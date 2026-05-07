@@ -65,6 +65,7 @@ file_handling = require("file_handling")
 -- Load the articulation map export function
 exportFunc = require("export")
 modern_ui = require("modern_ui")
+docking = require("imgui_docking")
 
 -- Load the articulation map export function
 track_depending_on_selection = require("track_depending_on_selection")

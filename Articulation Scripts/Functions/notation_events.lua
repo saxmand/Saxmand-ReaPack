@@ -87,8 +87,8 @@ function export.options()
         end
 
 
-        notation_events_settings()
-        
+        notation_events_settings()    
+                    
         reaper.ImGui_EndMenu(ctx)
     end
 end

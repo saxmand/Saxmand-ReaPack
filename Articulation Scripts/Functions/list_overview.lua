@@ -163,7 +163,9 @@ function export.listOverviewSurface(focusIsOn, popup)
             reaper.ImGui_SetNextWindowPos(ctx,  mouseX + 10, posY, reaper.ImGui_Cond_Appearing(), nil, 0.5)
         end
     end
-    
+        
+    docking.update(ctx)
+
     local visible, open =  reaper.ImGui_Begin(ctx, windowName, true,
             --    reaper.ImGui_WindowFlags_NoDecoration() |
                 reaper.ImGui_WindowFlags_TopMost()                 -- | reaper.ImGui_WindowFlags_NoMove()
@@ -269,7 +271,8 @@ function export.listOverviewSurface(focusIsOn, popup)
                 end
 
                 notation_events.others()
-
+                
+                docking.dropdown(ctx)
                 reaper.ImGui_EndMenu(ctx)
             end
             
@@ -528,7 +531,8 @@ function export.listOverviewSurface(focusIsOn, popup)
         modern_ui.bypassed_end(ctx)        
         reaper.ImGui_PopFont(ctx)
         
-        
+                
+        docking.setCurrent(ctx)
         reaper.ImGui_End(ctx)
     end
     reaper.ImGui_PopStyleVar(ctx)

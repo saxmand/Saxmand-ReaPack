@@ -59,6 +59,7 @@ local json_text = require("json_text")
 local modern_ui = require("modern_ui")
 local ocr_capture = require('ocr_capture')
 track_depending_on_selection = require("track_depending_on_selection")
+local docking = require("imgui_docking")
 
 
 local embed_ui = require("embed_ui")
@@ -1403,6 +1404,8 @@ local function loop()
         end 
     end
     
+    docking.update(ctx)
+    
     --reaper.ImGui_SetNextWindowSize(ctx, minimumsWidth + 8, minimumsWidth*1.5, reaper.ImGui_Cond_FirstUseEver())
     local visible, open = reaper.ImGui_Begin(ctx, 'Articulation Creator', true,
     -- reaper.ImGui_WindowFlags_NoDecoration() |
@@ -1412,7 +1415,9 @@ local function loop()
     | reaper.ImGui_WindowFlags_NoTitleBar() -- | reaper.ImGui_WindowFlags_AlwaysAutoResize()
     --| reaper.ImGui_WindowFlags_MenuBar()
     )
-
+    
+    
+    
     if visible then
         reaper.ImGui_BeginChild(ctx, "entireApp")
         ctrl = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Super())
@@ -1587,6 +1592,8 @@ local function loop()
                 batchUpdateAlljsfxInSession() 
             end                      
             setToolTipFunc("This will re-export all jsfx used in the focused session, using the latest script version, and update them on all the tracks.")
+            
+            docking.dropdown(ctx)
         end
         
         
@@ -4961,6 +4968,7 @@ len > 0 ? (
 
         windowW, windowH = reaper.ImGui_GetWindowSize(ctx)
         windowH = windowH - 8
+        docking.setCurrent(ctx)
         reaper.ImGui_End(ctx)
     end
 
