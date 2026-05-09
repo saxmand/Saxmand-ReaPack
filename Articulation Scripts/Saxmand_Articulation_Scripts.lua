@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.2.7
+-- @version 1.2.8
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -18,5 +18,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 -- @changelog
---   + Added option to use filter input channel global 
---   + Fixed force output channel to work on midi send area (new strategy)
+--   + changed articulation scripts to use play_position instead of time_precise for timing stuff, to support offline rendering correctly. 
+--   + make "Update script" update multiple articulations scripts on same track

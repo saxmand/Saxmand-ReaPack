@@ -1628,7 +1628,7 @@ local function loop()
         --reaper.ImGui_SameLine(ctx, lastWindowW - 30)
         function separatorLine(name, var)
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), _G[var] and colorGrey or colorWhite)
-            reaper.ImGui_SeparatorText(ctx, name)
+            reaper.ImGui_SeparatorText(ctx, name .. (_G[var] and  " [ click to unfold]" or ""))
             if reaper.ImGui_IsItemClicked(ctx) and var then 
                 _G[var] = not _G[var]
             end

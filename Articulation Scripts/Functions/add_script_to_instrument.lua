@@ -47,9 +47,9 @@ end
 
 
 
-function export.addMapToTrack(track, mapName)
+function export.addMapToTrack(track, mapName, forceFxIndex)
     if not track then return end
-    local fxNumber = track_depending_on_selection.findArticulationScript(track)
+    local fxNumber = forceFxIndex and forceFxIndex or track_depending_on_selection.findArticulationScript(track)
     if fxNumber then 
         reaper.TrackFX_Delete(track, fxNumber)
     end
@@ -73,7 +73,7 @@ function export.addMapToTrack(track, mapName)
         reaper.TrackFX_CopyToTrack(track, fxIndex, track, fxNumber, true)
         
         if appSettings and appSettings.alwaysEmbedUi then
-            embed_ui(track, fxIndex)
+            embed_ui(track, fxNumber)
         end
     end
 
@@ -186,9 +186,9 @@ function ex.updateMapOnInstrumentsWithMap(mapName)
                 local _, fxName = reaper.TrackFX_GetFXName(track, fxIndex)
                 if fxName:find(" (Articulation Script)", 1, true) and fxName:find(mapName, 1, true) ~= nil then
                     local articulationScriptSettings = getArticulationScriptSettings(track, fxIndex)
-                    export.addMapToTrack(track, mapName)
+                    export.addMapToTrack(track, mapName, fxIndex)
                     setArticulationScriptSettings(track, fxIndex, articulationScriptSettings) 
-                    break
+                    --break
                 end
             end
         end
