@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.2.6
+-- @version 1.2.7
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -18,4 +18,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 -- @changelog
---   + Added docking dropdown for Creator and List overview in settings
+--   + Added option to use filter input channel global 
+--   + Fixed force output channel to work on midi send area (new strategy)

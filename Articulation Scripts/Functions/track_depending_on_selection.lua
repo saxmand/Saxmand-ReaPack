@@ -8,7 +8,7 @@ local reaper_sections = dofile(scriptPath .. "/Helpers/reaper_sections.lua")
 local export = {}
 
 function export.findArticulationScript(track)
-    if track then 
+    if track and track ~= true then 
         local fxAmount = reaper.TrackFX_GetCount(track)
         for i = 0, fxAmount - 1 do
             local _, fxName = reaper.TrackFX_GetFXName(track, i)

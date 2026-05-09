@@ -4235,6 +4235,15 @@ len > 0 ? (
                             _, instrumentSettings.globalTranspose = reaper.ImGui_SliderInt(ctx, "Global transpose", instrumentSettings.globalTranspose or 0, -48, 48)
                             setToolTipFunc("Transpose playing notes globally.\nArticulation notes are not affected")
                             
+
+                            _, instrumentSettings.useFilterInputChannel = reaper.ImGui_Checkbox(ctx, "Use filter input channel", instrumentSettings.useFilterInputChannel)
+                            setToolTipFunc("To make the articulation script simpler, you need to activate filter channel in order to use it")
+                            if instrumentSettings.useFilterInputChannel then 
+                                reaper.ImGui_SetNextItemWidth(ctx, width)
+                                _, instrumentSettings.forceChannel = reaper.ImGui_SliderInt(ctx, "Filter channel", instrumentSettings.forceChannel or 0, 0, 16)
+                                setToolTipFunc("Filter input channel to a specific midi channel and let everything else pass through.\nYou might want to leave this as 0, and then set the filter channel when loading the scripts\n0 = off")
+                            end
+                            
                             
                             reaper.ImGui_SetNextItemWidth(ctx, width)
                             _, instrumentSettings.forceChannel = reaper.ImGui_SliderInt(ctx, "Force channel", instrumentSettings.forceChannel or 0, 0, 16)
