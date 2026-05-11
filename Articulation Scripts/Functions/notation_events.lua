@@ -2,6 +2,9 @@
 
 local export = {}
 
+
+
+
 local function notation_events_settings()
     reaper.ImGui_SeparatorText(ctx, "Assigning articulations")
     if reaper.ImGui_Checkbox(ctx, "Add current articulation to new notes", settings.add_current_articulation_to_new_notes) then
@@ -133,7 +136,29 @@ function export.others()
     end 
 
     reaper.ImGui_NewLine(ctx)
+    if sd_installed then 
+        reaper.ImGui_SeparatorText(ctx, "Streamdeck")
 
+        reaper.ImGui_SetNextItemWidth(ctx, 150)
+        ret, settings.streamdeck_fontSize = reaper.ImGui_SliderInt(ctx, "Font size", settings.streamdeck_fontSize, 10, 60)
+        if ret then     
+            reaper.SetExtState("articulationMap", "streamdeck_fontSize", settings.streamdeck_fontSize, true)            
+            saveSettings()
+        end
+
+        reaper.ImGui_SetNextItemWidth(ctx, 150)
+        ret, settings.streamdeck_borderWidth = reaper.ImGui_SliderInt(ctx, "Border width", settings.streamdeck_borderWidth, 2, 20)
+        if ret then     
+            reaper.SetExtState("articulationMap", "streamdeck_borderWidth", settings.streamdeck_borderWidth, true)            
+            saveSettings()
+        end
+        
+        if reaper.ImGui_Button(ctx, (plugin_installed and "Update" or "Install") .. " stream deck plugin") then
+            streamdeck.install_plugin()
+        end
+    
+    end
+    --reaper.ImGui_NewLine(ctx)
     reaper.ImGui_SeparatorText(ctx, "Others")
     if reaper.ImGui_Checkbox(ctx, "Show tooltip for articulation buttons", settings.show_tooltip_for_articaultion_buttons) then
         settings.show_tooltip_for_articaultion_buttons = not settings.show_tooltip_for_articaultion_buttons

@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.2.8
+-- @version 1.2.9
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -10,6 +10,7 @@
 --   Functions/*.dat
 --   Functions/Helpers/*.lua
 --   Functions/pre_delay_lib/*.lua
+--   Functions/streamdeck/*.streamDeckPlugin
 --   [main] Saxmand_Articulation_Script Creator.lua
 --   [main] Saxmand_Articulation_License Window.lua
 --   [main] Saxmand_Articulation_Background Server.lua
@@ -18,5 +19,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 -- @changelog
---   + changed articulation scripts to use play_position instead of time_precise for timing stuff, to support offline rendering correctly. 
---   + make "Update script" update multiple articulations scripts on same track
+--   + added streamdeck support
+--   + added streamdeck plugin

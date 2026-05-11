@@ -9,6 +9,7 @@ function export.columnsToNotUseLanes()
         ["Notation"] = true,
         ["Layer"] = true,
         ["KT"] = true,
+        ["SD"] = true,
     }
 end
 
@@ -118,6 +119,7 @@ function export.createTableOrderFromUsedMappings(mapping)
     if mapping.FilterCount then table.insert(mappingType, "FilterCount") end
 
     if mapping.KT then table.insert(mappingType, "KT") end
+    if mapping.SD then table.insert(mappingType, "SD") end
 
     if mapping.UIText then table.insert(mappingType, "UIText") end
     return mappingType
@@ -143,6 +145,7 @@ function export.getTableSizes(fontSize, tableSizeTitle, tableSizeGroup)
     tableSizes.Others = math.ceil(fontSize / 100 * 90)
     tableSizes.CC = reaper.ImGui_CalcTextSize(ctx, "CC127 X", 0, 0)
     tableSizes.KT = reaper.ImGui_CalcTextSize(ctx, "KT X", 0, 0)
+    tableSizes.SD = reaper.ImGui_CalcTextSize(ctx, "SD X", 0, 0)
     tableSizes.Notation = reaper.ImGui_CalcTextSize(ctx, "Notation     X", 0, 0)
     tableSizes.UIText = reaper.ImGui_CalcTextSize(ctx, "UIText  X", 0, 0)
     tableSizes.Delay = reaper.ImGui_CalcTextSize(ctx, "N.Delay  X", 0, 0)
@@ -179,7 +182,9 @@ function export.getTableSizes(fontSize, tableSizeTitle, tableSizeGroup)
         elseif export.getCCNumber(mappingName) then
             tableWidth = tableWidth + tableSizes.CC
         elseif mappingName == "KT" then
-            tableWidth = tableWidth + tableSizes.KT
+            tableWidth = tableWidth + tableSizes.KT        
+        elseif mappingName == "SD" then
+            tableWidth = tableWidth + tableSizes.SD
         elseif mappingName == "Notation" then
             tableWidth = tableWidth + tableSizes.Notation
         elseif mappingName == "UIText" then

@@ -70,6 +70,8 @@ docking = require("imgui_docking")
 -- Load the articulation map export function
 track_depending_on_selection = require("track_depending_on_selection")
 notation_events = require("notation_events")
+streamdeck = require("streamdeck")
+sd_installed, plugin_installed = streamdeck.check()
 
 --add_script_to_instrument = require("add_script_to_instrument")
 -- Load pathes
@@ -119,6 +121,9 @@ local defaultSettings = {
     keyboardTrigger_unfocus_dimming = 40,
     show_tooltip_for_articaultion_buttons = true,
     draw_delay_lines_on_piano_roll = false,
+
+    streamdeck_fontSize = 32, 
+    streamdeck_borderWidth = 6, 
 }
 
 function saveSettings()

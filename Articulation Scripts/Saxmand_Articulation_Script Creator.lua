@@ -60,6 +60,7 @@ local modern_ui = require("modern_ui")
 local ocr_capture = require('ocr_capture')
 track_depending_on_selection = require("track_depending_on_selection")
 local docking = require("imgui_docking")
+local get_articulation_scripts = require("get_articulation_scripts").get_articulation_scripts
 
 
 local embed_ui = require("embed_ui")
@@ -180,6 +181,8 @@ local function batchUpdateAlljsfxInSession()
     instrumentSettings = store.instrumentSettings
     mapping = store.mapping
 end
+
+
 
 local function changeArticulationScriptEmbedUiTextSize(bigger)
     local sameSize
@@ -798,13 +801,57 @@ function multipleSelectionOptionsInfo(title, modifierNames, modifierKeys, modifi
         if i < #modifierNames and i ~= 24 then 
             if compact then
                 reaper.ImGui_SameLine(ctx) 
-                local posX = reaper.ImGui_GetCursorPosX(ctx) - 16
+                local posX = reaper.ImGui_GetCursorPosX(ctx) - 8--16
                 reaper.ImGui_SameLine(ctx, posX) 
             else
                 reaper.ImGui_SameLine(ctx) 
             end
         end
     end
+end
+
+function uniqueNumberOption(title, compact)
+    reaper.ImGui_TextColored(ctx, 0x777777FF, "Options for " .. title .. ":")
+    reaper.ImGui_TextColored(ctx, 0x777777FF, "Use any number")
+
+    --[[ 
+    local max = 40
+    for i = 1, max do
+        --isSelected = modifierSettings[title] == name
+        --if not isSelected then
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
+            -- reaper.ImGui_PushStyleColor(ctx,reaper.ImGui_Col_Text(),0xFF0000FF)
+        --end
+        local btnName = i
+        if reaper.ImGui_Button(ctx, btnName) then
+            changeValue = true
+        end
+
+        --if not isSelected then
+            reaper.ImGui_PopStyleColor(ctx, 1)
+        --end
+        
+        if changeValue then
+            setUniqueNumberTrigger(columnName, i)      
+        end 
+        
+        local w = reaper.ImGui_CalcTextSize(ctx, tostring(i), 0, 0)
+        reaper.ImGui_SameLine(ctx) 
+        local posX = reaper.ImGui_GetCursorPosX(ctx) - 4
+        if posX + w + 20 > windowW then 
+            reaper.ImGui_NewLine(ctx)
+        else
+            reaper.ImGui_SameLine(ctx, posX)         
+        end
+    end ]]
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), colorTransparent)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), colorTransparent)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorTransparent)
+    reaper.ImGui_SameLine(ctx)     
+    reaper.ImGui_Button(ctx,"dummy1")
+    reaper.ImGui_Button(ctx,"dummy2")
+    reaper.ImGui_PopStyleColor(ctx, 4)
 end
 
 function multipleSelectionOptionsDropDown(title, array)
@@ -1171,10 +1218,15 @@ end
 
 function updateMapOnTracks()
     --local focusedWindow = reaper.JS_Window_GetFocus() 
+    if not imgui_window then
+        imgui_window = reaper.JS_Window_GetFocus() 
+    end
     --if not overWriteFile_Wait then 
-        addMap.updateMapOnInstrumentsWithMap(mapName) 
+        if addMap.updateMapOnInstrumentsWithMap(mapName) then 
+            
+            reaper.JS_Window_SetFocus(imgui_window)
+        end
     --end
-    --reaper.JS_Window_SetFocus(focusedWindow)
     -- RESET TRACK SELECTION HERE TO ENSURE WE UPDATE MAP. MAYBE VIA EXT STATE
 end
 
@@ -1592,6 +1644,13 @@ local function loop()
                 batchUpdateAlljsfxInSession() 
             end                      
             setToolTipFunc("This will re-export all jsfx used in the focused session, using the latest script version, and update them on all the tracks.")
+            
+            
+            if reaper.ImGui_Button(ctx, 'Batch update all articulation scripts installed.') then                 
+                articulation_scripts_list = get_articulation_scripts(articulationScriptsPath)
+                export.batchUpdateAllArticulationsScripts(articulation_scripts_list) 
+            end                      
+            setToolTipFunc("This will update all articulation scripts (jsfx) installed using the latest script version.\nThis will NOT update the articulation scripts in the session.")
             
             docking.dropdown(ctx)
         end
@@ -2178,6 +2237,9 @@ len > 0 ? (
                             name = "Keyboard Trigger", key = "K", ctrl = true, triggerName = "KT", --focusName = "KeyboardTrigger", 
                             tip = "Set Computer Keyboard Articulation controller keys how you like."
                             },{
+                            name = "Streamdeck Index", key = "S", ctrl = true, triggerName = "SD", --focusName = "KeyboardTrigger", 
+                            tip = "Set which Streamdeck index to use."
+                            },{
                             name = "Live Articulation", key = "Q", ctrl = true,triggerName = "LiveArticulation", 
                             tip = "Send note keyswitches and CCs when clicking articulation instead of attaching it to a note.\nThis will not use 'Delay' and 'Layer' or mappings who's relate to incoming notes"
                             },{
@@ -2239,9 +2301,9 @@ len > 0 ? (
                         
                         --reaper.ImGui_Spacing(ctx)
                         local buttonsData = {{
-                            name = "Add Articulation", key = "A", cmd = true, func = function() addArticulation() end,
+                            name = "Add Articulation", key = "A", cmd = true, ctrl = true, func = function() addArticulation() end,
                         },{
-                            name = "Add Multiple Articulations", triggerName = "Art", key = "A",cmd = true, ctrl = true, buttonType = "popup", sameLine = true
+                            name = "Add Multiple Articulations", triggerName = "Art", key = "A",cmd = true, ctrl = true, alt = true, buttonType = "popup", sameLine = true
                         },{
                             name = "Duplicate", key = "D",cmd = true, func = function() duplicateRows() end, sameLine = false
                         }}
@@ -2458,6 +2520,10 @@ len > 0 ? (
                                     --reaper.ImGui_TextColored(ctx, 0x777777FF, "Options for keyboard triggers:")
                                     --reaper.ImGui_TextColored(ctx, 0xFFFFFFFF, "0-9 and A-Z")  
                                     multipleSelectionOptionsInfo("Keyboard Triggers", keyboardTableKeysOrder, nil, nil, true)
+                                elseif mappingTypeName == "SD" then
+                                    --reaper.ImGui_TextColored(ctx, 0x777777FF, "Options for keyboard triggers:")
+                                    --reaper.ImGui_TextColored(ctx, 0xFFFFFFFF, "0-9 and A-Z")  
+                                    uniqueNumberOption("Streamdeck index", true)
                                 elseif mappingTypeName == "Notation" then
                                     --reaper.ImGui_TextColored(ctx, 0x777777FF, "Options for keyboard triggers:")
                                     --reaper.ImGui_TextColored(ctx, 0xFFFFFFFF, "0-9 and A-Z")  
@@ -2481,6 +2547,7 @@ len > 0 ? (
                                 and mappingTypeName:match("FilterPitch") == nil 
                                 and mappingTypeName:match("Pitch") == nil 
                                 and mappingTypeName:match("KT") == nil 
+                                and mappingTypeName:match("SD") == nil 
                                 --and mappingTypeName:match("Notation") == nil 
                                 then 
                                     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), colorTransparent)
@@ -3385,6 +3452,80 @@ len > 0 ? (
                                 end
                             end
                             
+                            function setUniqueNumberTrigger(columnName, number)
+                                local usedNumbers = {}
+
+                                if number then 
+                                    if number > 0 then 
+                                        local counter = 0
+                                        for _, rowKey in ipairs(selectedArticulationsCountKeys) do 
+                                            addKey = number + counter
+                                            if not tableInfo[rowKey].isLane then
+                                                usedNumbers[addKey] = true  
+                                                counter = counter + 1
+                                            end
+                                        end
+                                    
+                                        for rowKey = 1, #tableInfo do
+                                            if usedNumbers[tableInfo[rowKey][columnName]] then 
+                                                --tableInfo[rowKey][columnName] = nil 
+                                                setNewTableValue(rowKey, columnName, nil)
+                                            end
+                                        end
+                                    end
+
+                                    for rowKey = 1, #tableInfo do
+                                        if tableInfo[rowKey][columnName] then 
+                                            usedNumbers[tableInfo[rowKey][columnName]] = true
+                                        end
+                                    end
+                                
+                                    
+                                    local counter = 0
+                                    for _, rowKey in ipairs(selectedArticulationsCountKeys) do 
+                                        if not tableInfo[rowKey].isLane then  
+                                            addKey = (number and number > 0) and number+counter or 0
+                                            setNewTableValue(rowKey, columnName, addKey)
+                                            if number then 
+                                                usedNumbers[addKey] = true
+                                            end
+                                            counter = counter + 1
+                                        end
+                                    end
+                                end
+
+                                -- fill up the rest that are missing.
+                                for rowKey, art in ipairs(tableInfo) do 
+                                    if not tableInfo[rowKey].isLane and not tableInfo[rowKey][columnName] then                                          
+                                        for rk = 1, #tableInfo do
+                                            if not usedNumbers[rk] then                                                 
+                                                setNewTableValue(rowKey, columnName, rk)
+                                                usedNumbers[rk] = true
+                                                break
+                                            end
+                                        end                                        
+                                    end
+                                end
+                            end
+
+                            function modifyUniqueNumberTrigger(id, columnName, row, column)
+                                
+                                local title, mainLaneRow = getArticulationTextFromLane(columnName, row)
+                                
+                                if mainLaneRow then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorGrey) end 
+                                
+                                ret, stringInput = reaper.ImGui_InputText(ctx, "##" .. id, title, reaper.ImGui_InputTextFlags_CharsDecimal() | reaper.ImGui_InputTextFlags_AutoSelectAll()) -- ,reaper.ImGui_InputTextFlags_EnterReturnsTrue())
+                                if mainLaneRow then reaper.ImGui_PopStyleColor(ctx) end
+                                
+                                if ret then 
+                                    if not stringInput or (tonumber(stringInput) and tonumber(stringInput) >= 0) then 
+                                    --if (not lastInput or lastInput ~= stringInput) then
+                                        setUniqueNumberTrigger(columnName, tonumber(stringInput))                                    
+                                    end
+                                    --lastInput = stringInput                                    
+                                end
+                            end
+                            
                             function modifyExact(id, columnName, row, column, selections, keys) 
                                 local title, mainLaneRow = getArticulationTextFromLane(columnName, row, defaultValue)
                                 
@@ -3633,6 +3774,8 @@ len > 0 ? (
                                                     mapping.Interval = nil 
                                                 elseif column_name == "KT" then
                                                     mapping.KT = nil 
+                                                elseif column_name == "SD" then
+                                                    mapping.SD = nil 
                                                 elseif column_name == "Notation" then
                                                     mapping.Notation = nil
                                                 elseif column_name == "UIText" then
@@ -4033,6 +4176,11 @@ len > 0 ? (
                                                 --if isNotALane(columnName, row) then
                                                     modifyKeyboardTrigger(id, columnName, row, column)
                                                 --end
+                                            elseif columnName == "SD" then
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.SD)
+                                                --if isNotALane(columnName, row) then
+                                                    modifyUniqueNumberTrigger(id, columnName, row, column)
+                                                --end
                                             elseif columnName == "Notation" then
                                                 reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Notation)
                                                 --if isNotALane(columnName, row) then 
@@ -4236,12 +4384,16 @@ len > 0 ? (
                             setToolTipFunc("Transpose playing notes globally.\nArticulation notes are not affected")
                             
 
-                            _, instrumentSettings.useFilterInputChannel = reaper.ImGui_Checkbox(ctx, "Use filter input channel", instrumentSettings.useFilterInputChannel)
+                            _, instrumentSettings.useFilterInputChannel = reaper.ImGui_Checkbox(ctx, "Use input midi bus and channel filter", instrumentSettings.useFilterInputChannel)
                             setToolTipFunc("To make the articulation script simpler, you need to activate filter channel in order to use it")
                             if instrumentSettings.useFilterInputChannel then 
                                 reaper.ImGui_SetNextItemWidth(ctx, width)
-                                _, instrumentSettings.forceChannel = reaper.ImGui_SliderInt(ctx, "Filter channel", instrumentSettings.forceChannel or 0, 0, 16)
-                                setToolTipFunc("Filter input channel to a specific midi channel and let everything else pass through.\nYou might want to leave this as 0, and then set the filter channel when loading the scripts\n0 = off")
+                                _, instrumentSettings.filterInputBus = reaper.ImGui_SliderInt(ctx, "Filter bus to", instrumentSettings.filterInputBus or 0, 0, 16)
+                                setToolTipFunc("Filter to a specific midi bus and let everything else pass through.\nYou might want to leave this as 0, and then set the filter bus when loading the scripts\n0 = off")
+                                
+                                reaper.ImGui_SetNextItemWidth(ctx, width)
+                                _, instrumentSettings.filterInputChannel = reaper.ImGui_SliderInt(ctx, "Filter channel to", instrumentSettings.filterInputChannel or 0, 0, 16)
+                                setToolTipFunc("Filter input channel to a specific midi channel and let everything else pass through.\nYou might want to leave this as 0, and then set the filter channel when loading the scripts\n0 = off")                                
                             end
                             
                             

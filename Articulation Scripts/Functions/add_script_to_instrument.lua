@@ -189,6 +189,7 @@ function ex.updateMapOnInstrumentsWithMap(mapName)
                     export.addMapToTrack(track, mapName, fxIndex)
                     setArticulationScriptSettings(track, fxIndex, articulationScriptSettings) 
                     --break
+                    somethingAdded = true
                 end
             end
         end

@@ -143,6 +143,7 @@ function export.importJsonString(jsonString)
                     --mapping.Delay = luaTable.mapping.Delay or false
                     --aaa = luaTable.tableInfo.NoteM2
                     local noteCount = 0
+                    --reaper.ShowConsoleMsg(creatorVersion .. "\n")
                     for key, value in pairs(luaTable.tableInfo) do
                         
                         --reaper.ShowConsoleMsg(key .. "\n")

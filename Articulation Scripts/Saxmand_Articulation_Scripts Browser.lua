@@ -423,6 +423,16 @@ local function loop()
                 end
                 setToolTipFunc("Auto update the cloud whenever you open the browser.")
             end
+--[[ 
+            if database_focus == "Local" and b == "Database" then
+                reaper.ImGui_SameLine(ctx)
+                if reaper.ImGui_Button(ctx, 'Batch update all scripts installed') then                 
+                    articulation_scripts_list = get_articulation_scripts(articulationScriptsPath)
+                    export.batchUpdateAllArticulationsScripts(articulation_scripts_list) 
+                end                      
+                setToolTipFunc("This will update all articulation scripts (jsfx) installed using the latest script version.\nThis will NOT update the articulation scripts in the session.")
+            end
+             ]]
 
             if i < #btns then reaper.ImGui_SameLine(ctx) end
         end
