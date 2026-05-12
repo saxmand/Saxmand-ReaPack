@@ -654,6 +654,7 @@ colorGrey = theme.text_dim -- reaper.ImGui_ColorConvertDouble4ToU32(0.4,0.4,0.4,
 colorLightGrey = reaper.ImGui_ColorConvertDouble4ToU32(0.6,0.6,0.6,1)
 colorWhite = reaper.ImGui_ColorConvertDouble4ToU32(1, 1, 1,1)
 colorBlue = reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.2, 1,1)
+colorRed = reaper.ImGui_ColorConvertDouble4ToU32(1, 0.2, 0.2,1)
 colorAlmostWhite = reaper.ImGui_ColorConvertDouble4ToU32(0.8, 0.8, 0.8,1)
 
 colorTabSelected = reaper.ImGui_ColorConvertDouble4ToU32(0.3,0.1,0.4,1)
@@ -3465,10 +3466,9 @@ len > 0 ? (
                                                 counter = counter + 1
                                             end
                                         end
-                                    
+                                        
                                         for rowKey = 1, #tableInfo do
                                             if usedNumbers[tableInfo[rowKey][columnName]] then 
-                                                --tableInfo[rowKey][columnName] = nil 
                                                 setNewTableValue(rowKey, columnName, nil)
                                             end
                                         end
@@ -3508,6 +3508,40 @@ len > 0 ? (
                                 end
                             end
 
+                            function getConflicts(columnName, row, number)
+                                for rowKey = 1, #tableInfo do
+                                    if rowKey ~= row and tableInfo[rowKey][columnName] == number then 
+                                        return true
+                                    end
+                                end
+                                return false
+                            end
+
+                            function getUsed(columnName)
+                                local used = {}
+                                for rowKey = 1, #tableInfo do
+                                    if tableInfo[rowKey][columnName] then 
+                                        if used[tableInfo[rowKey][columnName]] then                                     
+                                            used[tableInfo[rowKey][columnName]] = used[tableInfo[rowKey][columnName]] + 1
+                                        else 
+                                            used[tableInfo[rowKey][columnName]] = 1
+                                        end
+                                    end
+                                end
+                                return used
+                            end
+
+                            function setNumberTrigger(columnName, number)
+                                local counter = 0
+                                for _, rowKey in ipairs(selectedArticulationsCountKeys) do 
+                                    if not tableInfo[rowKey].isLane then  
+                                        addKey = (number and number > 0) and number+counter
+                                        setNewTableValue(rowKey, columnName, addKey)
+                                        counter = counter + 1
+                                    end
+                                end
+                            end
+
                             function modifyUniqueNumberTrigger(id, columnName, row, column)
                                 
                                 local title, mainLaneRow = getArticulationTextFromLane(columnName, row)
@@ -3518,12 +3552,20 @@ len > 0 ? (
                                 if mainLaneRow then reaper.ImGui_PopStyleColor(ctx) end
                                 
                                 if ret then 
-                                    if not stringInput or (tonumber(stringInput) and tonumber(stringInput) >= 0) then 
-                                    --if (not lastInput or lastInput ~= stringInput) then
-                                        setUniqueNumberTrigger(columnName, tonumber(stringInput))                                    
+                                    local num = stringInput
+                                    if (tonumber(stringInput) and tonumber(stringInput) > 0) then
+                                        num = tonumber(stringInput)
+                                    else
+                                        num = nil
                                     end
+                                    
+                                    --if (not lastInput or lastInput ~= stringInput) then
+
+                                    setNumberTrigger(columnName, num) 
+                                    
                                     --lastInput = stringInput                                    
                                 end
+                                return title
                             end
                             
                             function modifyExact(id, columnName, row, column, selections, keys) 
@@ -3989,7 +4031,9 @@ len > 0 ? (
                                         
                                         reaper.ImGui_DrawList_AddCircle(draw_list, posXFix, posYFix, math.ceil(tableSizes.Play/20 * 8), color, 3, math.ceil(tableSizes.Play/20 * 2))
                                         --reaper.ImGui_DrawList_AddText(draw_list, posXFix, posYFix, colorLightGrey,row)
-        
+                                        
+                                        local usedStreamdeckIds = getUsed("SD")
+                                        
                                         for column = 1, columnAmount do
                                         
                                         
@@ -4179,7 +4223,13 @@ len > 0 ? (
                                             elseif columnName == "SD" then
                                                 reaper.ImGui_SetNextItemWidth(ctx, tableSizes.SD)
                                                 --if isNotALane(columnName, row) then
-                                                    modifyUniqueNumberTrigger(id, columnName, row, column)
+                                                    local number = modifyUniqueNumberTrigger(id, columnName, row, column)
+                                                    if number and tonumber(number) and number > 0 and usedStreamdeckIds[number] and usedStreamdeckIds[number] > 1 then                                                     
+                                                        local x, y = reaper.ImGui_GetItemRectMin(ctx)
+                                                        local x2, y2 = reaper.ImGui_GetItemRectMax(ctx)
+                                                        reaper.ImGui_DrawList_AddRect(draw_list, x, y, x2, y2, colorRed, nil, nil, 2)
+                                                        setToolTipFunc("Make numbers unique, to ensure they show as expected\n.When two shares the same number, the first one will be shown")
+                                                    end
                                                 --end
                                             elseif columnName == "Notation" then
                                                 reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Notation)
