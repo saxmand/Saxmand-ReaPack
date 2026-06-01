@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.3.0
+-- @version 1.3.1
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -19,4 +19,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 -- @changelog
---   + improved "Streamdeck index" input experience, doubles can accour, but error box will show. Empty spot will not show articulation (instead of 0)
+--   + Changed way of registration of license, since the current suddenly was blocked. 
