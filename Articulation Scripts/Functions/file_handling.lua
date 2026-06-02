@@ -2,6 +2,17 @@
 
 local export = {}
 
+
+function export.path_is_directory(path)
+    local ok = reaper.EnumerateFiles(path, 0)
+    if ok then return true end
+
+    ok = reaper.EnumerateSubdirectories(path, 0)
+    if ok then return true end
+
+    return false
+end
+
 function export.readFileLines(path, remove)
     local lines = {}
 
@@ -20,7 +31,7 @@ end
 
 function export.readFileForJsonLine(filePath)
     local file = io.open(filePath)
-    if not file then
+    if not file or export.path_is_directory(filePath) then
         return false
     end
     local jsonString = nil
@@ -97,15 +108,6 @@ function export.strip_common_parts(strings)
     return out, prefix, suffix
 end
 
-function export.path_is_directory(path)
-    local ok = reaper.EnumerateFiles(path, 0)
-    if ok then return true end
-
-    ok = reaper.EnumerateSubdirectories(path, 0)
-    if ok then return true end
-
-    return false
-end
 
 
 function export.importJsonString(jsonString)

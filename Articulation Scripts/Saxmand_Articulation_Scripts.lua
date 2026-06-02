@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.3.1
+-- @version 1.3.2
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -19,4 +19,6 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 -- @changelog
---   + Changed way of registration of license, since the current suddenly was blocked. 
+--   + Fix way of registration of license, since the current suddenly was blocked.
+--   + Fixed database being blocked 
+--   + To upload articulation script to database it requires all text fields to be filled in

@@ -4772,8 +4772,13 @@ len > 0 ? (
                     end
                     
                     
-                    function textInputsForSharingInstrumentSettings(value, info, multiline, defaultValue, alsoAppSettings)
+                    function textInputsForSharingInstrumentSettings(value, info, multiline, defaultValue, alsoAppSettings, required)
+                        local hasValue = instrumentSettings[value] ~= "" and instrumentSettings[value] ~= nil
                         reaper.ImGui_TextColored(ctx, colorGrey, value)
+                        if not hasValue and required then 
+                            reaper.ImGui_SameLine(ctx)
+                            reaper.ImGui_TextColored(ctx, colorGrey, "(required)")
+                        end
                         value = value:gsub(" ", "")
                         --reaper.ImGui_SameLine(ctx, infoTextOffset)
                         local text = instrumentSettings[value]
@@ -4794,6 +4799,7 @@ len > 0 ? (
                             --reaper.ImGui_TextColored(ctx, colorGrey, info)
                             setToolTipFunc(info)
                         end
+                        return hasValue
                     end
                     
                     ----------------------------------------------------------------------
@@ -4818,16 +4824,16 @@ len > 0 ? (
                             reaper.ImGui_NewLine(ctx) 
                             
                             if not instrumentSettings.Creator and appSettings.Creator then instrumentSettings.Creator = appSettings.Creator end
-                            textInputsForSharingInstrumentSettings("Creator", "Your user name", nil, nil, true) -- your name
+                            local creator = textInputsForSharingInstrumentSettings("Creator", "Your user name", nil, nil, true, true) -- your name
                             reaper.ImGui_Spacing(ctx)
-                            textInputsForSharingInstrumentSettings("Vendor", "Library manefactor") -- g[1]
+                            local vendor = textInputsForSharingInstrumentSettings("Vendor", "Library manefactor", nil, nil, nil, true) -- g[1]
                             reaper.ImGui_Spacing(ctx)
-                            textInputsForSharingInstrumentSettings("Product", "Name of the library") -- g[2]
+                            local product = textInputsForSharingInstrumentSettings("Product", "Name of the library", nil, nil, nil, true) -- g[2]
                             reaper.ImGui_Spacing(ctx)
                             local hasPatchName = instrumentSettings.Patch and instrumentSettings.Patch or mapName
                             textInputsForSharingInstrumentSettings("Patch", "Name of the patch. Script name if empty", nil, hasPatchName) -- n, if not N then after Bank 
                             reaper.ImGui_Spacing(ctx)
-                            textInputsForSharingInstrumentSettings("Info", "Describe the patch, how to use it or other info", true) -- m
+                            local info = textInputsForSharingInstrumentSettings("Info", "Describe the patch, how to use it or other info", true) -- m
                             if instrumentSettings.ConvertedFrom then 
                                 textInputsForSharingInstrumentSettings("Converted From", "Info about where the patch might come from. Remove this if the info is no longer relevant") -- m
                             end
@@ -4837,7 +4843,12 @@ len > 0 ? (
                             reaper.ImGui_SameLine(ctx, infoTextOffset)
                             
                             local disable = scriptShared --last_shared_text and text == last_shared_text
-                            if disable then reaper.ImGui_BeginDisabled(ctx) end
+                            local missingInfo = false
+                            if not disable then 
+                                missingInfo = not vendor or not product or not creator
+                            end
+
+                            if disable or missingInfo then reaper.ImGui_BeginDisabled(ctx) end
                             local btnName = disable and "SCRIPT SHARED!" or "SHARE SCRIPT TO DATABASE"
                             if reaper.ImGui_Button(ctx, btnName, textInputWidth, textInputWidth / 7) then
                                 local text = json_text.getSimple()
@@ -4847,9 +4858,11 @@ len > 0 ? (
                                     --last_shared_text = text
                                 end
                             end 
-                            if disable then 
-                                reaper.ImGui_EndDisabled(ctx)
-                                setToolTipFunc("This is soon possible!")                                 
+                            if disable or missingInfo then 
+                                reaper.ImGui_EndDisabled(ctx)                              
+                            end
+                            if missingInfo then 
+                                setToolTipFunc("Please fill in all required fields")
                             end
                         
                             reaper.ImGui_EndChild(ctx)
