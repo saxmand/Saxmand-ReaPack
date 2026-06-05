@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.3.3
+-- @version 1.3.4
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -19,4 +19,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 -- @changelog
---   + Fix to ensure no crash in browser if some data is missing
+--   + removed log when using popup list overview

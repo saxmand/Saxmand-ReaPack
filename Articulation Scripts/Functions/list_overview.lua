@@ -158,7 +158,7 @@ function export.listOverviewSurface(focusIsOn, popup)
                 local _, avTopMain, _, avBottomMain = reaper.JS_Window_GetViewportFromRect(0, 0, 0, 0, false)
                 local _, avTopHover, _, avBottomHover = reaper.JS_Window_GetViewportFromRect(mouseX, mouseY, mouseX, mouseY, false)
                 posY = avTopMain - posY 
-                reaper.ShowConsoleMsg(avTopHover .. " - " .. avBottomHover .. " - " .. posY .. " - " .. popupW .. " - " .. popupH .. "\n")
+                --reaper.ShowConsoleMsg(avTopHover .. " - " .. avBottomHover .. " - " .. posY .. " - " .. popupW .. " - " .. popupH .. "\n")
             end
             reaper.ImGui_SetNextWindowPos(ctx,  mouseX + 10, posY, reaper.ImGui_Cond_Appearing(), nil, 0.5)
         end
