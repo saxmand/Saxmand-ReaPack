@@ -616,16 +616,17 @@ local function loop()
 
                 local is_ascending = sort_direction == reaper.ImGui_SortDirection_Ascending()
 
-                --if a[key] and b[key] then
-                if a[key]:lower() < b[key]:lower() then
-                    return is_ascending
-                elseif a[key]:lower() > b[key]:lower() then
-                    return not is_ascending
-                end
-                --else
+                if a and b and a[key] and b[key] then
+                    if a[key]:lower() < b[key]:lower() then
+                        return is_ascending
+                    elseif a[key]:lower() > b[key]:lower() then
+                        return not is_ascending
+                    end
+                else
+                    return true
                 --    aa = a
                 --   reaper.ShowConsoleMsg(tostring(sort_direction) .. " - " .. tostring(col_user_id) .. " - " .. tableId_Vendor .. "\n")
-                --end
+                end
             end
 
             -- table.sort is unstable so always return a way to differentiate items.
