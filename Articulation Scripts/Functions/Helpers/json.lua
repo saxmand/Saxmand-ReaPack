@@ -45,7 +45,7 @@ end
 -- Expects the given pos to be the first character after the opening quote.
 -- Returns val, pos; the returned pos is after the closing quote character.
 local function parse_str_val(str, pos, val)
-    if val and tonumber(val) then val = tonumber(val) end
+    --if val and tonumber(val) then val = tonumber(val) end
     val = val or ''
     local early_end_error = 'End of input found while parsing string.'
     if pos > #str then error(early_end_error) end
