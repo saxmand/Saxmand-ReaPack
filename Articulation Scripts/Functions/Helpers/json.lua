@@ -138,7 +138,10 @@ function json_parse(str, pos, end_delim)
             pos, delim_found = skip_delim(str, pos, ',')
         end
     elseif first == '"' then -- Parse a string.
-        return parse_str_val(str, pos + 1)
+        local val, pos = parse_str_val(str, pos + 1)    
+        -- in case the value is actually a number but had string markers ""
+        if val and tonumber(val) then val = tonumber(val) end
+        return val, pos
     elseif first == '-' or first:match('%d') then -- Parse a number.
         return parse_num_val(str, pos)
     elseif first == end_delim then -- End of an object or array.
