@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.3.5
+-- @version 1.3.6
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -19,4 +19,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 -- @changelog
---   + Using Numbers in the begining of an articulation name will be used correctly as strings and not getting reduced when parsing
+--   + fixed bug in registration window causing crash

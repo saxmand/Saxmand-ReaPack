@@ -125,8 +125,10 @@ local function loop()
         end
         
         reaper.ImGui_Spacing(ctx)
+
+        local disable = not devMode and validLicense
         
-        if not devMode and validLicense then reaper.ImGui_BeginDisabled(ctx) end
+        if disable then reaper.ImGui_BeginDisabled(ctx) end
             if reaper.ImGui_Button(ctx, 'Activate', 120, 0) then
                 if license.verify_code(email_buf, code_buf) then
                     if license.save_license(email_buf, code_buf) then
@@ -140,7 +142,7 @@ local function loop()
                     status_msg = 'Invalid license. Please check your details.'
                 end
             end
-        if not devMode and validLicense then reaper.ImGui_EndDisabled(ctx) end
+        if disable then reaper.ImGui_EndDisabled(ctx) end
 
         --reaper.ImGui_SameLine(ctx)
         
