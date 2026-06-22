@@ -5,13 +5,31 @@ local export = {}
 
 
 
-local function notation_events_settings()
-    reaper.ImGui_SeparatorText(ctx, "Assigning articulations")
+local function notation_events_settings()    
+    reaper.ImGui_SeparatorText(ctx, "Assigning articulation")
     if reaper.ImGui_Checkbox(ctx, "Add current articulation to new notes", settings.add_current_articulation_to_new_notes) then
         settings.add_current_articulation_to_new_notes = not settings.add_current_articulation_to_new_notes
         saveSettings()
     end
     setToolTipFunc("This will automatically add notation events to notes that are being added.\nThis only affects the midi editor.")
+    
+    if reaper.ImGui_Checkbox(ctx, "Add current articulation to notes without articulations", settings.add_current_articulation_to_notes_without_articulations) then
+        settings.add_current_articulation_to_notes_without_articulations = not settings.add_current_articulation_to_notes_without_articulations
+        saveSettings()
+    end
+    setToolTipFunc("When focus moves away from an item, this adds the currently selected articulation (from the FX sliders) to any note that doesn't already have articulation text.")
+
+    if reaper.ImGui_Checkbox(ctx, "Remove articulation text when articulation script is removed", settings.remove_articulation_text_on_script_removal) then
+        settings.remove_articulation_text_on_script_removal = not settings.remove_articulation_text_on_script_removal
+        saveSettings()
+    end
+    setToolTipFunc("When the articulation script FX is removed from a track, this removes the articulation text from every note on every item on that track.")
+
+    if reaper.ImGui_Checkbox(ctx, "Remove articulation text not matching the articulation script", settings.remove_non_matching_articulation_text) then
+        settings.remove_non_matching_articulation_text = not settings.remove_non_matching_articulation_text
+        saveSettings()
+    end
+    setToolTipFunc("When focus moves away from an item, this removes any articulation text that no longer matches the track's articulation script (including when the track has no articulation script at all).")
 
     reaper.ImGui_SeparatorText(ctx, "Text events")
     if reaper.ImGui_Checkbox(ctx, "Mirror notation articulations to text events", settings.mirror_notation_articulations_to_text_events) then

@@ -540,4 +540,123 @@ function export.changeArticulation(prg, articulation, focusIsOn, forceInsert)
     end
 end
 
+local function isArticulationNotationMsg(msg)
+    return msg:match("^NOTE %d+ %d+ text") ~= nil
+end
+
+-- Add the currently selected articulation (from the FX sliders) to any note in the take that
+-- doesn't already have articulation text.
+function export.addCurrentArticulationToNotesWithoutArticulations(take)
+    if not take or not reaper.TakeIsMIDI(take) then return end
+
+    local takeTrack = reaper.GetMediaItemTake_Track(take)
+    if not takeTrack then return end
+
+    local _, triggerTableLayers, _, artSliders = readArticulationScript(takeTrack)
+    if not artSliders or #artSliders == 0 then return end
+
+    local _, noteCount = reaper.MIDI_CountEvts(take)
+    local addedAny = false
+    for noteidx = 0, noteCount - 1 do
+        local retval, selected, muted, notePpqpos, _, noteChannel, notePitch = reaper.MIDI_GetNote(take, noteidx)
+        if retval and not getNoteText(take, noteChannel, notePpqpos, notePitch) then
+            local parts = {}
+            for _, slider in ipairs(artSliders) do
+                local idx = math.floor(reaper.TrackFX_GetParam(takeTrack, slider.fxNumber, slider.param))
+                local layerList = triggerTableLayers[slider.layer]
+                local art = layerList and layerList[idx + 1]
+                table.insert(parts, art and art.articulation or "")
+            end
+            local newName = table.concat(parts, " / ")
+            if newName ~= "" then
+                local text = "NOTE " .. noteChannel .. " " .. notePitch .. " text " .. '"' .. newName .. '"'
+                reaper.MIDI_InsertTextSysexEvt(take, selected, muted, notePpqpos, 15, text, true)
+                addedAny = true
+            end
+        end
+    end
+
+    if addedAny then
+        reaper.MIDI_Sort(take)
+    end
+end
+
+-- Remove all articulation notation text events from every MIDI take on a track. Used when an
+-- articulation script FX is removed from the track entirely.
+function export.removeArticulationTextFromTrack(track)
+    if not track then return end
+
+    local itemCount = reaper.CountTrackMediaItems(track)
+    for i = 0, itemCount - 1 do
+        local item = reaper.GetTrackMediaItem(track, i)
+        local takeCount = reaper.CountTakes(item)
+        for j = 0, takeCount - 1 do
+            local take = reaper.GetMediaItemTake(item, j)
+            if take and reaper.TakeIsMIDI(take) then
+                local _, _, _, textCount = reaper.MIDI_CountEvts(take)
+                local removedAny = false
+                for k = textCount - 1, 0, -1 do
+                    local retval, _, _, _, _type, msg = reaper.MIDI_GetTextSysexEvt(take, k)
+                    if retval and _type == 15 and isArticulationNotationMsg(msg) then
+                        reaper.MIDI_DeleteTextSysexEvt(take, k)
+                        removedAny = true
+                    end
+                end
+                if removedAny then
+                    reaper.MIDI_Sort(take)
+                    mirror_notation_to_unique_text_events(take)
+                end
+            end
+        end
+    end
+end
+
+-- Remove a take's articulation notation text wherever it no longer matches the track's current
+-- articulation script (this also covers the track having no articulation script at all, since
+-- nothing can match in that case).
+function export.removeNonMatchingArticulationText(take)
+    if not take or not reaper.TakeIsMIDI(take) then return end
+
+    local takeTrack = reaper.GetMediaItemTake_Track(take)
+    if not takeTrack then return end
+
+    local _, triggerTableLayers = readArticulationScript(takeTrack)
+
+    local _, _, _, textCount = reaper.MIDI_CountEvts(take)
+    local removedAny = false
+    for i = textCount - 1, 0, -1 do
+        local retval, _, _, _, _type, msg = reaper.MIDI_GetTextSysexEvt(take, i)
+        if retval and _type == 15 then
+            local text = msg and msg:match('^NOTE %d+ %d+ text%s+"?([^"]*)"?$')
+            if text then
+                local matches = text ~= ""
+                for layerIndex, articulationName in ipairs(split_exact(text)) do
+                    local layerList = triggerTableLayers[layerIndex]
+                    local found = false
+                    if layerList then
+                        for _, art in ipairs(layerList) do
+                            if art.articulation == articulationName then
+                                found = true
+                                break
+                            end
+                        end
+                    end
+                    if not found then
+                        matches = false
+                        break
+                    end
+                end
+                if not matches then
+                    reaper.MIDI_DeleteTextSysexEvt(take, i)
+                    removedAny = true
+                end
+            end
+        end
+    end
+
+    if removedAny then
+        reaper.MIDI_Sort(take)
+    end
+end
+
 return export

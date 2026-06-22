@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.3.8
+-- @version 1.3.9
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -19,4 +19,6 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 -- @changelog
---   + Live articulations implemented. When recording (or using retrospective insert), and changing articulations, these will be reflected and added to the notes after inserting.
+--   + Option to remove articulation text from items when removing articulation script from a track
+--   + Option to remove articulation text from item when text does not match articulation script text (or there's no articulation script)
+--   + Option to add the current selected articulation to notes that do not have an articulation

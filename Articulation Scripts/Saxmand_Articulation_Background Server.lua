@@ -124,6 +124,8 @@ local defaultSettings = {
     keyboardTrigger_unfocus_dimming = 40,
     show_tooltip_for_articaultion_buttons = true,
     draw_delay_lines_on_piano_roll = false,
+    add_current_articulation_to_new_notes = true,
+    add_current_articulation_to_notes_without_articulations = true,
 
     streamdeck_fontSize = 32, 
     streamdeck_borderWidth = 6, 
@@ -264,11 +266,30 @@ local lastTrack
 local last_toolbar_state = nil  -- Track the previous toolbar button state
 
 local PreDelayEngine  = require("pre_delay_lib.pre_delay_engine")
-local engine 
-if settings.draw_delay_lines_on_piano_roll then 
+local engine
+if settings.draw_delay_lines_on_piano_roll then
     engine = PreDelayEngine.new()
 end
 --local art_maps = {}
+
+-- While the mouse is held down (e.g. dragging an item across tracks), a take's articulation
+-- text shouldn't be re-validated/re-filled against whatever track it's transiently passing
+-- over - only against where it actually ends up. So if the mouse is down, defer settling the
+-- take's articulation text until release.
+local pendingArticulationTextSettleTake = nil
+local function settleArticulationText(take)
+    if not take then return end
+    if isMouseDown then
+        pendingArticulationTextSettleTake = take
+        return
+    end
+    if settings.remove_non_matching_articulation_text then
+        change_articulation.removeNonMatchingArticulationText(take)
+    end
+    if settings.add_current_articulation_to_notes_without_articulations then
+        change_articulation.addCurrentArticulationToNotesWithoutArticulations(take)
+    end
+end
 
 local function loop()
     state            = reaper.JS_Mouse_GetState(-1)
@@ -279,6 +300,15 @@ local function loop()
     isMouseDown      = (state & 0x01) ~= 0
     isMouseReleased  = (state & 0x01) == 0
     isMouseRightDown = (state & 0x02) ~= 0
+
+    if pendingArticulationTextSettleTake and not isMouseDown then
+        local pendingTake = pendingArticulationTextSettleTake
+        pendingArticulationTextSettleTake = nil
+        if reaper.ValidatePtr2(0, pendingTake, "MediaItem_Take*") then
+            settleArticulationText(pendingTake)
+            mirror_notation_to_unique_text_events(pendingTake)
+        end
+    end
 
     local time       = reaper.time_precise()
     isMouseClick     = isMouseDown and not isMouseDownStart
@@ -322,10 +352,14 @@ local function loop()
     end
 
     if not lastTrack or lastTrack ~= track or (last_fxNumber ~= fxNumber) then
+        if settings.remove_articulation_text_on_script_removal and lastTrack and lastTrack == track and last_fxNumber and not fxNumber then
+            change_articulation.removeArticulationTextFromTrack(lastTrack)
+        end
+
         triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam, delay_map = readArticulationScript(track, fxName)
-        
-        lastTrack = track        
-        last_fxNumber = fxNumber        
+
+        lastTrack = track
+        last_fxNumber = fxNumber
 
         if track then
             trackNameRet, trackName = reaper.GetTrackName(track)
@@ -494,10 +528,12 @@ local function loop()
         if take then
             if last_take and last_midi_editor and not midi_editor then
                 convertProgramChangesToArticulations(last_take)
+                settleArticulationText(last_take)
                 mirror_notation_to_unique_text_events(last_take)
             end
             if last_take and last_take ~= take then
                 convertProgramChangesToArticulations(last_take)
+                settleArticulationText(last_take)
                 mirror_notation_to_unique_text_events(last_take)
             end
         end
