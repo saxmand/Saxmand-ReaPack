@@ -138,6 +138,11 @@ local function updateSliderFromArticulation(track, articulation)
                 isToggleOn = math.floor(selectedArticulationIdx) == math.floor(artMin)
                 local sliderVal = isAToggle and (isToggleOn and 1 or 0) or art.artInLayer
                 reaper.TrackFX_SetParam(track, artSliders[art.layer].fxNumber, artSliders[art.layer].param, sliderVal)
+
+                local liveArticulationMidiMap = live_articulations.buildArticulationMidiMap(triggerTableLayers)
+                live_articulations.sendArticulationProgramChanges(track, artSliders, liveArticulationMidiMap,
+                    art.layer, math.floor(selectedArticulationIdx))
+
                 existsInScript = art
                 break;
             end

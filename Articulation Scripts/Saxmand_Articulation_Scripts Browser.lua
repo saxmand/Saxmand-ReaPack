@@ -160,8 +160,8 @@ readCloudDatabase()
 -- Function to set the toolbar icon state
 local function setToolbarState(isActive)
     -- Set the command state to 1 for active, 0 for inactive
-    reaper.SetToggleCommandState(0, cmdID, isActive and 1 or 0)
-    reaper.RefreshToolbar(0) -- Refresh the toolbar to update the icon
+    reaper.SetToggleCommandState(sectionID, cmdID, isActive and 1 or 0)
+    reaper.RefreshToolbar2(sectionID, cmdID) -- Refresh the toolbar to update the icon
 end
 
 local function exit()
@@ -975,7 +975,18 @@ local function loop()
 
 
         --reaper.ImGui_PopStyleColor(ctx,3)
-
+        --[[ local docked  = reaper.ImGui_IsWindowDocked(ctx)
+        if docked then 
+            local hwnd = reaper.JS_Window_Find('Articulation_Script_Browser', true) 
+            local isVisible = reaper.JS_Window_IsVisible(hwnd )
+            if hwnd and not isVisible then
+                if not count_visible_time then count_visible_time = reaper.time_precise() end
+                if reaper.time_precise() - count_visible_time > 2 then 
+                    open = false
+                end
+            end
+        end
+ ]]
         reaper.ImGui_End(ctx)
     end
 
@@ -1001,8 +1012,6 @@ local function loop()
         setToolbarState(true)
         toolbarSet = true
     end
-    reaper.atexit(exit)
-
 
     if open then
         reaper.defer(loop)
@@ -1010,3 +1019,5 @@ local function loop()
 end
 
 loop()
+
+reaper.atexit(exit)

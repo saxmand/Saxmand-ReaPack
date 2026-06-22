@@ -98,6 +98,9 @@ local listOverviewSurface = require("list_overview").listOverviewSurface
 
 mirror_notation_to_unique_text_events = require("mirror_notation_to_unique_text_events").mirror_notation_to_unique_text_events
 
+live_articulations = require("live_articulations")
+convertProgramChangesToArticulations = live_articulations.convertProgramChangesToArticulations
+
 
 -- Load the reaper sections id number, used for
 local reaper_sections = dofile(scriptPath .. "/Functions/Helpers/reaper_sections.lua")
@@ -489,10 +492,12 @@ local function loop()
         --reaper.JS_Window_SetFocus(reaper.GetMainHwnd())
 
         if take then
-            if last_take and last_midi_editor and not midi_editor then 
+            if last_take and last_midi_editor and not midi_editor then
+                convertProgramChangesToArticulations(last_take)
                 mirror_notation_to_unique_text_events(last_take)
             end
             if last_take and last_take ~= take then
+                convertProgramChangesToArticulations(last_take)
                 mirror_notation_to_unique_text_events(last_take)
             end
         end
