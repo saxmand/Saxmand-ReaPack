@@ -567,15 +567,18 @@ local function loop()
             --[[ convertProgramChangesToArticulations(take)
             settleArticulationText(last_take)
             mirror_notation_to_unique_text_events(last_take) ]]
-            if last_take and last_midi_editor and not midi_editor then                
+            --[[ if last_take and not midi_editor then        
                 convertProgramChangesToArticulations(last_take)
                 settleArticulationText(last_take)
                 mirror_notation_to_unique_text_events(last_take)
-            end
-            if last_take and last_take ~= take then
-                convertProgramChangesToArticulations(last_take)
-                settleArticulationText(last_take)
-                mirror_notation_to_unique_text_events(last_take)
+            end ]]         
+            if (not last_take_convert or last_take_convert ~= take) or (not last_focusIsOn_convert or last_focusIsOn_convert ~= focusIsOn) then                    
+                convertProgramChangesToArticulations(take)
+                settleArticulationText(take)
+                mirror_notation_to_unique_text_events(take)
+                
+                last_take_convert = take
+                last_focusIsOn_convert = focusIsOn
             end
         end
 
@@ -583,7 +586,7 @@ local function loop()
             if not isMouseDown then 
                 updateArticulationJSFX(take)     
             end
-            last_midi_editor = midi_editor       
+            --last_midi_editor = midi_editor       
         end
     end
     ---------------
