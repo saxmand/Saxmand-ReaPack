@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="10050d09e5ed172aa6ab12ef9c3d56d2437908ab" name="Saxmand ReaPack">
+<index version="1" commit="fca37eca719304bd7c4ade7aa40afac3908fdbd2" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -25,6 +25,10 @@
       <version name="0.0.6" author="saxmand" time="2026-02-17T15:06:14Z">
         <changelog><![CDATA[updated to have bypass overlay]]></changelog>
         <source file="Articulation Scripts Web Surface.html">https://github.com/saxmand/Saxmand-ReaPack/raw/3bb62bc8cd1cc5369361d55f4fb3c827bfdf005d/Articulation%20Scripts/Articulation%20Scripts%20Web%20Surface.html</source>
+      </version>
+      <version name="0.0.7" author="saxmand" time="2026-07-08T10:24:58Z">
+        <changelog><![CDATA[added support for realtime triggers]]></changelog>
+        <source file="Articulation Scripts Web Surface.html">https://github.com/saxmand/Saxmand-ReaPack/raw/fca37eca719304bd7c4ade7aa40afac3908fdbd2/Articulation%20Scripts/Articulation%20Scripts%20Web%20Surface.html</source>
       </version>
     </reapack>
     <reapack name="Saxmand_Articulation_Scripts.lua" type="script" desc="Articulation Scripts">
