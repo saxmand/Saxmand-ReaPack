@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.4.0
+-- @version 1.4.1
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -15,13 +15,9 @@
 --   [main] Saxmand_Articulation_License Window.lua
 --   [main] Saxmand_Articulation_Background Server.lua
 --   [main] Saxmand_Articulation_Scripts Browser.lua
---   [main] Saxmand_Articulation_Converter.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Keyboard Trigger Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Converter.lua
 -- @changelog
---   + fix for live articulation inputting not working
---   + fix for crash when gluen (I hope)
---   + Preliminary work on live keyswitches
---   + Preliminary work on Articulation Converter
+--   + Removed duplicate of articulation convert
