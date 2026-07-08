@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.4.2
+-- @version 1.4.3
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
