@@ -10,6 +10,7 @@ function export.columnsToNotUseLanes()
         ["Layer"] = true,
         ["KT"] = true,
         ["SD"] = true,
+        ["LiveArticulation"] = true,
     }
 end
 
@@ -41,6 +42,8 @@ function export.getVisualColumnName(column_name)
         visualColumnName = "F.N.Count"
     elseif column_name:match("Filter") ~= nil then
         visualColumnName = column_name:gsub("Filter", "F.")
+    elseif column_name == "LiveArticulation" then
+        visualColumnName = "Live"
     else
         visualColumnName = column_name
     end
@@ -120,6 +123,7 @@ function export.createTableOrderFromUsedMappings(mapping)
 
     if mapping.KT then table.insert(mappingType, "KT") end
     if mapping.SD then table.insert(mappingType, "SD") end
+    if mapping.LiveArticulation then table.insert(mappingType, "LiveArticulation") end
 
     if mapping.UIText then table.insert(mappingType, "UIText") end
     return mappingType
@@ -146,6 +150,7 @@ function export.getTableSizes(fontSize, tableSizeTitle, tableSizeGroup)
     tableSizes.CC = reaper.ImGui_CalcTextSize(ctx, "CC127 X", 0, 0)
     tableSizes.KT = reaper.ImGui_CalcTextSize(ctx, "KT X", 0, 0)
     tableSizes.SD = reaper.ImGui_CalcTextSize(ctx, "SD X", 0, 0)
+    tableSizes.LiveArticulation = reaper.ImGui_CalcTextSize(ctx, "Live X", 0, 0)
     tableSizes.Notation = reaper.ImGui_CalcTextSize(ctx, "Notation     X", 0, 0)
     tableSizes.UIText = reaper.ImGui_CalcTextSize(ctx, "UIText  X", 0, 0)
     tableSizes.Delay = reaper.ImGui_CalcTextSize(ctx, "N.Delay  X", 0, 0)
@@ -185,6 +190,8 @@ function export.getTableSizes(fontSize, tableSizeTitle, tableSizeGroup)
             tableWidth = tableWidth + tableSizes.KT        
         elseif mappingName == "SD" then
             tableWidth = tableWidth + tableSizes.SD
+        elseif mappingName == "LiveArticulation" then
+            tableWidth = tableWidth + tableSizes.LiveArticulation
         elseif mappingName == "Notation" then
             tableWidth = tableWidth + tableSizes.Notation
         elseif mappingName == "UIText" then

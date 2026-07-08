@@ -8,7 +8,7 @@ local reaper_sections = dofile(scriptPath .. "/Helpers/reaper_sections.lua")
 local export = {}
 
 function export.findArticulationScript(track)
-    if track and track ~= true then 
+    if track and track ~= true and reaper.ValidatePtr(track, "MediaTrack*") then 
         local fxAmount = reaper.TrackFX_GetCount(track)
         for i = 0, fxAmount - 1 do
             local _, fxName = reaper.TrackFX_GetFXName(track, i)

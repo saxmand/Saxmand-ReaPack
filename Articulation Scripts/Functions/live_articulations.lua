@@ -177,7 +177,11 @@ function export.convertProgramChangesToArticulations(take)
     end
 
     local layerNumbers = {}
-    for layer in pairs(triggerTableLayers) do table.insert(layerNumbers, layer) end
+    for layer, layerArts in pairs(triggerTableLayers) do
+        if layerArts[1] and not layerArts[1].live then
+            table.insert(layerNumbers, layer)
+        end
+    end
     table.sort(layerNumbers)
 
     for n = 0, noteCount - 1 do

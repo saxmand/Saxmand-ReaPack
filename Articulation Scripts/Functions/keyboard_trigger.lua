@@ -220,14 +220,26 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
                 return table.unpack(enum_cache[i])
             end
         end
+
         local imgui_key_pressed
+        local imgui_key_released
+        if not keyname_pressed then keyname_pressed = {} end
+        if not keyname_pressed_send then keyname_pressed_send = {} end
+
         for key, name in getAllImguiKeys() do
-            if reaper.ImGui_IsKeyPressed(ctx, key) then
-                if name:match("Shift") == nil and name:match("Alt") == nil and name:match("Super") == nil and name:match("Ctrl") == nil then 
-                    imgui_key_pressed = name
+            if name:match("Shift") == nil and name:match("Alt") == nil and name:match("Super") == nil and name:match("Ctrl") == nil then 
+                if reaper.ImGui_IsKeyDown(ctx, key) then
+                    imgui_key_pressed = name     
+                    keyname_pressed[name] = true
+                end
+                
+                if reaper.ImGui_IsKeyReleased(ctx, key) then                
+                    imgui_key_released = name
+                    keyname_pressed[name] = false
                 end
             end
         end
+
         
         if retval then 
             if unicode_char == 32 then keyInput = " "
@@ -624,8 +636,11 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
                             else
                                 buttonTitle = triggerTableKeys[key].title--:gsub("+ ", "+"):gsub(" ", "\n")                                      -- .. " " .. colorGradient
                             end
+                            if triggerTableKeys[key].live then 
+                                buttonTitle = buttonTitle .. " [T]"
+                            end
                             colorTitle = buttonTitle
-                            isSelected = triggerTableKeys[key].artInLayer == artSelected[triggerTableKeys[key].layer]
+                            isSelected = not triggerTableKeys[key].live and triggerTableKeys[key].artInLayer == artSelected[triggerTableKeys[key].layer] or keyname_pressed[key]
                             color = buttenSelectedColor(isSelected) -- 0x222222FF or 0
                             textColor = 0xFFFFFFFF
                         else
@@ -646,25 +661,45 @@ function export.keyboardTriggerSurface(focusIsOn, focusHwnd)
                     buttonSizeH = buttonHeight - buttonSpacer
 
                     -- if triggerTableKeys[key].title  or key == "K" or key == "<"   or key == "J" or key == "I"  or key == "0" or key == "+" or key == "-" then
-                    function clickingArticulation()
+                    function clickingArticulation(liveArticulationOff)
                         if edit_keyboard_layout then
                             edit_key_row = r
                             edit_key_index = k
                         else
                             if triggerTableKeys[key] then
-                                changeArticulation(triggerTableKeys[key].programChange, triggerTableKeys[key].articulation, focusIsOn)
-                                finish = true
-                                lastClickedColor = buttonTitle
+                                changeArticulation(triggerTableKeys[key], triggerTableKeys[key].articulation, focusIsOn, nil, liveArticulationOff)
+                                finish = true                                
                                 reaper.SetExtState(contextName, "lastClickedArticulation", buttonTitle, true)                            
                             end
                         end
                     end
                         --if (key == keyInput) or
                     if (reaper.ImGui_Button(ctx,  "##" .. r .. ":" .. k, buttonSizeW, buttonSizeH)) then
-                        clickingArticulation()
+                        clickingArticulation(true)
                     end
-                    if (not resetNeeded and not edit_keyboard_layout and (retval and imgui_key_pressed and key == imgui_key_pressed)) then
-                        clickingArticulation()
+                    --liveArticulationOff
+                    if triggerTableKeys[key] and reaper.ImGui_IsItemHovered(ctx) then
+                        local edited = reaper.ImGui_IsItemActivated( ctx )
+                        if edited then 
+                            clickingArticulation()
+                        end
+                    end
+                    if (not resetNeeded and not edit_keyboard_layout and triggerTableKeys[key]) then 
+                        --if (retval and (imgui_key_pressed and key == imgui_key_pressed)) or (imgui_key_released and key == imgui_key_released) then
+                        if keyname_pressed[key] and not keyname_pressed_send[key] then 
+                            --if not last_imgui_key_pressed or last_imgui_key_pressed ~= imgui_key_pressed then 
+                                -- we ensure to not keep sending the message. 
+                                --last_imgui_key_pressed = imgui_key_pressed
+                                -- ensure to only send down and up on live articulations                                
+                                clickingArticulation()
+                            --end
+                            keyname_pressed_send[key] = true
+                        end
+                        if triggerTableKeys[key].live and keyname_pressed_send[key] and not keyname_pressed[key] then 
+                            -- ensure to only send down and up on live articulations                                
+                            clickingArticulation(true)                            
+                            keyname_pressed_send[key] = false
+                        end
                     end
 
                     if not edit_keyboard_layout then 

@@ -91,6 +91,7 @@ local keyboardTriggerSurface = require("keyboard_trigger").keyboardTriggerSurfac
 local listOfArticulationsScripts = require("scripts_list").listOfArticulationsScripts
 
 local listOverviewSurface = require("list_overview").listOverviewSurface
+converter = require("converter")
 
 
 
@@ -127,8 +128,12 @@ local defaultSettings = {
     add_current_articulation_to_new_notes = true,
     add_current_articulation_to_notes_without_articulations = true,
 
-    streamdeck_fontSize = 32, 
-    streamdeck_borderWidth = 6, 
+    streamdeck_fontSize = 32,
+    streamdeck_borderWidth = 6,
+    converter_auto_convert = false,
+    converter_auto_open = false,
+    converter_close_when_applying = true,
+    converter_horizontal_layout = false,
 }
 
 function saveSettings()
@@ -173,6 +178,10 @@ keyboardTrigger_script_path = scriptPath .. keyboardTrigger_name
 -- Register (or just retrieve if already added)
 keyboardTrigger_command_id = reaper.AddRemoveReaScript(true, 0, keyboardTrigger_script_path, false)
 
+
+converter_name = "Saxmand_Articulation_Converter.lua"
+converter_script_path = scriptPath .. converter_name
+converter_command_id = reaper.AddRemoveReaScript(true, 0, converter_script_path, false)
 
 listOverview_name = "Saxmand_Articulation_List Overview Surface.lua"
 listOverview_script_path = scriptPath .. listOverview_name
@@ -264,7 +273,6 @@ local refocusBasedOnTimer = false
 local timeSinceMouseRelease = 0
 local lastTrack
 local last_toolbar_state = nil  -- Track the previous toolbar button state
-
 local PreDelayEngine  = require("pre_delay_lib.pre_delay_engine")
 local engine
 if settings.draw_delay_lines_on_piano_roll then
@@ -336,8 +344,9 @@ local function loop()
     end
     
     
-
-    track, section_id, fxName, fxNumber, item, take, midi_editor, focusIsOn, focusHwnd = track_depending_on_selection.trackDependingOnSelection()
+    --if not isMouseDown then -- we only update on mouse release, in case we a dragging a region around
+        track, section_id, fxName, fxNumber, item, take, midi_editor, focusIsOn, focusHwnd = track_depending_on_selection.trackDependingOnSelection()
+    --end
 
     if settings.draw_delay_lines_on_piano_roll and midi_editor and fxNumber then 
         max_time_to_reset_legato = change_articulation.findParamWithNameValue(track, fxNumber, "Max time to reset legato") or 0
@@ -361,10 +370,17 @@ local function loop()
         lastTrack = track
         last_fxNumber = fxNumber
 
+        converter.refreshOriginals()
+        if settings.converter_auto_open and #converterOriginalNames > 0 then
+            if reaper.GetToggleCommandState(converter_command_id) ~= 1 then
+                setToggleCommandState(converter_command_id, true, false)
+            end
+        end
+
         if track then
             trackNameRet, trackName = reaper.GetTrackName(track)
             if trackNameRet then
-                reaper.SetProjExtState(0, "articulationMapOnDevice", "trackName", trackName)
+                reaper.SetExtState("articulationMapOnDevice", "trackName", trackName, false)
             end
 
             
@@ -380,13 +396,13 @@ local function loop()
     --reaper.StuffMIDIMessage(0, 0xF0, msgBytes)
     
     fx_is_bypassed = (track and fxNumber) and not reaper.TrackFX_GetEnabled(track, fxNumber) or false
-    reaper.SetProjExtState(0, "articulationMapOnDevice", "fx_is_bypassed", fx_is_bypassed and "1" or "0")
+    reaper.SetExtState("articulationMapOnDevice", "fx_is_bypassed", fx_is_bypassed and "1" or "0", false)
     
     if track and triggerTables then
         if fxNumber then
-            local ret, val = reaper.GetProjExtState(0, "articulationMapOnDevice", "enable_fx")
-            if ret and val == "1" then
-                reaper.SetProjExtState(0, "articulationMapOnDevice", "enable_fx", "0")
+            local enableFxVal = reaper.GetExtState("articulationMapOnDevice", "enable_fx")
+            if enableFxVal == "1" then
+                reaper.SetExtState("articulationMapOnDevice", "enable_fx", "0", false)
                 reaper.TrackFX_SetEnabled(track, fxNumber, true)
             end
             artSelected = {}
@@ -406,37 +422,48 @@ local function loop()
                 local prgNumber = triggerTableLayers[sl.layer] and triggerTableLayers[sl.layer][artSelected[sl.layer]+1] and triggerTableLayers[sl.layer][artSelected[sl.layer]+1].programChange or ""
                 table.insert(selectedArticulationsInLayers, prgNumber)
                 
-                --reaper.SetProjExtState(0, "articulationMapOnDevice", "selectedArticulationIdx" .. sl.layer, triggerTableLayers[sl.layer][artSelected[sl.layer]+1].programChange)
+                --reaper.SetExtState("articulationMapOnDevice", "selectedArticulationIdx" .. sl.layer, triggerTableLayers[sl.layer][artSelected[sl.layer]+1].programChange, false)
                 --end
                 --[[ 
-                    local retval, newArtFromDevice = reaper.GetProjExtState(0, "articulationMapOnDevice", "setArticulationFromDevice" .. sl.layer)                
+                    local retval, newArtFromDevice = reaper.GetExtState("articulationMapOnDevice", "setArticulationFromDevice" .. sl.layer)                
                     if (retval == 1 and newArtFromDevice) and (newArtFromDevice ~= "") then 
                         reaper.ShowConsoleMsg(newArtFromDevice .. "  art\n")
                         if triggerTableLayers and triggerTableLayers[sl.layer] and triggerTableLayers[sl.layer][newArtFromDevice + 1] then
                             changeArticulation(nil, triggerTableLayers[sl.layer][newArtFromDevice + 1].articulation, focusIsOn)
                         end
-                        reaper.SetProjExtState(0, "articulationMapOnDevice", "setArticulationFromDevice" .. sl.layer, "")
+                        reaper.SetExtState("articulationMapOnDevice", "setArticulationFromDevice" .. sl.layer, "", false)
                     end ]]                    
             end
             if #selectedArticulationsInLayers == #artSliders then 
                 local selectedArticulationsInLayersText = table.concat(selectedArticulationsInLayers, ";")  
                 --reaper.ShowConsoleMsg(selectedArticulationsInLayersText .. "\n")
-                reaper.SetProjExtState(0, "articulationMapOnDevice", "selectedArticulationIdx", selectedArticulationsInLayersText)
+                reaper.SetExtState("articulationMapOnDevice", "selectedArticulationIdx", selectedArticulationsInLayersText, false)
             end
             
             
-            local retval, newArtFromDevice = reaper.GetProjExtState(0, "articulationMapOnDevice", "setArticulationFromDevice")
-            if (retval == 1 and newArtFromDevice) and (newArtFromDevice ~= "") then
-                if triggerTables and triggerTables[newArtFromDevice + 1] then
-                    changeArticulation(nil, triggerTables[newArtFromDevice + 1].articulation, focusIsOn)
+            
+            local articulationPressedFromDevice = reaper.GetExtState("articulationMapOnDevice", "setArticulationFromDevicePressed")
+            if articulationPressedFromDevice ~= "" then
+                if triggerTables and triggerTables[articulationPressedFromDevice + 1] then
+                    changeArticulation(triggerTables[articulationPressedFromDevice + 1], triggerTables[articulationPressedFromDevice + 1].articulation, focusIsOn)
                 end
-                reaper.SetProjExtState(0, "articulationMapOnDevice", "setArticulationFromDevice", "")
+                reaper.SetExtState("articulationMapOnDevice", "setArticulationFromDevicePressed", "", false)
+            end
+
+            local articulationReleasedFromDevice = reaper.GetExtState("articulationMapOnDevice", "setArticulationFromDeviceReleased")
+            if articulationReleasedFromDevice ~= "" then
+                if triggerTables and triggerTables[articulationReleasedFromDevice + 1] then
+                    changeArticulation(triggerTables[articulationReleasedFromDevice + 1], triggerTables[articulationReleasedFromDevice + 1].articulation, focusIsOn, nil, true)
+                end
+                reaper.SetExtState("articulationMapOnDevice", "setArticulationFromDeviceReleased", "", false)
             end
 
             --selectedArticulationIdx, minval, maxval = reaper.TrackFX_GetParam(track, fxNumber, 0) -- 0 is the parameter index, 0 is the parameter value
         end
     else
-        reaper.SetProjExtState(0, "articulationMapOnDevice", "trackName", "")
+        reaper.SetExtState("articulationMapOnDevice", "trackName", "", false)
+        reaper.SetExtState("articulationMapOnDevice", "articulations", "", false)
+        reaper.SetExtState("articulationMapOnDevice", "mapName", "", false)
     end
 
  
@@ -484,6 +511,14 @@ local function loop()
 
     last_listOverview_command_state = listOverview_command_state
 
+    local converter_command_state = reaper.GetToggleCommandState(converter_command_id) == 1
+    if converter_command_state then
+        local closeConverter = converter.converterSurface(focusIsOn)
+        if closeConverter then
+            setToggleCommandState(converter_command_id, false, false)
+        end
+    end
+
     -- POPUP
     local poupListOverview_command_state = reaper.GetToggleCommandState(popupListOverview_command_id) == 1
     if (poupListOverview_command_state) and (fxNumber) then
@@ -525,8 +560,14 @@ local function loop()
         --last_focused_hwnd = reaper.JS_Window_GetForeground()
         --reaper.JS_Window_SetFocus(reaper.GetMainHwnd())
 
-        if take then
-            if last_take and last_midi_editor and not midi_editor then
+        if take  then
+            if settings.converter_auto_convert and (not last_take or take ~= last_take) then
+                converter.applyConversionToTake(last_take, converterMappings)
+            end
+            --[[ convertProgramChangesToArticulations(take)
+            settleArticulationText(last_take)
+            mirror_notation_to_unique_text_events(last_take) ]]
+            if last_take and last_midi_editor and not midi_editor then                
                 convertProgramChangesToArticulations(last_take)
                 settleArticulationText(last_take)
                 mirror_notation_to_unique_text_events(last_take)
@@ -605,8 +646,8 @@ reaper.defer(loop)
 
 local function exit()
     if engine then engine:destroy() end
-    reaper.SetProjExtState(0, "articulationMapOnDevice", "trackName", "")
-    reaper.SetProjExtState(0, "articulationMapOnDevice", "articulations", "")
+    reaper.SetExtState("articulationMapOnDevice", "trackName", "", false)
+    reaper.SetExtState("articulationMapOnDevice", "articulations", "", false)
     reaper.SetExtState("articulationMap", "running", "0", true)
     setToolbarState(false)
 end

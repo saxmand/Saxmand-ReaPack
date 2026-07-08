@@ -112,7 +112,7 @@ local function getArtNameFromSliders(track, artSliders)
     local newName = ""
     for i, slider in ipairs(artSliders) do
         local selectedArticulationIdx, min, max = reaper.TrackFX_GetParam(track, slider.fxNumber, slider.param) -- 0 is the parameter index, 0 is the parameter value
-        if selectedArticulationIdx > -1 and selectedArticulationIdx <= max then
+        if selectedArticulationIdx > -1 and selectedArticulationIdx <= max and not slider.live then
             local artNameFromSlider = triggerTableLayers[i][selectedArticulationIdx + 1].articulation
             newName = newName .. (i > 1 and " / " or "") .. artNameFromSlider
         end
@@ -129,7 +129,6 @@ local function updateSliderFromArticulation(track, articulation)
         local existsInScript
         local isAToggle = false
         local isToggleOn = false
-
         for i, art in ipairs(triggerTables) do
             if art.articulation == articulation then
                 local selectedArticulationIdx, artMin, artMax = reaper.TrackFX_GetParam(track,
@@ -139,9 +138,11 @@ local function updateSliderFromArticulation(track, articulation)
                 local sliderVal = isAToggle and (isToggleOn and 1 or 0) or art.artInLayer
                 reaper.TrackFX_SetParam(track, artSliders[art.layer].fxNumber, artSliders[art.layer].param, sliderVal)
 
-                local liveArticulationMidiMap = live_articulations.buildArticulationMidiMap(triggerTableLayers)
-                live_articulations.sendArticulationProgramChanges(track, artSliders, liveArticulationMidiMap,
-                    art.layer, math.floor(selectedArticulationIdx))
+                if live_articulations then 
+                    local liveArticulationMidiMap = live_articulations.buildArticulationMidiMap(triggerTableLayers)
+                    live_articulations.sendArticulationProgramChanges(track, artSliders, liveArticulationMidiMap,
+                        art.layer, math.floor(selectedArticulationIdx))
+                end
 
                 existsInScript = art
                 break;
@@ -163,7 +164,6 @@ end
 -- Function to set notation text for selected notes
 local function setNotationText(take, articulation, allNotes, forceInsert)
     local takeTrack = reaper.GetMediaItemTake_Track(take)
-    
     local existsInScript, triggerTableLayers, artSliders, isAToggle, isToggleOn = updateSliderFromArticulation(takeTrack, articulation)
     
     local noArticaultionProvided = articulation == nil 
@@ -177,7 +177,7 @@ local function setNotationText(take, articulation, allNotes, forceInsert)
                 local artLayer
                 -- look more at this
                 local currentText = getNoteText(take, noteChannel, notePpqpos, notePitch)
-
+                
                 if not cmd and not forceInsert then
                     if currentText then
                         local arts = split_exact(currentText)
@@ -205,7 +205,7 @@ local function setNotationText(take, articulation, allNotes, forceInsert)
                             else
                                 for artIndexInLayer, art in ipairs(layer) do
                                     for i, a in ipairs(arts) do
-                                        if art.articulation == a then
+                                        if art.articulation == a and not art.live then
                                             table.insert(newArtsTbl, a)
                                             --newArtsTbl[layerIndex] = a
                                             found = true
@@ -215,7 +215,9 @@ local function setNotationText(take, articulation, allNotes, forceInsert)
                                 end
                                 if not found then
                                     if #layer > 1 then
-                                        table.insert(newArtsTbl, layer[1].articulation)
+                                        if not layer[1].live then                                         
+                                            table.insert(newArtsTbl, layer[1].articulation)
+                                        end
                                         --newArtsTbl[layerIndex] = layer[1].articulation
                                     else
                                         if #triggerTableLayers == layerIndex then
@@ -461,7 +463,7 @@ function export.updateArticulationJSFX(take)
                             --reaper.ShowConsoleMsg(tostring(artSelected[layerNumber]) .. " - " ..layerNumber  .. " artsel\n")
                             local layerFound = false
                             for artNum, key in ipairs(layer) do
-                                if key.articulation == arts[layerNumber] then
+                                if not key.live and key.articulation == arts[layerNumber] then
                                     if math.floor(artSelected[layerNumber]) ~= math.floor(artNum - 1) then
                                         reaper.TrackFX_SetParam(track, fxNumber, artSliders[layerNumber].param,
                                             artNum - 1)
@@ -490,15 +492,35 @@ function export.updateArticulationJSFX(take)
     end
 end
 
-function export.changeArticulation(prg, articulation, focusIsOn, forceInsert)
+function export.changeArticulation(art, articulation, focusIsOn, forceInsert, liveArticulationOff)
     --trackArticulationScripts = {}
     -- make this only happen if the selected track and item is the same
     --for i = 0, 15 do
     -- use this if in recording mode
     -- change this with keyswitches etc
     -- make auto articaultion naming after recording stops
-    if prg and tonumber(prg) < 128 then
-        --reaper.StuffMIDIMessage(0, 192, prg, 127)
+    if art and art.live then 
+        -- this is a live articulation, and we just need to send the articulation.  
+        for key, val in ipairs(art.liveTriggers) do
+            local msg1, msg2, msg3 = val[1], val[2], val[3]
+            if liveArticulationOff then 
+                if msg1 == 0x90 then
+                    msg1 = 0x80
+                    msg3 = 64
+                    reaper.StuffMIDIMessage(0, msg1, msg2, msg3 )    
+                    reaper.StuffMIDIMessage(0, msg1, msg2, msg3 )    
+                    --reaper.ShowConsoleMsg(msg1 .. " - ".. msg2 .. " - ".. msg3 .. "\n")
+                end
+            else
+                reaper.StuffMIDIMessage(0, msg1, msg2, msg3 )    
+                --reaper.ShowConsoleMsg(msg1 .. " - ".. msg2 .. " - ".. msg3 .. "\n")
+            end
+        end
+        return 
+    end
+    -- we ensure to not continue on live articulation off, in case it's not triggered from a live articulation
+    if liveArticulationOff then 
+        return 
     end
 
     if focusIsOn == "track" then

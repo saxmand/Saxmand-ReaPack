@@ -13,8 +13,8 @@ local function exit()
 end
 
 local inDevMappings = {
-    --["Position (Legato)"] = true, 
-    --["Trills Trigger"] = true, 
+    --["Position (Legato)"] = true,
+    --["Trills Trigger"] = true,
     ["Live Articulation"] = true,
     ["Filter Channel"] = true,
     ["Filter Pitch"] = true,
@@ -1440,7 +1440,7 @@ local function loop()
         if appSettings.autoResizeWindowWidth then 
             if tableWidth and tableWidth > minimumsWidth then
                 set = true 
-                windowW = tableWidth+16
+                windowW = tableWidth+16+4
             elseif windowW < minimumsWidth + 8 then
                 set = true 
                 windowW = minimumsWidth + 8
@@ -2045,6 +2045,10 @@ len > 0 ? (
         local legatoInfo = {"Trigger on the first note of a phrase.\nThis is only useful for monophonic material.", "Trigger on notes connected to the first note, eg the legato note after.", "Trigger if a note is repeated by being connected to the previous note", "Trigger if a note is the first note or repeated by being connected to the previous note", "Trigger anytime. This might be useful when using layers"}
         local legatoKeys = {"F", "L", "R", "X", "A"}
 
+        local liveArticulationSelection = {"Live"}
+        local liveArticulationInfo = {""}
+        local liveArticulationKeys = {"L"}
+
         if mapName then
             -- for bidirectional call to articualtion list
             local path = reaper.GetResourcePath() .. "/Effects/Articulation Scripts/" .. mapName .. ".jsfx"
@@ -2397,7 +2401,7 @@ len > 0 ? (
                         if not lol or not hideTableButtons then  
                             ------------ INPUTS -------------------
                             
-                            --if focusedColumn then reaper.ShowConsoleMsg(focusedColumn .. "\n") end
+                            --if focusedColumn then reaper.ShowConsoleMsg(mappingType[focusedColumn]  .. "\n") end
                             reaper.ImGui_BeginGroup(ctx)
                             if focusedColumn and mappingType[focusedColumn] 
                                 --and (mappingType[focusedColumn] ~= "KT") 
@@ -2531,6 +2535,9 @@ len > 0 ? (
                                     multipleSelectionOptionsDropDown("Notation", musicxml.articulations)
                                     
                                     --reaper.ImGui_InvisibleButton(ctx,"dummy",16,2)
+                                elseif mappingType[focusedColumn] and mappingTypeName == "LiveArticulation" then
+                                    local modifierNames = liveArticulationSelection
+                                    multipleSelectionOptionsInfo(mappingTypeName, modifierNames, liveArticulationKeys, liveArticulationInfo)
                                 elseif mappingType[focusedColumn] and mappingTypeName == "UIText" then
                                     local modifierNames = {"Same"}
                                     multipleSelectionOptions(mappingTypeName, modifierNames)
@@ -2885,8 +2892,10 @@ len > 0 ? (
                             function setNewTableValue(row, columnName, newValue)
                                 local mainLaneRow = mapping_handling.getMainLaneRow(tableInfo, columnName, row)
                                 if mainLaneRow then 
+                                    if not tableInfo[mainLaneRow] then tableInfo[row] = {} end
                                     tableInfo[mainLaneRow][columnName] = newValue
                                 else
+                                    if not tableInfo[row] then tableInfo[row] = {} end
                                     tableInfo[row][columnName] = newValue
                                 end
                                 undo_redo.commit({tableInfo, mapping})
@@ -3568,22 +3577,25 @@ len > 0 ? (
                                 return title
                             end
                             
-                            function modifyExact(id, columnName, row, column, selections, keys) 
+                            function modifyExact(id, columnName, row, column, selections, keys, storeAsBoolean)
                                 local title, mainLaneRow = getArticulationTextFromLane(columnName, row, defaultValue)
-                                
+                                if storeAsBoolean then
+                                    title = (title == true) and keys[1] or ""
+                                end
+
                                 if mainLaneRow then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), colorGrey) end
-                                
-                                
+
+
                                 local ret2, stringInput = reaper.ImGui_InputText(ctx, "##" .. id, title, reaper.ImGui_InputTextFlags_CharsUppercase() | reaper.ImGui_InputTextFlags_AutoSelectAll() | reaper.ImGui_InputTextFlags_CallbackEdit(), filterFunctionSingleCharacter) -- ,reaper.ImGui_InputTextFlags_EnterReturnsTrue())
-                                
+
                                 if mainLaneRow then reaper.ImGui_PopStyleColor(ctx) end
-                                
+
                                 if ret2 then
                                     for i, key in ipairs(keys) do
-                                        if stringInput == key then 
+                                        if stringInput == key then
                                             local name = selections[i]
                                             for rowKey, counter in pairs(selectedArticulations) do
-                                                setNewTableValue(rowKey, columnName, name) 
+                                                setNewTableValue(rowKey, columnName, storeAsBoolean and true or name)
                                             end
                                             if column == focusedColumn and row == focusedRow then
                                                 local width = reaper.ImGui_CalcTextSize(ctx, key,0,0)
@@ -3592,7 +3604,7 @@ len > 0 ? (
                                             end
                                         elseif stringInput == "" then
                                             for rowKey, counter in pairs(selectedArticulations) do
-                                                setNewTableValue(rowKey, columnName, "") 
+                                                setNewTableValue(rowKey, columnName, storeAsBoolean and nil or "")
                                             end
                                         end
                                     end
@@ -3697,7 +3709,7 @@ len > 0 ? (
                             
                             --if not windowW then windowW = 200; windowH = 1 end
                             
-                            local childSizeW = windowW - 16 < tableWidth and windowW - 16 or tableWidth
+                            local childSizeW = windowW - 20 < tableWidth and windowW - 20 or tableWidth
                             tableHeight = windowH - tableY  - (math.ceil(appSettings.fontSize / 100 * 40) + 30)
                             if reaper.ImGui_BeginChild(ctx, "tablechild2", childSizeW, tableHeight) then
                                 
@@ -3820,6 +3832,8 @@ len > 0 ? (
                                                     mapping.SD = nil 
                                                 elseif column_name == "Notation" then
                                                     mapping.Notation = nil
+                                                elseif column_name == "LiveArticulation" then
+                                                    mapping.LiveArticulation = nil
                                                 elseif column_name == "UIText" then
                                                     mapping.UIText = nil
                                                 elseif mapping_handling.getCCNumber(column_name) then
@@ -4231,6 +4245,9 @@ len > 0 ? (
                                                         setToolTipFunc("Make numbers unique, to ensure they show as expected\n.When two shares the same number, the first one will be shown")
                                                     end
                                                 --end
+                                            elseif columnName == "LiveArticulation" then
+                                                reaper.ImGui_SetNextItemWidth(ctx, tableSizes.LiveArticulation)
+                                                modifyExact(id, columnName, row, column, liveArticulationSelection, liveArticulationKeys)
                                             elseif columnName == "Notation" then
                                                 reaper.ImGui_SetNextItemWidth(ctx, tableSizes.Notation)
                                                 --if isNotALane(columnName, row) then 

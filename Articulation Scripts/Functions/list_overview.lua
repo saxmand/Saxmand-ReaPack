@@ -390,26 +390,28 @@ function export.listOverviewSurface(focusIsOn, popup)
         local layerColor
         for layerNumber, layer in ipairs(triggerTableLayers) do 
             local layerX, layerY, layerX2, layerY2
-            local isLayerCollabsed = layerCollabsed[layerNumber]
+            local isLayerCollabsed = #layer > 1 and layerCollabsed[layerNumber]
+            local isLive = layer[1].live
             if #triggerTableLayers > 1 then
                 layerColor = layer[1].layerColor and tonumber(layer[1].layerColor) or  0x000000FF
                 
-                if (layerCollabsed[layerNumber]) or (settings.listOverview_showLayerText and (#layer > 1 or settings.listOverview_showLayerTextWithSingleArticulation))  then 
+                if (isLayerCollabsed) or (settings.listOverview_showLayerText and (#layer > 1 or settings.listOverview_showLayerTextWithSingleArticulation))  then 
                     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xAAAAAAFF)
                     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderHovered(), 0x222222FF )
                     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Header(), 0x000000FF)
                     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_HeaderActive(), 0x000000FF)
                     
                     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_SelectableTextAlign(), isLayerCollabsed and 0 or 0.5, 0) 
-                    local layerName = "Layer " .. layerNumber .. (isLayerCollabsed and (": " .. layer[artSelected[layerNumber] + 1].articulation) or "")
+                    local layerName = "Layer " .. layerNumber .. (isLayerCollabsed and (": " .. ((artSelected and artSelected[layerNumber] and layer[artSelected[layerNumber] + 1]) and layer[artSelected[layerNumber] + 1].articulation or "")) or "")
+                    if isLive then layerName = "Live triggers" end
                     if reaper.ImGui_Selectable(ctx,layerName, true, selectflag) then 
-                        reaper.TrackFX_SetParam(track, fxNumber, artSliders[layerNumber].param + 1, layerCollabsed[layerNumber] and 0 or 1) 
+                        reaper.TrackFX_SetParam(track, fxNumber, artSliders[layerNumber].param + 1, layerCollabsed[layerNumber] and 0 or 1)                         
                     end
                     reaper.ImGui_PopStyleColor(ctx,4)
                     reaper.ImGui_PopStyleVar(ctx)
                     layerX, layerY = reaper.ImGui_GetItemRectMin(ctx) 
 
-                    if not layerCollabsed[layerNumber] then
+                    if isLayerCollabsed then
                         reaper.ImGui_Separator(ctx)
                     end
                 end             
@@ -479,7 +481,7 @@ function export.listOverviewSurface(focusIsOn, popup)
                         end             
                     end      
                     
-                    isSelected = key.artInLayer == artSelected[layerNumber]
+                    isSelected = not key.live and key.artInLayer == artSelected[layerNumber]
                     local buttonTitle
                     --if #key.group > 0 then
                         buttonTitle = ((not settings.listOverview_showGroupNameAsHeader and key.group and key.group ~= "") and (key.group .. ": " ) or "") 
@@ -487,9 +489,20 @@ function export.listOverviewSurface(focusIsOn, popup)
                     --else
                     ----    buttonTitle = key.title:gsub("+ ", "+")--:gsub(" ", "\n")                                      -- .. " " .. colorGradient
                     --end
+                    if key.live and not settings.listOverview_showLayerText then 
+                        buttonTitle = buttonTitle .. " [L]"
+                    end
+
                     if reaper.ImGui_Selectable(ctx, buttonTitle .. "##" .. layerNumber .. ":".. artNum, isSelected) then 
-                        changeArticulation(nil, key.articulation, focusIsOn)
-                        articulationChange = true
+                        articulationChange = true                        
+                        changeArticulation(key, key.articulation, focusIsOn, nil, true)
+                    end
+                    --liveArticulationOff
+                    if reaper.ImGui_IsItemHovered(ctx) then
+                        local edited = reaper.ImGui_IsItemActivated( ctx )
+                        if edited then 
+                            changeArticulation(key, key.articulation, focusIsOn)
+                        end
                     end
                     notation_events.buttons_tooltip()
                     if not layerX then 
