@@ -151,7 +151,7 @@ end
 -- Returns unique articulation names per the current focus mode.
 local function collectTextsForCurrentFocus()
     if focusIsOn == "track" then
-        if not track then return {} end
+        if not track or not reaper.ValidatePtr(track, "MediaTrack*") then return {} end
         local seen, names = {}, {}
         for i = 0, reaper.CountTrackMediaItems(track) - 1 do
             local item = reaper.GetTrackMediaItem(track, i)
