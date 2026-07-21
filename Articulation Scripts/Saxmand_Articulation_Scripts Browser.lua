@@ -166,6 +166,10 @@ end
 
 local function exit()
     setToolbarState(false)
+    -- If closed while in converter selection mode, cancel the pending operation
+    if reaper.GetExtState("articulationMapConverter", "browserMode") ~= "" then
+        reaper.SetExtState("articulationMapConverter", "browserMode", "", false)
+    end
 end
 
 function formatSearchStringForAnyNonLetters(string)
@@ -337,11 +341,18 @@ local function loop()
             ]]
     end
 
+    local browserMode = reaper.GetExtState("articulationMapConverter", "browserMode")
+
     modern_ui.apply(ctx)
     reaper.ImGui_SetNextWindowSize(ctx, 600, 456, reaper.ImGui_Cond_FirstUseEver())
 
     local windowFlags = reaper.ImGui_WindowFlags_TopMost()
     --| reaper.ImGui_WindowFlags_AlwaysAutoResize()
+
+    if reaper.GetExtState("articulationMapConverter", "browserShouldFocus") == "1" then
+        reaper.SetExtState("articulationMapConverter", "browserShouldFocus", "", false)
+        reaper.ImGui_SetNextWindowFocus(ctx)
+    end
 
     local visible, open = reaper.ImGui_Begin(ctx, 'Articulation Scripts Browser Window', true, windowFlags
 
@@ -374,6 +385,15 @@ local function loop()
 
         modifierSettings = nil
         --local isEscape = reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape())
+
+        -- Escape in converter selection mode: cancel and refocus converter
+        if escape and not popupOpen and browserMode ~= "" and searchFieldAll == "" then
+            local wasOpen = reaper.GetExtState("articulationMapConverter", "browserWasOpen")
+            reaper.SetExtState("articulationMapConverter", "browserMode", "", false)
+            reaper.SetExtState("articulationMapConverter", "converterShouldFocus", "1", false)
+            if wasOpen == "0" then open = false end
+            escape = false
+        end
 
         if ((escape and not popupOpen) and (searchFieldAll == "")) or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_W(), false)) then
             open = false
@@ -530,40 +550,77 @@ local function loop()
             end
         end
 
+        -- Builds triggerTableLayers from the focused script's tableInfo rows and writes
+        -- the result to ExtState for the Background Server to pick up.
+        function useForConverter()
+            if not focusedScript or not focusedScript.tableInfo then return end
+            local layers = {}
+            for _, t in ipairs(focusedScript.tableInfo) do
+                if not t.isLane then
+                    local layerNum = t.Layer or 1
+                    layers[layerNum] = layers[layerNum] or {}
+                    table.insert(layers[layerNum], {
+                        articulation = t.Title,
+                        live         = t.LiveArticulation == true,
+                    })
+                end
+            end
+            local data = { mapName = focusedScript.mapName, triggerTableLayers = layers }
+            local wasOpen = reaper.GetExtState("articulationMapConverter", "browserWasOpen")
+            reaper.SetExtState("articulationMapConverter", "selectedScriptData", json.encodeToJson(data), false)
+            reaper.SetExtState("articulationMapConverter", "selectedFor", browserMode, false)
+            reaper.SetExtState("articulationMapConverter", "browserMode", "", false)
+            reaper.SetExtState("articulationMapConverter", "converterShouldFocus", "1", false)
+            if wasOpen == "0" then open = false end
+        end
+
         --reaper.ImGui_SameLine(ctx)
         if not focusedScript then reaper.ImGui_BeginDisabled(ctx) end
         local addMap = false
 
-        local hasTrackSelection = reaper.CountSelectedTracks(0) > 0
-        if not hasTrackSelection then reaper.ImGui_BeginDisabled(ctx) end
-        if reaper.ImGui_Button(ctx, "Add to selected tracks") or (enter and not popupOpen and focusedScript and hasTrackSelection) then
-            addScript()
-        end
-        if not hasTrackSelection then reaper.ImGui_EndDisabled(ctx) end
-
-        setToolTipFunc(
-        "Press enter to add selected articulation script to selected tracks\n - Add cmd to keep Browser window open")
-
-        reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, "Edit Articulation script") or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_E(), false) and not popupOpen and focusedScript) then
-            listOverviewSurface.openCreatorWindow()
-
-            reaper.SetExtState("articulationMap", "openJson", focusedScriptJson, false)
-        end
-        setToolTipFunc("Press cmd+e to open selected articulation script in the Script Creator")
-
-        reaper.ImGui_SameLine(ctx)
-        if isLocal then
-            if reaper.ImGui_Button(ctx, "Delete script") or (cmd and delete and not popupOpen and focusedScript) then
-                reaper.ImGui_OpenPopup(ctx, "Delete articulation script")
+        if browserMode ~= "" then
+            -- Converter selection mode: replace normal buttons with a single use button
+            local modeLabel = browserMode == "input"
+                and "Use articulation script for converter Input"
+                or  "Use articulation script for converter Output"
+            if reaper.ImGui_Button(ctx, modeLabel) or (enter and not popupOpen and focusedScript) then
+                useForConverter()
             end
+            setToolTipFunc("Select this articulation script as converter "
+                .. (browserMode == "input" and "input" or "output")
+                .. " source. Double-click a script to do the same.")
         else
-            if reaper.ImGui_Button(ctx, "Import script") or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_I()) and not popupOpen and focusedScript) then
-                export.createObjectForExport({ genTime = genTime, overwrite = true})
-                --reloadLocalScript = true
+            -- Normal mode: track add, edit, delete/import
+            local hasTrackSelection = reaper.CountSelectedTracks(0) > 0
+            if not hasTrackSelection then reaper.ImGui_BeginDisabled(ctx) end
+            if reaper.ImGui_Button(ctx, "Add to selected tracks") or (enter and not popupOpen and focusedScript and hasTrackSelection) then
+                addScript()
             end
+            if not hasTrackSelection then reaper.ImGui_EndDisabled(ctx) end
+
+            setToolTipFunc(
+            "Press enter to add selected articulation script to selected tracks\n - Add cmd to keep Browser window open")
+
+            reaper.ImGui_SameLine(ctx)
+            if reaper.ImGui_Button(ctx, "Edit Articulation script") or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_E(), false) and not popupOpen and focusedScript) then
+                listOverviewSurface.openCreatorWindow()
+                reaper.SetExtState("articulationMap", "openJson", focusedScriptJson, false)
+            end
+            setToolTipFunc("Press cmd+e to open selected articulation script in the Script Creator")
+
+            reaper.ImGui_SameLine(ctx)
+            if isLocal then
+                if reaper.ImGui_Button(ctx, "Delete script") or (cmd and delete and not popupOpen and focusedScript) then
+                    reaper.ImGui_OpenPopup(ctx, "Delete articulation script")
+                end
+            else
+                if reaper.ImGui_Button(ctx, "Import script") or (cmd and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_I()) and not popupOpen and focusedScript) then
+                    export.createObjectForExport({ genTime = genTime, overwrite = true})
+                    --reloadLocalScript = true
+                end
+            end
+            setToolTipFunc("Import script to harddrive. This will use the latest creator version.\n - press cmd+i to import")
         end
-        setToolTipFunc("Import script to harddrive. This will use the latest creator version.\n - press cmd+i to import")
 
         if not focusedScript then reaper.ImGui_EndDisabled(ctx) end
         reaper.ImGui_Separator(ctx)
@@ -703,7 +760,7 @@ local function loop()
                             end
 
                             if reaper.ImGui_IsItemHovered(ctx) and isDoubleClick then
-                                addScript()
+                                if browserMode ~= "" then useForConverter() else addScript() end
                             end
                         elseif v == "Time" then
                             reaper.ImGui_TableNextColumn(ctx)
@@ -716,7 +773,7 @@ local function loop()
                             end
 
                             if reaper.ImGui_IsItemHovered(ctx) and isDoubleClick then
-                                addScript()
+                                if browserMode ~= "" then useForConverter() else addScript() end
                             end
                         else
                             reaper.ImGui_TableNextColumn(ctx)

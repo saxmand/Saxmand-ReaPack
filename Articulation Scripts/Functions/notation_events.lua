@@ -31,6 +31,14 @@ local function notation_events_settings()
     end
     setToolTipFunc("When focus moves away from an item, this removes any articulation text that no longer matches the track's articulation script (including when the track has no articulation script at all).")
 
+    reaper.ImGui_SetNextItemWidth(ctx, 60)
+    local clicksChanged, newClicks = reaper.ImGui_SliderInt(ctx, "Clicks to set all notes when take is focused", settings.clicks_to_set_take_articulations or 1, 1, 3)
+    if clicksChanged then
+        settings.clicks_to_set_take_articulations = newClicks
+        saveSettings()
+    end
+    setToolTipFunc("Number of consecutive clicks on the same articulation (within 1 second) required to overwrite all notes in a take.\n1 = immediate (default).")
+
     reaper.ImGui_SeparatorText(ctx, "Text events")
     if reaper.ImGui_Checkbox(ctx, "Mirror notation articulations to text events", settings.mirror_notation_articulations_to_text_events) then
         settings.mirror_notation_articulations_to_text_events = not settings.mirror_notation_articulations_to_text_events

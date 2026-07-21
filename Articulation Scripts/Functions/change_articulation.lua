@@ -2,6 +2,8 @@
 
 local export = {}
 
+local takeClickState = { name = nil, time = 0, count = 0 }
+
 local function findParamWithNameAndSetTo(track, fx_index, name, val)
     if not track or not fx_index or not name or not val then 
         return false
@@ -448,46 +450,58 @@ end
 
 -- update when selected new notes in midi editor
 function export.updateArticulationJSFX(take)
-    if take then
-        local _, noteCount = reaper.MIDI_CountEvts(take)
-        for n = 0, noteCount - 1 do
-            local _, sel, muted, notePpqpos, endppqpos, noteChannel, notePitch, vel = reaper.MIDI_GetNote(take, n)
-            if sel then
-                if not lastSelectedNote or lastSelectedNote ~= n then
-                    lastSelectedNote = n
-                    local currentText = getNoteText(take, noteChannel, notePpqpos, notePitch)
-                    if currentText then
-                        local arts = split_exact(currentText)
-                        local allLayersFound = true
-                        for layerNumber, layer in ipairs(triggerTableLayers) do
-                            --reaper.ShowConsoleMsg(tostring(artSelected[layerNumber]) .. " - " ..layerNumber  .. " artsel\n")
-                            local layerFound = false
-                            for artNum, key in ipairs(layer) do
-                                if not key.live and key.articulation == arts[layerNumber] then
-                                    if math.floor(artSelected[layerNumber]) ~= math.floor(artNum - 1) then
-                                        reaper.TrackFX_SetParam(track, fxNumber, artSliders[layerNumber].param,
-                                            artNum - 1)
-                                    end
-                                    if articulationNotFoundParam then
-                                        reaper.TrackFX_SetParam(track, fxNumber, articulationNotFoundParam, 0)
-                                    end
-                                    layerFound = true
-                                    --reaper.ShowConsoleMsg(tostring(arts[layerNumber]) .. " - " ..layerNumber  .. " found\n")
-                                    break
-                                end
-                            end
-                            if not layerFound then
-                                --reaper.ShowConsoleMsg(tostring(arts[layerNumber]) .. " - " ..layerNumber  .. " err\n")
-                                allLayersFound = false
-                            end
-                        end
-                        if not allLayersFound and articulationNotFoundParam then
-                            reaper.TrackFX_SetParam(track, fxNumber, articulationNotFoundParam, 1)
-                        end
+    if not take then return end
+
+    local selIdx = reaper.MIDI_EnumSelNotes(take, 0)
+    if selIdx == -1 then
+        lastSelectedNote = nil
+        return
+    end
+
+    local _, _, _, notePpqpos, endppqpos, noteChannel, notePitch, vel = reaper.MIDI_GetNote(take, selIdx)
+
+    if lastSelectedNote
+        and lastSelectedNote.pos    == notePpqpos
+        and lastSelectedNote.endpos == endppqpos
+        and lastSelectedNote.chan   == noteChannel
+        and lastSelectedNote.pitch  == notePitch
+        and lastSelectedNote.vel    == vel
+    then
+        return
+    end
+
+    lastSelectedNote = {
+        pos    = notePpqpos,
+        endpos = endppqpos,
+        chan   = noteChannel,
+        pitch  = notePitch,
+        vel    = vel,
+    }
+
+    local currentText = getNoteText(take, noteChannel, notePpqpos, notePitch)
+    if currentText then
+        local arts = split_exact(currentText)
+        local allLayersFound = true
+        for layerNumber, layer in ipairs(triggerTableLayers) do
+            local layerFound = false
+            for artNum, key in ipairs(layer) do
+                if not key.live and key.articulation == arts[layerNumber] then
+                    if math.floor(artSelected[layerNumber]) ~= math.floor(artNum - 1) then
+                        reaper.TrackFX_SetParam(track, fxNumber, artSliders[layerNumber].param, artNum - 1)
                     end
+                    if articulationNotFoundParam then
+                        reaper.TrackFX_SetParam(track, fxNumber, articulationNotFoundParam, 0)
+                    end
+                    layerFound = true
+                    break
                 end
-                break
             end
+            if not layerFound then
+                allLayersFound = false
+            end
+        end
+        if not allLayersFound and articulationNotFoundParam then
+            reaper.TrackFX_SetParam(track, fxNumber, articulationNotFoundParam, 1)
         end
     end
 end
@@ -556,8 +570,23 @@ function export.changeArticulation(art, articulation, focusIsOn, forceInsert, li
             --  setNotationOrSelectNotes(activeTake, articulation, false)
             -- end
         elseif focusIsOn == "take" then
-            --isOff = setArticulationOnTrack(track, prg)
-            setArticulationOnAllSelectedTakes(articulation)
+            local threshold = settings and settings.clicks_to_set_take_articulations or 1
+            if threshold <= 1 then
+                setArticulationOnAllSelectedTakes(articulation)
+            else
+                local now = reaper.time_precise()
+                if takeClickState.name == articulation and (now - takeClickState.time) <= 1.0 then
+                    takeClickState.count = takeClickState.count + 1
+                else
+                    takeClickState.name  = articulation
+                    takeClickState.count = 1
+                end
+                takeClickState.time = now
+                if takeClickState.count >= threshold then
+                    setArticulationOnAllSelectedTakes(articulation)
+                    takeClickState.count = 0
+                end
+            end
         end
     end
 end

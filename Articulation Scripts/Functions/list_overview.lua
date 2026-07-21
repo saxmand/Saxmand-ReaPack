@@ -90,11 +90,25 @@ function export.openCreatorWindow(path, save)
     end
 end
 
-function export.openBrowserWindow()    
+function export.openBrowserWindow()
     local command_id, scriptIsOpen = getScriptId("Saxmand_Articulation_Scripts Browser.lua")
-    --if not scriptIsOpen then 
-        reaper.Main_OnCommand(command_id, 0)    
+    --if not scriptIsOpen then
+        reaper.Main_OnCommand(command_id, 0)
     --end
+end
+
+-- Opens the browser in converter selection mode. Sets ExtState so the browser knows
+-- which role (input/output) it's selecting for. Records whether browser was already
+-- open so it can be closed again after the user makes a selection.
+function export.openBrowserForConverterMode(mode)
+    local command_id, scriptIsOpen = getScriptId("Saxmand_Articulation_Scripts Browser.lua")
+    reaper.SetExtState("articulationMapConverter", "browserWasOpen", scriptIsOpen and "1" or "0", false)
+    reaper.SetExtState("articulationMapConverter", "browserMode", mode, false)
+    if scriptIsOpen then
+        reaper.SetExtState("articulationMapConverter", "browserShouldFocus", "1", false)
+    else
+        reaper.Main_OnCommand(command_id, 0)
+    end
 end
 
 function setToolTipFunc(text, color)

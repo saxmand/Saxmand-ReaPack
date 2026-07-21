@@ -90,7 +90,9 @@ local keyboardTriggerSurface = require("keyboard_trigger").keyboardTriggerSurfac
 
 local listOfArticulationsScripts = require("scripts_list").listOfArticulationsScripts
 
-local listOverviewSurface = require("list_overview").listOverviewSurface
+local listOverviewModule  = require("list_overview")
+local listOverviewSurface = listOverviewModule.listOverviewSurface
+openBrowserForConverterMode = listOverviewModule.openBrowserForConverterMode
 converter = require("converter")
 
 
@@ -127,13 +129,19 @@ local defaultSettings = {
     draw_delay_lines_on_piano_roll = false,
     add_current_articulation_to_new_notes = true,
     add_current_articulation_to_notes_without_articulations = true,
+    clicks_to_set_take_articulations = 1,
 
     streamdeck_fontSize = 32,
     streamdeck_borderWidth = 6,
+
     converter_auto_convert = false,
     converter_auto_open = false,
     converter_close_when_applying = true,
     converter_horizontal_layout = false,
+    converter_show_transpose_column = false,
+    converter_show_velocity_column  = false,
+    converter_fuzzy_threshold = 0.3,
+    converter_show_matching = true,
 }
 
 function saveSettings()
@@ -214,6 +222,8 @@ function setupLocalSurface()
     -- font = reaper.ImGui_CreateFont('Arial', 30, reaper.ImGui_FontFlags_Bold())
     font = reaper.ImGui_CreateFont('Arial')
     fontFat = reaper.ImGui_CreateFont('Arial', reaper.ImGui_FontFlags_Bold())
+
+    reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigVar_DragClickToInputText(), 1)
     -- imgui_font
     reaper.ImGui_Attach(ctx, font)
     reaper.ImGui_Attach(ctx, fontFat)
@@ -285,6 +295,8 @@ end
 -- over - only against where it actually ends up. So if the mouse is down, defer settling the
 -- take's articulation text until release.
 local pendingArticulationTextSettleTake = nil
+local pendingAutoConvert = false
+local pendingAutoOpen    = false
 local function settleArticulationText(take)
     if not take then return end
     if isMouseDown then
@@ -360,9 +372,69 @@ local function loop()
         last_max_time_to_reset_legato = max_time_to_reset_legato
     end
 
+    -- Flush deferred converter actions once the mouse is released and track is settled
+    if not isMouseDown then
+        if pendingAutoConvert and take then
+            pendingAutoConvert = false
+            converter.applyConversionToTake(take, converterStoredOnlyMappings, nil, true)
+        end
+        if pendingAutoOpen then
+            pendingAutoOpen = false
+            if #converterOriginalNames > 0 and (converterHasUnmapped or not settings.converter_auto_convert) then
+                if reaper.GetToggleCommandState(converter_command_id) ~= 1 then
+                    setToggleCommandState(converter_command_id, true, false)
+                end
+            end
+        end
+    end
+
+    -- Poll browser script selection (browser writes this when user picks a script for converter)
+    local selectedScriptData = reaper.GetExtState("articulationMapConverter", "selectedScriptData")
+    if selectedScriptData ~= "" then
+        local selectedFor = reaper.GetExtState("articulationMapConverter", "selectedFor")
+        reaper.SetExtState("articulationMapConverter", "selectedScriptData", "", false)
+        reaper.SetExtState("articulationMapConverter", "selectedFor", "", false)
+        local data = json.decodeFromJson(selectedScriptData)
+        if data and data.triggerTableLayers then
+            -- JSON encodes integer-keyed tables with string keys; convert back to numbers for ipairs
+            local intLayers = {}
+            for k, v in pairs(data.triggerTableLayers) do
+                local n = tonumber(k)
+                if n then intLayers[n] = v end
+            end
+            data.triggerTableLayers = intLayers
+            if selectedFor == "input" then
+                local layerCount = 0
+                for _ in pairs(data.triggerTableLayers) do layerCount = layerCount + 1 end
+                if layerCount > 1 then
+                    converter.setPendingInputData(data)
+                    reaper.SetExtState("articulationMapConverter", "converterShouldFocus", "1", false)
+                else
+                    converter.setManualInput(data)
+                    reaper.SetExtState("articulationMapConverter", "converterShouldFocus", "1", false)
+                end
+            elseif selectedFor == "output" then
+                converter.setManualOutput(data)
+                reaper.SetExtState("articulationMapConverter", "converterShouldFocus", "1", false)
+            end
+        end
+    end
+
     if not lastTrack or lastTrack ~= track or (last_fxNumber ~= fxNumber) then
         if settings.remove_articulation_text_on_script_removal and lastTrack and lastTrack == track and last_fxNumber and not fxNumber then
             change_articulation.removeArticulationTextFromTrack(lastTrack)
+        end
+
+        -- Clear manual converter scripts when focus changes; cancel any active browser selection mode
+        if converterManualInputTriggerTableLayers or converterManualOutputTriggerTableLayers then
+            converterManualInputTriggerTableLayers  = nil
+            converterManualInputMapName             = nil
+            converterManualOutputTriggerTableLayers = nil
+            converterManualOutputMapName            = nil
+            converterLastFxName                     = nil
+        end
+        if reaper.GetExtState("articulationMapConverter", "browserMode") ~= "" then
+            reaper.SetExtState("articulationMapConverter", "browserMode", "", false)
         end
 
         triggerTables, triggerTableLayers, triggerTableKeys, artSliders, articulationNotFoundParam, delay_map = readArticulationScript(track, fxName)
@@ -371,8 +443,10 @@ local function loop()
         last_fxNumber = fxNumber
 
         converter.refreshOriginals()
-        if settings.converter_auto_open and #converterOriginalNames > 0 then
-            if reaper.GetToggleCommandState(converter_command_id) ~= 1 then
+        if settings.converter_auto_open and #converterOriginalNames > 0 and (converterHasUnmapped or not settings.converter_auto_convert) then
+            if isMouseDown then
+                pendingAutoOpen = true
+            elseif reaper.GetToggleCommandState(converter_command_id) ~= 1 then
                 setToggleCommandState(converter_command_id, true, false)
             end
         end
@@ -561,9 +635,7 @@ local function loop()
         --reaper.JS_Window_SetFocus(reaper.GetMainHwnd())
 
         if take  then
-            if settings.converter_auto_convert and (not last_take or take ~= last_take) then
-                converter.applyConversionToTake(last_take, converterMappings)
-            end
+            
             --[[ convertProgramChangesToArticulations(take)
             settleArticulationText(last_take)
             mirror_notation_to_unique_text_events(last_take) ]]
@@ -572,13 +644,23 @@ local function loop()
                 settleArticulationText(last_take)
                 mirror_notation_to_unique_text_events(last_take)
             end ]]         
-            if (not last_take_convert or last_take_convert ~= take) or (not last_focusIsOn_convert or last_focusIsOn_convert ~= focusIsOn) then                    
+            if (not last_take_convert or last_take_convert ~= take) or (not last_track_convert or last_track_convert ~= track) or (not last_focusIsOn_convert or last_focusIsOn_convert ~= focusIsOn) then                    
+                
+                if settings.converter_auto_convert then
+                    if isMouseDown then
+                        pendingAutoConvert = true
+                    else
+                        converter.applyConversionToTake(take, converterStoredOnlyMappings, nil, true)
+                    end
+                end
+
                 convertProgramChangesToArticulations(take)
                 settleArticulationText(take)
                 mirror_notation_to_unique_text_events(take)
-                
+
                 last_take_convert = take
                 last_focusIsOn_convert = focusIsOn
+                last_track_convert = track
             end
         end
 

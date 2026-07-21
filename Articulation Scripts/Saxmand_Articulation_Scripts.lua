@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.4.4
+-- @version 1.4.5
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -20,4 +20,6 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Converter.lua
 -- @changelog
---   + bug fix for converter where track is missing.
+--   + changing the way we read notes in the editor, to update map to be more economic
+--   + Converter window added.
+--   + option to set how many clicks it requires to set articulations on a take. 
