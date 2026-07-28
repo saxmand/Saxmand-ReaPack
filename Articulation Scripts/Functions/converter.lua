@@ -877,7 +877,7 @@ local function renderPairTable(ctx, allInputNames)
                 handleInputClick(origName, flatIdx)
             end
         end
-        setToolTipFunc("Copy output to selected inputs")
+        setToolTipFunc(m.articulation .. "\n - Copy output to selected inputs")
 
         renderTVCells(origName, m, idx, tColIdx, vColIdx)
     end

@@ -443,7 +443,7 @@ local function loop()
         last_fxNumber = fxNumber
 
         converter.refreshOriginals()
-        if settings.converter_auto_open and #converterOriginalNames > 0 and (converterHasUnmapped or not settings.converter_auto_convert) then
+        if fxNumber and settings.converter_auto_open and #converterOriginalNames > 0 and (converterHasUnmapped or not settings.converter_auto_convert) then
             if isMouseDown then
                 pendingAutoOpen = true
             elseif reaper.GetToggleCommandState(converter_command_id) ~= 1 then
