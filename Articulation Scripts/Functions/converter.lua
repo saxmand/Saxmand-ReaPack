@@ -1688,15 +1688,16 @@ function export.converterSurface(_)
         --reaper.ImGui_SameLine(ctx)
 
         local inputIsExternal = converterManualInputTriggerTableLayers ~= nil or converterShowMappingsMode
+        local noApply = inputIsExternal or converterManualOutputTriggerTableLayers ~= nil
 
-        if inputIsExternal then reaper.ImGui_BeginDisabled(ctx) end
+        if noApply then reaper.ImGui_BeginDisabled(ctx) end
         if reaper.ImGui_Button(ctx, "Apply") then
             applyConversionsForCurrentFocus(converterMappings)
             if settings.converter_close_when_applying then close = true end
         end
-        if inputIsExternal then reaper.ImGui_EndDisabled(ctx) end
-        setToolTipFunc(inputIsExternal
-            and "Cannot apply when using a script or stored mappings as input."
+        if noApply then reaper.ImGui_EndDisabled(ctx) end
+        setToolTipFunc(noApply
+            and "Cannot apply when using a manually loaded script as input or output."
             or "Apply conversion to articulations, without storing them.")
         reaper.ImGui_SameLine(ctx)
 
@@ -1729,22 +1730,22 @@ function export.converterSurface(_)
         reaper.ImGui_SameLine(ctx)
         if not canStore then reaper.ImGui_EndDisabled(ctx) end
 
-        if inputIsExternal or not hasOriginals then reaper.ImGui_BeginDisabled(ctx) end
+        if noApply or not hasOriginals then reaper.ImGui_BeginDisabled(ctx) end
         if reaper.ImGui_Button(ctx, "Store settings and apply") then
             storeCurrentMappings()
             applyConversionsForCurrentFocus(converterMappings)
             if settings.converter_close_when_applying then close = true end
         end
-        if inputIsExternal or not hasOriginals then reaper.ImGui_EndDisabled(ctx) end
-        setToolTipFunc(inputIsExternal
-            and "Cannot apply when using a script or stored mappings as input."
+        if noApply or not hasOriginals then reaper.ImGui_EndDisabled(ctx) end
+        setToolTipFunc(noApply
+            and "Cannot apply when using a manually loaded script as input or output."
             or "Store conversion settings for this articulation script and apply.")
 
         if not anyInputActive and not popupIsOpen and not reaper.ImGui_IsAnyItemActive(ctx) and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter(), false) then
-            if hasOriginals or inputIsExternal then
+            if hasOriginals or noApply then
                 storeCurrentMappings()
             end
-            if not inputIsExternal then
+            if not noApply then
                 applyConversionsForCurrentFocus(converterMappings)
                 if settings.converter_close_when_applying then close = true end
             end
