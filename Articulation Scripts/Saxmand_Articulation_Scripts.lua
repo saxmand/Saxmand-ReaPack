@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.4.8
+-- @version 1.4.9
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -20,4 +20,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Converter.lua
 -- @changelog
---   + Fixed bug where single note adding didn't get current articulation (introduced in 1.4.5).
+--   + Support importing text from Googlesheet and added new export buttons in App Settings drop down for exporting to googlesheet format

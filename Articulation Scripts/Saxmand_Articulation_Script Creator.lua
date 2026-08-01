@@ -410,8 +410,8 @@ function importArticulationSet(onlyJson, openJson)
             local row = focusedRow and focusedRow or 0
             for line in string.gmatch(clipboard, "([^\n]*)\n?") do
                 if line ~= "" then -- To avoid adding empty strings if the string ends with a newline
-                    parts = splitString(line, ";")
-                            
+                    parts = splitString(line, line:match("\t") ~= nil and "\t" or ";")
+                    
                     for i, name in ipairs(parts) do
                         columnToInsertTo = focusedColumn + i - 1
                         focusedColumnName = mappingType[columnToInsertTo]
@@ -440,7 +440,43 @@ function importArticulationSet(onlyJson, openJson)
     end
 end
 
-function deleteRowsStart() 
+-- TO CLIPBOARD (Google Sheets / TSV format)
+-- includeHeaders: prepend a header row with column names
+-- onlySelected:   export only selected rows; falls back to all rows if nothing is selected
+function exportArticulationSetToClipboard(includeHeaders, onlySelected)
+    local lines = {}
+
+    if includeHeaders then
+        local header = {}
+        for _, col in ipairs(mappingType) do
+            table.insert(header, tostring(col))
+        end
+        table.insert(lines, table.concat(header, "\t"))
+    end
+
+    local hasSelection = selectedArticulationsCountKeys and #selectedArticulationsCountKeys > 0
+    local rowIndices
+    if onlySelected and hasSelection then
+        rowIndices = selectedArticulationsCountKeys
+    else
+        rowIndices = {}
+        for i = 1, #tableInfo do table.insert(rowIndices, i) end
+    end
+
+    for _, rowIdx in ipairs(rowIndices) do
+        local rowData = tableInfo[rowIdx] or {}
+        local cols = {}
+        for _, col in ipairs(mappingType) do
+            local val = rowData[col]
+            table.insert(cols, val ~= nil and tostring(val) or "")
+        end
+        table.insert(lines, table.concat(cols, "\t"))
+    end
+
+    reaper.CF_SetClipboard(table.concat(lines, "\n"))
+end
+
+function deleteRowsStart()
     reaper.ImGui_SetKeyboardFocusHere(ctx, 0)
     deleteRowsAction = 1
 end
@@ -1652,7 +1688,32 @@ local function loop()
                 export.batchUpdateAllArticulationsScripts(articulation_scripts_list) 
             end                      
             setToolTipFunc("This will update all articulation scripts (jsfx) installed using the latest script version.\nThis will NOT update the articulation scripts in the session.")
-            
+
+            reaper.ImGui_Separator(ctx)
+
+            if reaper.ImGui_BeginMenu(ctx, "Export") then
+                local exportTip = "Copies rows as tab-separated values (TSV) to the clipboard.\nPaste directly into Google Sheets or Excel: each column becomes a cell, each row becomes a new line."
+                if reaper.ImGui_MenuItem(ctx, "Export selected rows") then
+                    exportArticulationSetToClipboard(false, true)
+                end
+                setToolTipFunc(exportTip)
+                if reaper.ImGui_MenuItem(ctx, "Export selected rows with headers") then
+                    exportArticulationSetToClipboard(true, true)
+                end
+                setToolTipFunc(exportTip)
+                if reaper.ImGui_MenuItem(ctx, "Export all rows") then
+                    exportArticulationSetToClipboard(false, false)
+                end
+                setToolTipFunc(exportTip)
+                if reaper.ImGui_MenuItem(ctx, "Export all rows with headers") then
+                    exportArticulationSetToClipboard(true, false)
+                end
+                setToolTipFunc(exportTip)
+                reaper.ImGui_EndMenu(ctx)
+            end
+            setToolTipFunc("Copy rows as tab-separated values (TSV) to the clipboard, ready to paste into Google Sheets or Excel.")
+
+            reaper.ImGui_Separator(ctx)
             docking.dropdown(ctx)
         end
         
@@ -1698,7 +1759,7 @@ local function loop()
 
         local importClipboardButton = {
                 name = "Import clipboard", refocus = true, key = "V", cmd = true, shift = true, sameLine = true, func = function() importArticulationSet() end,
-                tip = 'Import clipboard.\n - A new line is a new row.\n - ";" seperates columns.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12\n\nCan also import "//json:{...}" string from Articulation Script JSFX'
+                tip = 'Import clipboard.\n - A new line is a new row.\n - tabs separates columns (like copying from google sheet) and if no tab is used we look for ";" as columns seperator.\n\n-Example:\nShort;C0;10\nLong;D0;11\nFX;E0;12\n\nCan also import "//json:{...}" string from Articulation Script JSFX'
                 }
         
         
