@@ -1714,6 +1714,16 @@ local function loop()
             setToolTipFunc("Copy rows as tab-separated values (TSV) to the clipboard, ready to paste into Google Sheets or Excel.")
 
             reaper.ImGui_Separator(ctx)
+
+            if reaper.ImGui_BeginMenu(ctx, "Extra") then
+                if reaper.ImGui_MenuItem(ctx, "Reset server settings") then
+                    reaper.DeleteExtState("articulationServerExtState", "settings", true)
+                end
+                setToolTipFunc("Removes all stored background server settings. The server will revert to defaults on next restart.")
+                reaper.ImGui_EndMenu(ctx)
+            end
+
+            reaper.ImGui_Separator(ctx)
             docking.dropdown(ctx)
         end
         
