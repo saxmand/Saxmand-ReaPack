@@ -5,7 +5,6 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 
 local is_new_value, filename, sectionID, cmdID, mode, resolution, val, contextstr = reaper.get_action_context()
 -- Check where we load from
-
 local toolbarSet
 -- Function to set the toolbar icon state
 local function setToolbarState(isActive)
@@ -144,14 +143,26 @@ local defaultSettings = {
     converter_show_matching = true,
 }
 
+serverScriptPath = scriptPath  -- expose root path to loaded modules
+local articulationServerExtState = "articulationServerExtState"
+
 function saveSettings()
     local settingsStr = json.encodeToJson(settings)
-    reaper.SetExtState(contextstr,"settings", settingsStr, true) 
+    reaper.SetExtState(articulationServerExtState,"settings", settingsStr, true)
+end
+
+function resetToDefaultSettings()
+    reaper.DeleteExtState(articulationServerExtState, "settings", true)
+    settings = json.decodeFromJson(json.encodeToJson(defaultSettings))
+    saveSettings()
 end
 
 
-if reaper.HasExtState(contextstr, "settings") then 
-    local settingsStr = reaper.GetExtState(contextstr,"settings") 
+if reaper.HasExtState(articulationServerExtState, "settings") then 
+    local settingsStr = reaper.GetExtState(articulationServerExtState,"settings") 
+    settings = json.decodeFromJson(settingsStr)
+elseif reaper.HasExtState("", "settings") then -- will delete later!!
+    local settingsStr = reaper.GetExtState("","settings") 
     settings = json.decodeFromJson(settingsStr)
 else    
     settings = defaultSettings

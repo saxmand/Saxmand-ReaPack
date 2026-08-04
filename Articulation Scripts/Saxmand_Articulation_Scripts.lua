@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.4.9
+-- @version 1.5.0
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -20,4 +20,5 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Converter.lua
 -- @changelog
---   + Support importing text from Googlesheet and added new export buttons in App Settings drop down for exporting to googlesheet format
+--   + Removed modern_ui.lua to have references to use Reaper theme, to see if it causes error. 
+--   + Changed storing server settings to ExtState = "articulationServerExtState", because it was using a blank placement, to see if it removes bug

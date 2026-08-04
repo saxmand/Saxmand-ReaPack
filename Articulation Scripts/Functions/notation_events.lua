@@ -191,6 +191,48 @@ function export.others()
         saveSettings()
     end
     setToolTipFunc("Disable to not see tooltip when hovering an articulation buttons")
+
+    reaper.ImGui_SeparatorText(ctx, "App settings")
+
+    local sep = package.config:sub(1,1)
+    local settingsFolder = serverScriptPath .. "settings" .. sep
+
+    if reaper.ImGui_Button(ctx, "Export settings") then
+        reaper.RecursiveCreateDirectory(settingsFolder, 0)
+        local dateStr = os.date("%Y%m%d_%H%M%S")
+        local filename = settingsFolder .. "articulation_server_settings_" .. dateStr .. ".json"
+        local f = io.open(filename, "w")
+        if f then f:write(json.encodeToJson(settings)); f:close() end
+    end
+    setToolTipFunc("Saves the current settings to a JSON file in the 'settings' subfolder next to the background server script.")
+
+    reaper.ImGui_SameLine(ctx)
+
+    if reaper.ImGui_Button(ctx, "Import settings") then
+        local _, filepath = reaper.JS_Dialog_BrowseForOpenFiles(
+            "Import Settings", settingsFolder, "",
+            "JSON\0*.json\0All files\0*.*\0", false)
+        if filepath and filepath ~= "" then
+            local f = io.open(filepath, "r")
+            if f then
+                local content = f:read("*a"); f:close()
+                local imported = json.decodeFromJson(content)
+                if imported and type(imported) == "table" then
+                    settings = imported
+                    saveSettings()
+                end
+            end
+        end
+    end
+    setToolTipFunc("Load a previously exported settings JSON file from the 'settings' subfolder.")
+
+    reaper.ImGui_SameLine(ctx)
+
+    if reaper.ImGui_Button(ctx, "Reset settings") then
+        resetToDefaultSettings()
+    end
+    setToolTipFunc("Removes all stored settings and restores every option to its default value.")
+
 end
 
 function export.buttons_tooltip()

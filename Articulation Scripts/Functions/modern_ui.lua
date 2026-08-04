@@ -5,7 +5,7 @@ local export = {}
 --------------------------------------------------------
 ------------------COLOURS-------------------------------
 --------------------------------------------------------
-local function getColorFromReaperTheme(tx, alpha)
+--[[ local function getColorFromReaperTheme(tx, alpha)
     return reaper.ImGui_ColorConvertNative(reaper.GetThemeColor(tx) << 8) | (alpha and alpha or 0xFF)
 end
 
@@ -18,9 +18,9 @@ local function getColorFromReaperTheme2(key, alpha)
     local b = (col >> 16) & 0xFF
 
     return r/255, g/255, b/255, alpha or 1.0
-end
+end ]]
 
-function export.ApplyReaperThemeToImGui()
+--[[ function export.ApplyReaperThemeToImGui()
 
     -- Window / base
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(), getColorFromReaperTheme("col_main_bg2"))
@@ -61,17 +61,15 @@ function export.ApplyReaperThemeToImGui()
     
     -- Selection highlight
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TextSelectedBg(), getColorFromReaperTheme("col_tl_bgsel"))--, 0.35))
-    --[[
-    ]]
-end
-
+end ]]
+--[[ 
 function export.ApplyReaperThemeToImGui_end()
     reaper.ImGui_PopStyleColor(ctx, 22) -- number you pushed
-end
+end ]]
 
 
 -- MODERN THEME PALETTE
-theme2 = {
+--[[ theme2 = {
     --bg            = reaper.ImGui_ColorConvertDouble4ToU32(0.1, 0.1, 0.11, 1.00),  -- Very dark grey (VSCode-like)
     bg            = getColorFromReaperTheme("tcp_pinned_track_gap"),  -- Very dark grey (VSCode-like)
     panel_bg      = reaper.ImGui_ColorConvertDouble4ToU32(0.16, 0.16, 0.18, 1.00),
@@ -93,7 +91,7 @@ theme2 = {
     success       = reaper.ImGui_ColorConvertDouble4ToU32(0.20, 0.70, 0.40, 1.00),
     warning       = reaper.ImGui_ColorConvertDouble4ToU32(0.90, 0.60, 0.10, 1.00),
     error         = reaper.ImGui_ColorConvertDouble4ToU32(0.90, 0.20, 0.20, 1.00),
-}
+} ]]
 theme = {
     bg            = reaper.ImGui_ColorConvertDouble4ToU32(0.14, 0.14, 0.15, 1.00), 
     menu_bg       = reaper.ImGui_ColorConvertDouble4ToU32(0.22, 0.22, 0.23, 1.00), 
