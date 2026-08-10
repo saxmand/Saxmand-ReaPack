@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.5.1
+-- @version 1.5.2
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -20,4 +20,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Converter.lua
 -- @changelog
---   + Added button on the Creator menu to remove server settings.
+--   + Guard fix for "?:-1: attempt to index a nil value" error when reading articulation scripts
