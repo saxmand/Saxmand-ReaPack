@@ -1450,7 +1450,7 @@ local function loop()
         closeApp()
     end
     
-    if windowW and windowH and minimumsWidth and not mouseDown then 
+    if windowW and windowH and minimumsWidth and not mouseDown then
         local set = false
         local min_tableHeight = math.ceil(appSettings.fontSize / 100 * 130)
         --[[ 
@@ -1500,7 +1500,8 @@ local function loop()
     -- reaper.ImGui_WindowFlags_NoDecoration() |
                                              reaper.ImGui_WindowFlags_TopMost() -- | reaper.ImGui_WindowFlags_NoMove()
     -- | reaper.ImGui_WindowFlags_NoBackground()
-    -- | reaper.ImGui_FocusedFlags_None() 
+    -- | reaper.ImGui_FocusedFlags_None()
+    | reaper.ImGui_WindowFlags_NoDocking()
     | reaper.ImGui_WindowFlags_NoTitleBar() -- | reaper.ImGui_WindowFlags_AlwaysAutoResize()
     --| reaper.ImGui_WindowFlags_MenuBar()
     )
@@ -3779,19 +3780,19 @@ len > 0 ? (
                             --reaper.ImGui_SetCursorPosX(ctx, tableX + 30)
                             
                             --if not windowW then windowW = 200; windowH = 1 end
-                            
                             local childSizeW = windowW - 20 < tableWidth and windowW - 20 or tableWidth
                             tableHeight = windowH - tableY  - (math.ceil(appSettings.fontSize / 100 * 40) + 30)
                             if reaper.ImGui_BeginChild(ctx, "tablechild2", childSizeW, tableHeight) then
-                                
-                                tableFlags = 
+
+                                tableFlags =
                                                 reaper.ImGui_TableFlags_ScrollY()
                                                 | reaper.ImGui_TableFlags_ScrollX()
-                                                | reaper.ImGui_TableFlags_RowBg() 
+                                                | reaper.ImGui_TableFlags_RowBg()
                                                 | reaper.ImGui_TableFlags_NoHostExtendX()
-                                                | reaper.ImGui_TableFlags_NoHostExtendY() 
-                                                
+                                                | reaper.ImGui_TableFlags_NoHostExtendY()
+
                                                 | reaper.ImGui_TableFlags_Borders()
+
                                 if reaper.ImGui_BeginTable(ctx, 'table1', columnAmount + 1, tableFlags) then --, tableWidth - 10, windowH - tableY - 40) then -- ,reaper.ImGui_GetTextLineHeightWithSpacing(ctx) * 20) then
                                     reaper.ImGui_TableSetupScrollFreeze(ctx, 2, 1)
                                     -- Display headers so we can inspect their interaction with borders.
