@@ -1,6 +1,6 @@
 -- @description FX Modulator Linking
 -- @author Saxmand
--- @version 1.6.8
+-- @version 1.6.9
 -- @provides
 --   [effect] ../FX Modulator Linking/*.jsfx
 --   [effect] ../FX Modulator Linking/SNJUK2 Modulators/*.jsfx
@@ -18,14 +18,14 @@
 --   Saxmand_FX Modulator Linking/Helpers/*.lua
 --   Saxmand_FX Modulator Linking/Color sets/*.txt
 -- @changelog
---   + made fallback for fix 9862: attempt to concatenate a table value. Unsure how the underlying problem exist.
+--   + fixed potential crash https://forum.cockos.com/showpost.php?p=2958040&postcount=1072
 
 
 local startTime = reaper.time_precise()
 local reaperStartupTime
 local exportCurrentSettingsAndRecetOnStart = false
 
-local version = "1.6.7" 
+local version = "1.6.9" 
 
 local seperator = package.config:sub(1,1)  -- path separator: '/' on Unix, '\\' on Windows
 local scriptPath = debug.getinfo(1, 'S').source:match("@(.*"..seperator..")")
@@ -7670,8 +7670,9 @@ function nlfoModulator(id, name, modulatorsPos, fxIndex, fxInContainerIndex, isC
 
     local paramName = "Speed"
     local visualIndexOffset = 0
+    local maxVal = 16
     if tonumber(isTempoSync) == 0 then
-        nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.speed", "Speed", 0.0039, 16,1, "%0.4f Hz", reaper.ImGui_SliderFlags_Logarithmic(), nil, nil, nil, nil,modulatorParameterWidth, 1, nil,  useKnobs, useNarrow)
+        nativeReaperModuleParameter(id, track, fxIndex, paramOut, "SliderDouble", "lfo.speed", "Speed", 0.0039, maxVal,1, "%0.4f Hz", reaper.ImGui_SliderFlags_Logarithmic(), nil, nil, nil, nil,modulatorParameterWidth, 1, nil,  useKnobs, useNarrow)
         --visualIndexOffset = visualIndexOffset + 1
     else  
         -- speed drop down menu
@@ -10103,7 +10104,7 @@ function drawCustomSlider(showName, valueName, valueColor, padColor, currentValu
     
     
     
-    if showMappingText then
+    if showMappingText and type(showMappingText) == "string" then
         if settings.useKnobs and settings.showSeperationLineBeforeMappingName then
             reaper.ImGui_DrawList_AddLine(draw_list, minX+2, maxY- 13, maxX-2,maxY-13, padColor & 0xFFFFFF33, 1)     
         end
