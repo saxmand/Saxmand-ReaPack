@@ -1499,8 +1499,7 @@ function export.converterSurface(_)
         -- converterFocusedTable, causing mismatched PushStyleColor/PopStyleColor pairs.
         local inputTableFocused  = converterFocusedTable == "input"
         local outputTableFocused = converterFocusedTable == "output"
-        local inputLabel = converterShowMappingsMode and "selected script mappings"
-            or (converterManualInputMapName or ("selected " .. focusIsOn))
+        local inputLabel = converterShowMappingsMode and "selected script mappings" or (converterManualInputMapName or ("selected " .. tostring(focusIsOn)))
         local outputLabel = (converterManualOutputMapName and (converterManualOutputMapName) or (fxName and fxName or "No articulation script in focus"))
         if horizLayout then
             -- Side-by-side: pair left, available right

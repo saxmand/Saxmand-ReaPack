@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.5.3
+-- @version 1.5.5
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -20,4 +20,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Converter.lua
 -- @changelog
---   + Fix, Creator is no longer dockable (for now), as it can creates visual glitches
+--   + Fix bug, convert.lua 1503 string error
