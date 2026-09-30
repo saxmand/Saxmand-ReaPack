@@ -1,7 +1,7 @@
 -- @description Articulation Scripts
 -- @author Saxmand
 -- @package Articulation Scripts
--- @version 1.5.5
+-- @version 1.5.6
 -- @about
 --   A complete system for the MOST advanced articulation system
 -- @provides
@@ -20,4 +20,4 @@
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Popup List Overview Surface.lua
 --   [main=midi_editor,midi_inlineeditor,main] Saxmand_Articulation_Converter.lua
 -- @changelog
---   + Fix bug, convert.lua 1503 string error
+--   + Sysex limitation for articulation names (47 characters) is removed when using REAPER 7.81+
