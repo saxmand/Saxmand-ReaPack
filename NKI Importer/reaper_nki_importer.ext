@@ -1,0 +1,16 @@
+-- @description NKI Importer extension
+-- @author Saxmand
+-- @version 1.0.0
+-- @about
+--   # NKI Importer extension
+--
+--   Lets you drop Kontakt .nki files on REAPER's arrange view (mixed with other files too) and
+--   hands them to the "NKI Importer" scripts package, which does the loading - install both.
+--   Restart REAPER after installing.
+--
+--   Source: NKI Importer/extension in this repository.
+-- @provides
+--   [darwin] reaper_nki_importer.dylib
+--   [win64] reaper_nki_importer-x64.dll
+-- @changelog
+--   + Initial release
