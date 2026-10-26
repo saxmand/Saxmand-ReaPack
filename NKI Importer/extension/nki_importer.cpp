@@ -1,8 +1,9 @@
 // NKI Importer - REAPER extension (macOS and Windows).
 // Subclasses the arrange view and catches WM_DROPFILES before REAPER sees it:
-//   * only .nki files dropped  -> swallowed, so no "Could not import..." popup
-//   * mixed with other files   -> .nki entries removed from the drop, the rest imports as usual
-// The .nki paths go to ExtState "Saxmand_NKI_Importer" / "dropQueue" (newline separated),
+//   * only Kontakt files (.nki instruments, .nkm multis) dropped -> swallowed, so no
+//     "Could not import..." popup
+//   * mixed with other files -> Kontakt files removed from the drop, the rest imports as usual
+// The Kontakt file paths go to ExtState "Saxmand_NKI_Importer" / "dropQueue" (newline separated),
 // and the import script is started unless it is already running (ExtState "busy"); the
 // Lua side does the actual Kontakt work.
 
@@ -24,7 +25,7 @@
 
 static const char *SECTION = "Saxmand_NKI_Importer";
 static const char *QUEUE_KEY = "dropQueue";
-static const char *VERSION = "0.7";
+static const char *VERSION = "0.8";
 static const char *SCRIPT_NAME = "Saxmand_NKI Importer - Import dropped files.lua";
 #ifdef _WIN32
 static const char PATH_SEP = '\\';
@@ -190,12 +191,13 @@ static bool rewriteDrop(HDROP drop, const std::string &first, const std::vector<
 
 // ---------------------------------------------------------------- drop handling
 
-static bool isNki(const std::string &fn)
+// Instruments (.nki) and multis (.nkm).
+static bool isKontaktFile(const std::string &fn)
 {
   if (fn.size() <= 4) return false;
   std::string ext = fn.substr(fn.size() - 4);
   for (char &c : ext) c = (char)tolower((unsigned char)c);
-  return ext == ".nki";
+  return ext == ".nki" || ext == ".nkm";
 }
 
 static void queueFiles(const std::vector<std::string> &files)
@@ -246,18 +248,18 @@ static void runImportScript()
   // drop the queued files, so they don't get imported by surprise on a later drop
   SetExtState(SECTION, QUEUE_KEY, "", false);
   ShowConsoleMsg((std::string("NKI Importer ext: could not find \"") + SCRIPT_NAME +
-    "\" in REAPER's Scripts folder - the dropped .nki files were ignored.\n").c_str());
+    "\" in REAPER's Scripts folder - the dropped Kontakt files were ignored.\n").c_str());
 }
 
 static LRESULT CALLBACK arrangeProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   if (msg == WM_DROPFILES) {
     HDROP drop = (HDROP)wParam;
-    std::vector<std::string> all = dropFiles(drop), nki, other;
-    for (const std::string &fn : all) (isNki(fn) ? nki : other).push_back(fn);
+    std::vector<std::string> all = dropFiles(drop), kontakt, other;
+    for (const std::string &fn : all) (isKontaktFile(fn) ? kontakt : other).push_back(fn);
 
-    if (!nki.empty()) {
-      queueFiles(nki);
+    if (!kontakt.empty()) {
+      queueFiles(kontakt);
       if (other.empty()) {
         DragFinish(drop); // what REAPER's own handler would do
         return 0;

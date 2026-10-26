@@ -2,7 +2,8 @@
 -- NKI Importer - shared code (macOS and Windows).
 -- Usage: local C = dofile(script_dir .. "nki_common.lua")
 --
--- Loading an .nki = clicking Kontakt's File > Load... and filling in its open dialog:
+-- Loading an .nki (instrument) or .nkm (multi) = clicking Kontakt's File > Load... and filling
+-- in its open dialog:
 --   macOS:   nki_helper.js (JXA) in the background - real clicks, System Events for the dialog
 --   Windows: js_ReaScriptAPI from a defer loop - Kontakt (Qt) takes posted mouse messages as
 --            long as the real cursor is on the target, and the dialog is a standard #32770
@@ -422,8 +423,14 @@ end
 
 ---------------------------------------------------------------- REAPER side
 
+-- Kontakt files NKI Importer loads: instruments (.nki) and multis (.nkm).
+function C.isKontaktFile(path)
+  local ext = path:lower():match("%.(%w+)$")
+  return ext == "nki" or ext == "nkm"
+end
+
 function C.nameFromPath(path)
-  return path:match("([^/\\]+)%.[nN][kK][iI]$") or path:match("([^/\\]+)$")
+  return path:match("([^/\\]+)%.[nN][kK][iImM]$") or path:match("([^/\\]+)$")
 end
 
 -- Inserts a track with Kontakt, floats the plugin window.
@@ -485,7 +492,7 @@ function C.calibrate(fxTitle, fxHwnd, countdown, onLine, onDone)
   end
 end
 
--- Imports one file: new track with Kontakt, then File > Load... with the .nki.
+-- Imports one file: new track with Kontakt, then File > Load... with the .nki/.nkm.
 -- onLine(line) gets progress, onDone(ok, message, track, fx) is called at the end; on
 -- failure message is the error plus a permission hint where one applies.
 function C.importFile(path, onLine, onDone)
@@ -540,19 +547,6 @@ function C.enqueue(files)
   return reaper.GetExtState(C.section, "busy") == "1"
 end
 
--- Calls onFiles(nkiPaths, changeCount) with the .nki files of the last drag (macOS).
-function C.draggedNki(onFiles)
-  C.runHelper("dragfiles", {}, nil, function(ok, lines)
-    local files, change = {}, nil
-    for _, line in ipairs(lines) do
-      change = change or tonumber(line:match("^CHANGE (%d+)"))
-      local path = line:match("^FILE (.+)")
-      if path and path:lower():match("%.nki$") then files[#files + 1] = path end
-    end
-    onFiles(ok and files or {}, change)
-  end, 10)
-end
-
 -- Lists the selection of every open Explorer window into a UTF-8 file (console output would
 -- go through the OEM code page and mangle non-ASCII paths).
 local EXPLORER_PS1 = [==[
@@ -565,9 +559,9 @@ foreach ($w in $shell.Windows()) {
 [IO.File]::WriteAllLines($out, [string[]]$paths)
 ]==]
 
--- Paths of the .nki files selected in Finder (macOS) or in open Explorer windows (Windows).
+-- Paths of the Kontakt files selected in Finder (macOS) or in open Explorer windows (Windows).
 -- Also returns what the Finder/Explorer query printed, for diagnosing an empty result.
-function C.selectedNkiFiles()
+function C.selectedKontaktFiles()
   local text, output
   if C.isMac then
     output = reaper.ExecProcess("/usr/bin/osascript -e " .. shellQuote([[
@@ -592,7 +586,7 @@ return out]]), 10000) or ""
   local files = {}
   -- (on macOS the ExecProcess output starts with the exit code line - not a path)
   for line in text:gmatch("[^\r\n]+") do
-    if line:lower():match("%.nki$") then files[#files + 1] = line end
+    if C.isKontaktFile(line) then files[#files + 1] = line end
   end
   return files, output
 end
@@ -600,10 +594,10 @@ end
 -- The "Import selected NKI files in Finder/Explorer" actions: queue the selection and run
 -- the import script (or let the already running one pick the files up).
 function C.importSelectedFiles()
-  local files, output = C.selectedNkiFiles()
+  local files, output = C.selectedKontaktFiles()
   if #files == 0 then
     local where = C.isMac and "Finder" or "Explorer"
-    local msg = "No .nki files selected in " .. where .. "."
+    local msg = "No .nki or .nkm files selected in " .. where .. "."
     if output:match("%S") and not output:match("^%s*0%s*$") then
       msg = msg .. "\n\n" .. where .. " query returned:\n" .. output:sub(1, 1000)
     end

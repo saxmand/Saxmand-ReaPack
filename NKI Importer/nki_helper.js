@@ -2,7 +2,7 @@
 // Launched in the background by the Lua scripts, so REAPER's main thread stays free
 // to process the clicks/keys we send to Kontakt:
 //   osascript -l JavaScript nki_helper.js <mode> <job.json> <status.txt>
-// modes: check | calibrate | load | dragfiles
+// modes: check | calibrate | load
 // Progress is written to <status.txt> one line per step; the last line is DONE or ERROR: ...
 
 ObjC.import('Foundation');
@@ -152,16 +152,6 @@ function countdownOffset(win, label, seconds) {
 }
 
 // Two points: the Files button, then (after we click it ourselves) the "Load..." menu item.
-// File paths of the last drag (any source app). The drag pasteboard keeps them until the
-// next drag starts; changeCount tells drags apart.
-function doDragFiles(job) {
-  var pb = $.NSPasteboard.pasteboardWithName($.NSPasteboardNameDrag);
-  status('CHANGE ' + pb.changeCount);
-  var urls = pb.readObjectsForClassesOptions($([$.NSURL]), $({ NSPasteboardURLReadingFileURLsOnlyKey: true }));
-  if (urls.isNil()) return;
-  for (var i = 0; i < urls.count; i++) status('FILE ' + urls.objectAtIndex(i).path.js);
-}
-
 function doCalibrate(job) {
   var proc = reaperProcess();
   var win = waitForPluginWindow(proc, job);
@@ -242,7 +232,6 @@ function run(argv) {
     if (mode === 'check') doCheck(job);
     else if (mode === 'calibrate') doCalibrate(job);
     else if (mode === 'load') doLoad(job);
-    else if (mode === 'dragfiles') doDragFiles(job);
     else throw new Error('Unknown mode: ' + mode);
     status('DONE');
   } catch (e) {

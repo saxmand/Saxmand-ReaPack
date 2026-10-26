@@ -1,12 +1,13 @@
 -- @description NKI Importer
 -- @author Saxmand
--- @version 1.0.0
+-- @version 1.1.0
 -- @about
 --   # NKI Importer
 --
---   Drop Kontakt .nki files on the arrange view, or select them in Finder/Explorer and run
---   "Import selected NKI files", and each one gets a new track with Kontakt and the instrument
---   loaded. Several files load one after another with a progress window.
+--   Drop Kontakt instruments (.nki) or multis (.nkm) on the arrange view, or select them in
+--   Finder/Explorer and run "Import selected NKI files", and each one gets a new track with
+--   Kontakt and the instrument or multi loaded. Several files load one after another with a
+--   progress window.
 --
 --   - Drag and drop needs the "NKI Importer extension" package (same repository).
 --   - Requires js_ReaScriptAPI.
@@ -24,7 +25,7 @@
 --   [main windows] Saxmand_NKI Importer - Import selected NKI files in Explorer.lua
 --   [main] Saxmand_NKI Importer - Calibrate Kontakt clicks.lua
 -- @changelog
---   + Initial release
+--   + Multis (.nkm) load the same way as instruments (.nki): drag and drop and the Finder/Explorer action
 
 -- NKI Importer: choose which installed Kontakt new tracks get (asked automatically on first
 -- use when more than one is installed). Click offsets are kept per version.
