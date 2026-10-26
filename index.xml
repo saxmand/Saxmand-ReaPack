@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="cb17390ecdb6591434271a5b9f7a9e6788f078bf" name="Saxmand ReaPack">
+<index version="1" commit="20042ff7db7665576883ab170e61aef9f159b828" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -12275,7 +12275,7 @@
 \widowctrl\hyphauto
 
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 NKI Importer extension\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Lets you drop Kontakt instruments (.nki) and multis (.nkm) on REAPER's arrange view (mixed with other files too) and hands them to the "NKI Importer" scripts package, which does the loading - install both. Restart REAPER after installing.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Lets you drop Kontakt instruments (.nki), multis (.nkm) and folders holding them on REAPER's arrange view (mixed with other files too) and hands them to the "NKI Importer" scripts package, which does the loading - install both. Restart REAPER after installing.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Source: NKI Importer/extension in this repository.\par}
 }
 ]]></description>
@@ -12290,6 +12290,11 @@
         <source platform="darwin" file="reaper_nki_importer.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/cb17390ecdb6591434271a5b9f7a9e6788f078bf/NKI%20Importer/reaper_nki_importer.dylib</source>
         <source platform="win64" file="reaper_nki_importer-x64.dll">https://github.com/saxmand/Saxmand-ReaPack/raw/cb17390ecdb6591434271a5b9f7a9e6788f078bf/NKI%20Importer/reaper_nki_importer-x64.dll</source>
       </version>
+      <version name="1.2.0" author="Saxmand" time="2026-10-26T18:55:00Z">
+        <changelog><![CDATA[+ Also catches dropped folders that contain Kontakt files]]></changelog>
+        <source platform="darwin" file="reaper_nki_importer.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/reaper_nki_importer.dylib</source>
+        <source platform="win64" file="reaper_nki_importer-x64.dll">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/reaper_nki_importer-x64.dll</source>
+      </version>
     </reapack>
     <reapack name="Saxmand_NKI Importer - Choose Kontakt version.lua" type="script" desc="NKI Importer">
       <metadata>
@@ -12299,6 +12304,7 @@
 
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 NKI Importer\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Drop Kontakt instruments (.nki) or multis (.nkm) on the arrange view, or select them in Finder/Explorer and run "Import selected NKI files", and each one gets a new track with Kontakt and the instrument or multi loaded. Several files load one after another with a progress window.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Drop folders too: their Kontakt files (subfolders included) go into a list to confirm first, and load into folder tracks named after the folders. Turn on "Collect files before loading" to gather files in that list from several places before loading - once loading starts, the mouse is busy.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Drag and drop needs the "NKI Importer extension" package (same repository).\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Requires js_ReaScriptAPI.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Kontakt 7 and 8. When more than one Kontakt is installed you're asked once which to use (change it later with "Choose Kontakt version").\par}
@@ -12326,6 +12332,20 @@
         <source main="main" platform="darwin" file="Saxmand_NKI Importer - Import selected NKI files in Finder.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/cb17390ecdb6591434271a5b9f7a9e6788f078bf/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Import%20selected%20NKI%20files%20in%20Finder.lua</source>
         <source main="main" platform="windows" file="Saxmand_NKI Importer - Import selected NKI files in Explorer.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/cb17390ecdb6591434271a5b9f7a9e6788f078bf/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Import%20selected%20NKI%20files%20in%20Explorer.lua</source>
         <source main="main" file="Saxmand_NKI Importer - Calibrate Kontakt clicks.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/cb17390ecdb6591434271a5b9f7a9e6788f078bf/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Calibrate%20Kontakt%20clicks.lua</source>
+      </version>
+      <version name="1.2.0" author="Saxmand" time="2026-10-26T18:55:00Z">
+        <changelog><![CDATA[+ Folders: drop or select them, confirm their Kontakt files in a list, and they load into folder tracks named after the folders
++ "Collect files before loading" toggle: gather files in the list first, load when you press Load
++ The list window takes drops itself, scrolls, and lets you remove files or folders
++ Escape while loading stops after the current file (also when Kontakt's window has the keyboard)]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Choose%20Kontakt%20version.lua</source>
+        <source file="nki_common.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/nki_common.lua</source>
+        <source platform="darwin" file="nki_helper.js">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/nki_helper.js</source>
+        <source file="Saxmand_NKI Importer - Import dropped files.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Import%20dropped%20files.lua</source>
+        <source main="main" platform="darwin" file="Saxmand_NKI Importer - Import selected NKI files in Finder.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Import%20selected%20NKI%20files%20in%20Finder.lua</source>
+        <source main="main" platform="windows" file="Saxmand_NKI Importer - Import selected NKI files in Explorer.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Import%20selected%20NKI%20files%20in%20Explorer.lua</source>
+        <source main="main" file="Saxmand_NKI Importer - Calibrate Kontakt clicks.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Calibrate%20Kontakt%20clicks.lua</source>
+        <source main="main" file="Saxmand_NKI Importer - Collect files before loading (toggle).lua">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Collect%20files%20before%20loading%20(toggle).lua</source>
       </version>
     </reapack>
   </category>
