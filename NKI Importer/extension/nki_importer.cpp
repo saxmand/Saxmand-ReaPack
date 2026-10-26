@@ -1,9 +1,9 @@
 // NKI Importer - REAPER extension (macOS and Windows).
 // Subclasses the arrange view and catches WM_DROPFILES before REAPER sees it:
-//   * only Kontakt files (.nki instruments, .nkm multis) dropped -> swallowed, so no
-//     "Could not import..." popup
+//   * only Kontakt files (.nki instruments, .nkm multis, or folders holding some) dropped ->
+//     swallowed, so no "Could not import..." popup
 //   * mixed with other files -> Kontakt files removed from the drop, the rest imports as usual
-// The Kontakt file paths go to ExtState "Saxmand_NKI_Importer" / "dropQueue" (newline separated),
+// The Kontakt file/folder paths go to ExtState "Saxmand_NKI_Importer" / "dropQueue" (newline separated),
 // and the import script is started unless it is already running (ExtState "busy"); the
 // Lua side does the actual Kontakt work.
 
@@ -25,7 +25,7 @@
 
 static const char *SECTION = "Saxmand_NKI_Importer";
 static const char *QUEUE_KEY = "dropQueue";
-static const char *VERSION = "0.8";
+static const char *VERSION = "0.9";
 static const char *SCRIPT_NAME = "Saxmand_NKI Importer - Import dropped files.lua";
 #ifdef _WIN32
 static const char PATH_SEP = '\\';
@@ -200,6 +200,45 @@ static bool isKontaktFile(const std::string &fn)
   return ext == ".nki" || ext == ".nkm";
 }
 
+// Folder search, as in the scripts (nki_common.lua): skip Samples and hidden folders, limit
+// the depth - and, since this runs inside the drop, stop after FOLDER_BUDGET folders (a big
+// sample library dropped for REAPER to import is then left alone quickly).
+static const int FOLDER_MAX_DEPTH = 8;
+static const int FOLDER_BUDGET = 2000;
+
+static bool skipFolder(const std::string &name)
+{
+  std::string lower = name;
+  for (char &c : lower) c = (char)tolower((unsigned char)c);
+  return lower == "samples" || name.empty() || name[0] == '.';
+}
+
+// Whether `dir` is a folder with Kontakt files in it or its subfolders (false for a file).
+static bool containsKontaktFiles(const std::string &dir, int depth, int &budget)
+{
+  if (--budget < 0) return false;
+  EnumerateFiles(dir.c_str(), -1); // re-read instead of REAPER's cached listing
+  for (int i = 0; const char *fn = EnumerateFiles(dir.c_str(), i); i++) {
+    if (isKontaktFile(fn)) return true;
+  }
+  if (depth <= 1) return false;
+  std::vector<std::string> subdirs;
+  EnumerateSubdirectories(dir.c_str(), -1);
+  for (int i = 0; const char *sub = EnumerateSubdirectories(dir.c_str(), i); i++) subdirs.push_back(sub);
+  for (const std::string &sub : subdirs) {
+    if (!skipFolder(sub) && containsKontaktFiles(dir + PATH_SEP + sub, depth - 1, budget)) return true;
+  }
+  return false;
+}
+
+static bool isKontaktDrop(std::string &fn)
+{
+  if (isKontaktFile(fn)) return true;
+  while (fn.size() > 1 && (fn.back() == '/' || fn.back() == '\\')) fn.pop_back();
+  int budget = FOLDER_BUDGET;
+  return containsKontaktFiles(fn, FOLDER_MAX_DEPTH, budget);
+}
+
 static void queueFiles(const std::vector<std::string> &files)
 {
   std::string queue = GetExtState(SECTION, QUEUE_KEY);
@@ -256,7 +295,11 @@ static LRESULT CALLBACK arrangeProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
   if (msg == WM_DROPFILES) {
     HDROP drop = (HDROP)wParam;
     std::vector<std::string> all = dropFiles(drop), kontakt, other;
-    for (const std::string &fn : all) (isKontaktFile(fn) ? kontakt : other).push_back(fn);
+    for (const std::string &fn : all) {
+      std::string path = fn;
+      if (isKontaktDrop(path)) kontakt.push_back(path);
+      else other.push_back(fn);
+    }
 
     if (!kontakt.empty()) {
       queueFiles(kontakt);
@@ -265,7 +308,7 @@ static LRESULT CALLBACK arrangeProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         return 0;
       }
       if (!rewriteDrop(drop, all[0], other))
-        ShowConsoleMsg("NKI Importer ext: could not remove .nki files from a mixed drop\n");
+        ShowConsoleMsg("NKI Importer ext: could not remove the Kontakt files from a mixed drop\n");
     }
   }
   return callPrevProc(hwnd, msg, wParam, lParam);

@@ -39,6 +39,7 @@ C.defaults = {
   openButton = "Open",
   guiDelay = 0, -- extra seconds to let Kontakt's GUI settle before clicking
   closeWindowAfter = false,
+  collectMode = false, -- true: files wait in the list until "Load" (folders always do)
 }
 
 function C.get(key)
@@ -433,13 +434,112 @@ function C.nameFromPath(path)
   return path:match("([^/\\]+)%.[nN][kK][iImM]$") or path:match("([^/\\]+)$")
 end
 
--- Inserts a track with Kontakt, floats the plugin window.
--- Returns track, fxIndex, window title, window  -or-  nil, error message.
-function C.createKontaktTrack(name)
+-- Folder search limits: library folders hold huge Samples folders and deep trees.
+local FOLDER_MAX_DEPTH = 8
+local FOLDER_SKIP = { samples = true }
+
+-- "Strings 2" before "Strings 10".
+local function naturalKey(name)
+  return name:lower():gsub("%d+", function(digits) return string.format("%012d", tonumber(digits)) end)
+end
+
+local function sortedListing(dir, enumerate)
+  enumerate(dir, -1) -- re-read the folder instead of REAPER's cached listing
+  local names = {}
+  local i = 0
+  while true do
+    local name = enumerate(dir, i)
+    if not name then break end
+    names[#names + 1] = name
+    i = i + 1
+  end
+  table.sort(names, function(a, b) return naturalKey(a) < naturalKey(b) end)
+  return names
+end
+
+-- The Kontakt files in a folder and its subfolders, in folder order: { path, group }, where
+-- group = the folder names from the given folder down, outermost first. Empty for a file.
+function C.expandFolder(dir)
+  dir = dir:gsub("[/\\]+$", "")
+  local sep = C.isWindows and "\\" or "/"
+  local found = {}
+  local function walk(path, group, depth)
+    for _, name in ipairs(sortedListing(path, reaper.EnumerateFiles)) do
+      if C.isKontaktFile(name) then found[#found + 1] = { path = path .. sep .. name, group = group } end
+    end
+    if depth >= FOLDER_MAX_DEPTH then return end
+    for _, sub in ipairs(sortedListing(path, reaper.EnumerateSubdirectories)) do
+      if not FOLDER_SKIP[sub:lower()] and sub:sub(1, 1) ~= "." then
+        local subGroup = { table.unpack(group) }
+        subGroup[#subGroup + 1] = sub
+        walk(path .. sep .. sub, subGroup, depth + 1)
+      end
+    end
+  end
+  walk(dir, { dir:match("([^/\\]+)$") }, 1)
+  return found
+end
+
+-- Where a batch of new tracks goes: below the last selected track, else at the end.
+function C.insertIndexBelowSelection()
+  local selected = reaper.CountSelectedTracks(0)
+  if selected == 0 then return reaper.CountTracks(0) end
+  return math.floor(reaper.GetMediaTrackInfo_Value(reaper.GetSelectedTrack(0, selected - 1), "IP_TRACKNUMBER"))
+end
+
+-- Inserts tracks one after another from `index`, inside REAPER folder tracks named after each
+-- track's group (folder names, outermost first) - folder tracks are added as needed. After
+-- every insert the last track closes all open folders, so the block is valid at any point
+-- (e.g. when loading is stopped halfway).
+function C.trackPlacer(index)
+  local P = { stack = {} }
+  local last, lastOwnDepth -- the last inserted track, and its depth without the closing part
+  local closing = 0 -- folders closed since the last insert
+
+  local function place(name, isFolder)
+    if last and reaper.ValidatePtr(last, "MediaTrack*") then
+      reaper.SetMediaTrackInfo_Value(last, "I_FOLDERDEPTH", lastOwnDepth - closing)
+      index = math.floor(reaper.GetMediaTrackInfo_Value(last, "IP_TRACKNUMBER")) -- tracks may have moved
+    end
+    closing = 0
+    reaper.InsertTrackAtIndex(index, true)
+    local track = reaper.GetTrack(0, index)
+    index = index + 1
+    reaper.GetSetMediaTrackInfo_String(track, "P_NAME", name, true)
+    if isFolder then P.stack[#P.stack + 1] = name end
+    last, lastOwnDepth = track, isFolder and 1 or 0
+    reaper.SetMediaTrackInfo_Value(track, "I_FOLDERDEPTH", lastOwnDepth - #P.stack)
+    return track
+  end
+
+  -- Inserts the track `name` inside the folder tracks for `group`.
+  function P.insert(name, group)
+    local shared = 0
+    while shared < #P.stack and shared < #group and P.stack[shared + 1] == group[shared + 1] do
+      shared = shared + 1
+    end
+    closing = closing + #P.stack - shared
+    for i = #P.stack, shared + 1, -1 do P.stack[i] = nil end
+    for i = shared + 1, #group do place(group[i], true) end
+    return place(name, false)
+  end
+
+  return P
+end
+
+-- Inserts a track with Kontakt, floats the plugin window. `insert(name)` creates the named,
+-- empty track (e.g. inside folder tracks); without it: "Track: Insert new track" below the
+-- selection. Returns track, fxIndex, window title, window  -or-  nil, error message.
+function C.createKontaktTrack(name, insert)
   reaper.Undo_BeginBlock()
-  reaper.Main_OnCommand(40001, 0) -- Track: Insert new track
-  local track = reaper.GetSelectedTrack(0, 0)
-  reaper.GetSetMediaTrackInfo_String(track, "P_NAME", name, true)
+  local track
+  if insert then
+    track = insert(name)
+  else
+    reaper.Main_OnCommand(40001, 0) -- Track: Insert new track
+    track = reaper.GetSelectedTrack(0, 0)
+    reaper.GetSetMediaTrackInfo_String(track, "P_NAME", name, true)
+  end
 
   local fxName = C.get("fxName")
   local fx = reaper.TrackFX_AddByName(track, fxName, false, -1)
@@ -494,9 +594,10 @@ end
 
 -- Imports one file: new track with Kontakt, then File > Load... with the .nki/.nkm.
 -- onLine(line) gets progress, onDone(ok, message, track, fx) is called at the end; on
--- failure message is the error plus a permission hint where one applies.
-function C.importFile(path, onLine, onDone)
-  local track, fx, title, hwnd = C.createKontaktTrack(C.nameFromPath(path))
+-- failure message is the error plus a permission hint where one applies. `insert`: see
+-- C.createKontaktTrack.
+function C.importFile(path, onLine, onDone, insert)
+  local track, fx, title, hwnd = C.createKontaktTrack(C.nameFromPath(path), insert)
   if not track then return onDone(false, fx) end
 
   C.runLoad(C.loadJob(path, title), hwnd, onLine, function(ok, lines)
@@ -504,36 +605,6 @@ function C.importFile(path, onLine, onDone)
     if C.get("closeWindowAfter") then reaper.TrackFX_Show(track, fx, 2) end
     onDone(true, nil, track, fx)
   end)
-end
-
--- Imports the files one by one, logging progress. onDone(ok) is called when finished or on
--- the first failure.
-function C.importFiles(files, log, onDone)
-  local index = 0
-  local startTime = reaper.time_precise()
-
-  local function nextFile()
-    index = index + 1
-    local path = files[index]
-    if not path then
-      log(string.format("All done (%d files, %.1fs)", #files, reaper.time_precise() - startTime))
-      return onDone(true)
-    end
-
-    local name = C.nameFromPath(path)
-    log(string.format("[%d/%d] %s", index, #files, name))
-    C.importFile(path, function(line)
-      log("  " .. line)
-    end, function(ok, message)
-      if not ok then
-        reaper.ShowMessageBox("Loading " .. name .. " failed:\n\n" .. message, "NKI Importer", 0)
-        return onDone(false)
-      end
-      nextFile()
-    end)
-  end
-
-  nextFile()
 end
 
 -- Adds files to the import queue (same one the extension fills on drops). Returns true when
@@ -559,8 +630,9 @@ foreach ($w in $shell.Windows()) {
 [IO.File]::WriteAllLines($out, [string[]]$paths)
 ]==]
 
--- Paths of the Kontakt files selected in Finder (macOS) or in open Explorer windows (Windows).
--- Also returns what the Finder/Explorer query printed, for diagnosing an empty result.
+-- Paths of the Kontakt files, and folders holding some, selected in Finder (macOS) or in open
+-- Explorer windows (Windows). Also returns what the Finder/Explorer query printed, for
+-- diagnosing an empty result.
 function C.selectedKontaktFiles()
   local text, output
   if C.isMac then
@@ -586,7 +658,9 @@ return out]]), 10000) or ""
   local files = {}
   -- (on macOS the ExecProcess output starts with the exit code line - not a path)
   for line in text:gmatch("[^\r\n]+") do
-    if C.isKontaktFile(line) then files[#files + 1] = line end
+    local path = line:gsub("[/\\]+$", "")
+    local absolute = path:match("^/") or path:match("^%a:[/\\]")
+    if absolute and (C.isKontaktFile(path) or #C.expandFolder(path) > 0) then files[#files + 1] = path end
   end
   return files, output
 end
@@ -597,7 +671,7 @@ function C.importSelectedFiles()
   local files, output = C.selectedKontaktFiles()
   if #files == 0 then
     local where = C.isMac and "Finder" or "Explorer"
-    local msg = "No .nki or .nkm files selected in " .. where .. "."
+    local msg = "No .nki or .nkm files, or folders with them, selected in " .. where .. "."
     if output:match("%S") and not output:match("^%s*0%s*$") then
       msg = msg .. "\n\n" .. where .. " query returned:\n" .. output:sub(1, 1000)
     end
