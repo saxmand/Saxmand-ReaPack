@@ -48,6 +48,7 @@ local gfxOpen = false
 local finishedAt
 local collectMode = C.get("collectMode")
 local placer -- folder-aware track inserter, one per run (C.trackPlacer)
+local nextAllowedAt = 0 -- earliest time the next file may start; see startNext
 
 local function count(state)
   local n = 0
@@ -111,12 +112,29 @@ local function escapePressed()
   return (reaper.JS_VKeys_GetDown(since):byte(0x1B) or 0) ~= 0
 end
 
+-- The instance loaded before this one, whose window is still open. Closing a Kontakt
+-- editor view is only safe once that instance has definitely stopped loading, so the
+-- window is left up until the next file is about to start -- by then it has had the
+-- settle delay plus however long the next track took to create. Closing it in the same
+-- cycle as the load finishing is what crashed Kontakt on the third file.
+local openInstance
+local function closeOpenInstance()
+  if not openInstance then return end
+  if reaper.ValidatePtr(openInstance.track, "MediaTrack*") then
+    reaper.TrackFX_Show(openInstance.track, openInstance.fx, 2)
+  end
+  openInstance = nil
+end
+
 local function startNext()
   for _, item in ipairs(items) do
     if item.state == "waiting" then
       if stopRequested then
         item.state = "skipped"
       else
+        -- before the new instance exists, so no two editors are ever torn down and
+        -- built in the same cycle
+        if #items > 1 then closeOpenInstance() end
         item.state = "loading"
         working = true
         local insert = item.placer and function(name) return item.placer.insert(name, item.group) end
@@ -126,8 +144,10 @@ local function startNext()
           item.state = ok and "done" or "failed"
           item.error = message and message:match("^[^\n]*")
           working = false
-          -- batch: don't leave a Kontakt window open per file
-          if ok and #items > 1 then reaper.TrackFX_Show(track, fx, 2) end
+          -- Kontakt has only just stopped loading, so the next file waits rather than
+          -- starting on this same cycle.
+          nextAllowedAt = reaper.time_precise() + C.get("betweenFiles")
+          if ok and track then openInstance = { track = track, fx = fx } end
           if not ok and not showGui then
             reaper.ShowMessageBox("Loading " .. item.name .. " failed:\n\n" .. message, "NKI Importer", 0)
           end
@@ -388,7 +408,7 @@ local function loop()
   -- old press never counts); once nothing is left to load, later files load normally again
   if escapePressed() and count("waiting") > 0 then stopRequested = true end
   if not working and count("waiting") == 0 then stopRequested = false end
-  if not working then startNext() end
+  if not working and reaper.time_precise() >= nextAllowedAt then startNext() end
 
   if gfxOpen then
     local action = drawWindow(buildRows(), not working and count("waiting") == 0 and count("held") == 0)
@@ -409,6 +429,12 @@ local function loop()
   local allDone = not working and count("waiting") == 0 and count("held") == 0
   if allDone then
     finishedAt = finishedAt or reaper.time_precise()
+    -- The last file's window is still up, since nothing came after it to close it.
+    -- Waiting for the linger means it has been settled for a while by now.
+    if openInstance and reaper.time_precise() - finishedAt >= C.get("betweenFiles")
+       and #items > 1 then
+      closeOpenInstance()
+    end
   else
     finishedAt = nil
   end
@@ -417,6 +443,10 @@ local function loop()
   local keepWindow = allDone and gfxOpen and (count("failed") > 0 or #items == 0
     or reaper.time_precise() - finishedAt < LINGER)
   if allDone and not keepWindow then
+    -- Last chance to put the final window away: the timed close above depends on the
+    -- list window lingering, which it does not do when nothing failed and the delay has
+    -- been raised past LINGER.
+    if #items > 1 then closeOpenInstance() end
     -- clear "busy" in the same cycle as the last queue check, so no drop can slip between
     reaper.DeleteExtState(C.section, "busy", false)
     return

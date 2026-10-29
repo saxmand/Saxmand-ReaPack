@@ -40,6 +40,13 @@ C.defaults = {
   guiDelay = 0, -- extra seconds to let Kontakt's GUI settle before clicking
   closeWindowAfter = false,
   collectMode = false, -- true: files wait in the list until "Load" (folders always do)
+  -- The Load dialog closing only means the dialog closed. Kontakt goes on reading
+  -- samples on its own threads afterwards, and anything done to it in that window --
+  -- destroying its editor view, constructing the next instance -- can take it down.
+  -- There is nothing to poll for "finished", so these two are waits. Raise them if
+  -- loading several files still crashes; lower them on fast storage with light patches.
+  loadSettle = 1.0,   -- seconds after the dialog closes before the file counts as loaded
+  betweenFiles = 0.5, -- seconds between one file finishing and the next instance
 }
 
 function C.get(key)
@@ -53,6 +60,19 @@ end
 
 function C.set(key, value)
   reaper.SetExtState(C.section, key, tostring(value), true)
+end
+
+-- Calls fn once `seconds` have passed, on the defer loop rather than by blocking: a
+-- busy wait here would stop REAPER servicing the plugin we are waiting for, which is
+-- the opposite of what these waits are for.
+function C.after(seconds, fn)
+  if not seconds or seconds <= 0 then return fn() end
+  local due = reaper.time_precise() + seconds
+  local function tick()
+    if reaper.time_precise() >= due then return fn() end
+    reaper.defer(tick)
+  end
+  tick()
 end
 
 ---------------------------------------------------------------- Kontakt version
@@ -596,14 +616,26 @@ end
 -- onLine(line) gets progress, onDone(ok, message, track, fx) is called at the end; on
 -- failure message is the error plus a permission hint where one applies. `insert`: see
 -- C.createKontaktTrack.
+--
+-- A file is not called loaded the moment its Load dialog closes. The dialog is a
+-- Windows common dialog; Kontakt dismisses it when it has accepted the path, and then
+-- reads the instrument on its own threads. Treating that as "done" is what let the
+-- caller close the editor view and build the next instance while the sampler was still
+-- working, and Kontakt 8 answers that by fast-failing the whole process.
 function C.importFile(path, onLine, onDone, insert)
   local track, fx, title, hwnd = C.createKontaktTrack(C.nameFromPath(path), insert)
   if not track then return onDone(false, fx) end
 
   C.runLoad(C.loadJob(path, title), hwnd, onLine, function(ok, lines)
     if not ok then return onDone(false, lines[#lines] .. C.permissionHint(lines), track, fx) end
-    if C.get("closeWindowAfter") then reaper.TrackFX_Show(track, fx, 2) end
-    onDone(true, nil, track, fx)
+    local settle = C.get("loadSettle")
+    if onLine and settle > 0 then
+      onLine(string.format("STEP let Kontakt finish loading  [%.2fs]", settle))
+    end
+    C.after(settle, function()
+      if C.get("closeWindowAfter") then reaper.TrackFX_Show(track, fx, 2) end
+      onDone(true, nil, track, fx)
+    end)
   end)
 end
 

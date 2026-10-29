@@ -1,6 +1,6 @@
 -- @description NKI Importer
 -- @author Saxmand
--- @version 1.2.0
+-- @version 1.2.1
 -- @about
 --   # NKI Importer
 --
@@ -30,11 +30,13 @@
 --   [main windows] Saxmand_NKI Importer - Import selected NKI files in Explorer.lua
 --   [main] Saxmand_NKI Importer - Calibrate Kontakt clicks.lua
 --   [main] Saxmand_NKI Importer - Collect files before loading (toggle).lua
+--   [main] Saxmand_NKI Importer - Set loading delays.lua
 -- @changelog
---   + Folders: drop or select them, confirm their Kontakt files in a list, and they load into folder tracks named after the folders
---   + "Collect files before loading" toggle: gather files in the list first, load when you press Load
---   + The list window takes drops itself, scrolls, and lets you remove files or folders
---   + Escape while loading stops after the current file (also when Kontakt's window has the keyboard)
+--   + Fixed: loading more than two files could crash Kontakt. A file was treated as loaded the
+--     moment its Load dialog closed, but Kontakt goes on reading the instrument after that, and
+--     closing its window or adding the next instance mid-load makes it abort the process.
+--     Loading now waits for it, and a window is only closed once the next file is about to start.
+--   + "Set loading delays" to adjust those waits for big libraries or slow storage
 
 -- NKI Importer: choose which installed Kontakt new tracks get (asked automatically on first
 -- use when more than one is installed). Click offsets are kept per version.
