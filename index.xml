@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="b96c188d7928ef7b34ff17f37813c197edbfd7a7" name="Saxmand ReaPack">
+<index version="1" commit="3c89128adcab2d0af19dec0d7d4e36959a2f4840" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -12403,6 +12403,22 @@
         <source main="main" platform="windows" file="Saxmand_NKI Importer - Import selected NKI files in Explorer.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Import%20selected%20NKI%20files%20in%20Explorer.lua</source>
         <source main="main" file="Saxmand_NKI Importer - Calibrate Kontakt clicks.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Calibrate%20Kontakt%20clicks.lua</source>
         <source main="main" file="Saxmand_NKI Importer - Collect files before loading (toggle).lua">https://github.com/saxmand/Saxmand-ReaPack/raw/20042ff7db7665576883ab170e61aef9f159b828/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Collect%20files%20before%20loading%20(toggle).lua</source>
+      </version>
+      <version name="1.2.1" author="Saxmand" time="2026-10-29T20:24:53Z">
+        <changelog><![CDATA[+ Fixed: loading more than two files could crash Kontakt. A file was treated as loaded the
+  moment its Load dialog closed, but Kontakt goes on reading the instrument after that, and
+  closing its window or adding the next instance mid-load makes it abort the process.
+  Loading now waits for it, and a window is only closed once the next file is about to start.
++ "Set loading delays" to adjust those waits for big libraries or slow storage]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/3c89128adcab2d0af19dec0d7d4e36959a2f4840/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Choose%20Kontakt%20version.lua</source>
+        <source file="nki_common.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/3c89128adcab2d0af19dec0d7d4e36959a2f4840/NKI%20Importer/nki_common.lua</source>
+        <source platform="darwin" file="nki_helper.js">https://github.com/saxmand/Saxmand-ReaPack/raw/3c89128adcab2d0af19dec0d7d4e36959a2f4840/NKI%20Importer/nki_helper.js</source>
+        <source file="Saxmand_NKI Importer - Import dropped files.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/3c89128adcab2d0af19dec0d7d4e36959a2f4840/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Import%20dropped%20files.lua</source>
+        <source main="main" platform="darwin" file="Saxmand_NKI Importer - Import selected NKI files in Finder.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/3c89128adcab2d0af19dec0d7d4e36959a2f4840/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Import%20selected%20NKI%20files%20in%20Finder.lua</source>
+        <source main="main" platform="windows" file="Saxmand_NKI Importer - Import selected NKI files in Explorer.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/3c89128adcab2d0af19dec0d7d4e36959a2f4840/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Import%20selected%20NKI%20files%20in%20Explorer.lua</source>
+        <source main="main" file="Saxmand_NKI Importer - Calibrate Kontakt clicks.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/3c89128adcab2d0af19dec0d7d4e36959a2f4840/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Calibrate%20Kontakt%20clicks.lua</source>
+        <source main="main" file="Saxmand_NKI Importer - Collect files before loading (toggle).lua">https://github.com/saxmand/Saxmand-ReaPack/raw/3c89128adcab2d0af19dec0d7d4e36959a2f4840/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Collect%20files%20before%20loading%20(toggle).lua</source>
+        <source main="main" file="Saxmand_NKI Importer - Set loading delays.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/3c89128adcab2d0af19dec0d7d4e36959a2f4840/NKI%20Importer/Saxmand_NKI%20Importer%20-%20Set%20loading%20delays.lua</source>
       </version>
     </reapack>
   </category>
