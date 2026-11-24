@@ -34,7 +34,13 @@
 --   because each preview frame is a separate ffmpeg run.
 --
 --   macOS: universal binary, Apple Silicon and Intel. Needs macOS 11 on Apple Silicon,
---   10.15 on Intel. Windows: 64-bit.
+--   10.15 on Intel.
+--
+--   Windows: 64-bit, and Windows 10 or newer. It links the Universal CRT, which is part
+--   of Windows from 10 onwards; on 7 or 8.1 that has to be installed separately through
+--   Windows Update. FFmpeg also has to be present, since that is what it decodes
+--   through - the script hands over whatever path is set on its Settings page, and
+--   otherwise it looks for ffmpeg on PATH.
 --
 --   Source: Video/extension in this repository.
 -- @provides
