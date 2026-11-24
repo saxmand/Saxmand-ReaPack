@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="f42e8a6d415af4a3958c3435fe6a90ae1e162910" name="Saxmand ReaPack">
+<index version="1" commit="13c245138824a16fac28c8744488f4a90a89f48a" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -12430,13 +12430,16 @@
 \widowctrl\hyphauto
 
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 Video Preview extension\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 macOS only. Reads video frames and fingerprints video and audio for the "Video Cut Detection Editor" script package (same repository) - install both, and restart REAPER afterwards.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Reads video frames and fingerprints video and audio for the "Video Cut Detection Editor" script package (same repository) - install both, and restart REAPER afterwards.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 What it adds to that script:\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Cut detection without FFmpeg. It reads a file once into a fingerprint store next to the video, after which detecting again at a different sensitivity is instant rather than another full pass over the file. It also distinguishes a cut from fast motion, which a plain frame-difference threshold cannot.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Video preview frames and cut thumbnails, decoded through AVFoundation.\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab The Compare Videos tab, which needs this extension: it fingerprints two cuts of the same film, works out which stretches moved where, and conforms a session from one to the other.\sa180\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 The script works without it by falling back to FFmpeg for cut detection and thumbnails, but the Compare Videos tab is unavailable and cut detection has to re-read the whole file on every run.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Universal binary: Apple Silicon and Intel. Needs macOS 11 on Apple Silicon, 10.15 on Intel. No Windows build - it is built on AVFoundation, which is macOS only.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 macOS decodes in-process through AVFoundation, which needs nothing installed and fingerprints a file using about a tenth of the CPU a full decode would.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Windows decodes through the ffmpeg binary instead - so FFmpeg has to be present there, and the script hands over its path. The fingerprints, the cut detector and the matcher are the same code on both, so the results are identical and a store built on one machine can be read on the other. The differences are that the first pass on Windows is faster but uses far more CPU, and that scrubbing is slower because each preview frame is a separate ffmpeg run.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 macOS: universal binary, Apple Silicon and Intel. Needs macOS 11 on Apple Silicon, 10.15 on Intel.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Windows: 64-bit, and Windows 10 or newer. It links the Universal CRT, which is part of Windows from 10 onwards; on 7 or 8.1 that has to be installed separately through Windows Update. FFmpeg also has to be present, since that is what it decodes through - the script hands over whatever path is set on its Settings page, and otherwise it looks for ffmpeg on PATH.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Source: Video/extension in this repository.\par}
 }
 ]]></description>
@@ -12444,6 +12447,15 @@
       <version name="1.0.0" author="Saxmand" time="2026-11-24T14:15:00Z">
         <changelog><![CDATA[+ First release]]></changelog>
         <source platform="darwin" file="reaper_video_preview.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/99de63cf8b301c706e3277f21c625bafc70dc575/Video/reaper_video_preview.dylib</source>
+      </version>
+      <version name="1.1.0" author="Saxmand" time="2026-11-24T20:41:19Z">
+        <changelog><![CDATA[+ Windows build. Cut detection, fingerprinting and version matching now work there
+  too, decoding through the ffmpeg binary rather than AVFoundation.
++ Decoding sits behind two interfaces, one per access pattern, so the fingerprints
+  and the matcher are shared code and both platforms produce identical stores.
++ VP_SetFFmpegPath, for telling the extension where ffmpeg is.]]></changelog>
+        <source platform="darwin" file="reaper_video_preview.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/13c245138824a16fac28c8744488f4a90a89f48a/Video/reaper_video_preview.dylib</source>
+        <source platform="win64" file="reaper_video_preview-x64.dll">https://github.com/saxmand/Saxmand-ReaPack/raw/13c245138824a16fac28c8744488f4a90a89f48a/Video/reaper_video_preview-x64.dll</source>
       </version>
     </reapack>
     <reapack name="Saxmand_Add subtitles to video from srt file using video processor.lua" type="script" desc="Add subtitles to video from srt file using video processor">
