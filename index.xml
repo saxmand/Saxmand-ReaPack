@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="3c89128adcab2d0af19dec0d7d4e36959a2f4840" name="Saxmand ReaPack">
+<index version="1" commit="99de63cf8b301c706e3277f21c625bafc70dc575" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -12423,6 +12423,29 @@
     </reapack>
   </category>
   <category name="Video">
+    <reapack name="reaper_video_preview.ext" type="extension" desc="Video Preview extension">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 Video Preview extension\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 macOS only. Reads video frames and fingerprints video and audio for the "Video Cut Detection Editor" script package (same repository) - install both, and restart REAPER afterwards.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 What it adds to that script:\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Cut detection without FFmpeg. It reads a file once into a fingerprint store next to the video, after which detecting again at a different sensitivity is instant rather than another full pass over the file. It also distinguishes a cut from fast motion, which a plain frame-difference threshold cannot.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Video preview frames and cut thumbnails, decoded through AVFoundation.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab The Compare Videos tab, which needs this extension: it fingerprints two cuts of the same film, works out which stretches moved where, and conforms a session from one to the other.\sa180\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 The script works without it by falling back to FFmpeg for cut detection and thumbnails, but the Compare Videos tab is unavailable and cut detection has to re-read the whole file on every run.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Universal binary: Apple Silicon and Intel. Needs macOS 11 on Apple Silicon, 10.15 on Intel. No Windows build - it is built on AVFoundation, which is macOS only.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Source: Video/extension in this repository.\par}
+}
+]]></description>
+      </metadata>
+      <version name="1.0.0" author="Saxmand" time="2026-11-24T14:15:00Z">
+        <changelog><![CDATA[+ First release]]></changelog>
+        <source platform="darwin" file="reaper_video_preview.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/99de63cf8b301c706e3277f21c625bafc70dc575/Video/reaper_video_preview.dylib</source>
+      </version>
+    </reapack>
     <reapack name="Saxmand_Add subtitles to video from srt file using video processor.lua" type="script" desc="Add subtitles to video from srt file using video processor">
       <version name="1.0.0" author="saxmand" time="2025-04-19T04:49:09Z">
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/ba3a7ed84ce47fc6ce97127e3d5edc8b4c6c7faf/Video/Saxmand_Add%20subtitles%20to%20video%20from%20srt%20file%20using%20video%20processor.lua</source>
@@ -12449,6 +12472,19 @@
       </version>
     </reapack>
     <reapack name="Saxmand_Video Cut Detection Editor.lua" type="script" desc="Find and edit cuts in videos using an editor and precise cut detection">
+      <metadata>
+        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
+{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
+\widowctrl\hyphauto
+
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 Video Cut Detection Editor\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Detects the cuts in a video, lets you name and colour them, and turns them into markers, regions, take markers, thumbnails or item splits in your session.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Cuts are found either by the "Video Preview extension" package (same repository, macOS only) or by FFmpeg. The extension is the default and needs nothing installed or configured; it also reads preview frames and thumbnails, and is what the Compare Videos tab runs on. Without it, set an FFmpeg path on the Settings page and cut detection works as before.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 The Compare Videos tab fingerprints two cuts of the same film and conforms a session from one to the other. It is still in development.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Optional: Ollama running locally, to label cuts from their picture.\par}
+}
+]]></description>
+      </metadata>
       <version name="0.0.1" author="saxmand" time="2026-01-14T18:12:49Z">
         <changelog><![CDATA[+ initial beta-release]]></changelog>
         <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/ed801892c210f9caa84901cca9bb420e182845bc/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
@@ -12609,6 +12645,43 @@
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/653b8113aa34851376f71c85dddad19de0e9dac3/Video/Helpers/json.lua</source>
         <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/653b8113aa34851376f71c85dddad19de0e9dac3/Video/Helpers/undo_redo.lua</source>
         <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/653b8113aa34851376f71c85dddad19de0e9dac3/Video/Helpers/hosi_exec_hidden.vbs</source>
+      </version>
+      <version name="0.3.0" author="saxmand" time="2026-11-24T14:15:00Z">
+        <changelog><![CDATA[FFmpeg is now optional
++ Cut detection can run from the video_preview extension instead of FFmpeg, and does
+  by default. The extension needs nothing installed, re-detects at a new sensitivity
+  in under a millisecond once it has read a file, and can tell a cut from a whip pan.
++ The extension also supplies thumbnails, preview frames and description frames, so
+  everything works with no FFmpeg present at all.
++ No more "FFmpeg is required" prompt at startup. It is asked for only where it is
+  actually being used, and the Settings page says plainly when neither is available.
++ Motion, Jump and Gap sliders for the extension detector. cmd/ctrl+click types a
+  value, opt/alt+click resets one to its default.
+Compare Videos tab (in development)
++ New tab for conforming a session from one cut of a film to another: fingerprint two
+  versions, see which stretches moved, and bring the session's own items along.
++ Shows where each item lands, which would be cut, and which have collided; the
+  fewest edits that line everything up; and a Cut button that applies them, rippling
+  every track so automation moves with the items.
++ Plays either version against the session items, or drives REAPER's own transport.
++ Marked as in development, and it is -- check what it tells you before cutting
+  anything you care about.
+Settings and shortcuts
++ The cut detection options are always shown; the "Options" fold is gone.
++ Settings page groups each detector's own settings under the choice of detector.
++ cmd/ctrl+w closes the window, and the action now reports its toggle state, so a
+  toolbar button shows whether the editor is open.
++ Fixed: the ctrl+1/2/3 tab shortcuts were bound to the Windows key on Windows and so
+  never worked there. Tooltips now name the modifiers for the platform you are on.
+Cut descriptions
++ Describes the frame on the cut rather than the one before it.
++ Repeated labels from the model are collapsed into one.
++ No longer dumps the model's raw reply to the console.]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/99de63cf8b301c706e3277f21c625bafc70dc575/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/ffmpeg.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/99de63cf8b301c706e3277f21c625bafc70dc575/Video/Helpers/ffmpeg.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/99de63cf8b301c706e3277f21c625bafc70dc575/Video/Helpers/json.lua</source>
+        <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/99de63cf8b301c706e3277f21c625bafc70dc575/Video/Helpers/undo_redo.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/99de63cf8b301c706e3277f21c625bafc70dc575/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
