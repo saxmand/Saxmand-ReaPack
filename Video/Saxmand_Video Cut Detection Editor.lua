@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.3.1
+-- @version 0.3.2
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -21,13 +21,15 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
---   + Says plainly when the Video Preview extension is not available, instead of
---     pointing at the wrong thing. On Windows it now says the extension is macOS only
---     -- it reads frames through AVFoundation, so there is no Windows build -- rather
---     than implying there is something to install. Cut detection there runs through
---     FFmpeg as it always has.
---   + The Settings page explains why there is no choice of detector when the extension
---     is absent, rather than showing only FFmpeg's settings with nothing said.
+--   + The Video Preview extension now has a Windows build, so cut detection from the
+--     fingerprint store -- and the Compare Videos tab -- work there too. Update that
+--     package alongside this one. FFmpeg is still needed on Windows, since that is what
+--     the extension decodes through; its path is handed over automatically.
+--   + Fixed: the Ollama check never worked on Windows. It redirected to /dev/null, which
+--     cmd.exe cannot do -- it refuses to run the command at all -- so cut descriptions
+--     reported "Ollama not installed" on machines where Ollama was installed and ready.
+--   + moondream is in the model list, which it was the default without appearing in, and
+--     the places that disagreed about which model was the default now agree.
 
 
 -------- Possible IDEAS TODO
@@ -595,6 +597,19 @@ local ffmpeg_path = ffmpeg.Get_Path(true)
 if ffmpeg_path == "" then ffmpeg_path = nil end
 local ffmpeg_available = ffmpeg_path ~= nil
 
+-- The extension decodes through the ffmpeg binary on Windows -- there is no
+-- AVFoundation there -- so it has to be told where that is. Harmless on macOS, which
+-- decodes in process and ignores it, so there is no platform branch here.
+--
+-- Called whenever the path changes as well as at startup: the extension holds it in a
+-- variable, not a setting, so a path found later in the session has to be handed over
+-- rather than waiting for a restart.
+function vpTellFfmpegPath()
+    if reaper.VP_SetFFmpegPath then
+        reaper.VP_SetFFmpegPath(ffmpeg_path or "")
+    end
+end
+
 -- Asks for the path now, for the places where FFmpeg is the thing being chosen. Returns
 -- whether there is one, and keeps the two module-level flags in step with the answer so
 -- everything downstream sees it without a restart.
@@ -604,6 +619,7 @@ function ensureFfmpegPath()
     if p == "" then p = nil end
     ffmpeg_path = p
     ffmpeg_available = ffmpeg_path ~= nil
+    vpTellFfmpegPath()
     return ffmpeg_available
 end
 
@@ -661,6 +677,10 @@ function setActionToggle(on)
 end
 
 setActionToggle(1)
+
+-- Hand the ffmpeg path over now that the extension is certainly loaded. On Windows the
+-- extension cannot decode anything without it.
+vpTellFfmpegPath()
 
 -- An italic face for asides -- notes about the tool rather than content of it.
 -- CreateFont's second argument is flags, not a size: in this ReaImGui the size is given
@@ -6213,11 +6233,23 @@ end
 
 
 
+-- Where to send output nobody wants to read.
+--
+-- cmd.exe cannot redirect to /dev/null: it resolves that as a relative path, finds no
+-- `dev` directory, prints "The system cannot find the path specified" and then does not
+-- run the command at all. So a POSIX redirect does not merely fail to silence anything
+-- on Windows -- it stops the command working. That made the Ollama check come back
+-- empty every time and report "not installed" on a machine where it was installed,
+-- running and ready.
+local function shellNull()
+    return is_windows and "nul" or "/dev/null"
+end
+
 function checkOllamaStatus()
     local host = settings.ollama_host or "localhost:11434"
 
     -- Check if the server is responding
-    local handle = io.popen('curl -s --max-time 2 http://' .. host .. '/api/tags 2>/dev/null')
+    local handle = io.popen('curl -s --max-time 2 http://' .. host .. '/api/tags 2>' .. shellNull())
     local result = handle and handle:read("*a") or ""
     if handle then handle:close() end
 
@@ -6232,7 +6264,7 @@ function checkOllamaStatus()
         else
             found = reaper.file_exists("/Applications/Ollama.app")
             if not found then
-                local h = io.popen('which ollama 2>/dev/null')
+                local h = io.popen('which ollama 2>' .. shellNull())
                 local out = h and h:read("*a") or ""
                 if h then h:close() end
                 found = out ~= ""
@@ -6253,7 +6285,7 @@ function checkOllamaStatus()
                 ollamaInstalledModels[fullName] = true
             end
         end
-        ollamaStatus = ollamaModelInstalled(settings.ollama_model or "llava") and "ready" or "model_missing"
+        ollamaStatus = ollamaModelInstalled(settings.ollama_model or "moondream") and "ready" or "model_missing"
     else
         ollamaStatus = "model_missing"
     end
@@ -7658,7 +7690,7 @@ function selectedItemButtons(IP)
                         end
                     end
                 end
-                setToolTipFunc("Use Ollama to name each cut from a video frame.\nModel: " .. (settings.ollama_model or "llava") .. "\nChange model in Settings.")
+                setToolTipFunc("Use Ollama to name each cut from a video frame.\nModel: " .. (settings.ollama_model or "moondream") .. "\nChange model in Settings.")
 
                 if reaper.ImGui_Button(ctx, "Reset cut names##extra") then
                     for i, c in ipairs(IP.cuts_making_threashold) do
@@ -7934,7 +7966,7 @@ function selectedCutInfoArea(IP)
 
             local describeTip = descCount > 1
                 and ("d: next  ·  ⇧d: prev  ·  right-click: all descriptions")
-                or ("Describe this cut using Ollama (" .. (settings.ollama_model or "llava") .. ")")
+                or ("Describe this cut using Ollama (" .. (settings.ollama_model or "moondream") .. ")")
             setToolTipFunc(describeTip, "d")
         else
             --if not cursorOutsideArea then
@@ -9401,6 +9433,7 @@ function settingButtons(IP)
     do
         -- Model dropdown
         local ollamaModels = {
+            { name = "moondream",          label = "moondream — 1.8B  · smallest and fastest" },
             { name = "llava",              label = "llava:7b — 7B  · good balance" },
             { name = "llava-phi3",         label = "llava-phi3 — 3.8B  · fast, good quality" },
             { name = "llava:13b",          label = "llava:13b — 13B  · high quality, slow" },

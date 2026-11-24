@@ -20,10 +20,14 @@ clang++ -std=c++17 -O2 -dynamiclib \
   -framework Accelerate \
   -framework Foundation \
   -o "$PACKAGE/reaper_video_preview.dylib" \
-  video_preview.mm \
-  frame_store.mm \
-  matcher.mm \
-  audio_store.mm
+  video_preview.cpp \
+  video_decoder_mac.mm \
+  frame_source_mac.mm \
+  audio_source_mac.mm \
+  frame_cache.cpp \
+  frame_store.cpp \
+  matcher.cpp \
+  audio_store.cpp
 
 PLUGINS="$HOME/Library/Application Support/REAPER/UserPlugins"
 cp "$PACKAGE/reaper_video_preview.dylib" "$PLUGINS/"

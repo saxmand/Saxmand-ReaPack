@@ -1,0 +1,175 @@
+// The bounded, least-recently-used cache of decoded frames. See frame_cache.h for why
+// it exists and why the frames are files rather than memory.
+
+#include "frame_cache.h"
+
+#include <algorithm>
+#include <list>
+#include <map>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+#include <sys/stat.h>
+
+#ifdef _WIN32
+  #include <windows.h>
+  #include <io.h>
+  #define VP_STAT _stat64
+  #define VP_STAT_T struct _stat64
+  static int vpUnlink(const char* p) { return ::remove(p); }
+#else
+  #include <dirent.h>
+  #include <unistd.h>
+  #define VP_STAT stat
+  #define VP_STAT_T struct stat
+  static int vpUnlink(const char* p) { return ::unlink(p); }
+#endif
+
+const uint64_t CACHE_BUDGET_BYTES = 256ull * 1024ull * 1024ull;
+const char*    CACHE_PREFIX       = "vp2_";
+
+uint32_t hashPath(const char* s) {
+    uint32_t h = 2166136261u;
+    while (*s) { h ^= (uint8_t)*s++; h *= 16777619u; }
+    return h;
+}
+
+std::string cacheDir() {
+#ifdef _WIN32
+    // GetTempPathW returns a path ending in a backslash, and honours TMP/TEMP, which is
+    // where Windows puts per-user scratch. Converted to UTF-8 because every path in this
+    // extension is UTF-8, REAPER's included.
+    wchar_t w[MAX_PATH + 1];
+    DWORD n = GetTempPathW(MAX_PATH, w);
+    if (n == 0 || n > MAX_PATH) return std::string("C:\\Windows\\Temp\\");
+    int need = WideCharToMultiByte(CP_UTF8, 0, w, (int)n, nullptr, 0, nullptr, nullptr);
+    std::string out(need, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w, (int)n, &out[0], need, nullptr, nullptr);
+    return out;
+#else
+    return std::string("/tmp/");
+#endif
+}
+
+std::string cacheFramePath(uint32_t pathHash, long long ms, int w, int h) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%s%u_%lld_%dx%d.jpg", CACHE_PREFIX, pathHash, ms, w, h);
+    return cacheDir() + buf;
+}
+
+// Touched from decoder worker threads as well as the main thread.
+static std::mutex g_cacheMu;
+static std::list<std::string>                                  g_lru;      // front = newest
+static std::map<std::string, std::list<std::string>::iterator> g_lruPos;
+static std::map<std::string, uint64_t>                         g_lruSize;
+static uint64_t                                                g_lruBytes = 0;
+
+// Drops the coldest files until the total is back inside the budget. Caller holds the
+// lock. Returns how many files were removed.
+static int cacheEvictLocked() {
+    int removed = 0;
+    while (g_lruBytes > CACHE_BUDGET_BYTES && !g_lru.empty()) {
+        const std::string victim = g_lru.back();
+        g_lru.pop_back();
+        g_lruPos.erase(victim);
+        auto it = g_lruSize.find(victim);
+        if (it != g_lruSize.end()) {
+            g_lruBytes -= std::min(g_lruBytes, it->second);
+            g_lruSize.erase(it);
+        }
+        vpUnlink(victim.c_str());
+        removed++;
+    }
+    return removed;
+}
+
+void cacheTouch(const std::string& path, uint64_t bytes) {
+    if (path.empty()) return;
+    std::lock_guard<std::mutex> lk(g_cacheMu);
+
+    auto known = g_lruPos.find(path);
+    if (known != g_lruPos.end()) {
+        // Splicing a node onto its own position is a precondition violation for
+        // list::splice, not a no-op, and the frame on screen is re-touched every single
+        // frame -- so the already-newest case has to be checked, not just handled.
+        if (known->second != g_lru.begin()) {
+            g_lru.splice(g_lru.begin(), g_lru, known->second);
+            known->second = g_lru.begin();   // the node moved; the index follows it
+        }
+        return;
+    }
+
+    if (bytes == 0) {
+        VP_STAT_T st;
+        if (VP_STAT(path.c_str(), &st) != 0) return;   // vanished; nothing to track
+        bytes = (uint64_t)st.st_size;
+    }
+
+    g_lru.push_front(path);
+    g_lruPos[path]  = g_lru.begin();
+    g_lruSize[path] = bytes;
+    g_lruBytes     += bytes;
+    cacheEvictLocked();
+}
+
+namespace {
+struct Found { std::string path; uint64_t bytes; double mtime; };
+
+// Every cache file in the temporary folder, with its size and age.
+void listCacheFiles(std::vector<Found>* out) {
+    const std::string dir    = cacheDir();
+    const std::string prefix = CACHE_PREFIX;
+#ifdef _WIN32
+    std::string pat = dir + prefix + "*.jpg";
+    int need = MultiByteToWideChar(CP_UTF8, 0, pat.c_str(), (int)pat.size(), nullptr, 0);
+    std::wstring wpat(need, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, pat.c_str(), (int)pat.size(), &wpat[0], need);
+
+    WIN32_FIND_DATAW fd{};
+    HANDLE h = FindFirstFileW(wpat.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        int n = WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, nullptr, 0, nullptr, nullptr);
+        std::string name(n > 0 ? n - 1 : 0, '\0');
+        if (n > 0) WideCharToMultiByte(CP_UTF8, 0, fd.cFileName, -1, &name[0], n, nullptr, nullptr);
+        uint64_t size = ((uint64_t)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
+        // FILETIME is 100 ns units since 1601; only the ordering matters here.
+        uint64_t ft = ((uint64_t)fd.ftLastWriteTime.dwHighDateTime << 32)
+                    | fd.ftLastWriteTime.dwLowDateTime;
+        out->push_back({ dir + name, size, (double)ft });
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+#else
+    DIR* d = opendir(dir.c_str());
+    if (!d) return;
+    struct dirent* e;
+    while ((e = readdir(d)) != nullptr) {
+        std::string name = e->d_name;
+        if (name.size() <= prefix.size() || name.compare(0, prefix.size(), prefix) != 0) continue;
+        if (name.size() < 4 || name.compare(name.size() - 4, 4, ".jpg") != 0) continue;
+        std::string full = dir + name;
+        VP_STAT_T st;
+        if (VP_STAT(full.c_str(), &st) != 0) continue;
+        out->push_back({ full, (uint64_t)st.st_size, (double)st.st_mtime });
+    }
+    closedir(d);
+#endif
+}
+} // namespace
+
+void cacheAdoptExisting() {
+    std::thread([]{
+        std::vector<Found> found;
+        listCacheFiles(&found);
+        // Oldest adopted first so it sits at the cold end and is evicted first.
+        std::sort(found.begin(), found.end(),
+                  [](const Found& a, const Found& b) { return a.mtime < b.mtime; });
+        for (const Found& f : found) cacheTouch(f.path, f.bytes);
+    }).detach();
+}

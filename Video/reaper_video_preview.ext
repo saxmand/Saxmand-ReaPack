@@ -1,12 +1,12 @@
 -- @description Video Preview extension
 -- @author Saxmand
--- @version 1.0.0
+-- @version 1.1.0
 -- @about
 --   # Video Preview extension
 --
---   macOS only. Reads video frames and fingerprints video and audio for the "Video Cut
---   Detection Editor" script package (same repository) - install both, and restart
---   REAPER afterwards.
+--   Reads video frames and fingerprints video and audio for the "Video Cut Detection
+--   Editor" script package (same repository) - install both, and restart REAPER
+--   afterwards.
 --
 --   What it adds to that script:
 --
@@ -23,11 +23,26 @@
 --   thumbnails, but the Compare Videos tab is unavailable and cut detection has to
 --   re-read the whole file on every run.
 --
---   Universal binary: Apple Silicon and Intel. Needs macOS 11 on Apple Silicon, 10.15
---   on Intel. No Windows build - it is built on AVFoundation, which is macOS only.
+--   macOS decodes in-process through AVFoundation, which needs nothing installed and
+--   fingerprints a file using about a tenth of the CPU a full decode would.
+--
+--   Windows decodes through the ffmpeg binary instead - so FFmpeg has to be present
+--   there, and the script hands over its path. The fingerprints, the cut detector and
+--   the matcher are the same code on both, so the results are identical and a store
+--   built on one machine can be read on the other. The differences are that the first
+--   pass on Windows is faster but uses far more CPU, and that scrubbing is slower
+--   because each preview frame is a separate ffmpeg run.
+--
+--   macOS: universal binary, Apple Silicon and Intel. Needs macOS 11 on Apple Silicon,
+--   10.15 on Intel. Windows: 64-bit.
 --
 --   Source: Video/extension in this repository.
 -- @provides
 --   [darwin] reaper_video_preview.dylib
+--   [win64] reaper_video_preview-x64.dll
 -- @changelog
---   + First release
+--   + Windows build. Cut detection, fingerprinting and version matching now work there
+--     too, decoding through the ffmpeg binary rather than AVFoundation.
+--   + Decoding sits behind two interfaces, one per access pattern, so the fingerprints
+--     and the matcher are shared code and both platforms produce identical stores.
+--   + VP_SetFFmpegPath, for telling the extension where ffmpeg is.

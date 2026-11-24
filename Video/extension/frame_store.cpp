@@ -1,7 +1,8 @@
 // frame_store — whole-file per-frame fingerprints, for comparing two versions of a cut.
 //
-// A single sequential AVAssetReader pass decodes every frame (VideoToolbox scales it
-// down for us on the way out) and reduces each one to a fixed-size fingerprint:
+// A single sequential pass over the file decodes every frame -- through FrameSource,
+// which is AVAssetReader on macOS and an ffmpeg pipe on Windows -- and reduces each one
+// to a fixed-size fingerprint:
 //
 //   dhash64  9x8 gradient hash — the MATCH signature.  Each bit is "this cell is
 //            brighter than the one to its right", so it keys on local gradients and
@@ -24,9 +25,6 @@
 //   uint32 ptsMs[frameCount]
 //   uint8  grid [frameCount * 256]
 
-#import <AVFoundation/AVFoundation.h>
-#import <CoreVideo/CoreVideo.h>
-
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -41,6 +39,7 @@
 
 #include "vp_api.h"
 #include "frame_store.h"
+#include "frame_source.h"
 
 // Decode target.  32x32 is far more than the 16x16 grid and 9x8 hash need, which keeps
 // the resample cheap while leaving headroom if the fingerprint grows.  Square on purpose:
@@ -183,146 +182,87 @@ static void analyzeWorker(AnalyzeJob* job, std::string srcPath, std::string stor
         job->state = 2;
     };
 
-    @autoreleasepool {
-        NSURL*        url   = [NSURL fileURLWithPath:@(srcPath.c_str())];
-        AVURLAsset*   asset = [AVURLAsset URLAssetWithURL:url options:nil];
-        AVAssetTrack* track = [[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
-        if (!track) { fail("no video track"); return; }
+    std::string openErr;
+    FrameSource* src = frameSourceOpen(srcPath.c_str(), ANALYZE_W, ANALYZE_H, &openErr);
+    if (!src) { fail(openErr.empty() ? "could not open video" : openErr); return; }
 
-        double duration = CMTimeGetSeconds(asset.duration);
-        float  fps      = track.nominalFrameRate;
-        if (!(fps > 0.0f)) fps = 25.0f;
-        if (!(duration > 0.0)) duration = 0.0;
-        job->framesTotal = (int)(duration * fps + 0.5);
+    double duration = src->duration();
+    double fps      = src->fps();
+    if (!(fps > 0.0))      fps = 25.0;
+    if (!(duration > 0.0)) duration = 0.0;
+    job->framesTotal = (int)(duration * fps + 0.5);
 
-        NSError*       err    = nil;
-        AVAssetReader* reader = [AVAssetReader assetReaderWithAsset:asset error:&err];
-        if (!reader) {
-            fail(err ? err.localizedDescription.UTF8String : "reader init failed");
-            return;
-        }
+    std::vector<uint64_t> hashes;
+    std::vector<uint32_t> ptsMs;
+    std::vector<uint8_t>  grids;
+    int reserve = job->framesTotal.load() > 0 ? job->framesTotal.load() : 1024;
+    hashes.reserve(reserve);
+    ptsMs.reserve(reserve);
+    grids.reserve((size_t)reserve * GRID_SZ);
 
-        // Ask VideoToolbox to hand back luma already scaled down — far cheaper than
-        // pulling full-res frames across and shrinking them ourselves.  Some codecs
-        // refuse the scale, so fall back to native size and resample in software.
-        NSDictionary* scaled = @{
-            (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
-            (id)kCVPixelBufferWidthKey:           @(ANALYZE_W),
-            (id)kCVPixelBufferHeightKey:          @(ANALYZE_H),
-        };
-        NSDictionary* native = @{
-            (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
-        };
+    uint8_t g16[GRID_SZ];
+    uint8_t h98[9 * 8];
 
-        AVAssetReaderTrackOutput* out =
-            [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:track outputSettings:scaled];
-        out.alwaysCopiesSampleData = NO;
-        if (![reader canAddOutput:out]) {
-            out = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:track outputSettings:native];
-            out.alwaysCopiesSampleData = NO;
-            if (![reader canAddOutput:out]) { fail("cannot add reader output"); return; }
-        }
-        [reader addOutput:out];
-        if (![reader startReading]) {
-            fail(reader.error ? reader.error.localizedDescription.UTF8String : "startReading failed");
-            return;
-        }
-
-        std::vector<uint64_t> hashes;
-        std::vector<uint32_t> ptsMs;
-        std::vector<uint8_t>  grids;
-        int reserve = job->framesTotal.load() > 0 ? job->framesTotal.load() : 1024;
-        hashes.reserve(reserve);
-        ptsMs.reserve(reserve);
-        grids.reserve((size_t)reserve * GRID_SZ);
-
-        uint8_t g16[GRID_SZ];
-        uint8_t h98[9 * 8];
-
-        while (reader.status == AVAssetReaderStatusReading) {
-            if (job->cancel) break;
-            @autoreleasepool {
-                CMSampleBufferRef sb = [out copyNextSampleBuffer];
-                if (!sb) break;
-                CVImageBufferRef pb = CMSampleBufferGetImageBuffer(sb);
-                if (pb) {
-                    CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
-                    const uint8_t* y = nullptr;
-                    int w = 0, h = 0, stride = 0;
-                    if (CVPixelBufferIsPlanar(pb)) {
-                        y      = (const uint8_t*)CVPixelBufferGetBaseAddressOfPlane(pb, 0);
-                        w      = (int)CVPixelBufferGetWidthOfPlane(pb, 0);
-                        h      = (int)CVPixelBufferGetHeightOfPlane(pb, 0);
-                        stride = (int)CVPixelBufferGetBytesPerRowOfPlane(pb, 0);
-                    } else {
-                        y      = (const uint8_t*)CVPixelBufferGetBaseAddress(pb);
-                        w      = (int)CVPixelBufferGetWidth(pb);
-                        h      = (int)CVPixelBufferGetHeight(pb);
-                        stride = (int)CVPixelBufferGetBytesPerRow(pb);
-                    }
-                    if (y && w > 0 && h > 0) {
-                        resampleLuma(y, w, h, stride, g16, GRID, GRID);
-                        resampleLuma(y, w, h, stride, h98, 9, 8);
-                        double t = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sb));
-                        if (!std::isfinite(t) || t < 0.0) t = 0.0;
-                        hashes.push_back(dhash9x8(h98));
-                        ptsMs.push_back((uint32_t)(t * 1000.0 + 0.5));
-                        grids.insert(grids.end(), g16, g16 + GRID_SZ);
-                        job->framesDone = (int)hashes.size();
-                    }
-                    CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
-                }
-                CFRelease(sb);
-            }
-        }
-
-        if (job->cancel) { [reader cancelReading]; fail("cancelled"); return; }
-        if (reader.status == AVAssetReaderStatusFailed) {
-            fail(reader.error ? reader.error.localizedDescription.UTF8String : "read failed");
-            return;
-        }
-        if (hashes.empty()) { fail("no frames decoded"); return; }
-
-        struct stat st;
-        int64_t srcSize = 0, srcMtime = 0;
-        if (stat(srcPath.c_str(), &st) == 0) {
-            srcSize  = (int64_t)st.st_size;
-            srcMtime = (int64_t)st.st_mtime;
-        }
-
-        FSHeader hdr;
-        memset(&hdr, 0, sizeof(hdr));
-        memcpy(hdr.magic, FS_MAGIC, 8);
-        hdr.frameCount = (uint32_t)hashes.size();
-        hdr.grid       = GRID;
-        hdr.fps        = fps;
-        hdr.duration   = duration;
-        hdr.srcSize    = srcSize;
-        hdr.srcMtime   = srcMtime;
-
-        // Write to a sibling temp file and rename, so an interrupted analysis can never
-        // leave a half-written store that later looks valid. The name carries the job,
-        // so two analyses of the same file in flight at once cannot write over each
-        // other's temp -- they produce identical bytes, so whichever renames last wins
-        // and either outcome is correct.
-        char tmpSuffix[48];
-        snprintf(tmpSuffix, sizeof(tmpSuffix), ".tmp%llx",
-                 (unsigned long long)(uintptr_t)job);
-        std::string tmp = storePath + tmpSuffix;
-        FILE* f = fopen(tmp.c_str(), "wb");
-        if (!f) { fail("cannot open store for writing"); return; }
-        bool ok = fwrite(&hdr, sizeof(hdr), 1, f) == 1
-               && fwrite(hashes.data(), sizeof(uint64_t), hashes.size(), f) == hashes.size()
-               && fwrite(ptsMs.data(),  sizeof(uint32_t), ptsMs.size(),  f) == ptsMs.size()
-               && fwrite(grids.data(),  1,                grids.size(),  f) == grids.size();
-        fclose(f);
-        if (!ok) { remove(tmp.c_str()); fail("store write failed"); return; }
-        remove(storePath.c_str());
-        if (rename(tmp.c_str(), storePath.c_str()) != 0) { fail("store rename failed"); return; }
-
-        job->frameCount = (int)hashes.size();
-        job->state      = 1;
+    LumaFrame fr;
+    while (src->next(&fr)) {
+        if (job->cancel) break;
+        // Resampled from whatever size actually arrived: a decoder may decline to scale
+        // on the way out, so the analysis size is a request rather than a guarantee.
+        resampleLuma(fr.y, fr.w, fr.h, fr.stride, g16, GRID, GRID);
+        resampleLuma(fr.y, fr.w, fr.h, fr.stride, h98, 9, 8);
+        hashes.push_back(dhash9x8(h98));
+        ptsMs.push_back((uint32_t)(fr.ptsSec * 1000.0 + 0.5));
+        grids.insert(grids.end(), g16, g16 + GRID_SZ);
+        job->framesDone = (int)hashes.size();
     }
+
+    std::string readErr = src->error();
+    bool cancelled = job->cancel.load();
+    delete src;
+
+    if (cancelled)          { fail("cancelled"); return; }
+    if (!readErr.empty())   { fail(readErr); return; }
+    if (hashes.empty())     { fail("no frames decoded"); return; }
+
+    struct stat st;
+    int64_t srcSize = 0, srcMtime = 0;
+    if (stat(srcPath.c_str(), &st) == 0) {
+        srcSize  = (int64_t)st.st_size;
+        srcMtime = (int64_t)st.st_mtime;
+    }
+
+    FSHeader hdr;
+    memset(&hdr, 0, sizeof(hdr));
+    memcpy(hdr.magic, FS_MAGIC, 8);
+    hdr.frameCount = (uint32_t)hashes.size();
+    hdr.grid       = GRID;
+    hdr.fps        = fps;
+    hdr.duration   = duration;
+    hdr.srcSize    = srcSize;
+    hdr.srcMtime   = srcMtime;
+
+    // Write to a sibling temp file and rename, so an interrupted analysis can never
+    // leave a half-written store that later looks valid. The name carries the job,
+    // so two analyses of the same file in flight at once cannot write over each
+    // other's temp -- they produce identical bytes, so whichever renames last wins
+    // and either outcome is correct.
+    char tmpSuffix[48];
+    snprintf(tmpSuffix, sizeof(tmpSuffix), ".tmp%llx",
+             (unsigned long long)(uintptr_t)job);
+    std::string tmp = storePath + tmpSuffix;
+    FILE* f = fopen(tmp.c_str(), "wb");
+    if (!f) { fail("cannot open store for writing"); return; }
+    bool ok = fwrite(&hdr, sizeof(hdr), 1, f) == 1
+           && fwrite(hashes.data(), sizeof(uint64_t), hashes.size(), f) == hashes.size()
+           && fwrite(ptsMs.data(),  sizeof(uint32_t), ptsMs.size(),  f) == ptsMs.size()
+           && fwrite(grids.data(),  1,                grids.size(),  f) == grids.size();
+    fclose(f);
+    if (!ok) { remove(tmp.c_str()); fail("store write failed"); return; }
+    remove(storePath.c_str());
+    if (rename(tmp.c_str(), storePath.c_str()) != 0) { fail("store rename failed"); return; }
+
+    job->frameCount = (int)hashes.size();
+    job->state      = 1;
 }
 
 // -----------------------------------------------------------------------
