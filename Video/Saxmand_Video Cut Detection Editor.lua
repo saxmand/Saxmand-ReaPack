@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.3.7
+-- @version 0.3.8
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,14 +24,10 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
---   + Fixed: "attempt to index a nil value" the first time a new video was analysed with
---     the extension. While an analysis runs the item properties are rebuilt every frame,
---     and the still-analysing path returned before cut_data was given a value, so the
---     rest of the frame had a nil to read.
---   + Describe is only offered when Ollama can actually answer -- installed, running and
---     with the model pulled. Descriptions already fetched can still be stepped through
---     without it, since those are stored with the cut. Whether Ollama is there is
---     checked once, the first time something offers it, not on every launch.
+--   + Compare Videos: hovering a source button shows the full name first, in italic
+--     grey, above the description. The labels are cut to fit and version names differ
+--     at the end, which is exactly the part that was being hidden. The audio button
+--     beside it does the same.
 
 
 -------- Possible IDEAS TODO
@@ -2189,7 +2185,10 @@ function conformAudioButton(IP, side)
             saveSettings()
         end
     end
-    setToolTipFunc("Sound used for the " .. side .. " version, for both matching and playback.\n" ..
+    -- Cut to 22 characters here, so the same treatment as the video button beside it:
+    -- a mix export's name is where the useful detail is.
+    setToolTipWithName(cur and cur:match("([^/\\]+)$") or nil,
+                   "Sound used for the " .. side .. " version, for both matching and playback.\n" ..
                    "Click to take the first item selected in the arrange view, or pick a file\n" ..
                    "when nothing is selected. A proper mix export matches far better than the\n" ..
                    "guide track inside the picture.")
@@ -4896,7 +4895,8 @@ function conformShorten(s, n)
 end
 
 function conformVideoButton(IP, side)
-    local name = conformShorten((IP and IP.fileName) or "no video", 26)
+    local full = (IP and IP.fileName) or nil
+    local name = conformShorten(full or "no video", 26)
     if reaper.ImGui_Button(ctx, name .. "##cfvid" .. side) then
         if conformPinSelected(side) then
             conformError = nil
@@ -4905,8 +4905,12 @@ function conformVideoButton(IP, side)
                            " version in the arrange view, then click this button."
         end
     end
-    setToolTipFunc("Video used as the " .. side .. " version.\n" ..
-                   "Click to take the first item selected in the arrange view.")
+    -- The label is cut to 26 characters, and version names are long and differ at the
+    -- end -- "..._v16_uMusik" against "..._v16_uMusik_fix" -- so the full name is the
+    -- first thing the tooltip says.
+    setToolTipWithName(full,
+                       "Video used as the " .. side .. " version.\n" ..
+                       "Click to take the first item selected in the arrange view.")
 end
 
 
@@ -6653,6 +6657,41 @@ function setToolTipFunc(text, shortcut, color)
         ImGui.SetItemTooltip(ctx, text)
         reaper.ImGui_PopStyleColor(ctx, 2)
     end
+end
+
+-- Same as setToolTipFunc, with the full name of whatever is hovered as a first line in
+-- italic grey above the description.
+--
+-- For the places where the label on screen is shortened to fit. The name is the thing
+-- you are most likely hovering to read, so it goes first; italic grey so it reads as a
+-- caption identifying the control rather than as part of the explanation.
+--
+-- Built with BeginItemTooltip rather than SetItemTooltip because the two lines are
+-- styled differently, and SetItemTooltip takes one string under one pushed colour.
+function setToolTipWithName(fullName, text, shortcut)
+    if not settings.showToolTip or isMouseDown then return end
+    if (not fullName or fullName == "") and (not text or text == "") then return end
+
+    -- Pushed before Begin: the border colour applies to the tooltip window itself, and
+    -- a style pushed after it has opened comes too late to affect it.
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorGrey)
+    if reaper.ImGui_BeginItemTooltip(ctx) then
+        if fullName and fullName ~= "" then
+            -- fontItalic is nil when the face could not be made, and PushFont then only
+            -- sets the size, so this degrades to upright grey rather than failing.
+            reaper.ImGui_PushFont(ctx, fontItalic, reaper.ImGui_GetFontSize(ctx))
+            reaper.ImGui_TextColored(ctx, colorGrey, fullName)
+            reaper.ImGui_PopFont(ctx)
+        end
+        if text and text ~= "" then
+            local body = shortcut
+                         and (text .. ".\n - press " .. shortcut .. " to set with keyboard")
+                         or text
+            reaper.ImGui_TextColored(ctx, colorWhite, body)
+        end
+        reaper.ImGui_EndTooltip(ctx)
+    end
+    reaper.ImGui_PopStyleColor(ctx)
 end
 
 
