@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.3.5
+-- @version 0.3.6
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,10 +24,11 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
---   + The extension no longer needs FFmpeg on Windows: it decodes through Media
---     Foundation, which is part of Windows. Update the extension package alongside this
---     one. FFmpeg stays useful there for ProRes and DNxHD, which Windows cannot decode,
---     and the extension falls back to it for those.
+--   + moondream is no longer offered or used as the cut description model. It had been
+--     the default without appearing in the list, so it showed as the selected model --
+--     on a fresh install, whether or not Ollama was there at all -- and could not be
+--     chosen again once changed away from. The default is llava, which is in the list,
+--     and anyone carrying the old value is moved across once.
 
 
 -------- Possible IDEAS TODO
@@ -257,7 +258,7 @@ local defaultSettings = {
     setColorOnSplitItems = true,
 
     ai_backend = "ollama",
-    ollama_model = "moondream",
+    ollama_model = "llava",
     ollama_host = "localhost:11434",
 
     compare_threshold = 0.65,
@@ -343,6 +344,15 @@ for key, value in pairs(defaultSettings) do
             settings[key] = value
         end
     end
+end
+
+-- moondream was briefly the default while not being one of the models on offer, so the
+-- dropdown showed a name that could not be chosen again once changed. Anyone carrying
+-- that stored value is moved to the default, which is a real entry in the list. Only
+-- that one value is touched: a model somebody picked on purpose is left alone.
+if settings.ollama_model == "moondream" then
+    settings.ollama_model = defaultSettings.ollama_model
+    saveSettings()
 end
 
 --------------------------------------------------------
@@ -1445,7 +1455,7 @@ function processDescriptionQueue(IP)
 
     local host = settings.ollama_host or "localhost:11434"
     local prompt = "Label this video frame in 2-4 words. Be specific and visual — describe what you actually see: the subject, action, or setting. Examples of good labels: Hand closeup, Woman in bed, Teeth closeup, Man talking, City street, Door opening, Coffee cup. Reply with ONLY the label. No punctuation, no explanation, no sentence."
-    local requestJson = '{"model":"' .. (settings.ollama_model or "moondream") .. '","prompt":"' .. prompt .. '","images":["' .. b64 .. '"],"stream":false}'
+    local requestJson = '{"model":"' .. (settings.ollama_model or "llava") .. '","prompt":"' .. prompt .. '","images":["' .. b64 .. '"],"stream":false}'
 
     local tmpReq = script_path .. "Helpers" .. seperator .. "tmp_desc_req.json"
     local f = io.open(tmpReq, "w")
@@ -6302,14 +6312,14 @@ function checkOllamaStatus()
                 ollamaInstalledModels[fullName] = true
             end
         end
-        ollamaStatus = ollamaModelInstalled(settings.ollama_model or "moondream") and "ready" or "model_missing"
+        ollamaStatus = ollamaModelInstalled(settings.ollama_model or "llava") and "ready" or "model_missing"
     else
         ollamaStatus = "model_missing"
     end
 end
 
 function startOllamaPull()
-    local model = settings.ollama_model or "moondream"
+    local model = settings.ollama_model or "llava"
     if is_windows then
         local tmpBat = script_path .. "Helpers" .. seperator .. "tmp_pull.bat"
         local f = io.open(tmpBat, "w")
@@ -7707,7 +7717,7 @@ function selectedItemButtons(IP)
                         end
                     end
                 end
-                setToolTipFunc("Use Ollama to name each cut from a video frame.\nModel: " .. (settings.ollama_model or "moondream") .. "\nChange model in Settings.")
+                setToolTipFunc("Use Ollama to name each cut from a video frame.\nModel: " .. (settings.ollama_model or "llava") .. "\nChange model in Settings.")
 
                 if reaper.ImGui_Button(ctx, "Reset cut names##extra") then
                     for i, c in ipairs(IP.cuts_making_threashold) do
@@ -7983,7 +7993,7 @@ function selectedCutInfoArea(IP)
 
             local describeTip = descCount > 1
                 and ("d: next  ·  ⇧d: prev  ·  right-click: all descriptions")
-                or ("Describe this cut using Ollama (" .. (settings.ollama_model or "moondream") .. ")")
+                or ("Describe this cut using Ollama (" .. (settings.ollama_model or "llava") .. ")")
             setToolTipFunc(describeTip, "d")
         else
             --if not cursorOutsideArea then
@@ -9506,13 +9516,12 @@ function settingButtons(IP)
     do
         -- Model dropdown
         local ollamaModels = {
-            { name = "moondream",          label = "moondream — 1.8B  · smallest and fastest" },
             { name = "llava",              label = "llava:7b — 7B  · good balance" },
             { name = "llava-phi3",         label = "llava-phi3 — 3.8B  · fast, good quality" },
             { name = "llava:13b",          label = "llava:13b — 13B  · high quality, slow" },
             { name = "minicpm-v",          label = "minicpm-v — 8B  · detailed descriptions" },
         }
-        local currentModel = settings.ollama_model or "moondream"
+        local currentModel = settings.ollama_model or "llava"
         local comboLabel = currentModel  -- fallback: show raw name if not in list
         for _, m in ipairs(ollamaModels) do
             if m.name == currentModel then comboLabel = m.label; break end
@@ -9619,7 +9628,7 @@ function settingButtons(IP)
             setToolTipFunc("Starts the Ollama background service. Then click Check.")
 
         elseif ollamaStatus == "model_missing" then
-            local model = settings.ollama_model or "moondream"
+            local model = settings.ollama_model or "llava"
             if reaper.ImGui_Button(ctx, 'Pull "' .. model .. '"') then
                 startOllamaPull()
             end
