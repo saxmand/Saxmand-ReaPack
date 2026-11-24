@@ -5,3 +5,15 @@ FX Modulator Linking/.DS_Store
 .DS_Store
 
 NKI Importer/extension/build/
+
+# Generated or local-only files under Video/ that must not be published: a temp script
+# the Ollama pull writes, editor settings, and experiments that are not part of either
+# package. They were committed once by a too-broad `git add` and are ignored now so that
+# cannot happen again.
+Video/.vscode/
+Video/Helpers/tmp_pull.sh
+Video/Helpers/vision_label.swift
+Video/Helpers/vision_label_bin
+Video/Saxmand_Video Framestore Test.lua
+Video/Saxmand_Video Preview Test.lua
+Video/extension/build/
