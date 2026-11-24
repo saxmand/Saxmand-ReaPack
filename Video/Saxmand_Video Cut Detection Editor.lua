@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.3.8
+-- @version 0.3.9
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,10 +24,11 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
---   + Compare Videos: hovering a source button shows the full name first, in italic
---     grey, above the description. The labels are cut to fit and version names differ
---     at the end, which is exactly the part that was being hidden. The audio button
---     beside it does the same.
+--   + Fixed, properly this time: "attempt to index a nil value" when analysing a video
+--     for the first time. 0.3.7 fixed one of the four things left unset while an
+--     analysis runs; the cut collections the UI iterates were the others. It only ever
+--     worked on a second attempt because a framestore existed by then, so the path that
+--     returns early was never taken.
 
 
 -------- Possible IDEAS TODO
@@ -6871,6 +6872,25 @@ end
 
 function find_cut_data(IP)
     if not IP then return end
+
+    -- The derived collections, before anything can return without reaching the places
+    -- further down that build them.
+    --
+    -- getItemProperties rebuilds the item-property table from scratch and then calls
+    -- this, so whatever this function leaves unset is nil for the rest of the frame --
+    -- and while an analysis is running it returns early, long before these are
+    -- populated. The UI iterates and indexes all three without checking, so every frame
+    -- of a first analysis raised "attempt to index a nil value". It worked on the second
+    -- attempt only because by then a framestore existed and the early return was never
+    -- taken.
+    --
+    -- Done here rather than at each return: there are several, and the next one added
+    -- would have the same problem. cut_data is deliberately NOT in this list -- the
+    -- fallback at the end of the function uses its being nil to tell "never loaded"
+    -- from "no cuts found", so forcing it would stop stored cuts being read from disk.
+    IP.cut_data_time_pos      = IP.cut_data_time_pos      or {}
+    IP.cuts_within_selection  = IP.cuts_within_selection  or {}
+    IP.cuts_making_threashold = IP.cuts_making_threashold or {}
 
     -- The extension's analysis is a background thread rather than a file appearing, so
     -- it is polled here and then feeds the same path: once the store is built, `done`
