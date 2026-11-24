@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="24ebb7d756a8029eaf8530a73190c0216771a476" name="Saxmand ReaPack">
+<index version="1" commit="ee82909bf82b08eda77cd38dff634ad381ded87a" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -12471,6 +12471,17 @@
         <source platform="darwin" file="reaper_video_preview.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/reaper_video_preview.dylib</source>
         <source platform="win64" file="reaper_video_preview-x64.dll">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/reaper_video_preview-x64.dll</source>
       </version>
+      <version name="1.1.2" author="Saxmand" time="2026-11-24T21:44:19Z">
+        <changelog><![CDATA[+ Fixed: on Windows nothing could start ffmpeg, so analysing reported "could not
+  run ffmpeg" whatever the path was. REAPER is a GUI process with no console, so
+  GetStdHandle gives back nothing for stdin and stderr, and CreateProcess refuses
+  those once STARTF_USESTDHANDLES is set. The unused slots now get NUL.
++ A failure to start says which failure it was -- no such file, no such folder,
+  access denied, wrong architecture -- and what path it tried.
++ VP_Version, so the script can show what it is actually running.]]></changelog>
+        <source platform="darwin" file="reaper_video_preview.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/reaper_video_preview.dylib</source>
+        <source platform="win64" file="reaper_video_preview-x64.dll">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/reaper_video_preview-x64.dll</source>
+      </version>
     </reapack>
     <reapack name="Saxmand_Add subtitles to video from srt file using video processor.lua" type="script" desc="Add subtitles to video from srt file using video processor">
       <version name="1.0.0" author="saxmand" time="2025-04-19T04:49:09Z">
@@ -12748,6 +12759,20 @@ Cut descriptions
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/Helpers/json.lua</source>
         <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/Helpers/undo_redo.lua</source>
         <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/Helpers/hosi_exec_hidden.vbs</source>
+      </version>
+      <version name="0.3.4" author="saxmand" time="2026-11-24T21:44:19Z">
+        <changelog><![CDATA[+ Fixed: on Windows the FFmpeg path could not be set while the extension was
+  selected, because those controls were hidden unless FFmpeg was the detector. The
+  extension decodes through ffmpeg there, so analysing failed and the one control
+  that would have fixed it was off screen. It is shown on Windows either way now.
++ The Settings page shows the script and extension versions. They are separate
+  ReaPack packages that update independently, and it says so when the extension is
+  missing or too old to report itself.]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/ffmpeg.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/Helpers/ffmpeg.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/Helpers/json.lua</source>
+        <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/Helpers/undo_redo.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
