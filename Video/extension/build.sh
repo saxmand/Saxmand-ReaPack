@@ -25,6 +25,7 @@ clang++ -std=c++17 -O2 -dynamiclib \
   frame_source_mac.mm \
   audio_source_mac.mm \
   frame_cache.cpp \
+  vp_fileio.cpp \
   frame_store.cpp \
   matcher.cpp \
   audio_store.cpp

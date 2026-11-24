@@ -30,6 +30,7 @@ command -v "$CXX" >/dev/null 2>&1 || {
   frame_source_win.cpp \
   audio_source_win.cpp \
   frame_cache.cpp \
+  vp_fileio.cpp \
   frame_store.cpp \
   matcher.cpp \
   audio_store.cpp \

@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.3.2
+-- @version 0.3.3
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -21,15 +21,9 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
---   + The Video Preview extension now has a Windows build, so cut detection from the
---     fingerprint store -- and the Compare Videos tab -- work there too. Update that
---     package alongside this one. FFmpeg is still needed on Windows, since that is what
---     the extension decodes through; its path is handed over automatically.
---   + Fixed: the Ollama check never worked on Windows. It redirected to /dev/null, which
---     cmd.exe cannot do -- it refuses to run the command at all -- so cut descriptions
---     reported "Ollama not installed" on machines where Ollama was installed and ready.
---   + moondream is in the model list, which it was the default without appearing in, and
---     the places that disagreed about which model was the default now agree.
+--   + "Frame diagnostics" on the Settings page, for when preview pictures come back
+--     blank: it reports where ffmpeg is, whether the frame cache folder can be written,
+--     and whether a frame actually decodes out of the selected item.
 
 
 -------- Possible IDEAS TODO
@@ -9374,6 +9368,26 @@ function settingButtons(IP)
             end
         end
         setToolTipFunc("Resolution of the live video preview panels (tA / tB). Higher = sharper but uses more GPU memory.")
+    end
+
+    -- When the pictures are blank there is nothing on screen to say why: a wrong ffmpeg
+    -- path, an unwritable temporary folder and a decode that runs but produces nothing
+    -- all look the same from the outside. This asks the extension and prints what it
+    -- found, so the answer can be read or pasted to someone who can act on it.
+    if reaper.VP_Diag then
+        if reaper.ImGui_Button(ctx, "Frame diagnostics") then
+            local path = IP and IP.filePath or ""
+            reaper.ShowConsoleMsg("")
+            reaper.ShowConsoleMsg("--- Video Preview diagnostics ---\n")
+            reaper.ShowConsoleMsg(reaper.VP_Diag(path) or "(no report)")
+            if path == "" then
+                reaper.ShowConsoleMsg("\nSelect a video item first to test decoding a frame from it.\n")
+            end
+        end
+        setToolTipFunc("Checks everything the preview pictures depend on -- where ffmpeg is,\n" ..
+                       "whether the frame cache folder can be written, and whether a frame\n" ..
+                       "actually decodes out of the selected item -- and prints the result\n" ..
+                       "to the console.")
     end
 
     reaper.ImGui_EndGroup(ctx)

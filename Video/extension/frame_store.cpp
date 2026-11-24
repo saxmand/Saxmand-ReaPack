@@ -40,6 +40,7 @@
 #include "vp_api.h"
 #include "frame_store.h"
 #include "frame_source.h"
+#include "vp_fileio.h"
 
 // Decode target.  32x32 is far more than the 16x16 grid and 9x8 hash need, which keeps
 // the resample cheap while leaving headroom if the fingerprint grows.  Square on purpose:
@@ -89,7 +90,7 @@ static uint64_t dhash9x8(const uint8_t* p) {
 // -----------------------------------------------------------------------
 
 bool fsReadHeader(const std::string& path, FSHeader* out) {
-    FILE* f = fopen(path.c_str(), "rb");
+    FILE* f = vpFopen(path, "rb");
     if (!f) return false;
     FSHeader h;
     bool ok = fread(&h, sizeof(h), 1, f) == 1;
@@ -107,7 +108,7 @@ bool fsLoad(const std::string& path, FrameStore* out, bool withGrid) {
     if (!out) return false;
     if (!fsReadHeader(path, &out->h)) return false;
 
-    FILE* f = fopen(path.c_str(), "rb");
+    FILE* f = vpFopen(path, "rb");
     if (!f) return false;
     if (fseek(f, sizeof(FSHeader), SEEK_SET) != 0) { fclose(f); return false; }
 
@@ -145,9 +146,9 @@ static bool readHeader(const std::string& path, FSHeader* out) { return fsReadHe
 static bool storeIsFresh(const std::string& storePath, const std::string& srcPath, FSHeader* out) {
     FSHeader h;
     if (!readHeader(storePath, &h)) return false;
-    struct stat st;
-    if (stat(srcPath.c_str(), &st) != 0) return false;
-    if (h.srcSize != (int64_t)st.st_size || h.srcMtime != (int64_t)st.st_mtime) return false;
+    uint64_t sz = 0; int64_t mt = 0;
+    if (!vpStat(srcPath, &sz, &mt)) return false;
+    if (h.srcSize != (int64_t)sz || h.srcMtime != mt) return false;
     if (out) *out = h;
     return true;
 }
@@ -224,11 +225,10 @@ static void analyzeWorker(AnalyzeJob* job, std::string srcPath, std::string stor
     if (!readErr.empty())   { fail(readErr); return; }
     if (hashes.empty())     { fail("no frames decoded"); return; }
 
-    struct stat st;
     int64_t srcSize = 0, srcMtime = 0;
-    if (stat(srcPath.c_str(), &st) == 0) {
-        srcSize  = (int64_t)st.st_size;
-        srcMtime = (int64_t)st.st_mtime;
+    {
+        uint64_t sz = 0; int64_t mt = 0;
+        if (vpStat(srcPath, &sz, &mt)) { srcSize = (int64_t)sz; srcMtime = mt; }
     }
 
     FSHeader hdr;
@@ -250,16 +250,16 @@ static void analyzeWorker(AnalyzeJob* job, std::string srcPath, std::string stor
     snprintf(tmpSuffix, sizeof(tmpSuffix), ".tmp%llx",
              (unsigned long long)(uintptr_t)job);
     std::string tmp = storePath + tmpSuffix;
-    FILE* f = fopen(tmp.c_str(), "wb");
+    FILE* f = vpFopen(tmp, "wb");
     if (!f) { fail("cannot open store for writing"); return; }
     bool ok = fwrite(&hdr, sizeof(hdr), 1, f) == 1
            && fwrite(hashes.data(), sizeof(uint64_t), hashes.size(), f) == hashes.size()
            && fwrite(ptsMs.data(),  sizeof(uint32_t), ptsMs.size(),  f) == ptsMs.size()
            && fwrite(grids.data(),  1,                grids.size(),  f) == grids.size();
     fclose(f);
-    if (!ok) { remove(tmp.c_str()); fail("store write failed"); return; }
-    remove(storePath.c_str());
-    if (rename(tmp.c_str(), storePath.c_str()) != 0) { fail("store rename failed"); return; }
+    if (!ok) { vpRemove(tmp); fail("store write failed"); return; }
+    vpRemove(storePath);
+    if (vpRename(tmp, storePath) != 0) { fail("store rename failed"); return; }
 
     job->frameCount = (int)hashes.size();
     job->state      = 1;

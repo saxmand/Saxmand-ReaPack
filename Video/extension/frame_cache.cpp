@@ -16,18 +16,13 @@
 
 #include <sys/stat.h>
 
+#include "vp_fileio.h"
+
 #ifdef _WIN32
   #include <windows.h>
-  #include <io.h>
-  #define VP_STAT _stat64
-  #define VP_STAT_T struct _stat64
-  static int vpUnlink(const char* p) { return ::remove(p); }
 #else
   #include <dirent.h>
   #include <unistd.h>
-  #define VP_STAT stat
-  #define VP_STAT_T struct stat
-  static int vpUnlink(const char* p) { return ::unlink(p); }
 #endif
 
 const uint64_t CACHE_BUDGET_BYTES = 256ull * 1024ull * 1024ull;
@@ -82,7 +77,7 @@ static int cacheEvictLocked() {
             g_lruBytes -= std::min(g_lruBytes, it->second);
             g_lruSize.erase(it);
         }
-        vpUnlink(victim.c_str());
+        vpRemove(victim);
         removed++;
     }
     return removed;
@@ -105,9 +100,9 @@ void cacheTouch(const std::string& path, uint64_t bytes) {
     }
 
     if (bytes == 0) {
-        VP_STAT_T st;
-        if (VP_STAT(path.c_str(), &st) != 0) return;   // vanished; nothing to track
-        bytes = (uint64_t)st.st_size;
+        uint64_t sz = 0;
+        if (!vpStat(path, &sz, nullptr)) return;   // vanished; nothing to track
+        bytes = sz;
     }
 
     g_lru.push_front(path);
@@ -154,9 +149,9 @@ void listCacheFiles(std::vector<Found>* out) {
         if (name.size() <= prefix.size() || name.compare(0, prefix.size(), prefix) != 0) continue;
         if (name.size() < 4 || name.compare(name.size() - 4, 4, ".jpg") != 0) continue;
         std::string full = dir + name;
-        VP_STAT_T st;
-        if (VP_STAT(full.c_str(), &st) != 0) continue;
-        out->push_back({ full, (uint64_t)st.st_size, (double)st.st_mtime });
+        uint64_t sz = 0; int64_t mt = 0;
+        if (!vpStat(full, &sz, &mt)) continue;
+        out->push_back({ full, sz, (double)mt });
     }
     closedir(d);
 #endif

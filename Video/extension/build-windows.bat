@@ -17,6 +17,7 @@ cl /nologo /O2 /EHsc /LD /std:c++17 /MT /DNDEBUG ^
   frame_source_win.cpp ^
   audio_source_win.cpp ^
   frame_cache.cpp ^
+  vp_fileio.cpp ^
   frame_store.cpp ^
   matcher.cpp ^
   audio_store.cpp ^

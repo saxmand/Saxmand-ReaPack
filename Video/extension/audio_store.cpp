@@ -36,6 +36,7 @@
 #include "vp_api.h"
 #include "audio_source.h"
 #include "dsp_fft.h"
+#include "vp_fileio.h"
 #include "frame_store.h"
 
 // 16 kHz mono: everything the fingerprint looks at sits below 6 kHz, and asking
@@ -78,9 +79,9 @@ static bool audioStoreFresh(const std::string& storePath, const std::string& src
     // without a waveform: re-analysis is 30x realtime, and silently showing an empty
     // strip would look like broken audio rather than an out-of-date cache.
     if ((h.flags & FS_FLAG_PEAKS) == 0) return false;
-    struct stat st;
-    if (stat(srcPath.c_str(), &st) != 0) return false;
-    return h.srcSize == (int64_t)st.st_size && h.srcMtime == (int64_t)st.st_mtime;
+    uint64_t sz = 0; int64_t mt = 0;
+    if (!vpStat(srcPath, &sz, &mt)) return false;
+    return h.srcSize == (int64_t)sz && h.srcMtime == mt;
 }
 
 static void audioWorker(AudioJob* job, std::string srcPath, std::string storePath) {
@@ -195,11 +196,10 @@ static void audioWorker(AudioJob* job, std::string srcPath, std::string storePat
     if (!readErr.empty()) { fail(readErr); return; }
     if (hashes.empty())   { fail("no audio decoded"); return; }
 
-    struct stat st;
     int64_t srcSize = 0, srcMtime = 0;
-    if (stat(srcPath.c_str(), &st) == 0) {
-        srcSize  = (int64_t)st.st_size;
-        srcMtime = (int64_t)st.st_mtime;
+    {
+        uint64_t sz2 = 0; int64_t mt2 = 0;
+        if (vpStat(srcPath, &sz2, &mt2)) { srcSize = (int64_t)sz2; srcMtime = mt2; }
     }
 
     FSHeader hdr;
@@ -223,16 +223,16 @@ static void audioWorker(AudioJob* job, std::string srcPath, std::string storePat
     snprintf(tmpSuffix, sizeof(tmpSuffix), ".tmp%llx",
              (unsigned long long)(uintptr_t)job);
     std::string tmp = storePath + tmpSuffix;
-    FILE* fo = fopen(tmp.c_str(), "wb");
+    FILE* fo = vpFopen(tmp, "wb");
     if (!fo) { fail("cannot open audio store for writing"); return; }
     bool ok = fwrite(&hdr, sizeof(hdr), 1, fo) == 1
            && fwrite(hashes.data(), sizeof(uint64_t), hashes.size(), fo) == hashes.size()
            && fwrite(ptsMs.data(),  sizeof(uint32_t), ptsMs.size(),  fo) == ptsMs.size()
            && fwrite(peaks.data(),  sizeof(uint16_t), peaks.size(),  fo) == peaks.size();
     fclose(fo);
-    if (!ok) { remove(tmp.c_str()); fail("audio store write failed"); return; }
-    remove(storePath.c_str());
-    if (rename(tmp.c_str(), storePath.c_str()) != 0) { fail("audio store rename failed"); return; }
+    if (!ok) { vpRemove(tmp); fail("audio store write failed"); return; }
+    vpRemove(storePath);
+    if (vpRename(tmp, storePath) != 0) { fail("audio store rename failed"); return; }
 
     job->hopCount = (int)hashes.size();
     job->state    = 1;

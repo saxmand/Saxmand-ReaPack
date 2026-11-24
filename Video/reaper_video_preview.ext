@@ -1,6 +1,6 @@
 -- @description Video Preview extension
 -- @author Saxmand
--- @version 1.1.0
+-- @version 1.1.1
 -- @about
 --   # Video Preview extension
 --
@@ -47,8 +47,13 @@
 --   [darwin] reaper_video_preview.dylib
 --   [win64] reaper_video_preview-x64.dll
 -- @changelog
---   + Windows build. Cut detection, fingerprinting and version matching now work there
---     too, decoding through the ffmpeg binary rather than AVFoundation.
---   + Decoding sits behind two interfaces, one per access pattern, so the fingerprints
---     and the matcher are shared code and both platforms produce identical stores.
---   + VP_SetFFmpegPath, for telling the extension where ffmpeg is.
+--   + Fixed: preview frames came back blank on Windows. Each frame is a separate ffmpeg
+--     run writing a file, and the wait for it to finish was reading its (empty) output
+--     instead of waiting for the process -- so ffmpeg was terminated as it shut down,
+--     before the picture had been flushed to disk. Cut detection was unaffected, which
+--     is why only the pictures were missing.
+--   + File access now uses the wide Windows calls throughout. The narrow ones read
+--     their paths in the ANSI code page rather than UTF-8, so a user name or media
+--     folder with a non-ASCII character made files invisible that were plainly there.
+--   + VP_Diag, which reports on the whole frame path; the script exposes it as "Frame
+--     diagnostics" on its Settings page.

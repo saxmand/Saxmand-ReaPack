@@ -25,6 +25,7 @@
 #include "frame_cache.h"
 #include "frame_source.h"        // frameSourceFFmpegPath -- one setting for everything
 #include "ffmpeg_pipe_win.h"
+#include "vp_fileio.h"
 
 namespace {
 
@@ -48,8 +49,8 @@ public:
         std::string out = cacheFramePath(hash, ms, maxW, maxH);
 
         // Already decoded: content-addressed, so the name alone settles it.
-        VP_FileInfo fi;
-        if (statFile(out, &fi)) { cacheTouch(out, fi.size); return out; }
+        uint64_t have = 0;
+        if (vpStat(out, &have, nullptr) && have > 0) { cacheTouch(out, have); return out; }
 
         if (!decodeTo(timeSec, maxW, maxH, out.c_str())) return std::string();
         cacheTouch(out, 0);
@@ -62,19 +63,6 @@ public:
     }
 
 private:
-    struct VP_FileInfo { uint64_t size; };
-
-    static bool statFile(const std::string& p, VP_FileInfo* out) {
-        FILE* f = fopen(p.c_str(), "rb");
-        if (!f) return false;
-        fseek(f, 0, SEEK_END);
-        long long n = ftell(f);
-        fclose(f);
-        if (n <= 0) return false;
-        out->size = (uint64_t)n;
-        return true;
-    }
-
     double clamp(double t) const { return (t < 0.0) ? 0.0 : (t > dur ? dur : t); }
 
     bool decodeTo(double timeSec, int maxW, int maxH, const char* outPath) {
@@ -95,11 +83,15 @@ private:
 
         ffp::Pipe p;
         if (!p.start(cmd, /*mergeStderr=*/false)) return false;
-        p.readAll(4096);     // waits for it to finish; there should be nothing to read
+        // Wait for the PROCESS, not for its pipe to close. ffmpeg is writing a file
+        // here, so what matters is that it has finished and flushed -- reading its
+        // (empty) stdout only tells us it is on the way out.
+        bool exited = p.waitExit(20000);
         p.close();
+        if (!exited) return false;
 
-        VP_FileInfo fi;
-        return statFile(outPath, &fi);
+        uint64_t size = 0;
+        return vpStat(outPath, &size, nullptr) && size > 0;
     }
 
     std::string src;

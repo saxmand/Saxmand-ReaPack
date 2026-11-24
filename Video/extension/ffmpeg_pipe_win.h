@@ -116,13 +116,33 @@ public:
         return out;
     }
 
+    // Waits for the child to finish. True if it exited within the timeout.
+    //
+    // Needed as well as reading the pipe, because the two are not the same event: the
+    // pipe reports end-of-file when the child closes its stdout, which happens as it
+    // exits but before it has finished. Anything that depends on what the child wrote
+    // to a FILE -- rather than to the pipe -- has to wait for the process itself.
+    bool waitExit(DWORD ms) {
+        if (!proc) return true;
+        return WaitForSingleObject(proc, ms) == WAIT_OBJECT_0;
+    }
+
     void close() {
         if (rd) { CloseHandle(rd); rd = nullptr; }
         if (wr) { CloseHandle(wr); wr = nullptr; }
         if (proc) {
             // Reading may stop early -- a cancelled analysis, or a caller that has seen
-            // enough -- and ffmpeg would then sit blocked on a full pipe forever.
-            if (WaitForSingleObject(proc, 0) == WAIT_TIMEOUT) TerminateProcess(proc, 0);
+            // enough -- and ffmpeg would then sit blocked on a full pipe forever. So
+            // give it a moment to leave on its own and only then insist.
+            //
+            // The moment matters. This used to be WaitForSingleObject(proc, 0), which
+            // asks "have you exited already?" and almost always says no, because the
+            // pipe signals end-of-file while the child is still shutting down. It then
+            // terminated ffmpeg mid-exit -- harmless when we had already read what we
+            // wanted off the pipe, and fatal when ffmpeg was writing a frame to a file,
+            // because the file was killed before it was flushed. That is why cut
+            // detection worked and previews came back blank.
+            if (WaitForSingleObject(proc, 5000) == WAIT_TIMEOUT) TerminateProcess(proc, 0);
             WaitForSingleObject(proc, 2000);
             CloseHandle(proc);
             proc = nullptr;

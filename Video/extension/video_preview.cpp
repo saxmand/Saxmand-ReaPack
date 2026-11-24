@@ -28,12 +28,20 @@
 #include <string>
 #include <cstdio>
 #include <cstring>
+#include <cstdarg>
 
 #include "sdk/reaper_plugin.h"
 #include "vp_api.h"
 #include "video_decoder.h"
 #include "frame_cache.h"
 #include "frame_source.h"
+#include "vp_fileio.h"
+
+#ifdef _WIN32
+  #define VP_PLATFORM_NAME "Windows (decoding through the ffmpeg binary)"
+#else
+  #define VP_PLATFORM_NAME "macOS (decoding in-process through AVFoundation)"
+#endif
 
 static int (*plugin_register)(const char*, void*) = nullptr;
 
@@ -102,6 +110,100 @@ static int VP_ExtractFrame(int handle, double timePos, int maxW, int maxH, const
     return d->extractTo(timePos, maxW, maxH, outputPath) ? 1 : 0;
 }
 
+// A report on everything the frame path depends on, for when it does not work and the
+// person who can see it is not the person who can read the code.
+//
+// Checks each link in order and says what it found, so a single run distinguishes a
+// wrong ffmpeg path from an unwritable cache folder from a decode that runs but produces
+// nothing -- which otherwise all look identical from the outside: a blank picture.
+static const char* VP_Diag(const char* filePath) {
+    static std::string out;
+    out.clear();
+    char buf[1024];
+
+    auto line = [&](const char* fmt, ...) {
+        va_list ap; va_start(ap, fmt);
+        vsnprintf(buf, sizeof(buf), fmt, ap);
+        va_end(ap);
+        out += buf; out += "\n";
+    };
+
+    line("platform        %s", VP_PLATFORM_NAME);
+    std::string exe = frameSourceFFmpegPath();
+    line("ffmpeg path     %s", exe.empty() ? "(none set)" : exe.c_str());
+
+    // Can we write where the frames are cached? A read-only or missing temp folder
+    // produces exactly the same blank picture as a failed decode.
+    std::string dir = cacheDir();
+    line("cache folder    %s", dir.c_str());
+    std::string probeFile = dir + "vp2_diag_write_test.tmp";
+    FILE* w = vpFopen(probeFile, "wb");
+    if (w) {
+        fputs("x", w);
+        fclose(w);
+        uint64_t sz = 0;
+        bool back = vpStat(probeFile, &sz, nullptr);
+        vpRemove(probeFile);
+        line("cache writable  %s", back && sz == 1 ? "yes" : "wrote but could not read back");
+    } else {
+        line("cache writable  NO - cannot create a file there");
+    }
+
+    if (!filePath || !filePath[0]) {
+        line("");
+        line("no file given, so nothing was decoded. Select a video item and run again.");
+        return out.c_str();
+    }
+    line("file            %s", filePath);
+
+    // 1. sequential decode -- what cut detection uses
+    std::string err;
+    FrameSource* fs = frameSourceOpen(filePath, 32, 32, &err);
+    if (!fs) {
+        line("sequential      FAILED to open: %s", err.empty() ? "(no reason given)" : err.c_str());
+    } else {
+        line("sequential      opened, %.3f s at %.3f fps", fs->duration(), fs->fps());
+        LumaFrame fr;
+        int n = 0;
+        while (n < 3 && fs->next(&fr)) n++;
+        if (n == 0) line("                NO FRAMES came back: %s",
+                         fs->error()[0] ? fs->error() : "(no reason given)");
+        else        line("                %d frames read, first %dx%d stride %d at %.3f s",
+                         n, fr.w, fr.h, fr.stride, fr.ptsSec);
+        delete fs;
+    }
+
+    // 2. random access -- what previews and thumbnails use
+    VideoDecoder* d = videoDecoderOpen(filePath, &err);
+    if (!d) {
+        line("random access   FAILED to open: %s", err.empty() ? "(no reason given)" : err.c_str());
+        return out.c_str();
+    }
+    line("random access   opened, %.3f s", d->duration());
+
+    double at = d->duration() > 2.0 ? 1.0 : d->duration() * 0.5;
+    std::string got = d->getFrame(at, 640, 360);
+    if (got.empty()) {
+        line("frame at %.2fs   FAILED - getFrame returned nothing", at);
+        line("");
+        line("The decode ran but produced no usable file. On Windows that is ffmpeg");
+        line("either not starting or not finishing; check the ffmpeg path above by");
+        line("running it in a command prompt.");
+    } else {
+        uint64_t sz = 0;
+        bool here = vpStat(got, &sz, nullptr);
+        line("frame at %.2fs   %s", at, got.c_str());
+        line("                %s, %llu bytes", here ? "written" : "NOT ON DISK",
+             (unsigned long long)sz);
+    }
+    delete d;
+    return out.c_str();
+}
+
+#ifdef VP_DIAG_TEST
+extern "C" const char* vpDiagForTest(const char* p) { return VP_Diag(p); }
+#endif
+
 // Where ffmpeg is, for the platforms that decode through it. macOS ignores this; it is
 // exported on both so the script can call it without caring which it is running on.
 static void VP_SetFFmpegPath(const char* path) {
@@ -137,6 +239,9 @@ static void* VA_VP_ExtractFrame(void** args, int nargs) {
                             (const char*)args[4]);
     return (void*)(intptr_t)r;
 }
+static void* VA_VP_Diag(void** args, int nargs) {
+    return (void*)VP_Diag(nargs >= 1 ? (const char*)args[0] : "");
+}
 static void* VA_VP_SetFFmpegPath(void** args, int nargs) {
     if (nargs >= 1) VP_SetFFmpegPath((const char*)args[0]);
     return nullptr;
@@ -167,6 +272,11 @@ static const VPFunc kFuncs[] = {
       "Tell the extension where the ffmpeg binary is. Windows decodes through it, so "
       "cut detection and previews need this (or ffmpeg on PATH). Ignored on macOS, "
       "which decodes in-process -- safe to call on both." },
+    { "VP_Diag", (void*)VP_Diag, (void*)VA_VP_Diag,
+      "const char*", "const char*", "filePath",
+      "A report on the frame path: ffmpeg location, cache folder and whether it is "
+      "writable, then a sequential decode and a single-frame decode of filePath. For "
+      "working out why pictures are blank. Pass an empty string to skip the decodes." },
 };
 static const int kNumFuncs = (int)(sizeof(kFuncs) / sizeof(kFuncs[0]));
 // REAPER holds onto the APIdef_ pointer for the plugin's lifetime, so the packed
