@@ -21,11 +21,17 @@
 
 namespace dsp {
 
+// Spelled out rather than taken from PI, which is a POSIX extension and is absent
+// from both MSVC and mingw unless _USE_MATH_DEFINES is set before <cmath>. Relying on
+// a macro that three toolchains disagree about is not worth the two lines it saves.
+static const double PI = 3.14159265358979323846;
+
+
 // Hann window, matching vDSP_hann_window(..., vDSP_HANN_DENORM): denormalised, so the
 // endpoints are zero and the divisor is N-1 rather than N.
 inline void hann(float* w, int n) {
     if (n <= 1) { if (n == 1) w[0] = 1.0f; return; }
-    const double k = 2.0 * M_PI / (double)(n - 1);
+    const double k = 2.0 * PI / (double)(n - 1);
     for (int i = 0; i < n; i++) w[i] = (float)(0.5 * (1.0 - std::cos(k * (double)i)));
 }
 
@@ -67,7 +73,7 @@ public:
         for (int i = 0; i < m_n; i++) { m_re[i] = in[m_rev[i]]; m_im[i] = 0.0; }
 
         for (int len = 2; len <= m_n; len <<= 1) {
-            const double ang = -2.0 * M_PI / (double)len;
+            const double ang = -2.0 * PI / (double)len;
             const double wr  = std::cos(ang), wi = std::sin(ang);
             for (int i = 0; i < m_n; i += len) {
                 double cr = 1.0, ci = 0.0;
