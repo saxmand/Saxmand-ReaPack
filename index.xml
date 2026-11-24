@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="564515304900039980e6a127e76038fc6a95d988" name="Saxmand ReaPack">
+<index version="1" commit="1c604dffc98bac7d33756193dac2c0245b1b9510" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -12795,6 +12795,18 @@ Cut descriptions
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/564515304900039980e6a127e76038fc6a95d988/Video/Helpers/json.lua</source>
         <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/564515304900039980e6a127e76038fc6a95d988/Video/Helpers/undo_redo.lua</source>
         <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/564515304900039980e6a127e76038fc6a95d988/Video/Helpers/hosi_exec_hidden.vbs</source>
+      </version>
+      <version name="0.3.6" author="saxmand" time="2026-11-24T21:55:37Z">
+        <changelog><![CDATA[+ moondream is no longer offered or used as the cut description model. It had been
+  the default without appearing in the list, so it showed as the selected model --
+  on a fresh install, whether or not Ollama was there at all -- and could not be
+  chosen again once changed away from. The default is llava, which is in the list,
+  and anyone carrying the old value is moved across once.]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/1c604dffc98bac7d33756193dac2c0245b1b9510/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/ffmpeg.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/1c604dffc98bac7d33756193dac2c0245b1b9510/Video/Helpers/ffmpeg.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/1c604dffc98bac7d33756193dac2c0245b1b9510/Video/Helpers/json.lua</source>
+        <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/1c604dffc98bac7d33756193dac2c0245b1b9510/Video/Helpers/undo_redo.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/1c604dffc98bac7d33756193dac2c0245b1b9510/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
