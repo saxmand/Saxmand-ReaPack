@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="99de63cf8b301c706e3277f21c625bafc70dc575" name="Saxmand ReaPack">
+<index version="1" commit="8927be1a6ccbc53059e46deafb8c669d5617e38e" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -12682,6 +12682,20 @@ Cut descriptions
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/99de63cf8b301c706e3277f21c625bafc70dc575/Video/Helpers/json.lua</source>
         <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/99de63cf8b301c706e3277f21c625bafc70dc575/Video/Helpers/undo_redo.lua</source>
         <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/99de63cf8b301c706e3277f21c625bafc70dc575/Video/Helpers/hosi_exec_hidden.vbs</source>
+      </version>
+      <version name="0.3.1" author="saxmand" time="2026-11-24T14:41:57Z">
+        <changelog><![CDATA[+ Says plainly when the Video Preview extension is not available, instead of
+  pointing at the wrong thing. On Windows it now says the extension is macOS only
+  -- it reads frames through AVFoundation, so there is no Windows build -- rather
+  than implying there is something to install. Cut detection there runs through
+  FFmpeg as it always has.
++ The Settings page explains why there is no choice of detector when the extension
+  is absent, rather than showing only FFmpeg's settings with nothing said.]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/8927be1a6ccbc53059e46deafb8c669d5617e38e/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/ffmpeg.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/8927be1a6ccbc53059e46deafb8c669d5617e38e/Video/Helpers/ffmpeg.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/8927be1a6ccbc53059e46deafb8c669d5617e38e/Video/Helpers/json.lua</source>
+        <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/8927be1a6ccbc53059e46deafb8c669d5617e38e/Video/Helpers/undo_redo.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/8927be1a6ccbc53059e46deafb8c669d5617e38e/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
