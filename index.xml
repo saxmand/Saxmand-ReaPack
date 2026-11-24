@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="ee82909bf82b08eda77cd38dff634ad381ded87a" name="Saxmand ReaPack">
+<index version="1" commit="564515304900039980e6a127e76038fc6a95d988" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -12437,9 +12437,10 @@
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab The Compare Videos tab, which needs this extension: it fingerprints two cuts of the same film, works out which stretches moved where, and conforms a session from one to the other.\sa180\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 The script works without it by falling back to FFmpeg for cut detection and thumbnails, but the Compare Videos tab is unavailable and cut detection has to re-read the whole file on every run.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 macOS decodes in-process through AVFoundation, which needs nothing installed and fingerprints a file using about a tenth of the CPU a full decode would.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Windows decodes through the ffmpeg binary instead - so FFmpeg has to be present there, and the script hands over its path. The fingerprints, the cut detector and the matcher are the same code on both, so the results are identical and a store built on one machine can be read on the other. The differences are that the first pass on Windows is faster but uses far more CPU, and that scrubbing is slower because each preview frame is a separate ffmpeg run.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Windows decodes through Media Foundation, which is part of Windows, so nothing has to be installed there either. What Media Foundation cannot read is ProRes and DNxHD, which have no Windows decoder - for those the extension falls back to the ffmpeg binary if one is available, and the script hands over its path.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 The fingerprints, the cut detector and the matcher are the same code on both platforms, so the results are identical and a store built on one machine can be read on the other.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 macOS: universal binary, Apple Silicon and Intel. Needs macOS 11 on Apple Silicon, 10.15 on Intel.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Windows: 64-bit, and Windows 10 or newer. It links the Universal CRT, which is part of Windows from 10 onwards; on 7 or 8.1 that has to be installed separately through Windows Update. FFmpeg also has to be present, since that is what it decodes through - the script hands over whatever path is set on its Settings page, and otherwise it looks for ffmpeg on PATH.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Windows: 64-bit, and Windows 10 or newer. It links the Universal CRT, which is part of Windows from 10 onwards; on 7 or 8.1 that has to be installed separately through Windows Update.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Source: Video/extension in this repository.\par}
 }
 ]]></description>
@@ -12482,6 +12483,15 @@
         <source platform="darwin" file="reaper_video_preview.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/reaper_video_preview.dylib</source>
         <source platform="win64" file="reaper_video_preview-x64.dll">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/reaper_video_preview-x64.dll</source>
       </version>
+      <version name="1.2.0" author="Saxmand" time="2026-11-24T21:54:17Z">
+        <changelog><![CDATA[+ Windows no longer needs FFmpeg. Decoding goes through Media Foundation, which is
+  part of Windows: in-process for both the sequential fingerprint pass and single
+  preview frames, with WIC writing the JPEGs. ffmpeg is kept as a fallback for what
+  Media Foundation cannot read, which in practice means ProRes and DNxHD.
++ The diagnostics report says which backend answered.]]></changelog>
+        <source platform="darwin" file="reaper_video_preview.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/564515304900039980e6a127e76038fc6a95d988/Video/reaper_video_preview.dylib</source>
+        <source platform="win64" file="reaper_video_preview-x64.dll">https://github.com/saxmand/Saxmand-ReaPack/raw/564515304900039980e6a127e76038fc6a95d988/Video/reaper_video_preview-x64.dll</source>
+      </version>
     </reapack>
     <reapack name="Saxmand_Add subtitles to video from srt file using video processor.lua" type="script" desc="Add subtitles to video from srt file using video processor">
       <version name="1.0.0" author="saxmand" time="2025-04-19T04:49:09Z">
@@ -12516,7 +12526,8 @@
 
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 Video Cut Detection Editor\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Detects the cuts in a video, lets you name and colour them, and turns them into markers, regions, take markers, thumbnails or item splits in your session.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Cuts are found either by the "Video Preview extension" package (same repository, macOS only) or by FFmpeg. The extension is the default and needs nothing installed or configured; it also reads preview frames and thumbnails, and is what the Compare Videos tab runs on. Without it, set an FFmpeg path on the Settings page and cut detection works as before.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Cuts are found either by the "Video Preview extension" package (same repository) or by FFmpeg. The extension is the default and needs nothing installed: it decodes through AVFoundation on macOS and Media Foundation on Windows. It also reads preview frames and thumbnails, and is what the Compare Videos tab runs on. Without it, set an FFmpeg path on the Settings page and cut detection works as before.\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 FFmpeg is still worth having on Windows for ProRes and DNxHD, which Windows has no decoder for; the extension falls back to it for those.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 The Compare Videos tab fingerprints two cuts of the same film and conforms a session from one to the other. It is still in development.\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 Optional: Ollama running locally, to label cuts from their picture.\par}
 }
@@ -12773,6 +12784,17 @@ Cut descriptions
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/Helpers/json.lua</source>
         <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/Helpers/undo_redo.lua</source>
         <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/ee82909bf82b08eda77cd38dff634ad381ded87a/Video/Helpers/hosi_exec_hidden.vbs</source>
+      </version>
+      <version name="0.3.5" author="saxmand" time="2026-11-24T21:54:17Z">
+        <changelog><![CDATA[+ The extension no longer needs FFmpeg on Windows: it decodes through Media
+  Foundation, which is part of Windows. Update the extension package alongside this
+  one. FFmpeg stays useful there for ProRes and DNxHD, which Windows cannot decode,
+  and the extension falls back to it for those.]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/564515304900039980e6a127e76038fc6a95d988/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/ffmpeg.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/564515304900039980e6a127e76038fc6a95d988/Video/Helpers/ffmpeg.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/564515304900039980e6a127e76038fc6a95d988/Video/Helpers/json.lua</source>
+        <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/564515304900039980e6a127e76038fc6a95d988/Video/Helpers/undo_redo.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/564515304900039980e6a127e76038fc6a95d988/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
