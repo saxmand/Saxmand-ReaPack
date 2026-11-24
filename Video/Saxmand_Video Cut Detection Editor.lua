@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.3.0
+-- @version 0.3.1
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -21,36 +21,13 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
---   FFmpeg is now optional
---   + Cut detection can run from the video_preview extension instead of FFmpeg, and does
---     by default. The extension needs nothing installed, re-detects at a new sensitivity
---     in under a millisecond once it has read a file, and can tell a cut from a whip pan.
---   + The extension also supplies thumbnails, preview frames and description frames, so
---     everything works with no FFmpeg present at all.
---   + No more "FFmpeg is required" prompt at startup. It is asked for only where it is
---     actually being used, and the Settings page says plainly when neither is available.
---   + Motion, Jump and Gap sliders for the extension detector. cmd/ctrl+click types a
---     value, opt/alt+click resets one to its default.
---   Compare Videos tab (in development)
---   + New tab for conforming a session from one cut of a film to another: fingerprint two
---     versions, see which stretches moved, and bring the session's own items along.
---   + Shows where each item lands, which would be cut, and which have collided; the
---     fewest edits that line everything up; and a Cut button that applies them, rippling
---     every track so automation moves with the items.
---   + Plays either version against the session items, or drives REAPER's own transport.
---   + Marked as in development, and it is -- check what it tells you before cutting
---     anything you care about.
---   Settings and shortcuts
---   + The cut detection options are always shown; the "Options" fold is gone.
---   + Settings page groups each detector's own settings under the choice of detector.
---   + cmd/ctrl+w closes the window, and the action now reports its toggle state, so a
---     toolbar button shows whether the editor is open.
---   + Fixed: the ctrl+1/2/3 tab shortcuts were bound to the Windows key on Windows and so
---     never worked there. Tooltips now name the modifiers for the platform you are on.
---   Cut descriptions
---   + Describes the frame on the cut rather than the one before it.
---   + Repeated labels from the model are collapsed into one.
---   + No longer dumps the model's raw reply to the console.
+--   + Says plainly when the Video Preview extension is not available, instead of
+--     pointing at the wrong thing. On Windows it now says the extension is macOS only
+--     -- it reads frames through AVFoundation, so there is no Windows build -- rather
+--     than implying there is something to install. Cut detection there runs through
+--     FFmpeg as it always has.
+--   + The Settings page explains why there is no choice of detector when the extension
+--     is absent, rather than showing only FFmpeg's settings with nothing said.
 
 
 -------- Possible IDEAS TODO
@@ -4412,7 +4389,22 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
                                 or 0xFFFFFF10
             reaper.ImGui_DrawList_AddRectFilled(dl, visLeft + 2, bandY + 2,
                                                 visLeft + viewW - 2, bandY + bandH - 2, col, 4)
-            local label = ready and "Compare" or "select a video for both sides"
+            -- Name the actual obstacle. This said "select a video for both sides"
+            -- whatever the reason, so someone without the extension was sent looking
+            -- for a selection problem they did not have. On Windows there is nothing
+            -- to install: the extension is built on AVFoundation.
+            local label
+            if ready then
+                label = "Compare"
+            elseif not (vp_available and reaper.VP_Analyze) then
+                label = is_windows
+                        and "not available on Windows - needs the macOS video_preview extension"
+                        or  "needs the video_preview extension"
+            elseif conformStatus then
+                label = "analysing..."
+            else
+                label = "select a video for both sides"
+            end
             reaper.ImGui_PushFont(ctx, font, 18)
             local tw = reaper.ImGui_CalcTextSize(ctx, label)
             reaper.ImGui_DrawList_AddText(dl, visLeft + (viewW - tw) / 2,
@@ -9265,6 +9257,22 @@ function settingButtons(IP)
         -- here: a modal has to keep being drawn to stay dismissable, and this tab stops
         -- drawing the moment you switch away from it, which would leave the dialog
         -- blocking input with nothing on screen to answer it.
+        reaper.ImGui_NewLine(ctx)
+    else
+        -- No choice to offer, so say why rather than silently showing FFmpeg's settings
+        -- and nothing else. On Windows there is nothing to go and install: the extension
+        -- reads frames through AVFoundation, so it is macOS only and always will be.
+        reaper.ImGui_TextColored(ctx, colorGrey, "Cut detection method")
+        reaper.ImGui_TextColored(ctx, 0xFFFFFF66, is_windows
+            and "FFmpeg. The faster extension detector is macOS only."
+            or  "FFmpeg. Install the Video Preview extension for the faster detector.")
+        setToolTipFunc(is_windows
+            and "The Video Preview extension reads frames through AVFoundation, which is\n" ..
+                "part of macOS, so there is no Windows build of it. Cut detection here\n" ..
+                "runs through FFmpeg, as it always has, and the Compare Videos tab is\n" ..
+                "unavailable."
+            or  "The Video Preview extension package, in this same repository, detects\n" ..
+                "cuts without FFmpeg and is what the Compare Videos tab runs on.")
         reaper.ImGui_NewLine(ctx)
     end
 
