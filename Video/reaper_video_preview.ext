@@ -1,0 +1,33 @@
+-- @description Video Preview extension
+-- @author Saxmand
+-- @version 1.0.0
+-- @about
+--   # Video Preview extension
+--
+--   macOS only. Reads video frames and fingerprints video and audio for the "Video Cut
+--   Detection Editor" script package (same repository) - install both, and restart
+--   REAPER afterwards.
+--
+--   What it adds to that script:
+--
+--   - Cut detection without FFmpeg. It reads a file once into a fingerprint store next
+--     to the video, after which detecting again at a different sensitivity is instant
+--     rather than another full pass over the file. It also distinguishes a cut from
+--     fast motion, which a plain frame-difference threshold cannot.
+--   - Video preview frames and cut thumbnails, decoded through AVFoundation.
+--   - The Compare Videos tab, which needs this extension: it fingerprints two cuts of
+--     the same film, works out which stretches moved where, and conforms a session from
+--     one to the other.
+--
+--   The script works without it by falling back to FFmpeg for cut detection and
+--   thumbnails, but the Compare Videos tab is unavailable and cut detection has to
+--   re-read the whole file on every run.
+--
+--   Universal binary: Apple Silicon and Intel. Needs macOS 11 on Apple Silicon, 10.15
+--   on Intel. No Windows build - it is built on AVFoundation, which is macOS only.
+--
+--   Source: Video/extension in this repository.
+-- @provides
+--   [darwin] reaper_video_preview.dylib
+-- @changelog
+--   + First release

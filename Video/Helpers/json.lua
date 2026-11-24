@@ -35,7 +35,7 @@ local function skip_delim(str, pos, delim, err_if_missing)
     pos = pos + #str:match('^%s*', pos)
     if str:sub(pos, pos) ~= delim then
         if err_if_missing then
-            return false, ('Expected ' .. delim .. ' near position ' .. pos)
+            error('Expected ' .. delim .. ' near position ' .. pos)
         end
         return pos, false
     end
@@ -109,7 +109,7 @@ function json_parse(str, pos, end_delim)
     
     
     pos = pos or 1
-    if pos > #str then return false, ('Reached unexpected end of input.') end
+    if pos > #str then error('Reached unexpected end of input.') end
     local pos = pos + #str:match('^%s*', pos) -- Skip whitespace.
     local first = str:sub(pos, pos)
     if first == '{' then -- Parse an object.
@@ -119,7 +119,7 @@ function json_parse(str, pos, end_delim)
             key, pos = json_parse(str, pos, '}')
             if key == nil then return obj, pos end
             if not delim_found then
-                return false, ('Comma missing between object items.')
+                error('Comma missing between object items.')
             end
             pos = skip_delim(str, pos, ':', true) -- true -> error if missing.
             obj[key], pos = json_parse(str, pos)
@@ -132,7 +132,7 @@ function json_parse(str, pos, end_delim)
             val, pos = json_parse(str, pos, ']')
             if val == nil then return arr, pos end
             if not delim_found then
-                return false, ('Comma missing between array items.')
+                error('Comma missing between array items.')
             end
             arr[#arr + 1] = val
             pos, delim_found = skip_delim(str, pos, ',')
@@ -152,10 +152,14 @@ function json_parse(str, pos, end_delim)
             end
         end
         local pos_info_str = 'position ' .. pos .. ': ' .. str:sub(pos, pos + 10)
-        return false, ('Invalid json syntax starting at ' .. pos_info_str)
+        error('Invalid json syntax starting at ' .. pos_info_str)
     end
 end
 
-function json.decodeFromJson(str) return json_parse(str, pos, end_delim) end
+function json.decodeFromJson(str)
+    local ok, result = pcall(json_parse, str)
+    if ok then return result end
+    return nil, result  -- result is the error message
+end
 
 return json
