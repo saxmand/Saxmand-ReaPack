@@ -25,6 +25,7 @@
 #include "frame_cache.h"
 #include "frame_source.h"        // frameSourceFFmpegPath -- one setting for everything
 #include "ffmpeg_pipe_win.h"
+#include "win_mf.h"
 #include "vp_fileio.h"
 
 namespace {
@@ -101,7 +102,7 @@ private:
 
 } // namespace
 
-VideoDecoder* videoDecoderOpen(const char* path, std::string* err) {
+VideoDecoder* videoDecoderOpenFFmpeg(const char* path, std::string* err) {
     if (!path || !path[0]) { if (err) *err = "no path"; return nullptr; }
     WinDecoder* d = new WinDecoder();
     if (!d->open(path, err)) { delete d; return nullptr; }

@@ -28,6 +28,11 @@ command -v "$CXX" >/dev/null 2>&1 || {
   video_preview.cpp \
   video_decoder_win.cpp \
   frame_source_win.cpp \
+  frame_source_mf.cpp \
+  video_decoder_mf.cpp \
+  audio_source_mf.cpp \
+  win_mf.cpp \
+  win_dispatch.cpp \
   audio_source_win.cpp \
   frame_cache.cpp \
   vp_fileio.cpp \
@@ -35,7 +40,7 @@ command -v "$CXX" >/dev/null 2>&1 || {
   matcher.cpp \
   audio_store.cpp \
   -static -static-libgcc -static-libstdc++ \
-  -lole32 -luser32 -lshell32
+  -lmfplat -lmfreadwrite -lmfuuid -lwindowscodecs -lole32 -loleaut32 -luser32 -lshell32
 
 x86_64-w64-mingw32-strip -s "$PACKAGE/reaper_video_preview-x64.dll"
 echo "Built $PACKAGE/reaper_video_preview-x64.dll"

@@ -18,6 +18,7 @@
 
 #include "frame_source.h"
 #include "ffmpeg_pipe_win.h"
+#include "win_mf.h"
 
 static std::mutex  g_pathMu;
 static std::string g_ffmpegPath;
@@ -106,7 +107,7 @@ private:
 
 } // namespace
 
-FrameSource* frameSourceOpen(const char* path, int w, int h, std::string* err) {
+FrameSource* frameSourceOpenFFmpeg(const char* path, int w, int h, std::string* err) {
     if (!path || !*path) { if (err) *err = "no path"; return nullptr; }
     WinFrameSource* s = new WinFrameSource();
     if (!s->open(path, w, h, err)) { delete s; return nullptr; }

@@ -15,6 +15,11 @@ cl /nologo /O2 /EHsc /LD /std:c++17 /MT /DNDEBUG ^
   video_preview.cpp ^
   video_decoder_win.cpp ^
   frame_source_win.cpp ^
+  frame_source_mf.cpp ^
+  video_decoder_mf.cpp ^
+  audio_source_mf.cpp ^
+  win_mf.cpp ^
+  win_dispatch.cpp ^
   audio_source_win.cpp ^
   frame_cache.cpp ^
   vp_fileio.cpp ^
@@ -22,7 +27,7 @@ cl /nologo /O2 /EHsc /LD /std:c++17 /MT /DNDEBUG ^
   matcher.cpp ^
   audio_store.cpp ^
   /Fobuild\ /Fe:..\reaper_video_preview-x64.dll ^
-  user32.lib shell32.lib || exit /b 1
+  mfplat.lib mfreadwrite.lib mfuuid.lib windowscodecs.lib ole32.lib oleaut32.lib user32.lib shell32.lib || exit /b 1
 
 copy /y ..\reaper_video_preview-x64.dll "%APPDATA%\REAPER\UserPlugins\" || exit /b 1
 echo Installed reaper_video_preview-x64.dll - restart REAPER

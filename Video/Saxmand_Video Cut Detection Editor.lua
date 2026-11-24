@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.3.4
+-- @version 0.3.5
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -10,24 +10,24 @@
 --   Detects the cuts in a video, lets you name and colour them, and turns them into
 --   markers, regions, take markers, thumbnails or item splits in your session.
 --
---   Cuts are found either by the "Video Preview extension" package (same repository,
---   macOS only) or by FFmpeg. The extension is the default and needs nothing installed
---   or configured; it also reads preview frames and thumbnails, and is what the Compare
---   Videos tab runs on. Without it, set an FFmpeg path on the Settings page and cut
---   detection works as before.
+--   Cuts are found either by the "Video Preview extension" package (same repository)
+--   or by FFmpeg. The extension is the default and needs nothing installed: it decodes
+--   through AVFoundation on macOS and Media Foundation on Windows. It also reads preview
+--   frames and thumbnails, and is what the Compare Videos tab runs on. Without it, set
+--   an FFmpeg path on the Settings page and cut detection works as before.
+--
+--   FFmpeg is still worth having on Windows for ProRes and DNxHD, which Windows has no
+--   decoder for; the extension falls back to it for those.
 --
 --   The Compare Videos tab fingerprints two cuts of the same film and conforms a
 --   session from one to the other. It is still in development.
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
---   + Fixed: on Windows the FFmpeg path could not be set while the extension was
---     selected, because those controls were hidden unless FFmpeg was the detector. The
---     extension decodes through ffmpeg there, so analysing failed and the one control
---     that would have fixed it was off screen. It is shown on Windows either way now.
---   + The Settings page shows the script and extension versions. They are separate
---     ReaPack packages that update independently, and it says so when the extension is
---     missing or too old to report itself.
+--   + The extension no longer needs FFmpeg on Windows: it decodes through Media
+--     Foundation, which is part of Windows. Update the extension package alongside this
+--     one. FFmpeg stays useful there for ProRes and DNxHD, which Windows cannot decode,
+--     and the extension falls back to it for those.
 
 
 -------- Possible IDEAS TODO
@@ -1032,8 +1032,9 @@ function get_cut_information(IP, detection_threshold)
         analysing = false
         reaper.MB("Cut detection needs either the video_preview extension or FFmpeg, and " ..
                   "neither was found.\n\n" ..
-                  "The extension detects cuts and reads frames with nothing to install or " ..
-                  "configure. Otherwise, set an FFmpeg path on the Settings page.",
+                  "The extension detects cuts and reads frames with nothing to install: " ..
+                  "AVFoundation on macOS, Media Foundation on Windows. Otherwise, set an " ..
+                  "FFmpeg path on the Settings page.",
                   "Cannot detect cuts", 0)
         return
     end
@@ -9350,15 +9351,17 @@ function settingButtons(IP)
     -- settings -- which is what will run.
     local usingExtension = cutMethodIsExtension()
 
-    -- On Windows the extension decodes through ffmpeg, so its path is needed whichever
-    -- detector is chosen -- and hiding these behind "FFmpeg selected" left no way to
-    -- set it at all while the extension was selected, which is the default. That is a
-    -- dead end: analysing fails and the one control that would fix it is not on screen.
+    -- Still reachable on Windows with the extension selected, but no longer because the
+    -- extension depends on it: Media Foundation handles the common formats in-process.
+    -- ffmpeg is the fallback for what Windows has no decoder for -- ProRes and DNxHD --
+    -- which is worth being able to set without changing detector first.
     if not usingExtension or is_windows then
         reaper.ImGui_TextColored(ctx, colorGrey, "FFmpeg")
         if usingExtension and is_windows then
             reaper.ImGui_TextColored(ctx, 0xFFFFFF66,
-                "The extension decodes through ffmpeg on Windows, so it needs this too.")
+                "Optional. The extension decodes H.264/HEVC itself; ffmpeg covers")
+            reaper.ImGui_TextColored(ctx, 0xFFFFFF66,
+                "ProRes and DNxHD, which Windows has no decoder for.")
         end
 
         if reaper.ImGui_Button(ctx, "Open FFMPEG Path") then

@@ -38,6 +38,7 @@
 #include "vp_fileio.h"
 
 #ifdef _WIN32
+  #include "win_mf.h"
   #define VP_PLATFORM_NAME "Windows (decoding through the ffmpeg binary)"
   #define VP_PLATFORM_SHORT "Windows, via ffmpeg"
 #else
@@ -49,7 +50,7 @@ static int (*plugin_register)(const char*, void*) = nullptr;
 
 // Keep in step with @version in Video/reaper_video_preview.ext -- the script shows this
 // on its Settings page, so a stale value here is a wrong answer to "what am I running".
-#define VP_VERSION_STR "1.1.2"
+#define VP_VERSION_STR "1.2.0"
 
 // -----------------------------------------------------------------------
 // Registry
@@ -168,7 +169,12 @@ static const char* VP_Diag(const char* filePath) {
     if (!fs) {
         line("sequential      FAILED to open: %s", err.empty() ? "(no reason given)" : err.c_str());
     } else {
+#ifdef _WIN32
+        line("sequential      opened, %.3f s at %.3f fps, via %s",
+             fs->duration(), fs->fps(), mfLastBackend());
+#else
         line("sequential      opened, %.3f s at %.3f fps", fs->duration(), fs->fps());
+#endif
         LumaFrame fr;
         int n = 0;
         while (n < 3 && fs->next(&fr)) n++;
@@ -185,7 +191,11 @@ static const char* VP_Diag(const char* filePath) {
         line("random access   FAILED to open: %s", err.empty() ? "(no reason given)" : err.c_str());
         return out.c_str();
     }
+#ifdef _WIN32
+    line("random access   opened, %.3f s, via %s", d->duration(), mfLastBackend());
+#else
     line("random access   opened, %.3f s", d->duration());
+#endif
 
     double at = d->duration() > 2.0 ? 1.0 : d->duration() * 0.5;
     std::string got = d->getFrame(at, 640, 360);

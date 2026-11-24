@@ -11,6 +11,7 @@
 #include "audio_source.h"
 #include "frame_source.h"        // frameSourceFFmpegPath -- one setting for both
 #include "ffmpeg_pipe_win.h"
+#include "win_mf.h"
 
 namespace {
 
@@ -58,7 +59,7 @@ private:
 
 } // namespace
 
-AudioSource* audioSourceOpen(const char* path, double rate, std::string* err) {
+AudioSource* audioSourceOpenFFmpeg(const char* path, double rate, std::string* err) {
     if (!path || !*path) { if (err) *err = "no path"; return nullptr; }
     WinAudioSource* s = new WinAudioSource();
     if (!s->open(path, rate, err)) { delete s; return nullptr; }

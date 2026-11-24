@@ -1,6 +1,6 @@
 -- @description Video Preview extension
 -- @author Saxmand
--- @version 1.1.2
+-- @version 1.2.0
 -- @about
 --   # Video Preview extension
 --
@@ -26,31 +26,29 @@
 --   macOS decodes in-process through AVFoundation, which needs nothing installed and
 --   fingerprints a file using about a tenth of the CPU a full decode would.
 --
---   Windows decodes through the ffmpeg binary instead - so FFmpeg has to be present
---   there, and the script hands over its path. The fingerprints, the cut detector and
---   the matcher are the same code on both, so the results are identical and a store
---   built on one machine can be read on the other. The differences are that the first
---   pass on Windows is faster but uses far more CPU, and that scrubbing is slower
---   because each preview frame is a separate ffmpeg run.
+--   Windows decodes through Media Foundation, which is part of Windows, so nothing has
+--   to be installed there either. What Media Foundation cannot read is ProRes and
+--   DNxHD, which have no Windows decoder - for those the extension falls back to the
+--   ffmpeg binary if one is available, and the script hands over its path.
+--
+--   The fingerprints, the cut detector and the matcher are the same code on both
+--   platforms, so the results are identical and a store built on one machine can be
+--   read on the other.
 --
 --   macOS: universal binary, Apple Silicon and Intel. Needs macOS 11 on Apple Silicon,
 --   10.15 on Intel.
 --
 --   Windows: 64-bit, and Windows 10 or newer. It links the Universal CRT, which is part
 --   of Windows from 10 onwards; on 7 or 8.1 that has to be installed separately through
---   Windows Update. FFmpeg also has to be present, since that is what it decodes
---   through - the script hands over whatever path is set on its Settings page, and
---   otherwise it looks for ffmpeg on PATH.
+--   Windows Update.
 --
 --   Source: Video/extension in this repository.
 -- @provides
 --   [darwin] reaper_video_preview.dylib
 --   [win64] reaper_video_preview-x64.dll
 -- @changelog
---   + Fixed: on Windows nothing could start ffmpeg, so analysing reported "could not
---     run ffmpeg" whatever the path was. REAPER is a GUI process with no console, so
---     GetStdHandle gives back nothing for stdin and stderr, and CreateProcess refuses
---     those once STARTF_USESTDHANDLES is set. The unused slots now get NUL.
---   + A failure to start says which failure it was -- no such file, no such folder,
---     access denied, wrong architecture -- and what path it tried.
---   + VP_Version, so the script can show what it is actually running.
+--   + Windows no longer needs FFmpeg. Decoding goes through Media Foundation, which is
+--     part of Windows: in-process for both the sequential fingerprint pass and single
+--     preview frames, with WIC writing the JPEGs. ffmpeg is kept as a fallback for what
+--     Media Foundation cannot read, which in practice means ProRes and DNxHD.
+--   + The diagnostics report says which backend answered.
