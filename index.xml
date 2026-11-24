@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="13c245138824a16fac28c8744488f4a90a89f48a" name="Saxmand ReaPack">
+<index version="1" commit="24ebb7d756a8029eaf8530a73190c0216771a476" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -12457,6 +12457,20 @@
         <source platform="darwin" file="reaper_video_preview.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/13c245138824a16fac28c8744488f4a90a89f48a/Video/reaper_video_preview.dylib</source>
         <source platform="win64" file="reaper_video_preview-x64.dll">https://github.com/saxmand/Saxmand-ReaPack/raw/13c245138824a16fac28c8744488f4a90a89f48a/Video/reaper_video_preview-x64.dll</source>
       </version>
+      <version name="1.1.1" author="Saxmand" time="2026-11-24T21:28:54Z">
+        <changelog><![CDATA[+ Fixed: preview frames came back blank on Windows. Each frame is a separate ffmpeg
+  run writing a file, and the wait for it to finish was reading its (empty) output
+  instead of waiting for the process -- so ffmpeg was terminated as it shut down,
+  before the picture had been flushed to disk. Cut detection was unaffected, which
+  is why only the pictures were missing.
++ File access now uses the wide Windows calls throughout. The narrow ones read
+  their paths in the ANSI code page rather than UTF-8, so a user name or media
+  folder with a non-ASCII character made files invisible that were plainly there.
++ VP_Diag, which reports on the whole frame path; the script exposes it as "Frame
+  diagnostics" on its Settings page.]]></changelog>
+        <source platform="darwin" file="reaper_video_preview.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/reaper_video_preview.dylib</source>
+        <source platform="win64" file="reaper_video_preview-x64.dll">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/reaper_video_preview-x64.dll</source>
+      </version>
     </reapack>
     <reapack name="Saxmand_Add subtitles to video from srt file using video processor.lua" type="script" desc="Add subtitles to video from srt file using video processor">
       <version name="1.0.0" author="saxmand" time="2025-04-19T04:49:09Z">
@@ -12724,6 +12738,16 @@ Cut descriptions
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/f42e8a6d415af4a3958c3435fe6a90ae1e162910/Video/Helpers/json.lua</source>
         <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/f42e8a6d415af4a3958c3435fe6a90ae1e162910/Video/Helpers/undo_redo.lua</source>
         <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/f42e8a6d415af4a3958c3435fe6a90ae1e162910/Video/Helpers/hosi_exec_hidden.vbs</source>
+      </version>
+      <version name="0.3.3" author="saxmand" time="2026-11-24T21:28:54Z">
+        <changelog><![CDATA[+ "Frame diagnostics" on the Settings page, for when preview pictures come back
+  blank: it reports where ffmpeg is, whether the frame cache folder can be written,
+  and whether a frame actually decodes out of the selected item.]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/ffmpeg.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/Helpers/ffmpeg.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/Helpers/json.lua</source>
+        <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/Helpers/undo_redo.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/24ebb7d756a8029eaf8530a73190c0216771a476/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
