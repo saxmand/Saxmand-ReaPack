@@ -1,6 +1,6 @@
 -- @description Video Preview extension
 -- @author Saxmand
--- @version 1.1.1
+-- @version 1.1.2
 -- @about
 --   # Video Preview extension
 --
@@ -47,13 +47,10 @@
 --   [darwin] reaper_video_preview.dylib
 --   [win64] reaper_video_preview-x64.dll
 -- @changelog
---   + Fixed: preview frames came back blank on Windows. Each frame is a separate ffmpeg
---     run writing a file, and the wait for it to finish was reading its (empty) output
---     instead of waiting for the process -- so ffmpeg was terminated as it shut down,
---     before the picture had been flushed to disk. Cut detection was unaffected, which
---     is why only the pictures were missing.
---   + File access now uses the wide Windows calls throughout. The narrow ones read
---     their paths in the ANSI code page rather than UTF-8, so a user name or media
---     folder with a non-ASCII character made files invisible that were plainly there.
---   + VP_Diag, which reports on the whole frame path; the script exposes it as "Frame
---     diagnostics" on its Settings page.
+--   + Fixed: on Windows nothing could start ffmpeg, so analysing reported "could not
+--     run ffmpeg" whatever the path was. REAPER is a GUI process with no console, so
+--     GetStdHandle gives back nothing for stdin and stderr, and CreateProcess refuses
+--     those once STARTF_USESTDHANDLES is set. The unused slots now get NUL.
+--   + A failure to start says which failure it was -- no such file, no such folder,
+--     access denied, wrong architecture -- and what path it tried.
+--   + VP_Version, so the script can show what it is actually running.

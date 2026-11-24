@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.3.3
+-- @version 0.3.4
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -21,9 +21,13 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
---   + "Frame diagnostics" on the Settings page, for when preview pictures come back
---     blank: it reports where ffmpeg is, whether the frame cache folder can be written,
---     and whether a frame actually decodes out of the selected item.
+--   + Fixed: on Windows the FFmpeg path could not be set while the extension was
+--     selected, because those controls were hidden unless FFmpeg was the detector. The
+--     extension decodes through ffmpeg there, so analysing failed and the one control
+--     that would have fixed it was off screen. It is shown on Windows either way now.
+--   + The Settings page shows the script and extension versions. They are separate
+--     ReaPack packages that update independently, and it says so when the extension is
+--     missing or too old to report itself.
 
 
 -------- Possible IDEAS TODO
@@ -47,6 +51,24 @@ local undo_redo = require("undo_redo")
 
 local is_windows = package.config:sub(1, 1) == "\\"
 local seperator = package.config:sub(1, 1) -- path separator: '/' on Unix, '\\' on Windows
+
+-- Read out of this file's own header rather than kept as a second copy of the number.
+-- A hardcoded version is wrong the moment the header is bumped and nobody notices, and
+-- the whole point of showing it is to answer "what am I running" correctly.
+local scriptVersion = (function()
+    local src = debug.getinfo(1, "S").source:match("^@?(.*)$")
+    local f = src and io.open(src)
+    if not f then return "?" end
+    local v
+    for _ = 1, 20 do
+        local line = f:read("*l")
+        if not line then break end
+        v = line:match("^%-%-%s*@version%s+(%S+)")
+        if v then break end
+    end
+    f:close()
+    return v or "?"
+end)()
 
 -- ---------------------------------------------------------------------------
 -- Modifier keys, and what to call them
@@ -9217,6 +9239,26 @@ function settingButtons(IP)
     ]]
     reaper.ImGui_BeginGroup(ctx)
     reaper.ImGui_TextColored(ctx, colorGrey, "Settings")
+
+    -- What is actually running, script and extension. Worth having on screen: the two
+    -- are separate ReaPack packages and update independently, so "have you got the
+    -- latest" is otherwise a question nobody can answer from inside the app.
+    reaper.ImGui_TextColored(ctx, 0xFFFFFF66, "Script " .. scriptVersion)
+    reaper.ImGui_SameLine(ctx)
+    if reaper.VP_Version then
+        reaper.ImGui_TextColored(ctx, 0xFFFFFF66, " -  Extension " .. reaper.VP_Version())
+        setToolTipFunc("The two are separate ReaPack packages: \"Video Cut Detection Editor\"\n" ..
+                       "and \"Video Preview extension\". Update both.")
+    elseif vp_available then
+        reaper.ImGui_TextColored(ctx, 0xFFAA44FF, " -  Extension too old to report its version")
+        setToolTipFunc("Update the \"Video Preview extension\" package in ReaPack,\n" ..
+                       "then restart REAPER.")
+    else
+        reaper.ImGui_TextColored(ctx, 0xFFAA44FF, " -  Extension not installed")
+        setToolTipFunc("Install the \"Video Preview extension\" package in ReaPack for\n" ..
+                       "cut detection without FFmpeg, and for the Compare Videos tab.\n" ..
+                       "Restart REAPER afterwards.")
+    end
      
     -- Named for what it does. It resets every setting in the script, not FFmpeg's path:
     -- its tooltip used to be a copy of the one on "Reset FFMPEG Path" below, which made
@@ -9308,8 +9350,16 @@ function settingButtons(IP)
     -- settings -- which is what will run.
     local usingExtension = cutMethodIsExtension()
 
-    if not usingExtension then
+    -- On Windows the extension decodes through ffmpeg, so its path is needed whichever
+    -- detector is chosen -- and hiding these behind "FFmpeg selected" left no way to
+    -- set it at all while the extension was selected, which is the default. That is a
+    -- dead end: analysing fails and the one control that would fix it is not on screen.
+    if not usingExtension or is_windows then
         reaper.ImGui_TextColored(ctx, colorGrey, "FFmpeg")
+        if usingExtension and is_windows then
+            reaper.ImGui_TextColored(ctx, 0xFFFFFF66,
+                "The extension decodes through ffmpeg on Windows, so it needs this too.")
+        end
 
         if reaper.ImGui_Button(ctx, "Open FFMPEG Path") then
             -- Asks for one where there is none, rather than only reporting its absence:
@@ -9344,6 +9394,11 @@ function settingButtons(IP)
                         or "No speed measured. Analyze to set this"))
         if speedUnset then reaper.ImGui_EndDisabled(ctx) end
 
+        -- Still FFmpeg-detector only: it sets the scdet threshold, which the extension
+        -- does not use. Shown nested inside the FFmpeg section rather than beside the
+        -- path, which is needed more widely.
+        local showExtreme = not usingExtension
+        if showExtreme then
         ret, settings.extremeCutDetection = reaper.ImGui_Checkbox(ctx, "Extreme cut detection", settings.extremeCutDetection)
         if ret then
             saveSettings()
@@ -9352,6 +9407,7 @@ function settingButtons(IP)
         "\nYou can hold down super while pressing keypad minus or plus for more gradual sensitivity." ..
         "\nEnabling this requires to re-analyse a video for more cuts to show up" ..
         "\n\nFFmpeg only: the extension has its own Motion, Jump and Gap sliders on the Cut Detection page.")
+        end
     end
 
     -- The preview belongs to the extension, so its settings sit with it. Also shown

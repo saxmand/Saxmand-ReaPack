@@ -67,12 +67,23 @@ public:
         // the child would be holding a handle to it and ReadFile would block forever.
         SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
 
+        // Every slot must hold a valid, inheritable handle once STARTF_USESTDHANDLES is
+        // set -- and REAPER is a GUI process with no console, so GetStdHandle returns
+        // NULL for stdin and stderr. Passing those straight through made CreateProcessW
+        // fail outright, which surfaced as "could not run ffmpeg" no matter how correct
+        // the path was. So the slots we are not piping get NUL, the Windows equivalent
+        // of /dev/null, opened inheritable.
+        nul = CreateFileW(L"NUL", GENERIC_READ | GENERIC_WRITE,
+                          FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+                          OPEN_EXISTING, 0, nullptr);
+        if (nul == INVALID_HANDLE_VALUE) nul = nullptr;
+
         STARTUPINFOW si{};
         si.cb = sizeof(si);
         si.dwFlags = STARTF_USESTDHANDLES;
         si.hStdOutput = wr;
-        si.hStdError  = mergeStderr ? wr : GetStdHandle(STD_ERROR_HANDLE);
-        si.hStdInput  = GetStdHandle(STD_INPUT_HANDLE);
+        si.hStdError  = mergeStderr ? wr : nul;
+        si.hStdInput  = nul;
 
         std::vector<wchar_t> mutableCmd(cmdline.begin(), cmdline.end());
         mutableCmd.push_back(L'\0');
@@ -80,9 +91,11 @@ public:
         PROCESS_INFORMATION pi{};
         BOOL ok = CreateProcessW(nullptr, mutableCmd.data(), nullptr, nullptr, TRUE,
                                  CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+        lastError = ok ? 0 : (int)GetLastError();
         // Our copy of the write end goes immediately: while we hold one, the pipe
         // cannot signal end-of-file when the child exits.
         CloseHandle(wr); wr = nullptr;
+        if (nul) { CloseHandle(nul); nul = nullptr; }
         if (!ok) { CloseHandle(rd); rd = nullptr; return false; }
 
         CloseHandle(pi.hThread);
@@ -149,9 +162,29 @@ public:
         }
     }
 
+    // 0 when the process started, otherwise GetLastError from CreateProcessW. 2 is
+    // "file not found", which for this call means the ffmpeg executable, not the video.
+    int lastError = 0;
+
 private:
-    HANDLE rd = nullptr, wr = nullptr, proc = nullptr;
+    HANDLE rd = nullptr, wr = nullptr, proc = nullptr, nul = nullptr;
 };
+
+// A failure to start, in words. 2 and 3 are the ones that actually happen, and they say
+// something quite specific: the path is wrong, rather than ffmpeg being unhappy.
+inline std::string startFailure(const std::string& exe, int err) {
+    char buf[512];
+    const char* why =
+        (err == 2)   ? "no such file" :
+        (err == 3)   ? "no such folder" :
+        (err == 5)   ? "access denied" :
+        (err == 193) ? "not a valid 64-bit executable" : "could not be started";
+    snprintf(buf, sizeof(buf),
+             "ffmpeg %s (error %d): %s\n"
+             "Windows decodes through ffmpeg, so set its path on the Settings page.",
+             why, err, exe.empty() ? "(no path set, looked for \"ffmpeg\" on PATH)" : exe.c_str());
+    return buf;
+}
 
 // Duration, frame rate and size, from the summary ffmpeg prints for its input.
 //
@@ -172,7 +205,7 @@ inline bool probe(const std::string& exe, const std::string& path, Probe* out, s
     std::wstring cmd = quoteArg(widen(exe)) + L" -hide_banner -i " + quoteArg(widen(path));
     Pipe p;
     if (!p.start(cmd, /*mergeStderr=*/true)) {
-        if (err) *err = "could not run ffmpeg (check the path on the Settings page)";
+        if (err) *err = startFailure(exe, p.lastError);
         return false;
     }
     std::string text = p.readAll();

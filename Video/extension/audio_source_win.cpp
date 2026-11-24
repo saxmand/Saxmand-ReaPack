@@ -33,7 +33,7 @@ public:
             L" -f f32le -";
 
         if (!pipe.start(cmd, /*mergeStderr=*/false)) {
-            if (errOut) *errOut = "could not run ffmpeg (check the path on the Settings page)";
+            if (errOut) *errOut = ffp::startFailure(exe, pipe.lastError);
             return false;
         }
         return true;

@@ -39,11 +39,17 @@
 
 #ifdef _WIN32
   #define VP_PLATFORM_NAME "Windows (decoding through the ffmpeg binary)"
+  #define VP_PLATFORM_SHORT "Windows, via ffmpeg"
 #else
   #define VP_PLATFORM_NAME "macOS (decoding in-process through AVFoundation)"
+  #define VP_PLATFORM_SHORT "macOS, AVFoundation"
 #endif
 
 static int (*plugin_register)(const char*, void*) = nullptr;
+
+// Keep in step with @version in Video/reaper_video_preview.ext -- the script shows this
+// on its Settings page, so a stale value here is a wrong answer to "what am I running".
+#define VP_VERSION_STR "1.1.2"
 
 // -----------------------------------------------------------------------
 // Registry
@@ -204,6 +210,8 @@ static const char* VP_Diag(const char* filePath) {
 extern "C" const char* vpDiagForTest(const char* p) { return VP_Diag(p); }
 #endif
 
+static const char* VP_Version() { return VP_VERSION_STR " (" VP_PLATFORM_SHORT ")"; }
+
 // Where ffmpeg is, for the platforms that decode through it. macOS ignores this; it is
 // exported on both so the script can call it without caring which it is running on.
 static void VP_SetFFmpegPath(const char* path) {
@@ -239,6 +247,9 @@ static void* VA_VP_ExtractFrame(void** args, int nargs) {
                             (const char*)args[4]);
     return (void*)(intptr_t)r;
 }
+static void* VA_VP_Version(void** args, int nargs) {
+    return (void*)VP_Version();
+}
 static void* VA_VP_Diag(void** args, int nargs) {
     return (void*)VP_Diag(nargs >= 1 ? (const char*)args[0] : "");
 }
@@ -272,6 +283,9 @@ static const VPFunc kFuncs[] = {
       "Tell the extension where the ffmpeg binary is. Windows decodes through it, so "
       "cut detection and previews need this (or ffmpeg on PATH). Ignored on macOS, "
       "which decodes in-process -- safe to call on both." },
+    { "VP_Version", (void*)VP_Version, (void*)VA_VP_Version,
+      "const char*", "", "",
+      "The extension's version, and how it decodes on this platform." },
     { "VP_Diag", (void*)VP_Diag, (void*)VA_VP_Diag,
       "const char*", "const char*", "filePath",
       "A report on the frame path: ffmpeg location, cache folder and whether it is "
