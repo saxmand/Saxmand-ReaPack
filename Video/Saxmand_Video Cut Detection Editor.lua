@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.3.6
+-- @version 0.3.7
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,11 +24,14 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
---   + moondream is no longer offered or used as the cut description model. It had been
---     the default without appearing in the list, so it showed as the selected model --
---     on a fresh install, whether or not Ollama was there at all -- and could not be
---     chosen again once changed away from. The default is llava, which is in the list,
---     and anyone carrying the old value is moved across once.
+--   + Fixed: "attempt to index a nil value" the first time a new video was analysed with
+--     the extension. While an analysis runs the item properties are rebuilt every frame,
+--     and the still-analysing path returned before cut_data was given a value, so the
+--     rest of the frame had a nil to read.
+--   + Describe is only offered when Ollama can actually answer -- installed, running and
+--     with the model pulled. Descriptions already fetched can still be stepped through
+--     without it, since those are stored with the cut. Whether Ollama is there is
+--     checked once, the first time something offers it, not on every launch.
 
 
 -------- Possible IDEAS TODO
@@ -6272,11 +6275,14 @@ local function shellNull()
     return is_windows and "nul" or "/dev/null"
 end
 
-function checkOllamaStatus()
+function checkOllamaStatus(timeoutSec)
     local host = settings.ollama_host or "localhost:11434"
 
-    -- Check if the server is responding
-    local handle = io.popen('curl -s --max-time 2 http://' .. host .. '/api/tags 2>' .. shellNull())
+    -- Check if the server is responding. The timeout is short for the automatic probe:
+    -- Ollama is on this machine, so it either answers at once or is not listening, and
+    -- a long wait would only stall the UI to learn the same thing.
+    local t = timeoutSec or 2
+    local handle = io.popen('curl -s --max-time ' .. t .. ' http://' .. host .. '/api/tags 2>' .. shellNull())
     local result = handle and handle:read("*a") or ""
     if handle then handle:close() end
 
@@ -6316,6 +6322,38 @@ function checkOllamaStatus()
     else
         ollamaStatus = "model_missing"
     end
+end
+
+-- Whether describing cuts can actually work right now.
+--
+-- Checked once, the first time something is about to offer it, rather than at startup:
+-- Ollama is optional and most runs never touch it, so a probe on every launch would be
+-- a cost paid by everyone for a feature few use. The Settings page's Check button
+-- refreshes it after installing or starting Ollama.
+--
+-- "ready" is the bar rather than merely "running", because it also means the selected
+-- model is pulled -- and a Describe that fails after a 30 second wait is worse than one
+-- that was never offered.
+local ollamaProbed = false
+
+function ollamaAvailable()
+    if not ollamaProbed then
+        ollamaProbed = true
+        checkOllamaStatus(1)
+    end
+    return ollamaStatus == "ready"
+end
+
+-- Says what to do about it, for the tooltip on a disabled Describe.
+function ollamaWhyUnavailable()
+    if ollamaStatus == "not_installed" then
+        return "Ollama is not installed. Settings > Cut description has a download link."
+    elseif ollamaStatus == "not_running" then
+        return "Ollama is installed but not running. Start it from Settings > Cut description."
+    elseif ollamaStatus == "model_missing" then
+        return "The model is not pulled yet. Settings > Cut description will fetch it."
+    end
+    return "Ollama could not be reached. See Settings > Cut description."
 end
 
 function startOllamaPull()
@@ -6805,6 +6843,17 @@ function find_cut_data(IP)
         if st == 0 then
             analysing = true
             analysingAmount = reaper.VP_AnalyzeProgress(vs.job)
+            -- Empty rather than left alone, because this returns before the fallback at
+            -- the end of the function that gives cut_data a value -- and the item
+            -- properties are rebuilt from scratch every frame while an analysis runs, so
+            -- without this every frame of a first analysis hands the rest of the UI a
+            -- nil to index. Which it did: "attempt to index a nil value" the first time
+            -- a new video was analysed.
+            --
+            -- Set here and not at the top of the function: the fallback distinguishes
+            -- "no cuts yet" from "never loaded" by this being nil, and making it {}
+            -- unconditionally would stop stored cuts ever being read back from disk.
+            IP.cut_data = IP.cut_data or {}
             return
         end
         if st == 2 then
@@ -7692,6 +7741,8 @@ function selectedItemButtons(IP)
 
                 reaper.ImGui_Separator(ctx)
 
+                local canDescribeAll = ollamaAvailable()
+                if not canDescribeAll then reaper.ImGui_BeginDisabled(ctx) end
                 if reaper.ImGui_Button(ctx, "Describe cuts##extra") then
                     if not IP.filePath then
                         reaper.MB("No video file found.", "No video", 0)
@@ -7717,7 +7768,11 @@ function selectedItemButtons(IP)
                         end
                     end
                 end
-                setToolTipFunc("Use Ollama to name each cut from a video frame.\nModel: " .. (settings.ollama_model or "llava") .. "\nChange model in Settings.")
+                if not canDescribeAll then reaper.ImGui_EndDisabled(ctx) end
+                setToolTipFunc(canDescribeAll
+                    and ("Use Ollama to name each cut from a video frame.\nModel: " ..
+                         (settings.ollama_model or "llava") .. "\nChange model in Settings.")
+                    or ollamaWhyUnavailable())
 
                 if reaper.ImGui_Button(ctx, "Reset cut names##extra") then
                     for i, c in ipairs(IP.cuts_making_threashold) do
@@ -7907,7 +7962,7 @@ function selectedCutInfoArea(IP)
             setToolTipFunc("Remove detected cut from timeline", "r/backspace/delete")
 
             reaper.ImGui_SameLine(ctx)
-            local descCut   = IP.cut_data[IP.currentSelectedCut]
+            local descCut   = IP.cut_data and IP.cut_data[IP.currentSelectedCut]
             local descDescs = descCut and descCut.descriptions
             local descCount = descDescs and #descDescs or 0
             local descIdx   = descCut and descCut.descriptionIdx  -- 0-based
@@ -7917,14 +7972,23 @@ function selectedCutInfoArea(IP)
                 descLabel = "Describe (" .. (descIdx + 1) .. "/" .. descCount .. ")"
             end
 
+            -- Only offered when it can actually work. Cycling through descriptions
+            -- already fetched stays available either way: those are stored with the
+            -- cut and need nothing running to read back.
+            local canDescribe = ollamaAvailable()
+            local canCycle    = descCount > 1
+            local descOff     = not canDescribe and not canCycle
+            if descOff then reaper.ImGui_BeginDisabled(ctx) end
             local descBtnClicked = reaper.ImGui_Button(ctx, descLabel)
+            if descOff then reaper.ImGui_EndDisabled(ctx) end
 
             -- Right-click → description list popup
             if reaper.ImGui_IsItemHovered(ctx) and reaper.ImGui_IsMouseClicked(ctx, 1) then
                 reaper.ImGui_OpenPopup(ctx, "desc_list##" .. itemNumber)
             end
             if reaper.ImGui_BeginPopup(ctx, "desc_list##" .. itemNumber) then
-                if reaper.ImGui_MenuItem(ctx, "Reanalyse") then
+                -- Same gate as the button: this one also fetches.
+                if reaper.ImGui_MenuItem(ctx, "Reanalyse", nil, false, canDescribe) then
                     if IP.filePath and descCut then
                         descCut.descriptions = nil
                         descCut.descriptionIdx = nil
@@ -7960,10 +8024,17 @@ function selectedCutInfoArea(IP)
             local isDescBack = isDescKey and isShiftDown
 
             if (isDescFwd or isDescBack) and IP.filePath and descCut then
-                local shouldAnalyse = not descDescs or descCount == 0 or descCount == 1 or descCut.descriptionCycleComplete
+                -- A new description has to be fetched when there is nothing stored, only
+                -- one stored, or the stored ones have all been cycled through once.
+                local wantNew = not descDescs or descCount == 0 or descCount == 1
+                                or descCut.descriptionCycleComplete
 
-                if isDescFwd then
-                    if shouldAnalyse then
+                -- Fetching needs Ollama; stepping through what is already stored does
+                -- not, since those are saved with the cut. So the two are gated apart.
+                if wantNew and not canDescribe then
+                    -- nothing to offer: cannot fetch, and nothing stored to step through
+                elseif isDescFwd then
+                    if wantNew then
                         descCut.descriptions = nil
                         descCut.descriptionIdx = nil
                         descCut.descriptionCycleComplete = false
@@ -7991,10 +8062,20 @@ function selectedCutInfoArea(IP)
                 end
             end
 
-            local describeTip = descCount > 1
-                and ("d: next  ·  ⇧d: prev  ·  right-click: all descriptions")
-                or ("Describe this cut using Ollama (" .. (settings.ollama_model or "llava") .. ")")
-            setToolTipFunc(describeTip, "d")
+            local describeTip
+            if not canDescribe then
+                describeTip = ollamaWhyUnavailable()
+                if canCycle then
+                    describeTip = describeTip ..
+                        "\n\nThe descriptions already fetched can still be stepped through."
+                end
+            elseif canCycle then
+                describeTip = "d: next  ·  shift+d: prev  ·  right-click: all descriptions"
+            else
+                describeTip = "Describe this cut using Ollama (" ..
+                              (settings.ollama_model or "llava") .. ")"
+            end
+            setToolTipFunc(describeTip, canDescribe and "d" or nil)
         else
             --if not cursorOutsideArea then
                 if reaper.ImGui_Button(ctx, "Insert marker") or ((not markerNameIsFocused or isSuperDown) and isI) then
@@ -9600,7 +9681,8 @@ function settingButtons(IP)
         reaper.ImGui_TextColored(ctx, statusColor, "Status: " .. statusText)
         reaper.ImGui_SameLine(ctx)
         if reaper.ImGui_SmallButton(ctx, "Check") then
-            checkOllamaStatus()
+            checkOllamaStatus(2)
+            ollamaProbed = true
         end
         setToolTipFunc("Check whether Ollama is installed, running, and the model is pulled")
 
