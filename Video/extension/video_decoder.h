@@ -24,6 +24,15 @@ public:
     // callers read it now rather than keeping it.
     virtual std::string getFrame(double timeSec, int maxW, int maxH) = 0;
 
+    // True when the path the last getFrame returned is NOT the frame that was asked
+    // for -- a stand-in held up while the real one is still being decoded elsewhere.
+    //
+    // A caller has to be told: it asks for a frame when the playhead moves and not
+    // again until it moves once more, so without this a stand-in stays on screen until
+    // something else happens to prompt a refresh. Decoders that always answer exactly
+    // never report pending, which is every decoder but Media Foundation's.
+    virtual bool framePending() const { return false; }
+
     // One frame written to exactly this path, JPEG or PNG by its extension. Used for
     // the thumbnails that go into the session, which have to live where the caller says
     // rather than in the cache.

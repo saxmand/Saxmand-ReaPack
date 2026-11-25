@@ -50,7 +50,7 @@ static int (*plugin_register)(const char*, void*) = nullptr;
 
 // Keep in step with @version in Video/reaper_video_preview.ext -- the script shows this
 // on its Settings page, so a stale value here is a wrong answer to "what am I running".
-#define VP_VERSION_STR "1.7.0"
+#define VP_VERSION_STR "1.7.1"
 
 // -----------------------------------------------------------------------
 // Registry
@@ -82,6 +82,18 @@ static double VP_GetDuration(int handle) {
     std::lock_guard<std::mutex> lk(g_mu);
     VideoDecoder* d = getDecoder(handle);
     return d ? d->duration() : 0.0;
+}
+
+// 1 while the path the last VP_GetFrame returned is a stand-in, the frame that was
+// actually asked for still being decoded. The caller asks for a frame when the playhead
+// moves and not again until it moves once more, so it has to know to come back.
+static int VP_FramePending(int handle) {
+    VideoDecoder* d;
+    {
+        std::lock_guard<std::mutex> lk(g_mu);
+        d = getDecoder(handle);
+    }
+    return (d && d->framePending()) ? 1 : 0;
 }
 
 static const char* VP_GetFrame(int handle, double timePos, int maxW, int maxH) {
@@ -284,6 +296,9 @@ static void* VA_VP_ExtractFrame(void** args, int nargs) {
 static void* VA_VP_SetCacheBudget(void** args, int nargs) {
     return (void*)(intptr_t)VP_SetCacheBudget(nargs >= 1 ? (int)(intptr_t)args[0] : 0);
 }
+static void* VA_VP_FramePending(void** args, int nargs) {
+    return (void*)(intptr_t)VP_FramePending(nargs >= 1 ? (int)(intptr_t)args[0] : 0);
+}
 static void* VA_VP_CacheStats(void** args, int nargs) {
     return (void*)VP_CacheStats();
 }
@@ -313,8 +328,15 @@ static const VPFunc kFuncs[] = {
       "Video duration in seconds." },
     { "VP_GetFrame",    (void*)VP_GetFrame,    (void*)VA_VP_GetFrame,
       "const char*", "int,double,int,int",  "handle,timePos,maxW,maxH",
-      "Return JPEG path for frame at timePos. On macOS an async batch keeps upcoming "
-      "frames on disk; on Windows each frame is one ffmpeg run, so scrubbing is slower." },
+      "Return JPEG path for frame at timePos. Both platforms read ahead of the playhead, "
+      "so a frame is usually already on disk. On Windows a frame that is not may be "
+      "answered with a stand-in while it decodes -- see VP_FramePending." },
+    { "VP_FramePending", (void*)VP_FramePending, (void*)VA_VP_FramePending,
+      "int",         "int",                 "handle",
+      "1 while the path the last VP_GetFrame returned is a stand-in and the frame asked "
+      "for is still being decoded. Ask again -- on the next call the real frame is "
+      "normally there. Always 0 on decoders that answer exactly, which is every one but "
+      "Media Foundation's." },
     { "VP_Close",       (void*)VP_Close,       (void*)VA_VP_Close,
       "void",        "int",                 "handle",
       "Close decoder and release resources." },

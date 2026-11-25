@@ -191,12 +191,17 @@ public:
     }
 
     double duration() const override { return dur; }
+    bool framePending() const override { return pending; }
 
     std::string getFrame(double timeSec, int maxW, int maxH) override {
         timeSec = clampTime(timeSec);
 
-        // Asked for the same frame again, which is what a paused playhead does.
-        if (timeSec == lastTime && maxW == lastW && maxH == lastH && !lastPath.empty())
+        // Asked for the same frame again, which is what a paused playhead does. Only a
+        // settled frame short-circuits: while one is pending, lastTime still describes
+        // the stand-in being shown, so this would answer about a different moment than
+        // the one asked for and the pending state would never clear.
+        if (!pending && timeSec == lastTime && maxW == lastW && maxH == lastH
+            && !lastPath.empty())
             return lastPath;
 
         const long long ms  = (long long)(timeSec * 1000.0 + 0.5);
@@ -210,6 +215,7 @@ public:
         if (fromWindow) {
             cacheTouch(out, have);        // on screen now, so the newest thing there
             result = out;
+            pending = false;
 
             // Move the window on at its midpoint, while the worker is still filling the
             // back half of the current one. Waiting until the window ran out would put a
@@ -247,10 +253,16 @@ public:
             // Unless it has not arrived for long enough that something is wrong with it,
             // in which case decode it here and be certain rather than leave the wrong
             // picture up for good.
-            if (!lastPath.empty() && missCount <= 30) return lastPath;
+            if (!lastPath.empty() && missCount <= 30) {
+                // Say so, or the caller leaves this on screen until the playhead moves
+                // again: it asks for a frame on a move and not otherwise.
+                pending = true;
+                return lastPath;
+            }
 
-            if (!decodeTo(timeSec, maxW, maxH, out)) return std::string();
+            if (!decodeTo(timeSec, maxW, maxH, out)) { pending = false; return std::string(); }
             cacheTouch(out, 0);
+            pending = false;
             result = out;
         }
 
@@ -633,6 +645,9 @@ private:
     // leaving the wrong picture up indefinitely.
     double                  missTime = -1.0;
     int                     missCount = 0;
+
+    // Whether the last getFrame handed back a stand-in rather than the frame asked for.
+    bool                    pending = false;
 
     // The window most recently asked for, and the last frame successfully returned.
     double      batchStart = -1.0;

@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.7.1
+-- @version 0.7.2
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,12 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Fixed: on Windows, moving to a cut whose frames were not cached left the previous
+--     picture on screen until you moved away and came back. Going there is instant
+--     because the decode happens elsewhere, but the thumbnail was only fetched when the
+--     playhead moved -- so nothing asked again once the real frame arrived. It now keeps
+--     asking while the extension reports the frame as still decoding. Needs the Video
+--     Preview extension at 1.7.1.
 --   + "Describe cuts" leaves alone any cut that already has a name, whether somebody
 --     typed it or an earlier run fetched it. Hold alt (opt on macOS) while clicking, or
 --     press shift+alt+d, to replace those too. A model run is not deterministic, so
@@ -1322,6 +1328,18 @@ end
 --
 -- Returns false if the extension cannot do it, so the caller falls back rather than
 -- quietly producing nothing.
+-- True while either preview is showing a stand-in for a frame still being decoded.
+-- Both handles are asked: the two sides of the preview decode independently, so one can
+-- be settled while the other is not.
+function vpFrameIsPending(IP)
+    if not reaper.VP_FramePending or not IP or not IP.filePath then return false end
+    local a = vpGetHandleCut(IP.filePath)
+    local b = vpGetHandle(IP.filePath)
+    if a and reaper.VP_FramePending(a) == 1 then return true end
+    if b and reaper.VP_FramePending(b) == 1 then return true end
+    return false
+end
+
 function vpExtractToPng(filePath, pngPath, atTime)
     if not vp_available or not reaper.VP_ExtractFrame then return false end
     local h = vpGetHandle(filePath)
@@ -8834,7 +8852,14 @@ function previewSection(IP)
     if not imageB_array then imageB_array = {} end
     -- PREVIEW SECTION  
     
-    local updateThumbnails = (not analyseStartTime and IP) and should_thumbnail_update(IP)
+    -- A frame the extension could not produce yet is answered with a stand-in while it
+    -- decodes elsewhere, and it only says so through VP_FramePending. Thumbnails are
+    -- otherwise fetched when the playhead moves and not again until it moves once more,
+    -- so without this the stand-in stays up until something else happens to prompt a
+    -- refresh -- which is what "the image never updates until I leave the cut and come
+    -- back" was.
+    local updateThumbnails = (not analyseStartTime and IP)
+                             and (should_thumbnail_update(IP) or vpFrameIsPending(IP))
     local itemNumber = IP and IP.itemNumber or 0
     local itemString = IP and tostring(IP.item) or 0
     --if not pngPath_array[itemString] then pngPath_array[itemString] = {} end

@@ -1,6 +1,6 @@
 -- @description Video Cut Detection Editor extension
 -- @author Saxmand
--- @version 1.7.0
+-- @version 1.7.1
 -- @about
 --   # Video Cut Detection Editor extension
 --
@@ -57,6 +57,11 @@
 --   [darwin] reaper_video_cut_detection_editor.dylib
 --   [win64] reaper_video_cut_detection_editor-x64.dll
 -- @changelog
+--   + VP_FramePending, so a caller can tell that the frame it was handed is a stand-in
+--     and the one it asked for is still decoding. Without it the script had no way to
+--     know to ask again: it fetches a frame when the playhead moves and not otherwise,
+--     so on Windows a stand-in stayed on screen until something else prompted a
+--     refresh. Always 0 on macOS, which answers every request exactly.
 --   + Selecting a cut no longer stalls on Windows. The frame it needs was decoded on
 --     the calling thread, and a seek there means a keyframe and then a walk forward --
 --     hundreds of milliseconds through Media Foundation where AVFoundation pays tens,
