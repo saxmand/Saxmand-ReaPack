@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.7.2
+-- @version 0.8.0
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,22 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Fixed: a cut was only selected when the cursor sat on its time exactly. A cut's
+--     time comes out of the analysis and has no reason to land on REAPER's frame grid,
+--     while the cursor always does -- so stepping a frame off a cut and back again left
+--     it unselected despite ending where it started. The cursor now takes the nearest
+--     cut within half a frame, nearest rather than first so two cuts closer than a
+--     frame cannot both claim it.
+--   + Fixed: shift-clicking empty timeline with a cut selected took two clicks to let
+--     go of it. The cursor position had not caught up within that frame and still held
+--     the cut's own time, so the cut was immediately re-selected.
+--   + A "Video" tick under the right-hand preview, on by default. Off, that picture
+--     stays on the selected cut while playing instead of following the playhead, so a
+--     cut can be compared against whatever is playing past it.
+--   + The right-hand caption reads "on playhead" while it is following playback, and
+--     "on cut" otherwise.
+--   + "Insert marker" pulses, as Analyse does: with no cut selected it is what the page
+--     is offering.
 --   + Fixed: on Windows, moving to a cut whose frames were not cached left the previous
 --     picture on screen until you moved away and came back. Going there is instant
 --     because the decode happens elsewhere, but the thumbnail was only fetched when the
@@ -385,6 +401,7 @@ local defaultSettings = {
     cut_gap = 20,                 -- frames; suppress a weaker cut beside a stronger
     clearCacheOnExit = false,     -- decoded frames are kept between sessions by default
     cacheBudgetMB = 256,          -- ceiling for the decoded-frame cache; see the slider
+    previewLiveVideo = true,      -- right preview follows the playhead while playing
 }
 
 local function saveSettings()
@@ -1338,6 +1355,14 @@ function vpFrameIsPending(IP)
     if a and reaper.VP_FramePending(a) == 1 then return true end
     if b and reaper.VP_FramePending(b) == 1 then return true end
     return false
+end
+
+-- Whether the right-hand preview follows the playhead during playback, or stays on the
+-- selected cut. On is the default: watching the video play is usually the point. Off is
+-- for comparing a cut against what is actually under the playhead, where a picture that
+-- keeps moving is no use.
+function previewShowsLiveVideo()
+    return settings.previewLiveVideo ~= false
 end
 
 function vpExtractToPng(filePath, pngPath, atTime)
@@ -8358,7 +8383,13 @@ function selectedCutInfoArea(IP)
             setToolTipFunc(describeTip)
         else
             --if not cursorOutsideArea then
-                if reaper.ImGui_Button(ctx, "Insert marker") or ((not markerNameIsFocused or isSuperDown) and isI) then
+                -- Pulsing, for the same reason Analyse does: with no cut selected this
+                -- is what the page is offering, and it is one button among many.
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), pulsatingColor(theme.accent, 3))
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), pulsatingColor(theme.accent, 3))
+                local insertClicked = reaper.ImGui_Button(ctx, "Insert marker")
+                reaper.ImGui_PopStyleColor(ctx, 2)
+                if insertClicked or ((not markerNameIsFocused or isSuperDown) and isI) then
                     local markerIndex = 0
                     for i, c in ipairs(IP.cut_data) do
                         if c.time > IP.cur_pos_in_item + subProj_item_pos then
@@ -8691,6 +8722,16 @@ function overviewArea(IP, IP2)
                 
                 overviewAreaFocus = IP.itemNumber
                 setCutSelection(IP, IP2, not isShiftDown and hoverIndex or nil) 
+
+                -- Shift+click on empty timeline clears the selection, and has to say so
+                -- loudly enough to survive the rest of this frame. cur_pos_in_item was
+                -- worked out before the click and still holds the selected cut's own
+                -- time, so the auto-select below would match that cut and put it
+                -- straight back -- which is why it took a second click to let go.
+                if isShiftDown and not hoverIndex then
+                    IP.suppressCutAutoSelect = true
+                end
+
                 moveCursorToPos(cur_pos)
                 
                 if IP2 then
@@ -8807,29 +8848,48 @@ function should_thumbnail_update(IP)
                     break
                 end
             end
-        elseif isPlaying then
+        elseif isPlaying and previewShowsLiveVideo() then
             -- Cut unchanged but playing: advance cur_pos_in_item to live position so B updates
             IP.cur_pos_in_item = IP.timeline_cur_pos_in_item
             updateThumbnails = IP.last_cur_pos_in_item ~= IP.cur_pos_in_item
         end
     else
 
-        if isPlaying then
+        if isPlaying and previewShowsLiveVideo() then
             IP.cur_pos_in_item = IP.timeline_cur_pos_in_item
             updateThumbnails = IP.last_cur_pos_in_item ~= IP.cur_pos_in_item
         else
-            if IP.cuts_making_threashold then-- and not IP.ignoreCutOnNextDefer then
+            -- Which cut, if any, the cursor is sitting on.
+            --
+            -- Within half a frame, not exactly. A cut's time comes out of the analysis
+            -- and has no reason to land on REAPER's frame grid, while the cursor always
+            -- does -- so stepping one frame off a cut and back again put the cursor on
+            -- the grid a fraction of a frame away from the cut, and an exact comparison
+            -- then found nothing. Shift+left followed by shift+right left the cut
+            -- unselected despite ending where it started.
+            --
+            -- Nearest wins rather than first, so two cuts less than a frame apart
+            -- cannot both claim the cursor and the closer one takes it.
+            if IP.cuts_making_threashold and not IP.suppressCutAutoSelect then
+                local at   = IP.cur_pos_in_item + subProj_item_pos
+                local tol  = 0.5 / ((frames_per_second and frames_per_second > 0)
+                                    and frames_per_second or 25)
+                local best, bestDiff
                 for i, c in ipairs(IP.cuts_making_threashold) do
-                    --reaper.ShowConsoleMsg(cur_pos_to_check
-                    if compareWithMargin(c.time, IP.cur_pos_in_item + subProj_item_pos) then
-                        IP.last_currentSelectedCut = IP.currentSelectedCut
-                        IP.currentSelectedCut = c.index
-                        updateThumbnails = true
-                        break;
+                    local diff = math.abs(c.time - at)
+                    if diff <= tol and (not bestDiff or diff < bestDiff) then
+                        best, bestDiff = c, diff
                     end
                 end
+                if best then
+                    IP.last_currentSelectedCut = IP.currentSelectedCut
+                    IP.currentSelectedCut = best.index
+                    updateThumbnails = true
+                end
             end
-            --IP.ignoreCutOnNextDefer = nil
+            -- Consumed here: the stale cursor position that made it necessary is only
+            -- stale for the frame the click happened in.
+            IP.suppressCutAutoSelect = nil
 
             if not updateThumbnails and IP.last_cur_pos_in_item ~= IP.cur_pos_in_item then
                 updateThumbnails = true
@@ -8933,10 +8993,10 @@ function previewSection(IP)
                 -- When scrubbing (not playing), show the frame before the cursor as usual.
                 if not oneFrameLater then
                     local tA
-                    if isPlaying and IP.currentSelectedCut and IP.cut_data and IP.cut_data[IP.currentSelectedCut] then
+                    if isPlaying and previewShowsLiveVideo() and IP.currentSelectedCut and IP.cut_data and IP.cut_data[IP.currentSelectedCut] then
                         -- Frozen anchor: the frame at the cut point itself
                         tA = roundToFrame(IP.cut_data[IP.currentSelectedCut].time - subProj_item_pos, frames_per_second) + subProj_item_pos
-                    elseif not isPlaying then
+                    elseif not isPlaying or not previewShowsLiveVideo() then
                         tA = cur_pos_rounded_to_frame_one_frame_ealier + subProj_item_pos
                     end
                     if tA then
@@ -8959,7 +9019,7 @@ function previewSection(IP)
                 if not oneFrameEarlier then
                     -- B: during playback always use live timeline position, not cur_pos_in_item
                     local tB
-                    if isPlaying and IP.timeline_cur_pos_in_item then
+                    if isPlaying and previewShowsLiveVideo() and IP.timeline_cur_pos_in_item then
                         tB = roundToFrame(IP.timeline_cur_pos_in_item, frames_per_second) + subProj_item_pos
                     else
                         tB = cur_pos_rounded_to_frame + subProj_item_pos
@@ -9069,9 +9129,31 @@ function previewSection(IP)
     -- near-identical images and nothing says that the left one is the frame before the
     -- cut and the right one the cut itself -- which is the whole point of showing two.
     -- Italic grey, as a caption rather than part of the page.
+    local liveNow = isPlaying and previewShowsLiveVideo()
+    local rightX  = slotsX + slotW + thumbnailGap()
+
     thumbnailCaption(slotsX, slotW, "before cut")
     reaper.ImGui_SameLine(ctx)
-    thumbnailCaption(slotsX + slotW + thumbnailGap(), slotW, "on cut")
+    -- "on playhead" while the right-hand picture is following playback, because that is
+    -- what it is showing then -- it is only the cut's own frame when it is not.
+    thumbnailCaption(rightX, slotW, liveNow and "on playhead" or "on cut")
+
+    -- The toggle sits at the right edge of the picture it governs.
+    reaper.ImGui_SameLine(ctx)
+    local label = "Video"
+    local tw    = reaper.ImGui_CalcTextSize(ctx, label)
+    local inner = reaper.ImGui_GetStyleVar(ctx, reaper.ImGui_StyleVar_ItemInnerSpacing()) or 4
+    local boxW  = reaper.ImGui_GetFrameHeight(ctx) + inner + tw
+    reaper.ImGui_SetCursorPosX(ctx, rightX + slotW - boxW)
+    local movedLive, live = reaper.ImGui_Checkbox(ctx, label .. "##previewlive",
+                                                  previewShowsLiveVideo())
+    if movedLive then
+        settings.previewLiveVideo = live
+        saveSettings()
+    end
+    setToolTipFunc("On: the right-hand picture follows the playhead while playing.\n" ..
+                   "Off: it stays on the selected cut, so the cut can be compared\n" ..
+                   "with whatever is playing past it.")
     return true
 end
 
