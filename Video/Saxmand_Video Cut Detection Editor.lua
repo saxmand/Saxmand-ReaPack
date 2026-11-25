@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.7.0
+-- @version 0.7.1
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,12 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + "Describe cuts" leaves alone any cut that already has a name, whether somebody
+--     typed it or an earlier run fetched it. Hold alt (opt on macOS) while clicking, or
+--     press shift+alt+d, to replace those too. A model run is not deterministic, so
+--     describing everything a second time used to quietly reword the lot.
+--   + Cut Detection: the transport sits on the same row as the thumbnail captions,
+--     centred in the gap between the two pictures, rather than on a row of its own.
 --   + shift+d describes every cut on the timeline, where d describes the selected one.
 --     Both Describe buttons say so. Stepping back through descriptions already fetched
 --     has moved from shift+d to alt+d -- it is the only way back to one that cost a
@@ -1504,24 +1510,45 @@ local function get_png_base64(path)
     end
 end
 
--- Queues every cut on the timeline for a description. Shared by the button in the Extra
+-- Queues cuts on the timeline for a description. Shared by the button in the Extra
 -- popup and by shift+D, so the two cannot drift apart. Returns true when work was
 -- actually queued.
-function describeAllCuts(IP)
+--
+-- Cuts that already carry a name are left alone unless `overwrite` says otherwise. A
+-- name is either one somebody typed or one a previous run fetched, and either way it is
+-- worth more than the one about to replace it -- a model run is not deterministic, so
+-- describing everything a second time would quietly reword the lot. An unnamed cut has
+-- `name` nil and shows as "Cut N", which is what makes the two cases distinguishable.
+function describeAllCuts(IP, overwrite)
     if not IP or not IP.filePath then
         reaper.MB("No video file found.", "No video", 0)
         return false
     end
     descriptionQueue = {}
     descriptionLastError = nil
+    local named, total = 0, 0
     for i, c in ipairs(IP.cuts_making_threashold or {}) do
-        if not c.exclude and IP.cut_data and IP.cut_data[c.index] then
-            table.insert(descriptionQueue, { cutIndex = c.index, filePath = IP.filePath })
+        local cut = IP.cut_data and IP.cut_data[c.index]
+        if not c.exclude and cut then
+            total = total + 1
+            local hasName = cut.name and cut.name ~= ""
+            if hasName then named = named + 1 end
+            if overwrite or not hasName then
+                table.insert(descriptionQueue, { cutIndex = c.index, filePath = IP.filePath })
+            end
         end
     end
     totalDescriptionCount = #descriptionQueue
     if totalDescriptionCount == 0 then
-        reaper.MB("No cuts detected on the timeline.", "No cuts", 0)
+        if total == 0 then
+            reaper.MB("No cuts detected on the timeline.", "No cuts", 0)
+        else
+            -- Saying nothing would look like the button had failed.
+            reaper.MB(named .. (named == 1 and " cut is" or " cuts are") ..
+                      " already named, so there was nothing to describe.\n\n" ..
+                      "Hold " .. MOD_ALT .. " while describing to replace the names too.",
+                      "Already named", 0)
+        end
         return false
     end
     undo_redo.save_undo(IP.cut_data)
@@ -7980,11 +8007,15 @@ function selectedItemButtons(IP)
                 local canDescribeAll = ollamaAvailable()
                 if not canDescribeAll then reaper.ImGui_BeginDisabled(ctx) end
                 if reaper.ImGui_Button(ctx, "Describe cuts##extra") then
-                    if describeAllCuts(IP) then closePopup = true end
+                    -- Alt held while clicking replaces names that are already there,
+                    -- the same as it does with the keyboard.
+                    if describeAllCuts(IP, isOptionDown) then closePopup = true end
                 end
                 if not canDescribeAll then reaper.ImGui_EndDisabled(ctx) end
                 setToolTipFunc(canDescribeAll
-                    and ("Use Ollama to name each cut from a video frame.\nModel: " ..
+                    and ("Use Ollama to name each cut from a video frame.\n" ..
+                         "Cuts that already have a name are left alone -- hold " .. MOD_ALT ..
+                         " to replace those too.\nModel: " ..
                          (settings.ollama_model or "llava") .. "\nChange model in Settings.")
                     or ollamaWhyUnavailable(), "shift+d")
 
@@ -8227,21 +8258,24 @@ function selectedCutInfoArea(IP)
                 reaper.ImGui_EndPopup(ctx)
             end
 
-            -- D = next (or fetch a new one); shift+D = describe every cut; alt+D = step
-            -- back through the ones already stored.
+            -- d           describe this cut
+            -- shift+d      describe every cut that has no name yet
+            -- shift+alt+d  describe every cut, replacing names that are already there
+            -- alt+d        step back through the descriptions already fetched
             --
-            -- Stepping back was on shift+D until shift+D was wanted for describing the
-            -- whole timeline. It moved rather than went: it is the only way back through
-            -- descriptions already fetched, and those cost a model run each.
+            -- Stepping back was on shift+d until shift+d was wanted for the whole
+            -- timeline. It moved rather than went: it is the only way back through
+            -- descriptions already fetched, and those cost a model run each. It takes
+            -- alt without shift, so shift+alt+d is free to mean "and overwrite".
             local isDescKey  = (not markerNameIsFocused or isSuperDown) and isD
-            local isDescAll  = isDescKey and isShiftDown and not isOptionDown
+            local isDescAll  = isDescKey and isShiftDown
             local isDescFwd  = descBtnClicked or (isDescKey and not isShiftDown and not isOptionDown)
-            local isDescBack = isDescKey and isOptionDown
+            local isDescBack = isDescKey and isOptionDown and not isShiftDown
 
             -- Describing everything is its own action, not a variation on describing
             -- this one, so it is handled before the per-cut branches and on its own.
             if isDescAll then
-                if canDescribe then describeAllCuts(IP) end
+                if canDescribe then describeAllCuts(IP, isOptionDown) end
                 isDescFwd, isDescBack = false, false
             end
 
@@ -8295,7 +8329,8 @@ function selectedCutInfoArea(IP)
             else
                 describeTip = "Describe this cut using Ollama (" ..
                               (settings.ollama_model or "llava") .. ")\n" ..
-                              "d: this cut  ·  shift+d: every cut"
+                              "d: this cut  ·  shift+d: every cut without a name\n" ..
+                              "shift+" .. MOD_ALT .. "+d: every cut, replacing names"
                 if canCycle then
                     describeTip = describeTip ..
                                   "\nalt+d: back through the ones already fetched\n" ..
@@ -8790,8 +8825,11 @@ function should_thumbnail_update(IP)
 end
 
 
+-- Returns true when it has drawn the thumbnails and their captions, so the caller knows
+-- there is a row to put the transport on. With no item selected it draws nothing, and
+-- the transport then needs a line of its own.
 function previewSection(IP)      
-    if not IP then return end
+    if not IP then return false end
     if not imageA_array then imageA_array = {} end
     if not imageB_array then imageB_array = {} end
     -- PREVIEW SECTION  
@@ -9009,6 +9047,7 @@ function previewSection(IP)
     thumbnailCaption(slotsX, slotW, "before cut")
     reaper.ImGui_SameLine(ctx)
     thumbnailCaption(slotsX + slotW + thumbnailGap(), slotW, "on cut")
+    return true
 end
 
 -- The gap ImGui puts between the two slots, so a caption can be placed under the second
@@ -9024,6 +9063,9 @@ end
 function thumbnailCaption(x, slotW, text)
     local tw = reaper.ImGui_CalcTextSize(ctx, text)
     reaper.ImGui_SetCursorPosX(ctx, x + (slotW - tw) / 2)
+    -- The transport buttons share this row, and text is shorter than a button: without
+    -- this the captions sit at the top of the row and the buttons hang below them.
+    reaper.ImGui_AlignTextToFramePadding(ctx)
     if fontItalic then reaper.ImGui_PushFont(ctx, fontItalic, reaper.ImGui_GetFontSize(ctx)) end
     reaper.ImGui_TextColored(ctx, colorGrey, text)
     if fontItalic then reaper.ImGui_PopFont(ctx) end
@@ -10754,13 +10796,15 @@ local function loop()
                 selectedCutInfoArea(itemProperties)
                 
                 overviewArea(itemProperties)
-                previewSection(itemProperties)
+                local onCaptionRow = previewSection(itemProperties)
                 
-                reaper.ImGui_NewLine(ctx)
+                -- The transport shares the row the thumbnail captions are on, centred
+                -- between them: the gap between the two pictures is where it belongs,
+                -- and it costs a row of height that was empty either side of it. With
+                -- no item selected there are no captions and so no row to join, and it
+                -- needs one of its own.
+                if not onCaptionRow then reaper.ImGui_NewLine(ctx) end
                 reaper.ImGui_SameLine(ctx, winW / 2 - math.floor(31*2.5)) 
-                
-                
-                
                 navigationButtons(itemProperties) 
                 
                 reaper.ImGui_Separator(ctx)
