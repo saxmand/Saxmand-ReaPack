@@ -225,17 +225,29 @@ public:
             const double windowEnd = batchStart + BATCH * step;
             const bool seeked = batchStart < 0.0 || maxW != batchW || maxH != batchH
                              || timeSec < batchStart - 2.0 || timeSec > windowEnd + 2.0;
-            if (!seeked && !lastPath.empty()) {
-                // Still warming up. Holding the previous frame for a moment beats
-                // stalling the interface on a decode the worker is already doing -- and
-                // it is already seeking and decoding the stretch this call wants.
-                return lastPath;
+            if (seeked) {
+                // Start the window behind the request, so the run has its keyframe
+                // decoded by the time playback arrives rather than opening with a stall.
+                batchStart = timeSec;
+                batchW = maxW; batchH = maxH;
+                requestWindow(std::max(0.0, timeSec - (BATCH / 2) * step), maxW, maxH);
             }
-            // Start the window behind the request, so the run has its keyframe decoded
-            // by the time playback arrives rather than beginning with a stall.
-            batchStart = timeSec;
-            batchW = maxW; batchH = maxH;
-            requestWindow(std::max(0.0, timeSec - (BATCH / 2) * step), maxW, maxH);
+
+            // The frame itself goes to the worker too, ahead of the window. Decoding it
+            // here instead is what made selecting a cut stall: a seek means a keyframe
+            // and then a walk forward, which on Media Foundation is hundreds of
+            // milliseconds where AVFoundation pays tens -- and the interface is calling
+            // this for two previews at once. Showing the frame already on screen for a
+            // tick or two is the better trade; the next call finds this one on disk.
+            requestPoint(timeSec, maxW, maxH);
+
+            if (timeSec != missTime) { missTime = timeSec; missCount = 0; }
+            missCount++;
+
+            // Unless it has not arrived for long enough that something is wrong with it,
+            // in which case decode it here and be certain rather than leave the wrong
+            // picture up for good.
+            if (!lastPath.empty() && missCount <= 30) return lastPath;
 
             if (!decodeTo(timeSec, maxW, maxH, out)) return std::string();
             cacheTouch(out, 0);
@@ -288,6 +300,19 @@ private:
         wcv.notify_one();
     }
 
+    // Asks the worker for one frame, ahead of any window.
+    void requestPoint(double timeSec, int w, int h) {
+        ensureWorker();
+        {
+            std::lock_guard<std::mutex> lk(wmu);
+            if (wPointPending.load() && wPointTime == timeSec && wPointW == w && wPointH == h)
+                return;                   // already asked for exactly this
+            wPointTime = timeSec; wPointW = w; wPointH = h;
+            wPointPending.store(true);
+        }
+        wcv.notify_one();
+    }
+
     void workerLoop() {
         // The reader is created here and used only here. comEnsure puts a thread into a
         // single-threaded apartment, so a reader built on the interface's thread and
@@ -300,19 +325,37 @@ private:
         if (!w.open(src.c_str(), nullptr)) return;   // no prefetch; decoding on demand
                                                      // still answers every request
         for (;;) {
-            double start; int w_, h_; uint64_t gen;
+            bool   doPoint = false;
+            double pt = 0.0; int ptW = 0, ptH = 0;
+            double start = 0.0; int w_ = 0, h_ = 0; uint64_t gen = 0;
             {
                 std::unique_lock<std::mutex> lk(wmu);
-                wcv.wait(lk, [this] { return wStop || wPending; });
+                wcv.wait(lk, [this] { return wStop || wPending || wPointPending.load(); });
                 if (wStop) return;
-                start = wStart; w_ = wW; h_ = wH;
-                wPending = false;
-                gen = wGen.load();
+                if (wPointPending.load()) {
+                    doPoint = true;
+                    pt = wPointTime; ptW = wPointW; ptH = wPointH;
+                    wPointPending.store(false);
+                } else {
+                    start = wStart; w_ = wW; h_ = wH;
+                    wPending = false;
+                    gen = wGen.load();
+                }
             }
-            // Abandoned as soon as the generation moves, which is what a new window or
-            // a shutdown does.
+
+            if (doPoint) {
+                // Straight to the cache path the interface is looking for, by the same
+                // route and so the same frame a direct decode would have produced.
+                const long long ms = (long long)(pt * 1000.0 + 0.5);
+                w.decodeTo(pt, ptW, ptH, cacheFramePath(w.hash, ms, ptW, ptH));
+                continue;                 // a window waiting goes next time round
+            }
+
+            // Abandoned as soon as the generation moves -- a new window or a shutdown --
+            // and also when a single frame is wanted, which cannot sit behind four
+            // seconds of decoding.
             w.decodeRun(start, BATCH, w_, h_,
-                        [this, gen] { return wGen.load() != gen; });
+                        [this, gen] { return wGen.load() != gen || wPointPending.load(); });
         }
     }
 
@@ -406,7 +449,7 @@ private:
             const std::string out = cacheFramePath(hash, ms, maxW, maxH);
             uint64_t have = 0;
             if (!(vpStat(out, &have, nullptr) && have > 0)) {
-                if (encodeSample(smp, maxW, maxH, out)) {
+                if (encodeSampleAtomic(smp, maxW, maxH, out)) {
                     cacheTouch(out, 0);
                     written++;
                 }
@@ -457,11 +500,38 @@ private:
         }
         if (!best) return false;
 
-        bool ok = encodeSample(best, maxW, maxH, outPath);
+        // Atomic here too: the worker answers single-frame requests through this, into
+        // the same cache the interface is watching -- and a thumbnail half-written when
+        // REAPER quits would otherwise be served as a complete one ever after.
+        bool ok = encodeSampleAtomic(best, maxW, maxH, outPath);
         best->Release();
         if (!ok) return false;
         uint64_t size = 0;
         return vpStat(outPath, &size, nullptr) && size > 0;
+    }
+
+    // Writes through a sibling temp file and renames into place.
+    //
+    // The worker writes frames while the interface is checking for them, so a direct
+    // write is visible half-finished: the file exists, has a size, and is not a picture
+    // yet. A rename is atomic, so a frame is either absent or complete. It also means an
+    // interrupted write -- a cancelled window, a crash -- leaves no corrupt frame behind
+    // to be served from the cache forever after.
+    bool encodeSampleAtomic(IMFSample* smp, int maxW, int maxH, const std::string& outPath) {
+        static std::atomic<unsigned> seq{0};
+        char suffix[32];
+        snprintf(suffix, sizeof(suffix), ".%u.tmp", seq.fetch_add(1));
+        const std::string tmp = outPath + suffix;
+        if (!encodeSample(smp, maxW, maxH, tmp)) { vpRemove(tmp); return false; }
+        if (vpRename(tmp, outPath) != 0) {
+            // Losing the race to another writer is success: the frame is there, and it
+            // is the same frame either way.
+            uint64_t have = 0;
+            const bool present = vpStat(outPath, &have, nullptr) && have > 0;
+            vpRemove(tmp);
+            return present;
+        }
+        return true;
     }
 
     bool encodeSample(IMFSample* smp, int maxW, int maxH, const std::string& outPath) {
@@ -547,10 +617,22 @@ private:
     std::mutex              wmu;
     std::condition_variable wcv;
     bool                    wStop = false;
-    bool                    wPending = false;
+    bool                    wPending = false;      // a window is waiting
     double                  wStart = 0.0;
     int                     wW = 0, wH = 0;
     std::atomic<uint64_t>   wGen{0};
+
+    // A single frame the interface is waiting on. It preempts a window, because a
+    // window is work for later while this is the picture on screen now.
+    std::atomic<bool>       wPointPending{false};
+    double                  wPointTime = 0.0;
+    int                     wPointW = 0, wPointH = 0;
+
+    // How long the same unanswered request has been shown the previous frame. Bounded
+    // so a frame the worker cannot produce resolves to a direct decode rather than
+    // leaving the wrong picture up indefinitely.
+    double                  missTime = -1.0;
+    int                     missCount = 0;
 
     // The window most recently asked for, and the last frame successfully returned.
     double      batchStart = -1.0;

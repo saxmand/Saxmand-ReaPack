@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.6.0
+-- @version 0.6.1
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,13 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Fixed: on the open tab, the tab's own tooltip appeared over whichever widget its
+--     content happened to end with -- on Settings, the third column. The tooltip was
+--     being attached after the tab had been closed off, by which point the last item
+--     was a widget inside it rather than the tab.
+--   + Selecting a cut whose frames are not cached no longer stalls, with the Video
+--     Preview extension at 1.7.0: the decode moves off the calling thread and the
+--     previous frame is held for a moment rather than the window freezing.
 --   + Keyboard navigation is off. With it on, Tab and the arrow keys moved focus between
 --     buttons and space activated whichever had it, so keys this app binds were being
 --     swallowed by whatever happened to be focused. It is now cleared every frame, so
@@ -10655,6 +10662,12 @@ local function loop()
             
             local flags = selectTab(1)
             cutDetection = reaper.ImGui_BeginTabItem(ctx, "Cut Detection", nil, flags)
+            -- Straight after BeginTabItem, while the tab button is still the last
+            -- submitted item. Set after EndTabItem instead, as these were, it attaches
+            -- to the last widget drawn inside the tab -- so the tooltip worked on the
+            -- tabs that were closed and, on the open one, turned up on whatever its
+            -- content happened to end with.
+            setToolTipFunc("Detect and name cuts in a video", MOD_CTRL .. "+1")
             
             if cutDetection then
                 updateTabSelection(1) 
@@ -10684,10 +10697,11 @@ local function loop()
                 
                 reaper.ImGui_EndTabItem(ctx)
             end 
-            setToolTipFunc("Detect and name cuts in a video", MOD_CTRL .. "+1")
             
             local flags = selectTab(2)
             compareVideos = reaper.ImGui_BeginTabItem(ctx, "Compare Videos", nil, flags)
+            -- Before the content; see the note on the first tab.
+            setToolTipFunc("Compare 2 videos cut with each other", MOD_CTRL .. "+2")
             if compareVideos then
                 updateTabSelection(2)
                 -- The overview-area focus keys are not wired up here: the cut overviews
@@ -10741,17 +10755,17 @@ local function loop()
                 reaper.ImGui_EndTabItem(ctx)
                 
             end
-            setToolTipFunc("Compare 2 videos cut with each other", MOD_CTRL .. "+2")
             
             local flags = selectTab(3)
             settingsShown = reaper.ImGui_BeginTabItem(ctx, "Settings", nil, flags)
+            -- Before the content; see the note on the first tab.
+            setToolTipFunc("Show app settings", MOD_CTRL .. "+3")
             if settingsShown then 
                 updateTabSelection(3)
                 
                 settingButtons(itemProperties) 
                 reaper.ImGui_EndTabItem(ctx) 
             end
-            setToolTipFunc("Show app settings",MOD_CTRL .. "+3")
             
             reaper.ImGui_EndTabBar(ctx)
         end

@@ -98,6 +98,30 @@ struct Decoder : public VideoDecoder {
     }
 
     // Write a CGImage to outPath as JPEG.
+    // Writes through a sibling temp file and renames into place.
+    //
+    // The batch generators write frames from their own queues while the main thread is
+    // checking for them, so a direct write is visible half-finished: the file exists,
+    // has a size, and is not a picture yet. A rename is atomic, so a frame is either
+    // absent or complete -- and an interrupted write leaves nothing corrupt behind to be
+    // served from the cache ever after.
+    static bool writeJPEGAtomic(CGImageRef img, NSString* outPath) {
+        static std::atomic<unsigned> seq{0};
+        NSString* tmp = [outPath stringByAppendingFormat:@".%u.tmp",
+                         seq.fetch_add(1)];
+        NSFileManager* fm = [NSFileManager defaultManager];
+        if (!writeJPEG(img, tmp)) { [fm removeItemAtPath:tmp error:nil]; return false; }
+        NSError* err = nil;
+        if (![fm moveItemAtPath:tmp toPath:outPath error:&err]) {
+            // Losing the race to another writer is success: the frame is there, and it
+            // is the same frame either way.
+            bool present = [fm fileExistsAtPath:outPath];
+            [fm removeItemAtPath:tmp error:nil];
+            return present;
+        }
+        return true;
+    }
+
     static bool writeJPEG(CGImageRef img, NSString* outPath) {
         NSURL* u = [NSURL fileURLWithPath:outPath];
         CGImageDestinationRef dst = CGImageDestinationCreateWithURL(
@@ -143,7 +167,7 @@ struct Decoder : public VideoDecoder {
                 NSError* err = nil; CMTime actual;
                 CGImageRef img = [gen copyCGImageAtTime:t actualTime:&actual error:&err];
                 if (!img) return "";
-                bool ok = writeJPEG(img, outPath);
+                bool ok = writeJPEGAtomic(img, outPath);
                 CGImageRelease(img);
                 if (!ok) return "";
             }
@@ -197,7 +221,7 @@ struct Decoder : public VideoDecoder {
                 // Counts as newly used even though playback has not reached it yet: it
                 // is about to be, and the frame on screen was touched by getFrame so it
                 // sits ahead of the whole batch either way.
-                if (writeJPEG(image, outPath)) cacheTouch(out, 0);
+                if (writeJPEGAtomic(image, outPath)) cacheTouch(out, 0);
             }
         }];
     }

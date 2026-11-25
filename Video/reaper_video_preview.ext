@@ -1,6 +1,6 @@
 -- @description Video Cut Detection Editor extension
 -- @author Saxmand
--- @version 1.6.0
+-- @version 1.7.0
 -- @about
 --   # Video Cut Detection Editor extension
 --
@@ -57,6 +57,19 @@
 --   [darwin] reaper_video_cut_detection_editor.dylib
 --   [win64] reaper_video_cut_detection_editor-x64.dll
 -- @changelog
+--   + Selecting a cut no longer stalls on Windows. The frame it needs was decoded on
+--     the calling thread, and a seek there means a keyframe and then a walk forward --
+--     hundreds of milliseconds through Media Foundation where AVFoundation pays tens,
+--     and the script asks for two previews at once. The request now goes to the same
+--     worker that reads ahead, ahead of whatever window it was filling, and the frame
+--     already on screen is held for a tick or two until it lands. A frame that does not
+--     arrive is decoded directly after about half a second, so a picture that cannot be
+--     produced that way still appears rather than leaving a stale one up.
+--   + Frames are written through a temp file and renamed into place. A frame written
+--     from a worker thread while the script was checking for it could be seen half
+--     finished -- present, with a size, and not a picture yet -- and an interrupted
+--     write left a corrupt frame to be served from the cache ever after. This affected
+--     macOS too, where the batch generators have always written from their own queues.
 --   + Renamed from "Video Preview extension" to match the script it serves, since
 --     nothing in the old name said where it came from. Same package, so updating
 --     replaces the binary; the file in UserPlugins is now
