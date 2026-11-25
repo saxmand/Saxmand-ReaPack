@@ -12,8 +12,10 @@
 //                           generators are cancelled and the batch restarts from there.
 //
 // Lifted out of video_preview, which is now platform-free. The prefetching is the part
-// worth keeping in mind: it is why scrubbing and playback feel immediate here, and it is
-// also the part the Windows decoder has no equivalent of.
+// worth keeping in mind: it is why scrubbing and playback feel immediate. Windows has
+// the same thing now, built by hand in video_decoder_mf.cpp -- Media Foundation has no
+// asynchronous batch decode, so there is a worker thread with a reader of its own in
+// place of these two generators.
 
 #import <AVFoundation/AVFoundation.h>
 #import <ImageIO/ImageIO.h>

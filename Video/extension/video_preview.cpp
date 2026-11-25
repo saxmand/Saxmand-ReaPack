@@ -50,7 +50,7 @@ static int (*plugin_register)(const char*, void*) = nullptr;
 
 // Keep in step with @version in Video/reaper_video_preview.ext -- the script shows this
 // on its Settings page, so a stale value here is a wrong answer to "what am I running".
-#define VP_VERSION_STR "1.4.0"
+#define VP_VERSION_STR "1.5.0"
 
 // -----------------------------------------------------------------------
 // Registry
@@ -239,6 +239,13 @@ static const char* VP_CacheStats() {
 // Empties it. Frames come back as they are decoded again, so this only ever costs time.
 static int VP_CacheClear() { return cacheClear(); }
 
+// The ceiling, in megabytes. Returns what was actually set, since the figure is held to
+// a range -- so the caller can show the value that took rather than the one it asked for.
+static int VP_SetCacheBudget(int mb) {
+    if (mb > 0) cacheSetBudget((uint64_t)mb * 1024ull * 1024ull);
+    return (int)(cacheBudget() / (1024ull * 1024ull));
+}
+
 // Where ffmpeg is, for the platforms that decode through it. macOS ignores this; it is
 // exported on both so the script can call it without caring which it is running on.
 static void VP_SetFFmpegPath(const char* path) {
@@ -273,6 +280,9 @@ static void* VA_VP_ExtractFrame(void** args, int nargs) {
                             (int)(intptr_t)args[2], (int)(intptr_t)args[3],
                             (const char*)args[4]);
     return (void*)(intptr_t)r;
+}
+static void* VA_VP_SetCacheBudget(void** args, int nargs) {
+    return (void*)(intptr_t)VP_SetCacheBudget(nargs >= 1 ? (int)(intptr_t)args[0] : 0);
 }
 static void* VA_VP_CacheStats(void** args, int nargs) {
     return (void*)VP_CacheStats();
@@ -324,6 +334,12 @@ static const VPFunc kFuncs[] = {
       "const char*", "", "",
       "What the decoded-frame cache occupies on disk, as \"<bytes> <files>\". Measured by "
       "listing the folder, so it is accurate even before the startup adopt pass has run." },
+    { "VP_SetCacheBudget", (void*)VP_SetCacheBudget, (void*)VA_VP_SetCacheBudget,
+      "int", "int", "megabytes",
+      "Sets how much disk the decoded-frame cache may use, and returns the figure that "
+      "took effect -- it is held to a range, so that can differ from what was asked. "
+      "Pass 0 to read the current value without changing it. Lowering it evicts down to "
+      "the new figure at once." },
     { "VP_CacheClear", (void*)VP_CacheClear, (void*)VA_VP_CacheClear,
       "int", "", "",
       "Deletes every cached frame and returns how many files went. Costs decode time "

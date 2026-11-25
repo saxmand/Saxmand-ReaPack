@@ -31,6 +31,11 @@
 #include <objbase.h>
 
 #include <algorithm>
+#include <atomic>
+#include <condition_variable>
+#include <functional>
+#include <mutex>
+#include <thread>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -117,7 +122,13 @@ bool writeBGR24(const std::string& path, int w, int h,
 
 class MFDecoder : public VideoDecoder {
 public:
-    ~MFDecoder() override { if (reader) reader->Release(); }
+    ~MFDecoder() override {
+        stopWorker();                     // joins before anything it touches is freed
+        if (reader) reader->Release();
+    }
+
+    // A worker never starts a worker of its own.
+    void markAsWorker() { isWorker = true; }
 
     bool open(const char* path, std::string* errOut) {
         if (!mfEnsureStarted()) { if (errOut) *errOut = "Media Foundation unavailable"; return false; }
@@ -141,6 +152,21 @@ public:
         if (FAILED(reader->SetStreamSelection((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE))) {
             if (errOut) *errOut = "no video stream";
             return false;
+        }
+
+        // Off the native type, before the output type is set: a prefetch window steps
+        // by one frame, so it needs the file's own rate and not a guess. Read from the
+        // output type it would be whatever the type built below happens to carry, which
+        // is how the fingerprint path once came to label every store 25 fps.
+        {
+            Rel<IMFMediaType> native;
+            if (SUCCEEDED(reader->GetNativeMediaType(
+                    (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, &native)) && native) {
+                UINT32 num = 0, den = 0;
+                if (SUCCEEDED(MFGetAttributeRatio(native, MF_MT_FRAME_RATE, &num, &den))
+                    && num && den)
+                    rate = (double)num / (double)den;
+            }
         }
 
         Rel<IMFMediaType> want;
@@ -168,14 +194,58 @@ public:
 
     std::string getFrame(double timeSec, int maxW, int maxH) override {
         timeSec = clampTime(timeSec);
-        long long ms = (long long)(timeSec * 1000.0 + 0.5);
-        std::string out = cacheFramePath(hash, ms, maxW, maxH);
+
+        // Asked for the same frame again, which is what a paused playhead does.
+        if (timeSec == lastTime && maxW == lastW && maxH == lastH && !lastPath.empty())
+            return lastPath;
+
+        const long long ms  = (long long)(timeSec * 1000.0 + 0.5);
+        const std::string out = cacheFramePath(hash, ms, maxW, maxH);
+        const double step = frameDur();
 
         uint64_t have = 0;
-        if (vpStat(out, &have, nullptr) && have > 0) { cacheTouch(out, have); return out; }
-        if (!decodeTo(timeSec, maxW, maxH, out)) return std::string();
-        cacheTouch(out, 0);
-        return out;
+        const bool fromWindow = vpStat(out, &have, nullptr) && have > 0;
+
+        std::string result;
+        if (fromWindow) {
+            cacheTouch(out, have);        // on screen now, so the newest thing there
+            result = out;
+
+            // Move the window on at its midpoint, while the worker is still filling the
+            // back half of the current one. Waiting until the window ran out would put a
+            // seek and a keyframe decode exactly where playback cannot absorb it.
+            const double mid = batchStart + (BATCH / 2) * step;
+            if (batchStart < 0.0 || timeSec >= mid || maxW != batchW || maxH != batchH) {
+                batchStart = timeSec + step;
+                batchW = maxW; batchH = maxH;
+                requestWindow(batchStart, maxW, maxH);
+            }
+        } else {
+            // A miss is either a real seek, or the window has not reached here yet.
+            const double windowEnd = batchStart + BATCH * step;
+            const bool seeked = batchStart < 0.0 || maxW != batchW || maxH != batchH
+                             || timeSec < batchStart - 2.0 || timeSec > windowEnd + 2.0;
+            if (!seeked && !lastPath.empty()) {
+                // Still warming up. Holding the previous frame for a moment beats
+                // stalling the interface on a decode the worker is already doing -- and
+                // it is already seeking and decoding the stretch this call wants.
+                return lastPath;
+            }
+            // Start the window behind the request, so the run has its keyframe decoded
+            // by the time playback arrives rather than beginning with a stall.
+            batchStart = timeSec;
+            batchW = maxW; batchH = maxH;
+            requestWindow(std::max(0.0, timeSec - (BATCH / 2) * step), maxW, maxH);
+
+            if (!decodeTo(timeSec, maxW, maxH, out)) return std::string();
+            cacheTouch(out, 0);
+            result = out;
+        }
+
+        if (!result.empty()) {
+            lastTime = timeSec; lastW = maxW; lastH = maxH; lastPath = result;
+        }
+        return result;
     }
 
     bool extractTo(double timeSec, int maxW, int maxH, const char* outPath) override {
@@ -184,6 +254,68 @@ public:
     }
 
 private:
+    // Starts the worker on first use rather than at open: a decoder that only ever has
+    // one frame taken out of it -- a thumbnail -- should not pay for a second reader.
+    void ensureWorker() {
+        if (isWorker || workerStarted) return;
+        workerStarted = true;
+        workerTh = std::thread([this] { workerLoop(); });
+    }
+
+    void stopWorker() {
+        if (!workerTh.joinable()) return;
+        {
+            std::lock_guard<std::mutex> lk(wmu);
+            wStop = true;
+            wGen++;                       // abandons the window in flight
+        }
+        wcv.notify_one();
+        workerTh.join();
+    }
+
+    // Asks for a window. A request supersedes whatever is running: the generation moves,
+    // and the run in flight notices at its next frame boundary rather than mid-frame, so
+    // the longest anything waits is one frame's decode.
+    void requestWindow(double startTime, int w, int h) {
+        ensureWorker();
+        {
+            std::lock_guard<std::mutex> lk(wmu);
+            if (wPending && wStart == startTime && wW == w && wH == h) return;
+            wStart = startTime; wW = w; wH = h;
+            wPending = true;
+            wGen++;
+        }
+        wcv.notify_one();
+    }
+
+    void workerLoop() {
+        // The reader is created here and used only here. comEnsure puts a thread into a
+        // single-threaded apartment, so a reader built on the interface's thread and
+        // read from this one is a cross-apartment call on an STA object -- which tends
+        // to appear to work right up until it does not. This thread also writes the
+        // JPEGs, through WIC, which wants COM on it regardless.
+        comEnsure();
+        MFDecoder w;
+        w.markAsWorker();
+        if (!w.open(src.c_str(), nullptr)) return;   // no prefetch; decoding on demand
+                                                     // still answers every request
+        for (;;) {
+            double start; int w_, h_; uint64_t gen;
+            {
+                std::unique_lock<std::mutex> lk(wmu);
+                wcv.wait(lk, [this] { return wStop || wPending; });
+                if (wStop) return;
+                start = wStart; w_ = wW; h_ = wH;
+                wPending = false;
+                gen = wGen.load();
+            }
+            // Abandoned as soon as the generation moves, which is what a new window or
+            // a shutdown does.
+            w.decodeRun(start, BATCH, w_, h_,
+                        [this, gen] { return wGen.load() != gen; });
+        }
+    }
+
     void readType() {
         Rel<IMFMediaType> cur;
         if (FAILED(reader->GetCurrentMediaType(
@@ -218,6 +350,72 @@ private:
 
     double clampTime(double t) const { return t < 0.0 ? 0.0 : (t > dur ? dur : t); }
 
+    bool seekTo(double timeSec) {
+        PROPVARIANT pos;
+        PropVariantInit(&pos);
+        pos.vt = VT_I8;
+        pos.hVal.QuadPart = (LONGLONG)(timeSec * 1.0e7);
+        HRESULT hr = reader->SetCurrentPosition(kTimeFormatDefault, pos);
+        PropVariantClear(&pos);
+        return SUCCEEDED(hr);
+    }
+
+    double frameDur() const { return 1.0 / (rate > 0.0 ? rate : 25.0); }
+
+    // Decodes a window of `count` frames from startTime, writing each to the cache under
+    // the grid time it serves. One seek and then forward reads, which is the whole point:
+    // the frames of a group of pictures are nearly free once its keyframe has been
+    // decoded, so a window costs little more than the single frame at its start.
+    //
+    // Which grid point a frame serves comes from gridIndexFor, so a frame written here is
+    // the same one decodeTo would have written for that time -- either may answer the
+    // request, and they must not disagree.
+    int decodeRun(double startTime, int count, int maxW, int maxH,
+                  const std::function<bool()>& cancelled) {
+        if (!reader || count <= 0) return 0;
+        if (!seekTo(startTime)) return 0;
+
+        const double step = frameDur();
+        int written = 0;
+
+        for (;;) {
+            if (cancelled()) break;
+
+            DWORD      flags = 0;
+            LONGLONG   ts    = 0;
+            IMFSample* smp   = nullptr;
+            if (FAILED(reader->ReadSample((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+                                          0, nullptr, &flags, &ts, &smp)))
+                break;
+            if (flags & MF_SOURCE_READERF_ENDOFSTREAM) { if (smp) smp->Release(); break; }
+            if (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) readType();
+            if (!smp) continue;
+
+            const double pts = (double)ts / 1.0e7;
+            const int    idx = gridIndexFor(pts, startTime, step, count);
+            if (idx < 0) {
+                // Before the window: the seek landed on an earlier keyframe, and these
+                // frames are the cost of reaching the ones wanted. Past it: done.
+                const bool past = pts > startTime + count * step;
+                smp->Release();
+                if (past) break;
+                continue;
+            }
+
+            const long long ms = (long long)((startTime + idx * step) * 1000.0 + 0.5);
+            const std::string out = cacheFramePath(hash, ms, maxW, maxH);
+            uint64_t have = 0;
+            if (!(vpStat(out, &have, nullptr) && have > 0)) {
+                if (encodeSample(smp, maxW, maxH, out)) {
+                    cacheTouch(out, 0);
+                    written++;
+                }
+            }
+            smp->Release();
+        }
+        return written;
+    }
+
     bool decodeTo(double timeSec, int maxW, int maxH, const std::string& outPath) {
         // SetCurrentPosition seeks to the nearest keyframe AT OR BEFORE the request and
         // stops there -- it does not decode on to the time asked for. This used to take
@@ -227,13 +425,7 @@ private:
         // timeSec, which is the last frame whose timestamp has not passed it -- the same
         // frame AVFoundation returns on the other platform, where the tolerances are
         // pinned to zero for exactly this reason.
-        PROPVARIANT pos;
-        PropVariantInit(&pos);
-        pos.vt = VT_I8;
-        pos.hVal.QuadPart = (LONGLONG)(timeSec * 1.0e7);
-        HRESULT hr = reader->SetCurrentPosition(kTimeFormatDefault, pos);
-        PropVariantClear(&pos);
-        if (FAILED(hr)) return false;
+        if (!seekTo(timeSec)) return false;
 
         const LONGLONG target = (LONGLONG)(timeSec * 1.0e7);
         IMFSample* best = nullptr;
@@ -344,7 +536,32 @@ private:
     int              fullWidth = 0, fullHeight = 0;  // coded, padding included
     int              cropX = 0, cropY = 0;           // where the picture sits in it
     bool             bottomUp = false;
+    double           rate = 0.0;
     double           dur = 0.0;
+    bool             isWorker = false;
+
+    // Prefetch. The worker is a second decoder on the same file, so its reader and its
+    // seeks never disturb the one answering the interface.
+    bool                    workerStarted = false;
+    std::thread             workerTh;
+    std::mutex              wmu;
+    std::condition_variable wcv;
+    bool                    wStop = false;
+    bool                    wPending = false;
+    double                  wStart = 0.0;
+    int                     wW = 0, wH = 0;
+    std::atomic<uint64_t>   wGen{0};
+
+    // The window most recently asked for, and the last frame successfully returned.
+    double      batchStart = -1.0;
+    int         batchW = 0, batchH = 0;
+    std::string lastPath;
+    double      lastTime = -1.0;
+    int         lastW = 0, lastH = 0;
+
+    // 100 frames is four seconds at 25 fps, comfortably more than one group of
+    // pictures, which is what makes the sequential run pay for itself.
+    static const int BATCH = 100;
 };
 
 } // namespace

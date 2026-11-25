@@ -28,7 +28,19 @@
 // 200 (one batch window ahead for each of the two videos being compared), so there is
 // ample room for timeline thumbnails to survive a playthrough and still be there
 // afterwards.
-extern const uint64_t CACHE_BUDGET_BYTES;
+// The budget, settable at runtime because what it should be depends on the machine and
+// the footage: 256 MB is ample for 640x360 previews and nowhere near enough to keep a
+// long comparison warm at a higher preview resolution. Lowering it evicts down to the
+// new figure straight away.
+uint64_t cacheBudget();
+void     cacheSetBudget(uint64_t bytes);
+
+// The range the setting is held to. The floor is what one prefetch window of two videos
+// needs at a generous frame size -- below it the window would evict its own frames
+// before playback reached them, which is slower than having no cache at all.
+static const uint64_t CACHE_BUDGET_MIN = 32ull  * 1024ull * 1024ull;
+static const uint64_t CACHE_BUDGET_MAX = 8192ull * 1024ull * 1024ull;
+static const uint64_t CACHE_BUDGET_DEFAULT = 256ull * 1024ull * 1024ull;
 extern const char*    CACHE_PREFIX;
 
 // Where the cached frames live. The system temporary folder, which is also why they

@@ -17,6 +17,7 @@
 // frames shows whichever is closer, rather than always the one behind.
 
 #include <cstdint>
+#include <cmath>
 
 enum class FramePick {
     Continue,   // short of the request; this frame becomes the candidate
@@ -33,4 +34,23 @@ inline FramePick framePick(long long ts, long long target,
     if (ts < target) return FramePick::Continue;
     if (!havePrev)   return FramePick::Take;
     return (ts - target) <= (target - prevTs) ? FramePick::Take : FramePick::Overshot;
+}
+
+// The grid point a decoded frame serves, while prefetching a window.
+//
+// A prefetch window is a regular grid of requested times, startTime + i*step, because
+// that is how the frames are asked for -- the caller works in whole frames. Walking the
+// stream and asking "which frame is nearest this grid point" would need the sequencing
+// state of a merge; asking the inverse, "which grid point is this frame nearest", is one
+// line and gives the same pairing whenever both are regular with the same spacing. That
+// equivalence is what makes a prefetched frame the same frame a single-frame decode
+// would have written for that time, which matters because either may serve the request.
+//
+// Where it does not hold -- a variable frame rate, so the stream is not regular -- the
+// pairing simply leaves grid points unfilled, and those fall back to decoding on demand.
+// Returns -1 for a frame outside the window.
+inline int gridIndexFor(double pts, double startTime, double step, int count) {
+    if (!(step > 0.0)) return -1;
+    const int i = (int)std::floor((pts - startTime) / step + 0.5);
+    return (i >= 0 && i < count) ? i : -1;
 }

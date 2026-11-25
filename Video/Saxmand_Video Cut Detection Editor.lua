@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.5.0
+-- @version 0.5.1
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,12 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Settings: a "Max" slider for how much disk the cached frames may use, beside the
+--     figure for what they currently occupy. Needs the Video Preview extension at
+--     1.5.0, which also brings the read-ahead that Windows previews were missing.
+--   + Settings: no gap under the divider, "Reset all settings" moved to the end of its
+--     column rather than sitting above the settings it discards, a space above "Frame
+--     diagnostics", and "Preview resolution" in grey like the other headings.
 --   + Settings: what the cached preview images occupy, a button to delete them, and a
 --     "Clear when closing app" toggle, in the second column. The cache already keeps
 --     itself inside a budget, so this is not housekeeping anyone has to do -- it is
@@ -334,6 +340,7 @@ local defaultSettings = {
     cut_jump = 20,                -- bits of 64 the frame hash must move
     cut_gap = 20,                 -- frames; suppress a weaker cut beside a stronger
     clearCacheOnExit = false,     -- decoded frames are kept between sessions by default
+    cacheBudgetMB = 256,          -- ceiling for the decoded-frame cache; see the slider
 }
 
 local function saveSettings()
@@ -741,9 +748,23 @@ end
 
 setActionToggle(1)
 
+-- The cache ceiling lives in the extension, which has no idea what was chosen last
+-- session, so the stored figure has to be handed over on startup as well as on a change.
+-- The extension holds it to a range and returns what took effect, so the slider shows
+-- the value in force rather than the one that was asked for.
+function vpApplyCacheBudget()
+    if not reaper.VP_SetCacheBudget then return end
+    local got = reaper.VP_SetCacheBudget(settings.cacheBudgetMB or 256)
+    if got and got > 0 and got ~= settings.cacheBudgetMB then
+        settings.cacheBudgetMB = got
+        saveSettings()
+    end
+end
+
 -- Hand the ffmpeg path over now that the extension is certainly loaded. On Windows the
 -- extension cannot decode anything without it.
 vpTellFfmpegPath()
+vpApplyCacheBudget()
 
 -- An italic face for asides -- notes about the tool rather than content of it.
 -- CreateFont's second argument is flags, not a size: in this ReaImGui the size is given
@@ -9532,24 +9553,9 @@ function settingButtons(IP)
                        "Restart REAPER afterwards.")
     end
     reaper.ImGui_Separator(ctx)
-    reaper.ImGui_NewLine(ctx)
 
     reaper.ImGui_BeginGroup(ctx)
      
-    -- Named for what it does. It resets every setting in the script, not FFmpeg's path:
-    -- its tooltip used to be a copy of the one on "Reset FFMPEG Path" below, which made
-    -- it read as an FFmpeg button. It stays up here, outside the per-detector sections,
-    -- because it is not one -- hiding it behind FFmpeg would put it out of reach for
-    -- anyone on the extension, which is now the default.
-    if reaper.ImGui_Button(ctx, "Reset all settings") then
-        settings = deep_copy(defaultSettings)
-        settings.tabSelection = 3
-        saveSettings()
-    end
-    setToolTipFunc("Put every setting in this script back to its default -- the detector and\n" ..
-                   "its thresholds, the preview resolution, the action settings, all of it.\n" ..
-                   "The FFmpeg path is kept; there is a separate button for that.")
-
     -- Which detector runs comes first, and everything that applies to only one of them
     -- sits below it, shown only when that one is chosen. The FFmpeg path buttons and
     -- "Extreme cut detection" used to sit up here, above the choice, which offered
@@ -9686,8 +9692,7 @@ function settingButtons(IP)
     -- when there is no choice of detector at all -- an extension old enough to have
     -- previews but no VP_Cuts -- since the previews still come from it either way.
     if vp_available and (usingExtension or not reaper.VP_Cuts) then
-        reaper.ImGui_AlignTextToFramePadding(ctx)
-        reaper.ImGui_Text(ctx, "Preview resolution:")
+        reaper.ImGui_TextColored(ctx, colorGrey, "Preview resolution")
         local vpSizeLabels = {"640x360", "960x540", "1280x720"}
         for i, label in ipairs(vpSizeLabels) do
             if reaper.ImGui_RadioButton(ctx, label .. "##vpsize", settings.vp_preview_size == i) then
@@ -9702,6 +9707,7 @@ function settingButtons(IP)
     -- path, an unwritable temporary folder and a decode that runs but produces nothing
     -- all look the same from the outside. This asks the extension and prints what it
     -- found, so the answer can be read or pasted to someone who can act on it.
+    reaper.ImGui_NewLine(ctx)
     if reaper.VP_Diag then
         if reaper.ImGui_Button(ctx, "Frame diagnostics") then
             local path = IP and IP.filePath or ""
@@ -9733,6 +9739,20 @@ function settingButtons(IP)
                        "timing if the file has been analysed.")
     end
 
+    -- Last in the column, because it undoes everything above it: a button that throws
+    -- away every choice on this page does not belong at the top of it, where it sat
+    -- next to the detector it has nothing to do with. It resets the script's settings,
+    -- not FFmpeg's path -- there is a separate button for that.
+    reaper.ImGui_NewLine(ctx)
+    if reaper.ImGui_Button(ctx, "Reset all settings") then
+        settings = deep_copy(defaultSettings)
+        settings.tabSelection = 3
+        saveSettings()
+    end
+    setToolTipFunc("Put every setting in this script back to its default -- the detector and\n" ..
+                   "its thresholds, the preview resolution, the action settings, all of it.\n" ..
+                   "The FFmpeg path is kept; there is a separate button for that.")
+
     reaper.ImGui_EndGroup(ctx)
     
     
@@ -9757,6 +9777,24 @@ function settingButtons(IP)
     reaper.ImGui_NewLine(ctx)
     reaper.ImGui_TextColored(ctx, colorGrey, "Cached preview images")
     if reaper.VP_CacheStats then
+        if reaper.VP_SetCacheBudget then
+            reaper.ImGui_SetNextItemWidth(ctx, 130)
+            local movedBudget, mb = reaper.ImGui_SliderInt(
+                ctx, "Max##cachebudget", settings.cacheBudgetMB or 256, 32, 4096, "%d MB")
+            if movedBudget then
+                settings.cacheBudgetMB = mb
+                saveSettings()
+                vpApplyCacheBudget()     -- lowering it evicts immediately
+                vpCacheStats(true)       -- so the figure below follows at once
+            end
+            setToolTipFunc("How much disk the cached frames may use.\n" ..
+                           "Bigger keeps more of a comparison warm, so scrubbing back\n" ..
+                           "over ground already covered stays instant. Smaller costs\n" ..
+                           "decode time when it evicts something still being looked at.\n" ..
+                           "The prefetcher reads ahead about four seconds per video, so\n" ..
+                           "below roughly 64 MB at a high preview resolution it can\n" ..
+                           "start evicting its own frames before playback reaches them.")
+        end
         local bytes, files = vpCacheStats()
         settingsInfoText(formatBytes(bytes) .. " in " ..
                          files .. (files == 1 and " file" or " files"))

@@ -4,6 +4,7 @@
 #include "frame_cache.h"
 
 #include <algorithm>
+#include <atomic>
 #include <list>
 #include <map>
 #include <mutex>
@@ -25,7 +26,9 @@
   #include <unistd.h>
 #endif
 
-const uint64_t CACHE_BUDGET_BYTES = 256ull * 1024ull * 1024ull;
+static std::atomic<uint64_t> g_budget{ CACHE_BUDGET_DEFAULT };
+
+uint64_t cacheBudget() { return g_budget.load(); }
 // Bumped whenever a fix changes which picture a given time resolves to. The cache is
 // content-addressed by path, time and size and nothing else, so without this a frame
 // written by a build that picked the wrong frame is handed straight back by the build
@@ -80,7 +83,8 @@ static uint64_t                                                g_lruBytes = 0;
 // lock. Returns how many files were removed.
 static int cacheEvictLocked() {
     int removed = 0;
-    while (g_lruBytes > CACHE_BUDGET_BYTES && !g_lru.empty()) {
+    const uint64_t budget = cacheBudget();
+    while (g_lruBytes > budget && !g_lru.empty()) {
         const std::string victim = g_lru.back();
         g_lru.pop_back();
         g_lruPos.erase(victim);
@@ -93,6 +97,16 @@ static int cacheEvictLocked() {
         removed++;
     }
     return removed;
+}
+
+// Clamped rather than rejected: a figure out of range is a caller's slip, and the
+// cache carrying on with a sane bound beats it refusing to work.
+void cacheSetBudget(uint64_t bytes) {
+    if (bytes < CACHE_BUDGET_MIN) bytes = CACHE_BUDGET_MIN;
+    if (bytes > CACHE_BUDGET_MAX) bytes = CACHE_BUDGET_MAX;
+    std::lock_guard<std::mutex> lk(g_cacheMu);
+    g_budget.store(bytes);
+    cacheEvictLocked();                   // a lower figure takes effect at once
 }
 
 void cacheTouch(const std::string& path, uint64_t bytes) {

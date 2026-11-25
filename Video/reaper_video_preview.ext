@@ -1,6 +1,6 @@
 -- @description Video Preview extension
 -- @author Saxmand
--- @version 1.4.0
+-- @version 1.5.0
 -- @about
 --   # Video Preview extension
 --
@@ -33,6 +33,9 @@
 --   DNxHD, which have no Windows decoder - for those the extension falls back to the
 --   ffmpeg binary if one is available, and the script hands over its path.
 --
+--   Both platforms read ahead of the playhead rather than decoding a frame only once it
+--   is asked for, which is what makes scrubbing and playback feel immediate.
+--
 --   The fingerprints, the cut detector and the matcher are the same code on both
 --   platforms, and the frames they work from are scaled by that same code rather than
 --   by each platform's decoder, so the results are identical to the bit and a store
@@ -50,6 +53,17 @@
 --   [darwin] reaper_video_preview.dylib
 --   [win64] reaper_video_preview-x64.dll
 -- @changelog
+--   + Windows reads ahead now, as macOS already did, so playback and scrubbing no longer
+--     decode each frame only once it is wanted. Media Foundation has no asynchronous
+--     batch decode, so this is a worker thread with a reader of its own, decoding the
+--     stretch the playhead is heading into: one seek and then forward reads, which is
+--     what makes it worth doing, since the frames of a group of pictures come almost
+--     free once its keyframe has been decoded. The window moves on at its midpoint
+--     while the back half is still filling, and a seek abandons the run in flight at
+--     the next frame boundary rather than mid-frame.
+--   + VP_SetCacheBudget, so the cache ceiling can be set rather than fixed at 256 MB.
+--     It is held to 32 MB..8 GB and returns the figure that took effect; lowering it
+--     evicts down to the new figure at once.
 --   + VP_CacheStats and VP_CacheClear, so the script can show what the decoded-frame
 --     cache occupies and empty it on request.
 --   + Fixed: thumbnails on Windows were a frame early. A frame is now chosen as the
