@@ -83,6 +83,13 @@ public:
                 if (SUCCEEDED(MFGetAttributeRatio(native, MF_MT_FRAME_RATE, &num, &den))
                     && num && den)
                     nativeRate = (double)num / (double)den;
+                MFVideoArea a;
+                memset(&a, 0, sizeof(a));
+                if (SUCCEEDED(native->GetBlob(MF_MT_MINIMUM_DISPLAY_APERTURE,
+                                              (UINT8*)&a, sizeof(a), nullptr))
+                    || SUCCEEDED(native->GetBlob(MF_MT_GEOMETRIC_APERTURE,
+                                                 (UINT8*)&a, sizeof(a), nullptr)))
+                    nativeArea = a;
             }
         }
 
@@ -95,7 +102,7 @@ public:
             if (FAILED(MFCreateMediaType(&want))) { if (errOut) *errOut = "MFCreateMediaType failed"; return false; }
             want->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
             want->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
-            MFSetAttributeSize(want, MF_MT_FRAME_SIZE, (UINT32)w, (UINT32)h);
+            if (w > 0 && h > 0) MFSetAttributeSize(want, MF_MT_FRAME_SIZE, (UINT32)w, (UINT32)h);
             HRESULT hr = reader->SetCurrentMediaType(
                 (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, nullptr, want);
             if (FAILED(hr)) {
@@ -158,7 +165,29 @@ private:
                 (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, &cur))) return;
         UINT32 w = 0, h = 0;
         if (SUCCEEDED(MFGetAttributeSize(cur, MF_MT_FRAME_SIZE, &w, &h))) {
-            width = (int)w; height = (int)h;
+            fullWidth = width = (int)w; fullHeight = height = (int)h;
+        }
+
+        // The coded size is padded up to whole macroblocks -- a 1440x1080 file decodes
+        // as 1440x1088 -- and the aperture says which part of that is the picture.
+        // Without this the bottom rows of padding are fingerprinted along with the
+        // image, which is both wrong and enough to stop the hashes matching macOS.
+        cropX = cropY = 0;
+        MFVideoArea area;
+        memset(&area, 0, sizeof(area));
+        bool haveArea =
+            SUCCEEDED(cur->GetBlob(MF_MT_MINIMUM_DISPLAY_APERTURE,
+                                   (UINT8*)&area, sizeof(area), nullptr)) ||
+            SUCCEEDED(cur->GetBlob(MF_MT_GEOMETRIC_APERTURE,
+                                   (UINT8*)&area, sizeof(area), nullptr));
+        if (!haveArea && nativeArea.Area.cx > 0) { area = nativeArea; haveArea = true; }
+        if (haveArea) {
+            int ax = area.OffsetX.value, ay = area.OffsetY.value;
+            int aw = area.Area.cx,       ah = area.Area.cy;
+            if (aw > 0 && ah > 0 && ax >= 0 && ay >= 0
+                && ax + aw <= fullWidth && ay + ah <= fullHeight) {
+                cropX = ax; cropY = ay; width = aw; height = ah;
+            }
         }
         UINT32 num = 0, den = 0;
         if (SUCCEEDED(MFGetAttributeRatio(cur, MF_MT_FRAME_RATE, &num, &den)) && num && den)
@@ -183,7 +212,10 @@ private:
             LONG  pitch = 0;
             if (SUCCEEDED(two->Lock2D(&scan, &pitch)) && scan && pitch != 0) {
                 twoD = two;
-                out->y = scan;
+                // Step into the picture, past any coded padding. cropY times a negative
+                // pitch walks the right way for a bottom-up buffer too, since scan is
+                // image row 0 either way.
+                out->y = scan + (ptrdiff_t)cropY * (ptrdiff_t)pitch + cropX;
                 out->w = width;
                 out->h = height;
                 // Lock2D hands back the top row, so a negative pitch is the step
@@ -203,18 +235,19 @@ private:
         // the old length check could not catch it: NV12 is w*h*3/2, so a luma plane
         // padded well past w*h still passed.
         int stride = defStride < 0 ? -defStride : defStride;
-        if (stride < width) stride = width;
-        if (len / (DWORD)stride < (DWORD)height) { buffer->Unlock(); return false; }
+        if (stride < fullWidth) stride = fullWidth;
+        if (len / (DWORD)stride < (DWORD)fullHeight) { buffer->Unlock(); return false; }
         locked = true;
         out->w = width;
         out->h = height;
-        if (defStride < 0) {          // bottom-up: start at the last row and step back
-            out->y = p + (ptrdiff_t)stride * (height - 1);
+        if (defStride < 0) {          // bottom-up: image row 0 is the last row in memory
+            out->y = p + (ptrdiff_t)stride * (fullHeight - 1);
             out->stride = -stride;
         } else {
             out->y = p;
             out->stride = stride;
         }
+        out->y += (ptrdiff_t)cropY * out->stride + cropX;
         return true;
     }
 
@@ -234,6 +267,9 @@ private:
     double           rate = 25.0;
     double           nativeRate = 0.0;   // the stream's own, authoritative
     int              defStride = 0;      // MF_MT_DEFAULT_STRIDE, signed
+    int              fullWidth = 0, fullHeight = 0;  // coded size, padding included
+    int              cropX = 0, cropY = 0;           // offset of the picture within it
+    MFVideoArea      nativeArea{};       // aperture off the native type, as a fallback
     double           dur  = 0.0;
     std::string      err;
 };

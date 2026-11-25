@@ -50,21 +50,39 @@ public:
         dur  = pr.duration;
         rate = (pr.fps > 0.0) ? pr.fps : 25.0;
 
+        // No size asked for means native, and no scale filter -- see frameSourceOpen.
+        if (reqW <= 0 || reqH <= 0) {
+            if (pr.width <= 0 || pr.height <= 0) {
+                if (errOut) *errOut = "could not read the video size";
+                return false;
+            }
+            reqW = pr.width; reqH = pr.height;
+            scaling = false;
+        }
+
         char vf[128], fpsArg[64];
-        snprintf(vf, sizeof(vf), "scale=%d:%d", w, h);
+        snprintf(vf, sizeof(vf), "scale=%d:%d", reqW, reqH);
         snprintf(fpsArg, sizeof(fpsArg), "%.6f", rate);
 
+        // yuv420p and not gray: "gray" puts swscale in the way, which expands video
+        // range to full range and clips at both ends. That is a non-monotonic change,
+        // so it moves hash bits -- measured at 1.4 bits of mean Hamming against the
+        // same frames taken as a raw luma plane, which is enough to matter when the
+        // point is for this backend to agree with Media Foundation and AVFoundation.
+        // The chroma planes are read and dropped in next().
         // -nostdin so it cannot sit waiting on a console that is not there, and
         // -v quiet so the frame data on stdout is never mixed with log text.
         std::wstring cmd =
             ffp::quoteArg(ffp::widen(exe)) +
             L" -nostdin -v quiet -i " + ffp::quoteArg(ffp::widen(path)) +
             L" -an -sn -dn" +
-            L" -vf " + ffp::quoteArg(ffp::widen(vf)) +
-            L" -pix_fmt gray -r " + ffp::widen(fpsArg) +
+            (scaling ? (L" -vf " + ffp::quoteArg(ffp::widen(vf))) : std::wstring()) +
+            L" -pix_fmt yuv420p -r " + ffp::widen(fpsArg) +
             L" -fps_mode cfr -f rawvideo -";
 
-        buf.resize((size_t)w * h);
+        buf.resize((size_t)reqW * reqH);
+        // yuv420p carries half-resolution chroma, rounded up on odd dimensions.
+        chroma.resize((size_t)2 * (((size_t)reqW + 1) / 2) * (((size_t)reqH + 1) / 2));
         if (!pipe.start(cmd, /*mergeStderr=*/false)) {
             if (errOut) *errOut = ffp::startFailure(exe, pipe.lastError);
             return false;
@@ -82,6 +100,13 @@ public:
             if (got != 0) err = "ffmpeg output ended mid-frame";
             return false;
         }
+        if (!chroma.empty()) {
+            const int cneed = (int)chroma.size();
+            if (pipe.readExact(chroma.data(), cneed) < cneed) {
+                err = "ffmpeg output ended mid-frame";
+                return false;
+            }
+        }
         out->y      = buf.data();
         out->w      = reqW;
         out->h      = reqH;
@@ -98,6 +123,8 @@ public:
 private:
     ffp::Pipe            pipe;
     std::vector<uint8_t> buf;
+    std::vector<uint8_t> chroma;      // read and discarded; only luma is fingerprinted
+    bool                 scaling = true;
     std::string          err;
     int                  reqW = 0, reqH = 0;
     long long            index = 0;

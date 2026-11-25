@@ -39,8 +39,8 @@
 
 #ifdef _WIN32
   #include "win_mf.h"
-  #define VP_PLATFORM_NAME "Windows (decoding through the ffmpeg binary)"
-  #define VP_PLATFORM_SHORT "Windows, via ffmpeg"
+  #define VP_PLATFORM_NAME "Windows (decoding in-process through Media Foundation, ffmpeg as fallback)"
+  #define VP_PLATFORM_SHORT "Windows, Media Foundation"
 #else
   #define VP_PLATFORM_NAME "macOS (decoding in-process through AVFoundation)"
   #define VP_PLATFORM_SHORT "macOS, AVFoundation"
@@ -50,7 +50,7 @@ static int (*plugin_register)(const char*, void*) = nullptr;
 
 // Keep in step with @version in Video/reaper_video_preview.ext -- the script shows this
 // on its Settings page, so a stale value here is a wrong answer to "what am I running".
-#define VP_VERSION_STR "1.2.1"
+#define VP_VERSION_STR "1.3.0"
 
 // -----------------------------------------------------------------------
 // Registry
@@ -165,7 +165,9 @@ static const char* VP_Diag(const char* filePath) {
 
     // 1. sequential decode -- what cut detection uses
     std::string err;
-    FrameSource* fs = frameSourceOpen(filePath, 32, 32, &err);
+    // 0,0 for native, which is what the analysis asks for -- a diagnostic that opened
+    // the file differently from the real thing would be reporting on the wrong path.
+    FrameSource* fs = frameSourceOpen(filePath, 0, 0, &err);
     if (!fs) {
         line("sequential      FAILED to open: %s", err.empty() ? "(no reason given)" : err.c_str());
     } else {
@@ -290,9 +292,10 @@ static const VPFunc kFuncs[] = {
       "Extract frame at timePos to outputPath (.jpg or .png). Returns 1 on success." },
     { "VP_SetFFmpegPath", (void*)VP_SetFFmpegPath, (void*)VA_VP_SetFFmpegPath,
       "void", "const char*", "path",
-      "Tell the extension where the ffmpeg binary is. Windows decodes through it, so "
-      "cut detection and previews need this (or ffmpeg on PATH). Ignored on macOS, "
-      "which decodes in-process -- safe to call on both." },
+      "Tell the extension where the ffmpeg binary is. On Windows it is the fallback for "
+      "what Media Foundation cannot decode, in practice ProRes and DNxHD; everything "
+      "else needs no ffmpeg at all. Ignored on macOS, which decodes in-process through "
+      "AVFoundation -- safe to call on both." },
     { "VP_Version", (void*)VP_Version, (void*)VA_VP_Version,
       "const char*", "", "",
       "The extension's version, and how it decodes on this platform." },

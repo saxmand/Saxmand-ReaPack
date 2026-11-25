@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.4.0
+-- @version 0.4.1
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,10 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Needs the Video Preview extension at 1.3.0, which fixes the same file
+--     fingerprinting differently on macOS and on Windows -- the remaining reason cut
+--     detection disagreed between them once frame timing was sorted out. Fingerprint
+--     stores built before it rebuild themselves on first use; nothing to do by hand.
 --   + Fixed: cut detection on Windows found fewer cuts than macOS and put most of them
 --     in the wrong place. A cut's position was worked out by dividing its frame number
 --     by the frame rate recorded in the fingerprint store, and on Windows that rate was
@@ -9458,9 +9462,10 @@ function settingButtons(IP)
         for _, m in ipairs({
             { "extension", "Extension",
               "Detects from the fingerprints the VP extension stores beside the video.\n" ..
-              "The first run has to build that store -- slower than FFmpeg, about 45 s\n" ..
-              "for a 15 minute 1080p file, though a tenth of the CPU -- but after it\n" ..
-              "exists, re-detecting at a different sensitivity takes under a millisecond\n" ..
+              "The first run has to build that store, for much the same wall time as\n" ..
+              "FFmpeg but a fraction of the CPU, since it decodes on the machine's\n" ..
+              "video engine rather than across every core. After the store exists,\n" ..
+              "re-detecting at a different sensitivity takes under a millisecond\n" ..
               "instead of another full pass. More controls, and better on fast motion,\n" ..
               "where it can tell a cut from a whip pan. Files already analysed in the\n" ..
               "Compare Videos tab have the store already. The default, and it needs\n" ..

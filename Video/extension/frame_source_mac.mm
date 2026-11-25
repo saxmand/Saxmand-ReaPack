@@ -46,10 +46,11 @@ public:
                 return false;
             }
 
-            // Ask VideoToolbox to hand back luma already scaled down -- far cheaper than
-            // pulling full-res frames across and shrinking them ourselves. Some codecs
-            // refuse the scale, so fall back to native size; the caller resamples from
-            // whatever width and height actually arrive.
+            // A scale request is honoured only if the caller makes one. Fingerprinting
+            // does not: VideoToolbox's scaler is not Media Foundation's, so letting the
+            // decoder shrink the frame made the hashes differ between platforms for the
+            // same file. Asking for 32x32 here also turned out to be *slower* in wall
+            // time than pulling native frames and boxing them ourselves.
             NSDictionary* scaled = @{
                 (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
                 (id)kCVPixelBufferWidthKey:           @(w),
@@ -60,7 +61,7 @@ public:
             };
 
             output = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:track
-                                                               outputSettings:scaled];
+                                                               outputSettings:(w > 0 && h > 0) ? scaled : native];
             output.alwaysCopiesSampleData = NO;
             if (![reader canAddOutput:output]) {
                 output = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:track

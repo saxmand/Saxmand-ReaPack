@@ -55,6 +55,14 @@ public:
 // whatever arrives rather than assuming they got what they asked for.
 //
 // Returns nullptr on failure, with the reason in err when err is non-null.
+// w and h are a *request* for the decoder to scale on the way out. Pass 0 for both to
+// get native frames, which is what fingerprinting wants: letting each platform's decoder
+// do the downscale made the fingerprints platform-specific, because VideoToolbox's
+// scaler and Media Foundation's are not the same filter -- 6.7 bits of mean Hamming
+// difference on the same file, where the matcher treats 4 as a confident match. Scaling
+// in our own code instead makes the two bit-identical, and measured faster on macOS
+// besides. A decoder may still decline and hand back native frames, so a consumer must
+// cope with any size and stride regardless.
 FrameSource* frameSourceOpen(const char* path, int w, int h, std::string* err);
 
 // Where the ffmpeg binary is, for the platforms that decode through it. Ignored on

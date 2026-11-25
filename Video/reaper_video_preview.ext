@@ -1,6 +1,6 @@
 -- @description Video Preview extension
 -- @author Saxmand
--- @version 1.2.1
+-- @version 1.3.0
 -- @about
 --   # Video Preview extension
 --
@@ -23,8 +23,10 @@
 --   thumbnails, but the Compare Videos tab is unavailable and cut detection has to
 --   re-read the whole file on every run.
 --
---   macOS decodes in-process through AVFoundation, which needs nothing installed and
---   fingerprints a file using about a tenth of the CPU a full decode would.
+--   macOS decodes in-process through AVFoundation, which needs nothing installed. Both
+--   platforms decode on the machine's video engine rather than across every core, so
+--   fingerprinting costs a fraction of the CPU a software decode does - measured at a
+--   sixth of FFmpeg's on a minute of 1440x1080, for much the same wall time.
 --
 --   Windows decodes through Media Foundation, which is part of Windows, so nothing has
 --   to be installed there either. What Media Foundation cannot read is ProRes and
@@ -32,8 +34,9 @@
 --   ffmpeg binary if one is available, and the script hands over its path.
 --
 --   The fingerprints, the cut detector and the matcher are the same code on both
---   platforms, so the results are identical and a store built on one machine can be
---   read on the other.
+--   platforms, and the frames they work from are scaled by that same code rather than
+--   by each platform's decoder, so the results are identical to the bit and a store
+--   built on one machine can be compared with one built on the other.
 --
 --   macOS: universal binary, Apple Silicon and Intel. Needs macOS 11 on Apple Silicon,
 --   10.15 on Intel.
@@ -47,6 +50,25 @@
 --   [darwin] reaper_video_preview.dylib
 --   [win64] reaper_video_preview-x64.dll
 -- @changelog
+--   + Fixed: the same file fingerprinted differently on macOS and on Windows, so cut
+--     detection disagreed between them and a store built on one machine could not be
+--     compared with one built on the other. Each platform had been letting its own
+--     decoder shrink the frame, and VideoToolbox's scaler is not Media Foundation's:
+--     measured on one file, 6.7 bits of mean Hamming difference between the two, where
+--     the matcher treats 4 bits as a confident match, and only 1.7% of frames hashing
+--     alike. Frames are now decoded at native size and scaled by the extension's own
+--     code on every platform, which makes the fingerprints bit-identical - measured at
+--     0 bits across all 1543 frames of a file decoded two independent ways - and is
+--     also faster on macOS, 1.1 s against 2.4 s for a minute of 1440x1080.
+--   + Fixed: on Windows the bottom rows of every frame were fingerprinted from the
+--     padding a codec adds to reach whole macroblocks - a 1440x1080 file decodes as
+--     1440x1088 - because the crop the format declares was ignored.
+--   + Fixed: the ffmpeg fallback asked for "gray", which puts a scaler in the way that
+--     expands video range to full range and clips both ends, moving hash bits. It now
+--     takes the luma plane as the decoder produced it.
+--   + Video fingerprint stores from before this change are read as stale and rebuilt,
+--     since their numbers cannot be compared with new ones. Audio stores are unaffected.
+--   + The diagnostics report no longer claims Windows decodes through ffmpeg.
 --   + Fixed: cut detection on Windows found fewer cuts than macOS and put most of them
 --     in the wrong place. Every Windows store was labelled 25 fps whatever the file
 --     was, because the frame rate was read back off the output format rather than the

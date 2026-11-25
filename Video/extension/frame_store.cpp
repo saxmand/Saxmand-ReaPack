@@ -46,8 +46,11 @@
 // Decode target.  32x32 is far more than the 16x16 grid and 9x8 hash need, which keeps
 // the resample cheap while leaving headroom if the fingerprint grows.  Square on purpose:
 // both versions get normalised identically, so the comparison is aspect-agnostic.
-static const int ANALYZE_W = 32;
-static const int ANALYZE_H = 32;
+// Analysis decodes at native size and does its own downscaling -- see frameSourceOpen.
+// These are no longer a request to the decoder, only a record of what the fingerprint
+// is derived to; the grid and the 9x8 hash come straight from the native frame.
+static const int ANALYZE_W = 0;
+static const int ANALYZE_H = 0;
 static const int GRID      = FS_GRID;
 static const int GRID_SZ   = FS_GRID_SZ;
 
@@ -152,6 +155,9 @@ static bool storeIsFresh(const std::string& storePath, const std::string& srcPat
     uint64_t sz = 0; int64_t mt = 0;
     if (!vpStat(srcPath, &sz, &mt)) return false;
     if (h.srcSize != (int64_t)sz || h.srcMtime != mt) return false;
+    // A video store from an older fingerprint chain describes the same file with
+    // different numbers, so it has to be rebuilt rather than reused.
+    if ((h.flags & FS_FLAG_AUDIO) == 0 && h.reserved != FS_VIDEO_CHAIN) return false;
     if (out) *out = h;
     return true;
 }
@@ -256,6 +262,7 @@ static void analyzeWorker(AnalyzeJob* job, std::string srcPath, std::string stor
     hdr.duration   = duration;
     hdr.srcSize    = srcSize;
     hdr.srcMtime   = srcMtime;
+    hdr.reserved   = FS_VIDEO_CHAIN;
 
     // Write to a sibling temp file and rename, so an interrupted analysis can never
     // leave a half-written store that later looks valid. The name carries the job,

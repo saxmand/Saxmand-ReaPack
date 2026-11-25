@@ -32,6 +32,16 @@ static const uint32_t FS_FLAG_AUDIO = 1u;
 // nothing beside the hashes, and it means a waveform costs no second decode pass.
 static const uint32_t FS_FLAG_PEAKS = 2u;
 
+// Which fingerprint chain a VIDEO store was built with, carried in the header's
+// `reserved` field. Bumping it makes older stores read as stale and rebuild, which is
+// necessary whenever the pixels behind a hash change: a store from a different chain is
+// not wrong in itself, it simply cannot be compared with one from this chain. Audio
+// stores do not use it -- their fingerprints are untouched by video-side changes.
+//   1  decode at native size and downscale in our own code, identically on every
+//      platform. Before this, each platform let its own decoder scale, which put 6.7
+//      bits of mean Hamming between the same file analysed on macOS and on Windows.
+static const uint32_t FS_VIDEO_CHAIN = 1u;
+
 #pragma pack(push, 1)
 struct FSHeader {
     char     magic[8];
@@ -42,7 +52,7 @@ struct FSHeader {
     int64_t  srcSize;
     int64_t  srcMtime;
     uint32_t flags;
-    uint32_t reserved;
+    uint32_t reserved;    // video stores: FS_VIDEO_CHAIN
 };
 #pragma pack(pop)
 
