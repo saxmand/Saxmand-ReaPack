@@ -26,7 +26,19 @@
 #endif
 
 const uint64_t CACHE_BUDGET_BYTES = 256ull * 1024ull * 1024ull;
-const char*    CACHE_PREFIX       = "vp2_";
+// Bumped whenever a fix changes which picture a given time resolves to. The cache is
+// content-addressed by path, time and size and nothing else, so without this a frame
+// written by a build that picked the wrong frame is handed straight back by the build
+// that fixed it -- which is exactly what happened: thumbnails stayed wrong after the
+// seek fix because they were never decoded again.
+//   vp2_  up to 1.3.1: Windows seeks returned the preceding keyframe, and coded
+//         padding was included in the picture
+const char*    CACHE_PREFIX       = "vp3_";
+
+// Retired prefixes, swept on startup. Without this they are orphaned: eviction only
+// ever looks at the current prefix, so the old files would sit in the temporary folder
+// for good -- and this cache has already filled a disk once.
+static const char* CACHE_RETIRED[] = { "vp2_" };
 
 uint32_t hashPath(const char* s) {
     uint32_t h = 2166136261u;
@@ -116,9 +128,9 @@ namespace {
 struct Found { std::string path; uint64_t bytes; double mtime; };
 
 // Every cache file in the temporary folder, with its size and age.
-void listCacheFiles(std::vector<Found>* out) {
+void listCacheFiles(const char* prefixIn, std::vector<Found>* out) {
     const std::string dir    = cacheDir();
-    const std::string prefix = CACHE_PREFIX;
+    const std::string prefix = prefixIn;
 #ifdef _WIN32
     std::string pat = dir + prefix + "*.jpg";
     int need = MultiByteToWideChar(CP_UTF8, 0, pat.c_str(), (int)pat.size(), nullptr, 0);
@@ -160,8 +172,16 @@ void listCacheFiles(std::vector<Found>* out) {
 
 void cacheAdoptExisting() {
     std::thread([]{
+        // Retired generations go first, so their space is freed before the budget is
+        // applied to what is still valid.
+        for (const char* old : CACHE_RETIRED) {
+            std::vector<Found> stale;
+            listCacheFiles(old, &stale);
+            for (const Found& f : stale) vpRemove(f.path);
+        }
+
         std::vector<Found> found;
-        listCacheFiles(&found);
+        listCacheFiles(CACHE_PREFIX, &found);
         // Oldest adopted first so it sits at the cold end and is evicted first.
         std::sort(found.begin(), found.end(),
                   [](const Found& a, const Found& b) { return a.mtime < b.mtime; });

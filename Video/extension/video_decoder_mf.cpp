@@ -237,6 +237,7 @@ private:
 
         const LONGLONG target = (LONGLONG)(timeSec * 1.0e7);
         IMFSample* best = nullptr;
+        LONGLONG   bestTs = 0;
         // Bounded only to keep a decoder that reports non-advancing timestamps from
         // spinning; a sane keyframe interval ends the loop long before this.
         for (int tries = 0; tries < 900; tries++) {
@@ -254,11 +255,12 @@ private:
             if (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) readType();
             if (!smp) continue;
 
-            // See frame_pick.h for the rule and why it is floor, not nearest.
-            const FramePick pick = framePick((long long)ts, (long long)target, best != nullptr);
+            // See frame_pick.h for the rule and why it is nearest.
+            const FramePick pick = framePick((long long)ts, (long long)target,
+                                             (long long)bestTs, best != nullptr);
             if (pick == FramePick::Overshot) { smp->Release(); break; }
             if (best) best->Release();
-            best = smp;
+            best = smp; bestTs = ts;
             if (pick == FramePick::Take) break;
         }
         if (!best) return false;

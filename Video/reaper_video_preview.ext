@@ -1,6 +1,6 @@
 -- @description Video Preview extension
 -- @author Saxmand
--- @version 1.3.1
+-- @version 1.3.2
 -- @about
 --   # Video Preview extension
 --
@@ -50,6 +50,18 @@
 --   [darwin] reaper_video_preview.dylib
 --   [win64] reaper_video_preview-x64.dll
 -- @changelog
+--   + Fixed: thumbnails on Windows were a frame early. A frame is now chosen as the
+--     nearest one to the time asked for, rather than the one whose own interval covers
+--     it. A cut's time arrives rounded to the millisecond from the fingerprint store
+--     while the decoder reports its own, so the two disagree slightly and in no fixed
+--     direction; nearest absorbs that, where covering the time does not and lands a
+--     frame early whenever the decoder's clock reads the later of the two.
+--   + Fixed: cached frames from an earlier version were served instead of being decoded
+--     again, so the seek fix in 1.3.1 changed nothing on screen for anyone who had
+--     already viewed a file. The cache is keyed by path, time and size and nothing
+--     else, so it now carries a generation that is bumped whenever a fix changes which
+--     frame a time resolves to. Retired generations are deleted on startup rather than
+--     left in the temporary folder.
 --   + Fixed: every thumbnail and preview frame on Windows came from the wrong moment.
 --     Seeking lands on the nearest keyframe at or before the time asked for and stops
 --     there; the code took that frame without looking at its timestamp, on the mistaken

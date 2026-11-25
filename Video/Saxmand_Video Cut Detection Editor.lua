@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.4.2
+-- @version 0.4.3
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,12 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Fixed: cut thumbnails written by an earlier version were kept and shown, so a fix
+--     to which frame gets decoded changed nothing on screen. They are named after their
+--     time in the file and nothing in the name said which build made them; the folder
+--     now records that, and thumbnails from an older one are rebuilt once. Needs the
+--     Video Preview extension at 1.3.2, which does the same for its own frame cache and
+--     picks the frame nearest the time asked for.
 --   + Fixed: a console window flashed over REAPER on Windows. The Ollama check ran
 --     through a shell, which Windows gives a window, and it ran as soon as a cut was
 --     selected whether or not Ollama was wanted at all - so it turned up for people who
@@ -1270,6 +1276,33 @@ local function createThumbnails(filePath, pngPath, itemStart, overwrite, backgro
 end
 
 
+-- Cut thumbnails are PNGs named after their time in the file, and nothing in the name
+-- says which build decoded them -- so a thumbnail written by a version that picked the
+-- wrong frame is trusted for good, and a fix to the decoder changes nothing on screen.
+-- A marker in the folder records which generation wrote them; when it does not match,
+-- the existing files are regenerated once instead of believed.
+local THUMB_GENERATION = "2"
+-- 2  (script 0.4.3 / extension 1.3.2) frames are chosen nearest to the time asked for,
+--    and on Windows a seek no longer returns the keyframe before it
+-- 1  everything earlier
+
+local thumbGenHandled = {}
+
+local function thumbnailsAreStale(directory)
+    if thumbGenHandled[directory] then return false end
+    thumbGenHandled[directory] = true        -- once per folder per session
+
+    local marker = directory .. "thumbnail_generation.txt"
+    local f = io.open(marker, "r")
+    local have = f and f:read("*l") or nil
+    if f then f:close() end
+    if have == THUMB_GENERATION then return false end
+
+    local w = io.open(marker, "w")
+    if w then w:write(THUMB_GENERATION) w:close() end
+    return true
+end
+
 function generateThumbnailsForCuts(IP, onlySpecific, secondary)
     local directory = IP.thumbnailPath
     local fileName = IP.fileName
@@ -1286,6 +1319,10 @@ function generateThumbnailsForCuts(IP, onlySpecific, secondary)
     if not secondary then 
         generationQueue = {} -- Clear previous queue
     end
+
+    -- Set once per folder per session, and then every thumbnail is rebuilt rather than
+    -- reused, however many of them already exist.
+    local stale = thumbnailsAreStale(directory)
     
     for _, c in ipairs(IP.cuts_making_threashold) do 
         
@@ -1303,7 +1340,7 @@ function generateThumbnailsForCuts(IP, onlySpecific, secondary)
                       cut.time_frame_before = oneFrameEarlier
                  end
                  
-                 if not reaper.file_exists(cut.pngPath) then 
+                 if stale or not reaper.file_exists(cut.pngPath) then 
                      -- Add tasks to queue instead of processing immediately
                      table.insert(generationQueue, {
                         filePath = IP.filePath, 
@@ -1314,7 +1351,7 @@ function generateThumbnailsForCuts(IP, onlySpecific, secondary)
                  end
                  if not onlySpecific then 
                     
-                    if not reaper.file_exists(cut.pngPath_frame_before) then 
+                    if stale or not reaper.file_exists(cut.pngPath_frame_before) then 
                        table.insert(generationQueue, {
                           filePath = IP.filePath, 
                           pngPath = cut.pngPath_frame_before, 
