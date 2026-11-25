@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="50615756f0b9a03c99819b0c3c4f9cd7205f32cc" name="Saxmand ReaPack">
+<index version="1" commit="fa8c71068d182e386ccb3c4eacd842dcecf514d4" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -12549,6 +12549,58 @@
         <source platform="darwin" file="reaper_video_preview.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/50615756f0b9a03c99819b0c3c4f9cd7205f32cc/Video/reaper_video_preview.dylib</source>
         <source platform="win64" file="reaper_video_preview-x64.dll">https://github.com/saxmand/Saxmand-ReaPack/raw/50615756f0b9a03c99819b0c3c4f9cd7205f32cc/Video/reaper_video_preview-x64.dll</source>
       </version>
+      <version name="1.3.1" author="Saxmand" time="2026-11-25T16:13:51Z">
+        <changelog><![CDATA[+ Fixed: every thumbnail and preview frame on Windows came from the wrong moment.
+  Seeking lands on the nearest keyframe at or before the time asked for and stops
+  there; the code took that frame without looking at its timestamp, on the mistaken
+  belief that Media Foundation decodes on to the requested time by itself. So each
+  picture was early by anything from nothing to a whole group of pictures, varying
+  from one to the next. Frames after the keyframe are now walked to the one
+  actually on screen at that moment, which is the frame AVFoundation returns on
+  macOS as well.
++ Fixed: Windows thumbnails carried the padding a codec adds to reach whole
+  macroblocks, and were squashed by that much - the same cause as the fingerprint
+  fix in 1.3.0, in the separate code path that serves single frames.
++ Fixed: a bottom-up frame had its row direction applied twice, once from the
+  buffer's own negative pitch and again from the format's flag, which read past the
+  end of the buffer.
++ Fixed: the same file fingerprinted differently on macOS and on Windows, so cut
+  detection disagreed between them and a store built on one machine could not be
+  compared with one built on the other. Each platform had been letting its own
+  decoder shrink the frame, and VideoToolbox's scaler is not Media Foundation's:
+  measured on one file, 6.7 bits of mean Hamming difference between the two, where
+  the matcher treats 4 bits as a confident match, and only 1.7% of frames hashing
+  alike. Frames are now decoded at native size and scaled by the extension's own
+  code on every platform, which makes the fingerprints bit-identical - measured at
+  0 bits across all 1543 frames of a file decoded two independent ways - and is
+  also faster on macOS, 1.1 s against 2.4 s for a minute of 1440x1080.
++ Fixed: on Windows the bottom rows of every frame were fingerprinted from the
+  padding a codec adds to reach whole macroblocks - a 1440x1080 file decodes as
+  1440x1088 - because the crop the format declares was ignored.
++ Fixed: the ffmpeg fallback asked for "gray", which puts a scaler in the way that
+  expands video range to full range and clips both ends, moving hash bits. It now
+  takes the luma plane as the decoder produced it.
++ Video fingerprint stores from before this change are read as stale and rebuilt,
+  since their numbers cannot be compared with new ones. Audio stores are unaffected.
++ The diagnostics report no longer claims Windows decodes through ffmpeg.
++ Fixed: cut detection on Windows found fewer cuts than macOS and put most of them
+  in the wrong place. Every Windows store was labelled 25 fps whatever the file
+  was, because the frame rate was read back off the output format rather than the
+  file's, and cut positions were worked out by dividing a frame number by it. So on
+  anything that was not 25 fps every cut moved, further the later it sat, and the
+  ones pushed past the end of the analysed stretch were dropped.
++ Cut positions now come from the timestamp each frame carries instead of being
+  divided out of a frame rate, which is also correct for variable frame rate files
+  on either platform. The store's frame rate is measured from those timestamps
+  rather than taken on trust from the decoder.
++ Fixed: a padded or bottom-up frame buffer on Windows was read as though its rows
+  were packed top-down, which fingerprinted rows of the wrong pixels and, for a
+  bottom-up buffer, read past the end of the buffer.
++ VP_StoreInfo reports a store's frame count, declared and measured frame rate,
+  timestamp spacing and first hashes, for comparing one machine against another.]]></changelog>
+        <source platform="darwin" file="reaper_video_preview.dylib">https://github.com/saxmand/Saxmand-ReaPack/raw/fa8c71068d182e386ccb3c4eacd842dcecf514d4/Video/reaper_video_preview.dylib</source>
+        <source platform="win64" file="reaper_video_preview-x64.dll">https://github.com/saxmand/Saxmand-ReaPack/raw/fa8c71068d182e386ccb3c4eacd842dcecf514d4/Video/reaper_video_preview-x64.dll</source>
+      </version>
     </reapack>
     <reapack name="Saxmand_Add subtitles to video from srt file using video processor.lua" type="script" desc="Add subtitles to video from srt file using video processor">
       <version name="1.0.0" author="saxmand" time="2025-04-19T04:49:09Z">
@@ -12942,6 +12994,40 @@ Cut descriptions
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/50615756f0b9a03c99819b0c3c4f9cd7205f32cc/Video/Helpers/json.lua</source>
         <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/50615756f0b9a03c99819b0c3c4f9cd7205f32cc/Video/Helpers/undo_redo.lua</source>
         <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/50615756f0b9a03c99819b0c3c4f9cd7205f32cc/Video/Helpers/hosi_exec_hidden.vbs</source>
+      </version>
+      <version name="0.4.2" author="saxmand" time="2026-11-25T16:13:51Z">
+        <changelog><![CDATA[+ Fixed: a console window flashed over REAPER on Windows. The Ollama check ran
+  through a shell, which Windows gives a window, and it ran as soon as a cut was
+  selected whether or not Ollama was wanted at all - so it turned up for people who
+  had nothing to do with it. Everything that runs a command now goes through
+  REAPER's hidden process call, as the thumbnail path already did. The terminal
+  that opens while pulling an Ollama model is still meant to be seen: it is the
+  only progress a multi-gigabyte download has.
++ Fixed: removing an Ollama model did nothing on Windows. The request body was
+  wrapped in single quotes, which cmd.exe does not treat as quoting, so Ollama was
+  sent them literally and rejected the request.
++ Needs the Video Preview extension at 1.3.1, which fixes thumbnails and preview
+  frames on Windows coming from the wrong moment in the file.
++ Needs the Video Preview extension at 1.3.0, which fixes the same file
+  fingerprinting differently on macOS and on Windows -- the remaining reason cut
+  detection disagreed between them once frame timing was sorted out. Fingerprint
+  stores built before it rebuild themselves on first use; nothing to do by hand.
++ Fixed: cut detection on Windows found fewer cuts than macOS and put most of them
+  in the wrong place. A cut's position was worked out by dividing its frame number
+  by the frame rate recorded in the fingerprint store, and on Windows that rate was
+  always 25 whatever the file was. Positions now come from the timestamp each frame
+  carries, which also makes them right for variable frame rate files. Needs the
+  Video Preview extension at 1.2.1 or newer; older ones fall back to the division.
++ Settings page text wraps inside its column instead of running into the next one.
++ "Frame diagnostics" also reports the fingerprint store's frame count, measured
+  frame rate and frame timing, so the same file can be compared between machines.
++ Fixed: the settings page told Windows users the extension was macOS only, which
+  stopped being true when the Windows build shipped.]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/fa8c71068d182e386ccb3c4eacd842dcecf514d4/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/ffmpeg.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/fa8c71068d182e386ccb3c4eacd842dcecf514d4/Video/Helpers/ffmpeg.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/fa8c71068d182e386ccb3c4eacd842dcecf514d4/Video/Helpers/json.lua</source>
+        <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/fa8c71068d182e386ccb3c4eacd842dcecf514d4/Video/Helpers/undo_redo.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/fa8c71068d182e386ccb3c4eacd842dcecf514d4/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
