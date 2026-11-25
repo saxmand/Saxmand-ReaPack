@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.5.1
+-- @version 0.6.0
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -10,7 +10,7 @@
 --   Detects the cuts in a video, lets you name and colour them, and turns them into
 --   markers, regions, take markers, thumbnails or item splits in your session.
 --
---   Cuts are found either by the "Video Preview extension" package (same repository)
+--   Cuts are found either by the "Video Cut Detection Editor extension" package (same
 --   or by FFmpeg. The extension is the default and needs nothing installed: it decodes
 --   through AVFoundation on macOS and Media Foundation on Windows. It also reads preview
 --   frames and thumbnails, and is what the Compare Videos tab runs on. Without it, set
@@ -24,6 +24,16 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Keyboard navigation is off. With it on, Tab and the arrow keys moved focus between
+--     buttons and space activated whichever had it, so keys this app binds were being
+--     swallowed by whatever happened to be focused. It is now cleared every frame, so
+--     REAPER's own preference cannot put it back. Typing in a field is unaffected.
+--   + Opening the Settings tab stops playback. Every transport control is on the other
+--     two tabs, so sound that carried on here could not be stopped without navigating
+--     back to find the button.
+--   + The extension is now called "Video Cut Detection Editor extension" in ReaPack,
+--     rather than "Video Preview extension" - the same package under a name that says
+--     what it belongs to. Update it alongside this script.
 --   + Settings: a "Max" slider for how much disk the cached frames may use, beside the
 --     figure for what they currently occupy. Needs the Video Preview extension at
 --     1.5.0, which also brings the read-ahead that Windows previews were missing.
@@ -693,7 +703,7 @@ function ensureFfmpegPath()
     return ffmpeg_available
 end
 
--- video_preview extension: fast hardware-accelerated frame extraction via AVFoundation.
+-- The extension: hardware-accelerated frame extraction, AVFoundation or Media Foundation.
 -- Falls back to ffmpeg subprocess when the extension is not loaded.
 local vp_available = reaper.VP_Open ~= nil
 local vp_handles = {}      -- [filePath] = handle for the advancing playback head (tB)
@@ -1103,7 +1113,7 @@ function get_cut_information(IP, detection_threshold)
         -- refresh guard rebuilds every item's properties on every frame. It has to go.
         analyseStartTime, analyseEndTime = nil, nil
         analysing = false
-        reaper.MB("Cut detection needs either the video_preview extension or FFmpeg, and " ..
+        reaper.MB("Cut detection needs either the Video Cut Detection Editor extension or FFmpeg, and " ..
                   "neither was found.\n\n" ..
                   "The extension detects cuts and reads frames with nothing to install: " ..
                   "AVFoundation on macOS, Media Foundation on Windows. Otherwise, set an " ..
@@ -1520,7 +1530,7 @@ function processDescriptionQueue(IP)
         -- only if it cannot be used.
         if not vpExtractToPng(task.filePath, framePng, describeTime) then
             if not ffmpeg_path then
-                abortWithError("needs either the video_preview extension or FFmpeg to read a frame")
+                abortWithError("needs either the Video Cut Detection Editor extension or FFmpeg to read a frame")
                 return
             end
             local ffmpegExec = ffmpeg_path:gsub('"', '')
@@ -1842,7 +1852,7 @@ function startConform(IP1, IP2, keepResult)
     conformIP1, conformIP2 = IP1, IP2
 
     if not vp_available or not reaper.VP_Analyze then
-        conformError = "video_preview extension not loaded (needs VP_Analyze) — run extension/build.sh and restart REAPER."
+        conformError = "Video Cut Detection Editor extension not loaded (needs VP_Analyze) — install it from ReaPack and restart REAPER."
         return
     end
     conformStoreA, conformStoreB = conformStorePath(IP1), conformStorePath(IP2)
@@ -4533,15 +4543,15 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
                                                 visLeft + viewW - 2, bandY + bandH - 2, col, 4)
             -- Name the actual obstacle. This said "select a video for both sides"
             -- whatever the reason, so someone without the extension was sent looking
-            -- for a selection problem they did not have. On Windows there is nothing
-            -- to install: the extension is built on AVFoundation.
+            -- for a selection problem they did not have. The label used to tell Windows
+            -- users this could never work for them, the extension having been built on
+            -- AVFoundation; it decodes through Media Foundation there now, so the only
+            -- thing missing is the package itself, on either platform.
             local label
             if ready then
                 label = "Compare"
             elseif not (vp_available and reaper.VP_Analyze) then
-                label = is_windows
-                        and "not available on Windows - needs the macOS video_preview extension"
-                        or  "needs the video_preview extension"
+                label = "needs the Video Cut Detection Editor extension"
             elseif conformStatus then
                 label = "analysing..."
             else
@@ -9541,14 +9551,14 @@ function settingButtons(IP)
     if reaper.VP_Version then
         reaper.ImGui_TextColored(ctx, 0xFFFFFF66, " -  Extension " .. reaper.VP_Version())
         setToolTipFunc("The two are separate ReaPack packages: \"Video Cut Detection Editor\"\n" ..
-                       "and \"Video Preview extension\". Update both.")
+                       "and \"Video Cut Detection Editor extension\". Update both.")
     elseif vp_available then
         reaper.ImGui_TextColored(ctx, 0xFFAA44FF, " -  Extension too old to report its version")
-        setToolTipFunc("Update the \"Video Preview extension\" package in ReaPack,\n" ..
+        setToolTipFunc("Update the \"Video Cut Detection Editor extension\" package in ReaPack,\n" ..
                        "then restart REAPER.")
     else
         reaper.ImGui_TextColored(ctx, 0xFFAA44FF, " -  Extension not installed")
-        setToolTipFunc("Install the \"Video Preview extension\" package in ReaPack for\n" ..
+        setToolTipFunc("Install the \"Video Cut Detection Editor extension\" package in ReaPack for\n" ..
                        "cut detection without FFmpeg, and for the Compare Videos tab.\n" ..
                        "Restart REAPER afterwards.")
     end
@@ -9614,10 +9624,11 @@ function settingButtons(IP)
         -- and nothing else. This used to tell Windows users the extension was macOS
         -- only and always would be, which the Windows build has made untrue.
         reaper.ImGui_TextColored(ctx, colorGrey, "Cut detection method")
-        settingsInfoText("FFmpeg. Install the Video Preview extension for the faster detector.")
-        setToolTipFunc("The Video Preview extension package, in this same repository, detects\n" ..
-                       "cuts without FFmpeg and is what the Compare Videos tab runs on.\n" ..
-                       "There are macOS and Windows builds. Restart REAPER after installing.")
+        settingsInfoText("FFmpeg. Install the Video Cut Detection Editor extension for the faster detector.")
+        setToolTipFunc("The \"Video Cut Detection Editor extension\" package, in this same\n" ..
+                       "repository, detects cuts without FFmpeg and is what the Compare\n" ..
+                       "Videos tab runs on. There are macOS and Windows builds.\n" ..
+                       "Restart REAPER after installing.")
         reaper.ImGui_NewLine(ctx)
     end
 
@@ -9814,7 +9825,7 @@ function settingButtons(IP)
                        "Leave it off to keep previews instant between sessions;\n" ..
                        "turn it on if the temporary folder needs to stay small.")
     else
-        settingsInfoText("Needs the Video Preview extension.")
+        settingsInfoText("Needs the Video Cut Detection Editor extension.")
     end
     reaper.ImGui_EndGroup(ctx)
     
@@ -10317,6 +10328,26 @@ local function loop()
     
     
     reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigVar_KeyRepeatDelay(), 0.5)
+
+    -- Keyboard navigation off, and set every frame rather than once at startup.
+    --
+    -- With it on, Tab and the arrow keys move focus between widgets and space activates
+    -- whichever holds it, so the keys this app binds -- stepping a frame, playing,
+    -- nudging a cut -- are swallowed by whatever button happens to be focused. Dear
+    -- ImGui enables it by default and REAPER has its own preference that can put it
+    -- back, which is why this is not a one-off: one call a frame costs nothing and
+    -- nothing downstream can quietly undo it.
+    --
+    -- Typing is unaffected. NavEnableKeyboard is navigation only, so an input field
+    -- still takes text; ConfigFlags_NoKeyboard is the one that would break that, which
+    -- is why it is not the flag used here. An earlier attempt at this sat commented out
+    -- below for good reason: it passed the flag itself as the config variable, so it
+    -- was writing 0 into whatever variable happens to share that number.
+    local cfgFlags = ImGui.GetConfigVar(ctx, ImGui.ConfigVar_Flags)
+    if (cfgFlags & ImGui.ConfigFlags_NavEnableKeyboard) ~= 0 then
+        ImGui.SetConfigVar(ctx, ImGui.ConfigVar_Flags,
+                           cfgFlags & ~ImGui.ConfigFlags_NavEnableKeyboard)
+    end
     
     buttonSize = 25
 
@@ -10333,7 +10364,6 @@ local function loop()
         if not frames_per_second or frames_per_second == 0 then frames_per_second = 25 end
  
         --reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigVar_MacOSXBehaviors(), 1) 
-        --reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigFlags_NavEnableKeyboard(), 0)
 
         local imageW = ((winW - 8 * 3) / 2) / (16 / 9) -- settings.windowSize --
 
@@ -10589,12 +10619,24 @@ local function loop()
             reaper.ImGui_Separator(ctx)
         end
         
+        -- Tab 3 is Settings.
+        local TAB_SETTINGS = 3
+
         function updateTabSelection(number)
             if last_tabSelection then 
                 settings.tabSelection = number
                 saveSettings()
                 if last_tabSelection ~= number then
                     update_cut_data = true
+
+                    -- Arriving at the settings page stops whatever this app was
+                    -- playing. Every transport control lives on the other two tabs, so
+                    -- sound that carries on here cannot be stopped without navigating
+                    -- back to find the button -- and nothing on this page has anything
+                    -- to do with playback. conformHalt is the same stop the button
+                    -- performs, so in sync mode it carries the project transport with
+                    -- it, and it leaves alone a playback that REAPER itself started.
+                    if number == TAB_SETTINGS then conformHalt() end
                 end
             end
             last_tabSelection = number 

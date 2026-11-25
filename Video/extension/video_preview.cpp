@@ -50,7 +50,7 @@ static int (*plugin_register)(const char*, void*) = nullptr;
 
 // Keep in step with @version in Video/reaper_video_preview.ext -- the script shows this
 // on its Settings page, so a stale value here is a wrong answer to "what am I running".
-#define VP_VERSION_STR "1.5.0"
+#define VP_VERSION_STR "1.6.0"
 
 // -----------------------------------------------------------------------
 // Registry
@@ -382,7 +382,13 @@ static void unregisterFuncs(const VPFunc* fns, int count) {
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
     REAPER_PLUGIN_HINSTANCE, reaper_plugin_info_t* rec)
 {
+    // Set only once the API names are ours. Without it, a copy that bowed out because
+    // another was already loaded would still run the unregister path on unload and
+    // strip the working copy's functions out from under it.
+    static bool registered = false;
+
     if (!rec) {
+        if (!registered) return 0;
         if (plugin_register) {
             unregisterFuncs(kFuncs, kNumFuncs);
             unregisterFuncs(g_frameStoreFuncs, g_frameStoreFuncCount);
@@ -400,6 +406,15 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
     plugin_register = rec->Register;
     if (!plugin_register) return 0;
 
+    // Another copy of this extension already owns the API names. That happens when an
+    // older build is still in UserPlugins -- installed by hand, or left behind by an
+    // update that could not remove the file it replaced. Registering over it only half
+    // takes, because plugin_register refuses a name that is taken, and the real damage
+    // comes later: unloading would unregister those names and leave the copy that is
+    // actually working without them. So stand down instead, and let the one already
+    // there do the job.
+    if (rec->GetFunc && rec->GetFunc("VP_Analyze")) return 0;
+
     // Silent on success. Whether the functions arrived is already observable from
     // ReaScript -- the editor checks for VP_Analyze and says so in its own UI -- so a
     // console line on every REAPER launch only trains people to ignore the console.
@@ -411,5 +426,6 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
     registerFuncs(g_frameStoreFuncs, g_frameStoreFuncCount);
     registerFuncs(g_matcherFuncs, g_matcherFuncCount);
     registerFuncs(g_audioStoreFuncs, g_audioStoreFuncCount);
+    registered = true;
     return 1;
 }

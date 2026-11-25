@@ -1,12 +1,16 @@
--- @description Video Preview extension
+-- @description Video Cut Detection Editor extension
 -- @author Saxmand
--- @version 1.5.0
+-- @version 1.6.0
 -- @about
---   # Video Preview extension
+--   # Video Cut Detection Editor extension
 --
 --   Reads video frames and fingerprints video and audio for the "Video Cut Detection
 --   Editor" script package (same repository) - install both, and restart REAPER
 --   afterwards.
+--
+--   Named "Video Preview extension" until 1.6.0. Updating replaces the old binary; if
+--   a reaper_video_preview file is still in UserPlugins it was put there by hand and
+--   can be deleted.
 --
 --   What it adds to that script:
 --
@@ -50,9 +54,19 @@
 --
 --   Source: Video/extension in this repository.
 -- @provides
---   [darwin] reaper_video_preview.dylib
---   [win64] reaper_video_preview-x64.dll
+--   [darwin] reaper_video_cut_detection_editor.dylib
+--   [win64] reaper_video_cut_detection_editor-x64.dll
 -- @changelog
+--   + Renamed from "Video Preview extension" to match the script it serves, since
+--     nothing in the old name said where it came from. Same package, so updating
+--     replaces the binary; the file in UserPlugins is now
+--     reaper_video_cut_detection_editor. The ReaScript functions keep their VP_ prefix,
+--     so no script that uses them needs changing.
+--   + A second copy of the extension now stands down instead of registering over the
+--     one already loaded. Doing so only half-took, since a function name that is taken
+--     is refused, and unloading would then have stripped those names from the copy that
+--     was working. Only reachable with a hand-installed leftover, but that is exactly
+--     what a rename invites.
 --   + Windows reads ahead now, as macOS already did, so playback and scrubbing no longer
 --     decode each frame only once it is wanted. Media Foundation has no asynchronous
 --     batch decode, so this is a worker thread with a reader of its own, decoding the

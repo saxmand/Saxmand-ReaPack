@@ -24,7 +24,7 @@ command -v "$CXX" >/dev/null 2>&1 || {
 # -static and friends so the result needs no mingw runtime DLLs beside it: a user
 # installing through ReaPack gets one file, not four.
 "$CXX" -std=c++17 -O2 -shared -DNDEBUG \
-  -o "$PACKAGE/reaper_video_preview-x64.dll" \
+  -o "$PACKAGE/reaper_video_cut_detection_editor-x64.dll" \
   video_preview.cpp \
   video_decoder_win.cpp \
   frame_source_win.cpp \
@@ -42,9 +42,9 @@ command -v "$CXX" >/dev/null 2>&1 || {
   -static -static-libgcc -static-libstdc++ \
   -lmfplat -lmfreadwrite -lmfuuid -lwindowscodecs -lole32 -loleaut32 -luser32 -lshell32
 
-x86_64-w64-mingw32-strip -s "$PACKAGE/reaper_video_preview-x64.dll"
-echo "Built $PACKAGE/reaper_video_preview-x64.dll"
-x86_64-w64-mingw32-objdump -p "$PACKAGE/reaper_video_preview-x64.dll" \
+x86_64-w64-mingw32-strip -s "$PACKAGE/reaper_video_cut_detection_editor-x64.dll"
+echo "Built $PACKAGE/reaper_video_cut_detection_editor-x64.dll"
+x86_64-w64-mingw32-objdump -p "$PACKAGE/reaper_video_cut_detection_editor-x64.dll" \
     | grep -q ReaperPluginEntry \
     && echo "  exports ReaperPluginEntry" \
     || { echo "  ERROR: entry point missing" >&2; exit 1; }

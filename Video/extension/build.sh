@@ -19,7 +19,7 @@ clang++ -std=c++17 -O2 -dynamiclib \
   -framework ImageIO \
   -framework Accelerate \
   -framework Foundation \
-  -o "$PACKAGE/reaper_video_preview.dylib" \
+  -o "$PACKAGE/reaper_video_cut_detection_editor.dylib" \
   video_preview.cpp \
   video_decoder_mac.mm \
   frame_source_mac.mm \
@@ -31,5 +31,5 @@ clang++ -std=c++17 -O2 -dynamiclib \
   audio_store.cpp
 
 PLUGINS="$HOME/Library/Application Support/REAPER/UserPlugins"
-cp "$PACKAGE/reaper_video_preview.dylib" "$PLUGINS/"
-echo "Built and installed reaper_video_preview.dylib — restart REAPER"
+cp "$PACKAGE/reaper_video_cut_detection_editor.dylib" "$PLUGINS/"
+echo "Built and installed reaper_video_cut_detection_editor.dylib — restart REAPER"

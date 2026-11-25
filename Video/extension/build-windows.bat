@@ -26,8 +26,8 @@ cl /nologo /O2 /EHsc /LD /std:c++17 /MT /DNDEBUG ^
   frame_store.cpp ^
   matcher.cpp ^
   audio_store.cpp ^
-  /Fobuild\ /Fe:..\reaper_video_preview-x64.dll ^
+  /Fobuild\ /Fe:..\reaper_video_cut_detection_editor-x64.dll ^
   mfplat.lib mfreadwrite.lib mfuuid.lib windowscodecs.lib ole32.lib oleaut32.lib user32.lib shell32.lib || exit /b 1
 
-copy /y ..\reaper_video_preview-x64.dll "%APPDATA%\REAPER\UserPlugins\" || exit /b 1
-echo Installed reaper_video_preview-x64.dll - restart REAPER
+copy /y ..\reaper_video_cut_detection_editor-x64.dll "%APPDATA%\REAPER\UserPlugins\" || exit /b 1
+echo Installed reaper_video_cut_detection_editor-x64.dll - restart REAPER
