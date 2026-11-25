@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.8.1
+-- @version 0.8.2
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,14 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Fixed: on Windows, Ollama was reported as installed but not running on machines
+--     that did not have it, so the page offered to start it and Windows answered with
+--     its own "cannot find ollama". Whether a program exists is now read from the exit
+--     code rather than from whether anything was printed -- "where" announces a miss on
+--     its error output, which counted as output. Starting or pulling now re-checks
+--     first and opens the download page instead if it has gone missing.
+--   + Fixed: showing the "nothing to describe" message raised an error instead of
+--     drawing, having called a helper declared further down the file than itself.
 --   + "Describe cuts" with nothing to describe now says so across the thumbnails for a
 --     couple of seconds, instead of a dialog that has to be dismissed. It also goes on
 --     the next thing you do, whichever comes first.
@@ -1399,11 +1407,17 @@ function drawTransientMessage(x, y, w, h)
     local cx = x + (w - tw) / 2
     local cy = y + (h - th) / 2
     local pad = 10
+    -- Alpha composed here rather than through the withAlpha helper: that one is a local
+    -- declared further down the file, so from up here it resolves as a global and is
+    -- nil at call time. Colours are 0xRRGGBBAA, so the alpha is the low byte.
+    local function fadedTo(col, alpha)
+        return (col // 256) * 256 + math.floor(alpha * fade)
+    end
+
     local dl = reaper.ImGui_GetWindowDrawList(ctx)
     reaper.ImGui_DrawList_AddRectFilled(dl, cx - pad, cy - pad, cx + tw + pad, cy + th + pad,
-                                        withAlpha(0x000000FF, math.floor(0xDD * fade)), 6)
-    reaper.ImGui_DrawList_AddText(dl, cx, cy,
-                                  withAlpha(colorWhite, math.floor(0xFF * fade)), m.text)
+                                        fadedTo(0x000000FF, 0xDD), 6)
+    reaper.ImGui_DrawList_AddText(dl, cx, cy, fadedTo(colorWhite, 0xFF), m.text)
 end
 
 -- Whether the right-hand preview follows the playhead during playback, or stays on the
@@ -6560,16 +6574,43 @@ end
 -- arguments, with no shell redirection -- stderr is simply not captured, which is all
 -- the discarded "2>nul" was ever for.
 function shellRead(cmd, timeoutMs)
+    local _, out = shellExec(cmd, timeoutMs)
+    return out
+end
+
+-- The same, but giving the exit code as well.
+--
+-- Worth having separately: whether a command's error output is folded into what comes
+-- back is not something to rely on, and "where" announces a miss on stderr while
+-- exiting 1. Testing for empty output therefore reads a missing program as a present
+-- one if that text is merged -- which is exactly how Ollama came to be reported as
+-- installed but not running on a machine that did not have it, and how pressing Start
+-- then produced Windows' own "cannot find ollama". The exit code says so plainly.
+--
+-- -1 means the command could not be run at all, which is distinct from a non-zero exit.
+function shellExec(cmd, timeoutMs)
     if not is_windows then
         local h = io.popen(cmd)
-        local out = h and h:read("*a") or ""
-        if h then h:close() end
-        return out
+        if not h then return -1, "" end
+        local out = h:read("*a") or ""
+        local ok, _, code = h:close()
+        return ok and 0 or (code or 1), out
     end
     local raw = reaper.ExecProcess(cmd, timeoutMs or 3000)
-    if not raw then return "" end
+    if not raw then return -1, "" end
     local nl = raw:find("\n")
-    return nl and raw:sub(nl + 1) or ""
+    if not nl then return tonumber(raw) or -1, "" end
+    return tonumber(raw:sub(1, nl - 1)) or -1, raw:sub(nl + 1)
+end
+
+-- Whether Ollama is on this machine at all, as distinct from running.
+function ollamaBinaryFound()
+    if is_windows then
+        local code = shellExec('where ollama', 2000)
+        return code == 0
+    end
+    if reaper.file_exists("/Applications/Ollama.app") then return true end
+    return (shellExec('which ollama', 2000)) == 0
 end
 
 function checkOllamaStatus(timeoutSec)
@@ -6583,17 +6624,10 @@ function checkOllamaStatus(timeoutSec)
                              ' http://' .. host .. '/api/tags', (t + 1) * 1000)
 
     if result == "" then
-        -- Server not responding — check if the binary/app exists
-        local found = false
-        if is_windows then
-            found = shellRead('where ollama', 2000) ~= ""
-        else
-            found = reaper.file_exists("/Applications/Ollama.app")
-            if not found then
-                found = shellRead('which ollama 2>' .. shellNull(), 2000) ~= ""
-            end
-        end
-        ollamaStatus = found and "not_running" or "not_installed"
+        -- Server not responding: installed but idle, or not there at all. The
+        -- difference decides whether the page offers Start or Download, so getting it
+        -- wrong offers to start something that cannot be started.
+        ollamaStatus = ollamaBinaryFound() and "not_running" or "not_installed"
         return
     end
 
@@ -6647,6 +6681,16 @@ function ollamaWhyUnavailable()
 end
 
 function startOllamaPull()
+    -- Reachable from the model list, which is drawn whatever the status is -- so this
+    -- can be asked for on a machine with no Ollama at all. Pulling would then open a
+    -- terminal only to report that the command does not exist.
+    if not ollamaBinaryFound() then
+        ollamaStatus = "not_installed"
+        if reaper.CF_ShellExecute then
+            reaper.CF_ShellExecute("https://ollama.com/download")
+        end
+        return
+    end
     local model = settings.ollama_model or "llava"
     if is_windows then
         local tmpBat = script_path .. "Helpers" .. seperator .. "tmp_pull.bat"
@@ -10263,7 +10307,16 @@ function settingButtons(IP)
 
         elseif ollamaStatus == "not_running" then
             if reaper.ImGui_Button(ctx, "Start Ollama") then
-                if is_windows then
+                -- Checked again here rather than trusted from the last probe. Starting
+                -- something that is not installed is not a harmless no-op: Windows puts
+                -- up its own "cannot find ollama", which says nothing about what to do
+                -- about it. The download page does.
+                if not ollamaBinaryFound() then
+                    ollamaStatus = "not_installed"
+                    if reaper.CF_ShellExecute then
+                        reaper.CF_ShellExecute("https://ollama.com/download")
+                    end
+                elseif is_windows then
                     -- Through ExecProcess so no console appears; "start" is a cmd
                     -- builtin, hence the explicit shell, and -1 does not wait on a
                     -- server that is meant to keep running.
@@ -10278,7 +10331,9 @@ function settingButtons(IP)
                     end
                 end
             end
-            setToolTipFunc("Starts the Ollama background service. Then click Check.")
+            setToolTipFunc("Starts the Ollama background service. Then click Check.\n" ..
+                           "If it turns out not to be installed after all, this opens\n" ..
+                           "the download page instead.")
 
         elseif ollamaStatus == "model_missing" then
             local model = settings.ollama_model or "llava"
