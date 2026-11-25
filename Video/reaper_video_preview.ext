@@ -1,6 +1,6 @@
 -- @description Video Preview extension
 -- @author Saxmand
--- @version 1.3.2
+-- @version 1.4.0
 -- @about
 --   # Video Preview extension
 --
@@ -50,6 +50,8 @@
 --   [darwin] reaper_video_preview.dylib
 --   [win64] reaper_video_preview-x64.dll
 -- @changelog
+--   + VP_CacheStats and VP_CacheClear, so the script can show what the decoded-frame
+--     cache occupies and empty it on request.
 --   + Fixed: thumbnails on Windows were a frame early. A frame is now chosen as the
 --     nearest one to the time asked for, rather than the one whose own interval covers
 --     it. A cut's time arrives rounded to the millisecond from the fingerprint store

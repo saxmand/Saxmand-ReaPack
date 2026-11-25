@@ -46,6 +46,17 @@ void cacheTouch(const std::string& path, uint64_t bytes);
 // REAPER should not wait for it to start up.
 void cacheAdoptExisting();
 
+// What the cache currently occupies on disk: total bytes, and the number of files in
+// `files` when it is not null. Measured by listing the folder rather than reported from
+// the in-memory index, so it is the truth even before the adopt pass has run and even
+// if something outside this process has been at the files.
+uint64_t cacheUsage(int* files);
+
+// Deletes every cached frame of the current generation and empties the index. Returns
+// how many files went. Frames reappear as they are decoded again, so this costs time,
+// never correctness.
+int cacheClear();
+
 // FNV-1a of a file path -- the cache-file discriminator, so frames from different videos
 // never share a slot even when handles are reused across restarts.
 uint32_t hashPath(const char* s);

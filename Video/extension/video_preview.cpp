@@ -50,7 +50,7 @@ static int (*plugin_register)(const char*, void*) = nullptr;
 
 // Keep in step with @version in Video/reaper_video_preview.ext -- the script shows this
 // on its Settings page, so a stale value here is a wrong answer to "what am I running".
-#define VP_VERSION_STR "1.3.2"
+#define VP_VERSION_STR "1.4.0"
 
 // -----------------------------------------------------------------------
 // Registry
@@ -224,6 +224,21 @@ extern "C" const char* vpDiagForTest(const char* p) { return VP_Diag(p); }
 
 static const char* VP_Version() { return VP_VERSION_STR " (" VP_PLATFORM_SHORT ")"; }
 
+// What the decoded-frame cache occupies, as "<bytes> <files>". Two numbers in one call
+// because each one costs a directory listing, and the caller wants both together.
+static const char* VP_CacheStats() {
+    static std::string out;
+    int files = 0;
+    const uint64_t bytes = cacheUsage(&files);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%llu %d", (unsigned long long)bytes, files);
+    out = buf;
+    return out.c_str();
+}
+
+// Empties it. Frames come back as they are decoded again, so this only ever costs time.
+static int VP_CacheClear() { return cacheClear(); }
+
 // Where ffmpeg is, for the platforms that decode through it. macOS ignores this; it is
 // exported on both so the script can call it without caring which it is running on.
 static void VP_SetFFmpegPath(const char* path) {
@@ -258,6 +273,12 @@ static void* VA_VP_ExtractFrame(void** args, int nargs) {
                             (int)(intptr_t)args[2], (int)(intptr_t)args[3],
                             (const char*)args[4]);
     return (void*)(intptr_t)r;
+}
+static void* VA_VP_CacheStats(void** args, int nargs) {
+    return (void*)VP_CacheStats();
+}
+static void* VA_VP_CacheClear(void** args, int nargs) {
+    return (void*)(intptr_t)VP_CacheClear();
 }
 static void* VA_VP_Version(void** args, int nargs) {
     return (void*)VP_Version();
@@ -299,6 +320,14 @@ static const VPFunc kFuncs[] = {
     { "VP_Version", (void*)VP_Version, (void*)VA_VP_Version,
       "const char*", "", "",
       "The extension's version, and how it decodes on this platform." },
+    { "VP_CacheStats", (void*)VP_CacheStats, (void*)VA_VP_CacheStats,
+      "const char*", "", "",
+      "What the decoded-frame cache occupies on disk, as \"<bytes> <files>\". Measured by "
+      "listing the folder, so it is accurate even before the startup adopt pass has run." },
+    { "VP_CacheClear", (void*)VP_CacheClear, (void*)VA_VP_CacheClear,
+      "int", "", "",
+      "Deletes every cached frame and returns how many files went. Costs decode time "
+      "afterwards, never correctness." },
     { "VP_Diag", (void*)VP_Diag, (void*)VA_VP_Diag,
       "const char*", "const char*", "filePath",
       "A report on the frame path: ffmpeg location, cache folder and whether it is "

@@ -170,6 +170,32 @@ void listCacheFiles(const char* prefixIn, std::vector<Found>* out) {
 }
 } // namespace
 
+uint64_t cacheUsage(int* files) {
+    std::vector<Found> found;
+    listCacheFiles(CACHE_PREFIX, &found);
+    uint64_t total = 0;
+    for (const Found& f : found) total += f.bytes;
+    if (files) *files = (int)found.size();
+    return total;
+}
+
+int cacheClear() {
+    // The index goes first and under the lock, so a decoder thread that is mid-touch
+    // cannot re-insert a path that is about to be deleted.
+    {
+        std::lock_guard<std::mutex> lk(g_cacheMu);
+        g_lru.clear();
+        g_lruPos.clear();
+        g_lruSize.clear();
+        g_lruBytes = 0;
+    }
+    std::vector<Found> found;
+    listCacheFiles(CACHE_PREFIX, &found);
+    int removed = 0;
+    for (const Found& f : found) if (vpRemove(f.path) == 0) removed++;
+    return removed;
+}
+
 void cacheAdoptExisting() {
     std::thread([]{
         // Retired generations go first, so their space is freed before the budget is

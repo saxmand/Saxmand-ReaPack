@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.4.3
+-- @version 0.5.0
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,14 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Settings: what the cached preview images occupy, a button to delete them, and a
+--     "Clear when closing app" toggle, in the second column. The cache already keeps
+--     itself inside a budget, so this is not housekeeping anyone has to do -- it is
+--     there to see what it costs and take it back on demand. Deleting them loses
+--     nothing: frames are rebuilt from the video as they are needed.
+--   + Settings: the script and extension versions sit across the top of the page rather
+--     than inside the first column, and the "Settings" heading is gone -- the page is
+--     plainly the settings page without it.
 --   + Fixed: cut thumbnails written by an earlier version were kept and shown, so a fix
 --     to which frame gets decoded changed nothing on screen. They are named after their
 --     time in the file and nothing in the name said which build made them; the folder
@@ -325,6 +333,7 @@ local defaultSettings = {
     cut_motion = 300,             -- jump as a % of the local median distance
     cut_jump = 20,                -- bits of 64 the frame hash must move
     cut_gap = 20,                 -- frames; suppress a weaker cut beside a stronger
+    clearCacheOnExit = false,     -- decoded frames are kept between sessions by default
 }
 
 local function saveSettings()
@@ -9464,6 +9473,29 @@ end
 -- own right edge. Measured from the cursor rather than fixed, so it works in whichever
 -- column it is called from -- and it replaces hand-splitting strings into short lines,
 -- which only ever held for one font size and went stale the moment the wording changed.
+-- Size of the extension's decoded-frame cache, polled rather than read per frame: each
+-- read lists the cache folder, which holds thousands of files.
+local vpCacheBytes, vpCacheFiles, vpCacheStatsAt = 0, 0, 0
+
+function vpCacheStats(forceNow)
+    if forceNow then vpCacheStatsAt = 0 end
+    local now = reaper.time_precise()
+    if (now - vpCacheStatsAt) > 3 and reaper.VP_CacheStats then
+        local b, f = (reaper.VP_CacheStats() or ""):match("^(%d+) (%d+)$")
+        vpCacheBytes = tonumber(b) or 0
+        vpCacheFiles = tonumber(f) or 0
+        vpCacheStatsAt = now
+    end
+    return vpCacheBytes, vpCacheFiles
+end
+
+function formatBytes(b)
+    if b >= 1073741824 then return string.format("%.2f GB", b / 1073741824) end
+    if b >= 1048576    then return string.format("%.1f MB", b / 1048576) end
+    if b >= 1024       then return string.format("%.0f KB", b / 1024) end
+    return string.format("%d bytes", b)
+end
+
 function settingsInfoText(txt, color)
     reaper.ImGui_PushTextWrapPos(ctx, reaper.ImGui_GetCursorPosX(ctx) + (posX2 or 220) - 16)
     reaper.ImGui_TextColored(ctx, color or 0xFFFFFF66, txt)
@@ -9479,29 +9511,30 @@ function settingButtons(IP)
     end
     setToolTipFunc("Only show thumbnails for cuts is useful if you don't want thumbnail creation when the playhead is not on a cut")
     ]]
-    reaper.ImGui_BeginGroup(ctx)
-    reaper.ImGui_TextColored(ctx, colorGrey, "Settings")
-
-    -- What is actually running, script and extension. Worth having on screen: the two
-    -- are separate ReaPack packages and update independently, so "have you got the
-    -- latest" is otherwise a question nobody can answer from inside the app.
+    -- What is actually running, script and extension, spanning the whole page above the
+    -- columns: the two are separate ReaPack packages and update independently, so "have
+    -- you got the latest" is otherwise a question nobody can answer from inside the app.
+    -- Full width, so none of it has to be wrapped into a 220 px column.
     reaper.ImGui_TextColored(ctx, 0xFFFFFF66, "Script " .. scriptVersion)
+    reaper.ImGui_SameLine(ctx)
     if reaper.VP_Version then
-        -- Short enough to share the line; the two warnings below are not.
-        reaper.ImGui_SameLine(ctx)
         reaper.ImGui_TextColored(ctx, 0xFFFFFF66, " -  Extension " .. reaper.VP_Version())
         setToolTipFunc("The two are separate ReaPack packages: \"Video Cut Detection Editor\"\n" ..
                        "and \"Video Preview extension\". Update both.")
     elseif vp_available then
-        settingsInfoText("Extension too old to report its version", 0xFFAA44FF)
+        reaper.ImGui_TextColored(ctx, 0xFFAA44FF, " -  Extension too old to report its version")
         setToolTipFunc("Update the \"Video Preview extension\" package in ReaPack,\n" ..
                        "then restart REAPER.")
     else
-        settingsInfoText("Extension not installed", 0xFFAA44FF)
+        reaper.ImGui_TextColored(ctx, 0xFFAA44FF, " -  Extension not installed")
         setToolTipFunc("Install the \"Video Preview extension\" package in ReaPack for\n" ..
                        "cut detection without FFmpeg, and for the Compare Videos tab.\n" ..
                        "Restart REAPER afterwards.")
     end
+    reaper.ImGui_Separator(ctx)
+    reaper.ImGui_NewLine(ctx)
+
+    reaper.ImGui_BeginGroup(ctx)
      
     -- Named for what it does. It resets every setting in the script, not FFmpeg's path:
     -- its tooltip used to be a copy of the one on "Reset FFMPEG Path" below, which made
@@ -9715,6 +9748,35 @@ function settingButtons(IP)
             settings.useTypeForSingleInsert = t
             saveSettings()
         end
+    end
+
+    -- Preview frames and thumbnails are decoded to JPEGs in the system temporary
+    -- folder and kept, because decoding them again is the expensive part. The cache
+    -- keeps itself inside a budget, so this is not housekeeping anyone has to do --
+    -- it is here to be able to see what it costs and take it back on demand.
+    reaper.ImGui_NewLine(ctx)
+    reaper.ImGui_TextColored(ctx, colorGrey, "Cached preview images")
+    if reaper.VP_CacheStats then
+        local bytes, files = vpCacheStats()
+        settingsInfoText(formatBytes(bytes) .. " in " ..
+                         files .. (files == 1 and " file" or " files"))
+        if reaper.ImGui_Button(ctx, "Clear cached images") then
+            if reaper.VP_CacheClear then reaper.VP_CacheClear() end
+            vpCacheStats(true)         -- so the figure updates on this very frame
+        end
+        setToolTipFunc("Deletes the decoded frames from the temporary folder.\n" ..
+                       "Nothing is lost: they are rebuilt from the video as they\n" ..
+                       "are needed again, which only costs the decode time.")
+
+        local retCache
+        retCache, settings.clearCacheOnExit =
+            reaper.ImGui_Checkbox(ctx, "Clear when closing app", settings.clearCacheOnExit)
+        if retCache then saveSettings() end
+        setToolTipFunc("Empties the cache every time this script closes.\n" ..
+                       "Leave it off to keep previews instant between sessions;\n" ..
+                       "turn it on if the temporary folder needs to stay small.")
+    else
+        settingsInfoText("Needs the Video Preview extension.")
     end
     reaper.ImGui_EndGroup(ctx)
     
@@ -10142,6 +10204,13 @@ local function exit()
     conformReleaseWaveJobs()
     -- session item previews would keep playing after the script is gone
     conformStopItemPreviews()
+
+    -- Off by default: the frames are what make previews instant next time, and the
+    -- cache bounds itself anyway. On, for anyone who would rather the temporary folder
+    -- did not hold a few hundred megabytes between sessions.
+    if settings.clearCacheOnExit and reaper.VP_CacheClear then
+        reaper.VP_CacheClear()
+    end
 
     local i = 0
     
