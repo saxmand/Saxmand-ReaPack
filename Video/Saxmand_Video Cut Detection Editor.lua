@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.6.1
+-- @version 0.7.0
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,21 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + shift+d describes every cut on the timeline, where d describes the selected one.
+--     Both Describe buttons say so. Stepping back through descriptions already fetched
+--     has moved from shift+d to alt+d -- it is the only way back to one that cost a
+--     model run, so it moved rather than went.
+--   + Cut Detection: one Analyse button instead of two. An unanalysed video showed a
+--     second, pulsing one where the cut count goes, a few pixels from the first; the
+--     button that is always there now pulses instead.
+--   + Cut Detection: the thumbnails fill their full width with black, as the Compare
+--     tab's do, so a picture that is not the shape of its slot has an edge rather than
+--     fading into the page.
+--   + Cut Detection: italic captions under the thumbnails -- "before cut" on the left,
+--     "on cut" on the right. The two pictures are often near-identical and nothing said
+--     which was which, that being the reason there are two.
+--   + Cut Detection: Undo and Redo moved down to the right-hand end of the row of
+--     actions, away from the frame-stepping arrows they read as part of.
 --   + Fixed: on the open tab, the tab's own tooltip appeared over whichever widget its
 --     content happened to end with -- on Settings, the third column. The tooltip was
 --     being attached after the tab had been closed off, by which point the last item
@@ -1487,6 +1502,32 @@ local function get_png_base64(path)
         handle:close()
         return result:gsub("[\n\r]", "")
     end
+end
+
+-- Queues every cut on the timeline for a description. Shared by the button in the Extra
+-- popup and by shift+D, so the two cannot drift apart. Returns true when work was
+-- actually queued.
+function describeAllCuts(IP)
+    if not IP or not IP.filePath then
+        reaper.MB("No video file found.", "No video", 0)
+        return false
+    end
+    descriptionQueue = {}
+    descriptionLastError = nil
+    for i, c in ipairs(IP.cuts_making_threashold or {}) do
+        if not c.exclude and IP.cut_data and IP.cut_data[c.index] then
+            table.insert(descriptionQueue, { cutIndex = c.index, filePath = IP.filePath })
+        end
+    end
+    totalDescriptionCount = #descriptionQueue
+    if totalDescriptionCount == 0 then
+        reaper.MB("No cuts detected on the timeline.", "No cuts", 0)
+        return false
+    end
+    undo_redo.save_undo(IP.cut_data)
+    generatingDescriptions = true
+    popupItemProperties = IP
+    return true
 end
 
 function processDescriptionQueue(IP)
@@ -7839,7 +7880,16 @@ function cutColors(IP)
 end
 
 function analyseButton(IP, btnName)
-    if reaper.ImGui_Button(ctx, btnName .. "##:" .. (IP.filePath or "")) then
+    -- Pulsing while nothing has been analysed: on a fresh video this is the one thing
+    -- to do, and the page offers a great many buttons that are not it.
+    local pulse = IP and IP.item and not IP.analysisMade
+    if pulse then
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), pulsatingColor(theme.accent, 3))
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), pulsatingColor(theme.accent, 3))
+    end
+    local clicked = reaper.ImGui_Button(ctx, btnName .. "##:" .. (IP.filePath or ""))
+    if pulse then reaper.ImGui_PopStyleColor(ctx, 2) end
+    if clicked then
         
         if analysing then
             os.remove(IP.cutTextFilePathRaw)
@@ -7930,35 +7980,13 @@ function selectedItemButtons(IP)
                 local canDescribeAll = ollamaAvailable()
                 if not canDescribeAll then reaper.ImGui_BeginDisabled(ctx) end
                 if reaper.ImGui_Button(ctx, "Describe cuts##extra") then
-                    if not IP.filePath then
-                        reaper.MB("No video file found.", "No video", 0)
-                    else
-                        descriptionQueue = {}
-                        descriptionLastError = nil
-                        for i, c in ipairs(IP.cuts_making_threashold) do
-                            if not c.exclude and IP.cut_data[c.index] then
-                                table.insert(descriptionQueue, {
-                                    cutIndex = c.index,
-                                    filePath = IP.filePath,
-                                })
-                            end
-                        end
-                        totalDescriptionCount = #descriptionQueue
-                        if totalDescriptionCount > 0 then
-                            undo_redo.save_undo(IP.cut_data)
-                            generatingDescriptions = true
-                            popupItemProperties = IP
-                            closePopup = true
-                        else
-                            reaper.MB("No cuts detected on the timeline.", "No cuts", 0)
-                        end
-                    end
+                    if describeAllCuts(IP) then closePopup = true end
                 end
                 if not canDescribeAll then reaper.ImGui_EndDisabled(ctx) end
                 setToolTipFunc(canDescribeAll
                     and ("Use Ollama to name each cut from a video frame.\nModel: " ..
                          (settings.ollama_model or "llava") .. "\nChange model in Settings.")
-                    or ollamaWhyUnavailable())
+                    or ollamaWhyUnavailable(), "shift+d")
 
                 if reaper.ImGui_Button(ctx, "Reset cut names##extra") then
                     for i, c in ipairs(IP.cuts_making_threashold) do
@@ -8016,15 +8044,10 @@ function itemButton(IP)
             reaper.ImGui_TextColored(ctx, colorGrey, cutInfoText)
         end
         
-        if not IP.analysisMade and IP.item then  
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_PushStyleColor(ctx,reaper.ImGui_Col_Button(), pulsatingColor(theme.accent, 3))
-            reaper.ImGui_PushStyleColor(ctx,reaper.ImGui_Col_ButtonHovered(), pulsatingColor(theme.accent, 3))
-            analyseButton(IP, "Analyse video##" .. itemNumber)
-            reaper.ImGui_PopStyleColor(ctx,2)
-            reaper.ImGui_SameLine(ctx, posX4)
-        end
-        
+        -- A second Analyse button used to appear here, where the cut count goes, while
+        -- the first one sat in its usual place a few pixels away -- two of the same
+        -- button on screen at once. The pulse was the only thing this one added, so it
+        -- moved into analyseButton itself and this went.
         selectedItemButtons(IP)
     end
 end
@@ -8204,10 +8227,23 @@ function selectedCutInfoArea(IP)
                 reaper.ImGui_EndPopup(ctx)
             end
 
-            -- D = next (or re-analyse if only 1 or full cycle done); Shift+D = previous
+            -- D = next (or fetch a new one); shift+D = describe every cut; alt+D = step
+            -- back through the ones already stored.
+            --
+            -- Stepping back was on shift+D until shift+D was wanted for describing the
+            -- whole timeline. It moved rather than went: it is the only way back through
+            -- descriptions already fetched, and those cost a model run each.
             local isDescKey  = (not markerNameIsFocused or isSuperDown) and isD
-            local isDescFwd  = descBtnClicked or (isDescKey and not isShiftDown)
-            local isDescBack = isDescKey and isShiftDown
+            local isDescAll  = isDescKey and isShiftDown and not isOptionDown
+            local isDescFwd  = descBtnClicked or (isDescKey and not isShiftDown and not isOptionDown)
+            local isDescBack = isDescKey and isOptionDown
+
+            -- Describing everything is its own action, not a variation on describing
+            -- this one, so it is handled before the per-cut branches and on its own.
+            if isDescAll then
+                if canDescribe then describeAllCuts(IP) end
+                isDescFwd, isDescBack = false, false
+            end
 
             if (isDescFwd or isDescBack) and IP.filePath and descCut then
                 -- A new description has to be fetched when there is nothing stored, only
@@ -8253,15 +8289,20 @@ function selectedCutInfoArea(IP)
                 describeTip = ollamaWhyUnavailable()
                 if canCycle then
                     describeTip = describeTip ..
-                        "\n\nThe descriptions already fetched can still be stepped through."
+                        "\n\nThe descriptions already fetched can still be stepped through.\n" ..
+                        "alt+d steps back through them."
                 end
-            elseif canCycle then
-                describeTip = "d: next  ·  shift+d: prev  ·  right-click: all descriptions"
             else
                 describeTip = "Describe this cut using Ollama (" ..
-                              (settings.ollama_model or "llava") .. ")"
+                              (settings.ollama_model or "llava") .. ")\n" ..
+                              "d: this cut  ·  shift+d: every cut"
+                if canCycle then
+                    describeTip = describeTip ..
+                                  "\nalt+d: back through the ones already fetched\n" ..
+                                  "right-click: all descriptions"
+                end
             end
-            setToolTipFunc(describeTip, canDescribe and "d" or nil)
+            setToolTipFunc(describeTip)
         else
             --if not cursorOutsideArea then
                 if reaper.ImGui_Button(ctx, "Insert marker") or ((not markerNameIsFocused or isSuperDown) and isI) then
@@ -8632,6 +8673,14 @@ end
 function DrawImageCentered(image, slotW, slotH, label)
     local p = { reaper.ImGui_GetCursorScreenPos(ctx) }
 
+    -- The slot is filled black first, across its whole width, as the Compare tab's
+    -- slots are. A 16:9 picture in a slot of another shape leaves bars either side, and
+    -- those used to be window background -- so the picture had no edge to it and the
+    -- two thumbnails ran into the page. conformSlotBg is the same colour that tab uses.
+    reaper.ImGui_DrawList_AddRectFilled(reaper.ImGui_GetWindowDrawList(ctx),
+                                        p[1], p[2], p[1] + slotW, p[2] + slotH,
+                                        conformSlotBg, 4)
+
     -- Draw background slot
     reaper.ImGui_InvisibleButton(ctx, label, slotW, slotH)       -- Invisible button as background/placeholder?
     -- actually Button draws a frame. We want a black box?
@@ -8940,6 +8989,8 @@ function previewSection(IP)
         --imageB_array[itemString] = nil 
     end
     
+    local slotsX = reaper.ImGui_GetCursorPosX(ctx)
+
     DrawImageCentered(imageA_array[itemString], slotW, slotH, imageAText .. "##1_" .. itemNumber)
     setToolTipFunc(imageATip)
 
@@ -8950,6 +9001,32 @@ function previewSection(IP)
     if not isLastImage then
         setToolTipFunc(isPlaying and "Live video" or "Image on cut selection")
     end
+
+    -- Which frame each side is showing, under each picture. Without it the pair is two
+    -- near-identical images and nothing says that the left one is the frame before the
+    -- cut and the right one the cut itself -- which is the whole point of showing two.
+    -- Italic grey, as a caption rather than part of the page.
+    thumbnailCaption(slotsX, slotW, "before cut")
+    reaper.ImGui_SameLine(ctx)
+    thumbnailCaption(slotsX + slotW + thumbnailGap(), slotW, "on cut")
+end
+
+-- The gap ImGui puts between the two slots, so a caption can be placed under the second
+-- one without assuming a number.
+function thumbnailGap()
+    -- GetStyleVar hands back a Vec2 as two values, x first. Taking the second one got
+    -- the vertical spacing, which is a different number entirely.
+    local sx = reaper.ImGui_GetStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing())
+    return sx or 8
+end
+
+-- One caption, centred under a slot that starts at x and is slotW wide.
+function thumbnailCaption(x, slotW, text)
+    local tw = reaper.ImGui_CalcTextSize(ctx, text)
+    reaper.ImGui_SetCursorPosX(ctx, x + (slotW - tw) / 2)
+    if fontItalic then reaper.ImGui_PushFont(ctx, fontItalic, reaper.ImGui_GetFontSize(ctx)) end
+    reaper.ImGui_TextColored(ctx, colorGrey, text)
+    if fontItalic then reaper.ImGui_PopFont(ctx) end
 end
 
 -- NOT USED
@@ -10686,12 +10763,15 @@ local function loop()
                 
                 navigationButtons(itemProperties) 
                 
-                reaper.ImGui_SameLine(ctx, winW - 106) 
-                undoRedoButtons(itemProperties)
-                
-                
                 reaper.ImGui_Separator(ctx)
                 addButtons(itemProperties) 
+
+                -- Undo and Redo sit at the right-hand end of the row of actions, rather
+                -- than up beside the navigation arrows where they used to be. They
+                -- belong with the things that change the cuts, which is what they undo;
+                -- next to the frame-stepping arrows they read as part of navigating.
+                reaper.ImGui_SameLine(ctx, winW - 106)
+                undoRedoButtons(itemProperties)
                 
                 
                 
