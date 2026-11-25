@@ -1,6 +1,6 @@
 -- @description Video Preview extension
 -- @author Saxmand
--- @version 1.3.0
+-- @version 1.3.1
 -- @about
 --   # Video Preview extension
 --
@@ -50,6 +50,20 @@
 --   [darwin] reaper_video_preview.dylib
 --   [win64] reaper_video_preview-x64.dll
 -- @changelog
+--   + Fixed: every thumbnail and preview frame on Windows came from the wrong moment.
+--     Seeking lands on the nearest keyframe at or before the time asked for and stops
+--     there; the code took that frame without looking at its timestamp, on the mistaken
+--     belief that Media Foundation decodes on to the requested time by itself. So each
+--     picture was early by anything from nothing to a whole group of pictures, varying
+--     from one to the next. Frames after the keyframe are now walked to the one
+--     actually on screen at that moment, which is the frame AVFoundation returns on
+--     macOS as well.
+--   + Fixed: Windows thumbnails carried the padding a codec adds to reach whole
+--     macroblocks, and were squashed by that much - the same cause as the fingerprint
+--     fix in 1.3.0, in the separate code path that serves single frames.
+--   + Fixed: a bottom-up frame had its row direction applied twice, once from the
+--     buffer's own negative pitch and again from the format's flag, which read past the
+--     end of the buffer.
 --   + Fixed: the same file fingerprinted differently on macOS and on Windows, so cut
 --     detection disagreed between them and a store built on one machine could not be
 --     compared with one built on the other. Each platform had been letting its own

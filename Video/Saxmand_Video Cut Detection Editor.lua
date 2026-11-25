@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.4.1
+-- @version 0.4.2
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,18 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Fixed: a console window flashed over REAPER on Windows. The Ollama check ran
+--     through a shell, which Windows gives a window, and it ran as soon as a cut was
+--     selected whether or not Ollama was wanted at all - so it turned up for people who
+--     had nothing to do with it. Everything that runs a command now goes through
+--     REAPER's hidden process call, as the thumbnail path already did. The terminal
+--     that opens while pulling an Ollama model is still meant to be seen: it is the
+--     only progress a multi-gigabyte download has.
+--   + Fixed: removing an Ollama model did nothing on Windows. The request body was
+--     wrapped in single quotes, which cmd.exe does not treat as quoting, so Ollama was
+--     sent them literally and rejected the request.
+--   + Needs the Video Preview extension at 1.3.1, which fixes thumbnails and preview
+--     frames on Windows coming from the wrong moment in the file.
 --   + Needs the Video Preview extension at 1.3.0, which fixes the same file
 --     fingerprinting differently on macOS and on Windows -- the remaining reason cut
 --     detection disagreed between them once frame timing was sorted out. Fingerprint
@@ -1224,13 +1236,10 @@ local function createThumbnails_mac(filePath, pngPath, itemStart, overwrite, bac
   end
 end
 
-local function createThumbnails_windows(filePath, pngPath, itemStart, overwrite)
-  if overwrite or not reaper.file_exists(pngPath) then
-    -- Бронебойный вариант запуска для Windows (с двойными кавычками)
-    local cmd = '""' .. ffmpeg_path .. '" -ss ' .. itemStart .. ' -y -i "'..filePath..'" -frames:v 1 "'..pngPath ..'"'
-    return io.popen(cmd, "r")
-  end
-end
+-- (createThumbnails_windows removed: createThumbnails dispatches to
+-- createThumbnails_win, which runs ffmpeg hidden through ExecProcess. The old
+-- duplicate used io.popen, so had it ever been wired up it would have put a console
+-- window on screen for every thumbnail.)
 
 
 -- One frame to a file, through the extension's already-open decoder. The FFmpeg route
@@ -1376,7 +1385,9 @@ local function get_png_base64(path)
     if not reaper.file_exists(path) then return nil end
     if is_windows then
         local tmpB64 = path .. ".b64tmp"
-        os.execute('certutil -encode "' .. path .. '" "' .. tmpB64 .. '" >nul 2>&1')
+        -- Hidden, and without the redirect: os.execute gets a console window on
+        -- Windows exactly as io.popen does, and this runs once per cut described.
+        shellRead('certutil -encode "' .. path .. '" "' .. tmpB64 .. '"', 10000)
         local f = io.open(tmpB64, "r")
         if not f then return nil end
         local content = f:read("*a")
@@ -1446,10 +1457,11 @@ function processDescriptionQueue(IP)
                 return
             end
             local ffmpegExec = ffmpeg_path:gsub('"', '')
+            -- No 2>&1: shellRead runs this hidden, and a shell is what puts a console
+            -- window on screen. Describing a run of cuts would flash one per cut.
             local ffmpegCmd = '"' .. ffmpegExec .. '" -ss ' .. string.format("%.6f", describeTime)
-                .. ' -y -i "' .. task.filePath .. '" -frames:v 1 "' .. framePng .. '" 2>&1'
-            local ffmpegHandle = io.popen(ffmpegCmd)
-            if ffmpegHandle then ffmpegHandle:read("*a"); ffmpegHandle:close() end
+                .. ' -y -i "' .. task.filePath .. '" -frames:v 1 "' .. framePng .. '"'
+            shellRead(ffmpegCmd, 20000)
         end
 
         if not reaper.file_exists(framePng) then
@@ -1479,9 +1491,7 @@ function processDescriptionQueue(IP)
     f:close()
 
     local curl_cmd = 'curl -s --max-time 30 -H "content-type: application/json" -d @"' .. tmpReq .. '" http://' .. host .. '/api/generate'
-    local handle = io.popen(curl_cmd)
-    local content = handle and handle:read("*a") or ""
-    if handle then handle:close() end
+    local content = shellRead(curl_cmd, 31000)
     os.remove(tmpReq)
 
     if not content or content == "" then
@@ -6295,6 +6305,29 @@ local function shellNull()
     return is_windows and "nul" or "/dev/null"
 end
 
+-- Runs a command and returns its output, without a console window appearing.
+--
+-- io.popen goes through a shell, and on Windows that shell gets a console window which
+-- flashes up over REAPER every time. The Ollama probe runs one as soon as a cut is
+-- selected, whether or not anyone intends to use Ollama, so the flicker turned up for
+-- people who had nothing to do with it. reaper.ExecProcess runs hidden instead, which
+-- is why the thumbnail path already uses it; its result is the exit code, a newline,
+-- then the output. Commands passed here must therefore be a plain executable and its
+-- arguments, with no shell redirection -- stderr is simply not captured, which is all
+-- the discarded "2>nul" was ever for.
+function shellRead(cmd, timeoutMs)
+    if not is_windows then
+        local h = io.popen(cmd)
+        local out = h and h:read("*a") or ""
+        if h then h:close() end
+        return out
+    end
+    local raw = reaper.ExecProcess(cmd, timeoutMs or 3000)
+    if not raw then return "" end
+    local nl = raw:find("\n")
+    return nl and raw:sub(nl + 1) or ""
+end
+
 function checkOllamaStatus(timeoutSec)
     local host = settings.ollama_host or "localhost:11434"
 
@@ -6302,25 +6335,18 @@ function checkOllamaStatus(timeoutSec)
     -- Ollama is on this machine, so it either answers at once or is not listening, and
     -- a long wait would only stall the UI to learn the same thing.
     local t = timeoutSec or 2
-    local handle = io.popen('curl -s --max-time ' .. t .. ' http://' .. host .. '/api/tags 2>' .. shellNull())
-    local result = handle and handle:read("*a") or ""
-    if handle then handle:close() end
+    local result = shellRead('curl -s --max-time ' .. t ..
+                             ' http://' .. host .. '/api/tags', (t + 1) * 1000)
 
     if result == "" then
         -- Server not responding — check if the binary/app exists
         local found = false
         if is_windows then
-            local h = io.popen('where ollama 2>nul')
-            local out = h and h:read("*a") or ""
-            if h then h:close() end
-            found = out ~= ""
+            found = shellRead('where ollama', 2000) ~= ""
         else
             found = reaper.file_exists("/Applications/Ollama.app")
             if not found then
-                local h = io.popen('which ollama 2>' .. shellNull())
-                local out = h and h:read("*a") or ""
-                if h then h:close() end
-                found = out ~= ""
+                found = shellRead('which ollama 2>' .. shellNull(), 2000) ~= ""
             end
         end
         ollamaStatus = found and "not_running" or "not_installed"
@@ -6384,6 +6410,8 @@ function startOllamaPull()
         if f then
             f:write('@echo off\necho Pulling ' .. model .. '...\nollama pull "' .. model .. '"\necho.\necho Done! Press any key to close.\npause >nul')
             f:close()
+            -- Visible on purpose, unlike every other launch in this script: a model
+            -- is gigabytes and takes minutes, so the terminal IS the progress bar.
             os.execute('start cmd /c "' .. tmpBat .. '"')
         end
     else
@@ -9741,8 +9769,18 @@ function settingButtons(IP)
             end
             if modelToRemove then
                 local host = settings.ollama_host or "localhost:11434"
-                local h = io.popen('curl -s -X DELETE -H "Content-Type: application/json" -d \'{"model":"' .. modelToRemove .. '"}\' http://' .. host .. '/api/delete 2>&1')
-                if h then h:close() end
+                -- The body goes in a file rather than inline: single quotes are not
+                -- quoting to cmd.exe, so curl was handed them literally and the JSON
+                -- was rejected, which made Remove do nothing at all on Windows.
+                local tmpDel = script_path .. "Helpers" .. seperator .. "tmp_del_req.json"
+                local df = io.open(tmpDel, "w")
+                if df then
+                    df:write('{"model":"' .. modelToRemove .. '"}')
+                    df:close()
+                    shellRead('curl -s -X DELETE -H "Content-Type: application/json" -d @"' ..
+                              tmpDel .. '" http://' .. host .. '/api/delete', 10000)
+                    os.remove(tmpDel)
+                end
                 ollamaInstalledModels[modelToRemove] = nil
                 if settings.ollama_model == modelToRemove then ollamaStatus = "model_missing" end
                 reaper.ImGui_CloseCurrentPopup(ctx)
@@ -9791,7 +9829,10 @@ function settingButtons(IP)
         elseif ollamaStatus == "not_running" then
             if reaper.ImGui_Button(ctx, "Start Ollama") then
                 if is_windows then
-                    os.execute('start /B ollama serve')
+                    -- Through ExecProcess so no console appears; "start" is a cmd
+                    -- builtin, hence the explicit shell, and -1 does not wait on a
+                    -- server that is meant to keep running.
+                    reaper.ExecProcess('cmd.exe /C start /B ollama serve', -1)
                 else
                     -- Try the .app first; fall back to CLI serve in background
                     local appExists = reaper.file_exists("/Applications/Ollama.app")

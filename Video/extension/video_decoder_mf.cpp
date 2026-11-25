@@ -19,6 +19,8 @@
 #include "win_mf.h"
 #include "frame_cache.h"
 #include "vp_fileio.h"
+#include "bgra_rows.h"
+#include "frame_pick.h"
 
 #include <windows.h>
 #include <mfapi.h>
@@ -29,6 +31,7 @@
 #include <objbase.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -57,8 +60,10 @@ void comEnsure() {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 }
 
+// row0 points at image row 0 and rowStep is the signed step to the row below, so a
+// bottom-up buffer needs no flag of its own.
 bool writeBGR24(const std::string& path, int w, int h,
-                const uint8_t* bgra, int stride, bool bottomUp) {
+                const uint8_t* row0, ptrdiff_t rowStep) {
     comEnsure();
 
     bool isPng = path.size() > 4 &&
@@ -96,7 +101,7 @@ bool writeBGR24(const std::string& path, int w, int h,
     const int dstStride = ((w * 3) + 3) & ~3;               // WIC wants 4-byte rows
     std::vector<uint8_t> rows((size_t)dstStride * h, 0);
     for (int y = 0; y < h; y++) {
-        const uint8_t* src = bgra + (size_t)(bottomUp ? (h - 1 - y) : y) * stride;
+        const uint8_t* src = row0 + (ptrdiff_t)y * rowStep;
         uint8_t* dst = rows.data() + (size_t)y * dstStride;
         for (int x = 0; x < w; x++) {
             dst[x * 3 + 0] = src[x * 4 + 0];   // B
@@ -185,20 +190,43 @@ private:
                 (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, &cur))) return;
         UINT32 w = 0, h = 0;
         if (SUCCEEDED(MFGetAttributeSize(cur, MF_MT_FRAME_SIZE, &w, &h))) {
-            width = (int)w; height = (int)h;
+            fullWidth = width = (int)w; fullHeight = height = (int)h;
         }
         // Negative means the rows run bottom to top, which is usual for RGB out of MF.
         UINT32 st = 0;
         if (SUCCEEDED(cur->GetUINT32(MF_MT_DEFAULT_STRIDE, &st)))
             bottomUp = ((INT32)st) < 0;
+
+        // The coded size is padded up to whole macroblocks -- 1440x1080 arrives as
+        // 1440x1088 -- and only the aperture says which part is the picture. Without
+        // this a thumbnail carries rows of padding and is squashed by that much.
+        cropX = cropY = 0;
+        MFVideoArea area;
+        memset(&area, 0, sizeof(area));
+        if (SUCCEEDED(cur->GetBlob(MF_MT_MINIMUM_DISPLAY_APERTURE,
+                                   (UINT8*)&area, sizeof(area), nullptr))
+            || SUCCEEDED(cur->GetBlob(MF_MT_GEOMETRIC_APERTURE,
+                                      (UINT8*)&area, sizeof(area), nullptr))) {
+            int ax = area.OffsetX.value, ay = area.OffsetY.value;
+            int aw = area.Area.cx,       ah = area.Area.cy;
+            if (aw > 0 && ah > 0 && ax >= 0 && ay >= 0
+                && ax + aw <= fullWidth && ay + ah <= fullHeight) {
+                cropX = ax; cropY = ay; width = aw; height = ah;
+            }
+        }
     }
 
     double clampTime(double t) const { return t < 0.0 ? 0.0 : (t > dur ? dur : t); }
 
     bool decodeTo(double timeSec, int maxW, int maxH, const std::string& outPath) {
-        // Seek, then take the first frame at or after the request. MF lands on the
-        // nearest keyframe and decodes forward itself, so this is accurate enough for a
-        // preview and costs a fraction of reading from the start.
+        // SetCurrentPosition seeks to the nearest keyframe AT OR BEFORE the request and
+        // stops there -- it does not decode on to the time asked for. This used to take
+        // whatever that first sample was without looking at its timestamp, so every
+        // thumbnail came from the preceding keyframe: out by anything from nothing to a
+        // whole GOP, differently for each one. The frame wanted is the one on screen at
+        // timeSec, which is the last frame whose timestamp has not passed it -- the same
+        // frame AVFoundation returns on the other platform, where the tolerances are
+        // pinned to zero for exactly this reason.
         PROPVARIANT pos;
         PropVariantInit(&pos);
         pos.vt = VT_I8;
@@ -207,25 +235,39 @@ private:
         PropVariantClear(&pos);
         if (FAILED(hr)) return false;
 
-        for (int tries = 0; tries < 240; tries++) {
+        const LONGLONG target = (LONGLONG)(timeSec * 1.0e7);
+        IMFSample* best = nullptr;
+        // Bounded only to keep a decoder that reports non-advancing timestamps from
+        // spinning; a sane keyframe interval ends the loop long before this.
+        for (int tries = 0; tries < 900; tries++) {
             DWORD      flags = 0;
             LONGLONG   ts    = 0;
             IMFSample* smp   = nullptr;
             if (FAILED(reader->ReadSample((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM,
-                                          0, nullptr, &flags, &ts, &smp))) return false;
-            if (flags & MF_SOURCE_READERF_ENDOFSTREAM) { if (smp) smp->Release(); return false; }
+                                          0, nullptr, &flags, &ts, &smp))) {
+                if (best) best->Release();
+                return false;
+            }
+            // End of stream with something in hand is not a failure: a request at the
+            // very end of a file legitimately resolves to the last frame.
+            if (flags & MF_SOURCE_READERF_ENDOFSTREAM) { if (smp) smp->Release(); break; }
             if (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) readType();
             if (!smp) continue;
 
-            bool ok = encodeSample(smp, maxW, maxH, outPath);
-            smp->Release();
-            if (ok) {
-                uint64_t size = 0;
-                return vpStat(outPath, &size, nullptr) && size > 0;
-            }
-            return false;
+            // See frame_pick.h for the rule and why it is floor, not nearest.
+            const FramePick pick = framePick((long long)ts, (long long)target, best != nullptr);
+            if (pick == FramePick::Overshot) { smp->Release(); break; }
+            if (best) best->Release();
+            best = smp;
+            if (pick == FramePick::Take) break;
         }
-        return false;
+        if (!best) return false;
+
+        bool ok = encodeSample(best, maxW, maxH, outPath);
+        best->Release();
+        if (!ok) return false;
+        uint64_t size = 0;
+        return vpStat(outPath, &size, nullptr) && size > 0;
     }
 
     bool encodeSample(IMFSample* smp, int maxW, int maxH, const std::string& outPath) {
@@ -244,7 +286,7 @@ private:
         IMF2DBuffer* two = nullptr;
         BYTE* scan = nullptr;
         LONG  pitch = 0;
-        bool  locked2D = false, locked = false;
+        bool  locked2D = false, locked = false, contiguous = false;
         if (SUCCEEDED(buf->QueryInterface(IID_PPV_ARGS(&two))) && two
             && SUCCEEDED(two->Lock2D(&scan, &pitch)) && scan) {
             locked2D = true;
@@ -253,18 +295,24 @@ private:
             DWORD len = 0;
             if (FAILED(buf->Lock(&scan, nullptr, &len)) || !scan) return false;
             locked = true;
-            pitch = width * 4;
-            if ((int)len < pitch * height) { buf->Unlock(); return false; }
+            // A contiguous buffer carries no stride of its own, so the CODED width
+            // gives it -- the picture width would skew every row for a padded frame.
+            if (len < (DWORD)(fullWidth * 4) * (DWORD)fullHeight) { buf->Unlock(); return false; }
+            contiguous = true;
         }
 
-        bool flip = bottomUp || pitch < 0;
-        int  stride = (int)(pitch < 0 ? -pitch : pitch);
-        const uint8_t* base = scan;
-        if (pitch < 0) base = scan - (size_t)stride * (height - 1);
+        // See bgra_rows.h: padded, bottom-up and cropped all resolve to one pointer and
+        // one signed step.
+        const BgraRows rows = bgraCrop(
+            contiguous ? bgraFromContiguous(scan, fullWidth, fullHeight, bottomUp)
+                       : bgraFrom2D(scan, (ptrdiff_t)pitch),
+            cropX, cropY);
+        const ptrdiff_t rowStep = rows.step;
+        const uint8_t*  row0    = rows.row0;
 
         bool ok;
         if (outW == width && outH == height) {
-            ok = writeBGR24(outPath, width, height, base, stride, flip);
+            ok = writeBGR24(outPath, width, height, row0, rowStep);
         } else {
             // Nearest-neighbour is enough for a preview thumbnail and keeps this free
             // of another dependency; the fingerprint path does its own area-average
@@ -272,15 +320,14 @@ private:
             std::vector<uint8_t> small((size_t)outW * outH * 4);
             for (int y = 0; y < outH; y++) {
                 int sy = (int)((double)y * height / outH);
-                if (flip) sy = height - 1 - sy;
-                const uint8_t* srow = base + (size_t)sy * stride;
+                const uint8_t* srow = row0 + (ptrdiff_t)sy * rowStep;
                 uint8_t* drow = small.data() + (size_t)y * outW * 4;
                 for (int x = 0; x < outW; x++) {
                     int sx = (int)((double)x * width / outW);
                     memcpy(drow + x * 4, srow + sx * 4, 4);
                 }
             }
-            ok = writeBGR24(outPath, outW, outH, small.data(), outW * 4, false);
+            ok = writeBGR24(outPath, outW, outH, small.data(), (ptrdiff_t)outW * 4);
         }
 
         if (locked2D) { two->Unlock2D(); two->Release(); }
@@ -291,7 +338,9 @@ private:
     IMFSourceReader* reader = nullptr;
     std::string      src;
     uint32_t         hash = 0;
-    int              width = 0, height = 0;
+    int              width = 0, height = 0;          // the picture
+    int              fullWidth = 0, fullHeight = 0;  // coded, padding included
+    int              cropX = 0, cropY = 0;           // where the picture sits in it
     bool             bottomUp = false;
     double           dur = 0.0;
 };
