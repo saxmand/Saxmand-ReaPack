@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.8.0
+-- @version 0.8.1
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,9 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + "Describe cuts" with nothing to describe now says so across the thumbnails for a
+--     couple of seconds, instead of a dialog that has to be dismissed. It also goes on
+--     the next thing you do, whichever comes first.
 --   + Fixed: a cut was only selected when the cursor sat on its time exactly. A cut's
 --     time comes out of the analysis and has no reason to land on REAPER's frame grid,
 --     while the cursor always does -- so stepping a frame off a cut and back again left
@@ -1357,6 +1360,52 @@ function vpFrameIsPending(IP)
     return false
 end
 
+-- A message shown briefly over the thumbnails, in place of a dialog.
+--
+-- For telling someone an action had nothing to do -- every cut already named, no cuts
+-- found -- which is worth saying and not worth a modal they have to dismiss before
+-- carrying on. Over the pictures because that is where the eye already is, and gone
+-- again on its own.
+TRANSIENT_SECONDS = 2
+transientMessage  = nil        -- { text = ..., at = time_precise when set }
+
+function setTransientMessage(text)
+    transientMessage = { text = text, at = time_precise }
+end
+
+-- Once a frame, after the keys have been read.
+function updateTransientMessage()
+    local m = transientMessage
+    if not m then return end
+    -- Never on the frame it was set: the keystroke or click that caused the message is
+    -- itself an action and would clear it before it was ever drawn. Belt and braces as
+    -- things stand, since every caller sets a message while the interface draws, which
+    -- is after this runs -- but it is the invariant that matters, not the current order
+    -- of two lines a thousand apart.
+    if time_precise <= m.at then return end
+    if isMouseClick or isAnyKeyPressed or (time_precise - m.at) > TRANSIENT_SECONDS then
+        transientMessage = nil
+    end
+end
+
+-- Drawn across both pictures, centred, over a panel dark enough to read against any
+-- frame. Fades over the last half second so it leaves rather than vanishes.
+function drawTransientMessage(x, y, w, h)
+    local m = transientMessage
+    if not m then return end
+    local fade = math.min(1.0, math.max(0.0,
+                     (TRANSIENT_SECONDS - (time_precise - m.at)) / 0.5))
+    local tw, th = reaper.ImGui_CalcTextSize(ctx, m.text)
+    local cx = x + (w - tw) / 2
+    local cy = y + (h - th) / 2
+    local pad = 10
+    local dl = reaper.ImGui_GetWindowDrawList(ctx)
+    reaper.ImGui_DrawList_AddRectFilled(dl, cx - pad, cy - pad, cx + tw + pad, cy + th + pad,
+                                        withAlpha(0x000000FF, math.floor(0xDD * fade)), 6)
+    reaper.ImGui_DrawList_AddText(dl, cx, cy,
+                                  withAlpha(colorWhite, math.floor(0xFF * fade)), m.text)
+end
+
 -- Whether the right-hand preview follows the playhead during playback, or stays on the
 -- selected cut. On is the default: watching the video play is usually the point. Off is
 -- for comparing a cut against what is actually under the playhead, where a picture that
@@ -1564,7 +1613,7 @@ end
 -- `name` nil and shows as "Cut N", which is what makes the two cases distinguishable.
 function describeAllCuts(IP, overwrite)
     if not IP or not IP.filePath then
-        reaper.MB("No video file found.", "No video", 0)
+        setTransientMessage("No video file found")
         return false
     end
     descriptionQueue = {}
@@ -1583,14 +1632,14 @@ function describeAllCuts(IP, overwrite)
     end
     totalDescriptionCount = #descriptionQueue
     if totalDescriptionCount == 0 then
+        -- Said over the thumbnails rather than in a dialog: there is nothing to decide,
+        -- and a modal for "nothing to do" costs a click to get back to where you were.
         if total == 0 then
-            reaper.MB("No cuts detected on the timeline.", "No cuts", 0)
+            setTransientMessage("No cuts detected on the timeline")
         else
-            -- Saying nothing would look like the button had failed.
-            reaper.MB(named .. (named == 1 and " cut is" or " cuts are") ..
-                      " already named, so there was nothing to describe.\n\n" ..
-                      "Hold " .. MOD_ALT .. " while describing to replace the names too.",
-                      "Already named", 0)
+            setTransientMessage(
+                (named == 1 and "The cut is" or "All " .. named .. " cuts are") ..
+                " already named  -  hold " .. MOD_ALT .. " to replace them")
         end
         return false
     end
@@ -9113,6 +9162,7 @@ function previewSection(IP)
     end
     
     local slotsX = reaper.ImGui_GetCursorPosX(ctx)
+    local slotsScreenX, slotsScreenY = reaper.ImGui_GetCursorScreenPos(ctx)
 
     DrawImageCentered(imageA_array[itemString], slotW, slotH, imageAText .. "##1_" .. itemNumber)
     setToolTipFunc(imageATip)
@@ -9129,6 +9179,10 @@ function previewSection(IP)
     -- near-identical images and nothing says that the left one is the frame before the
     -- cut and the right one the cut itself -- which is the whole point of showing two.
     -- Italic grey, as a caption rather than part of the page.
+    -- Over the finished pictures, before the captions below them.
+    drawTransientMessage(slotsScreenX, slotsScreenY,
+                         slotW * 2 + thumbnailGap(), slotH)
+
     local liveNow = isPlaying and previewShowsLiveVideo()
     local rightX  = slotsX + slotW + thumbnailGap()
 
@@ -10632,9 +10686,15 @@ local function loop()
             ["KeypadAdd"] = true, 
             ["KeypadSubtract"] = true
             }
+        -- Any key at all, for clearing a transient message: whatever someone does next
+        -- is their acknowledgement of it.
+        isAnyKeyPressed = false
         for _, letter in ipairs(alphabet) do
-            _G["is" .. letter] = ImGui.IsKeyPressed(ctx, ImGui["Key_" .. letter], repeatKeys[letter])
+            local pressed = ImGui.IsKeyPressed(ctx, ImGui["Key_" .. letter], repeatKeys[letter])
+            _G["is" .. letter] = pressed
+            if pressed then isAnyKeyPressed = true end
         end
+        updateTransientMessage()
 
         -- cmd+w closes the window, as it does everywhere else. Clearing `open` is the
         -- same thing the title bar's close button does: the loop stops deferring, and
