@@ -19,6 +19,7 @@
 #include <mferror.h>
 
 #include <cmath>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -67,6 +68,22 @@ public:
         if (FAILED(reader->SetStreamSelection((DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE))) {
             if (errOut) *errOut = "no video stream";
             return false;
+        }
+
+        // The source's own frame rate, read before the output type is overridden. This
+        // is the authoritative one: the type set below is built here from scratch and
+        // carries no MF_MT_FRAME_RATE, and nothing asks MF to convert the rate, so what
+        // the stream declares is what arrives. Reading it back off the output type
+        // instead is what labelled every Windows store 25 fps whatever the file was.
+        {
+            Rel<IMFMediaType> native;
+            if (SUCCEEDED(reader->GetNativeMediaType(
+                    (DWORD)MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, &native)) && native) {
+                UINT32 num = 0, den = 0;
+                if (SUCCEEDED(MFGetAttributeRatio(native, MF_MT_FRAME_RATE, &num, &den))
+                    && num && den)
+                    nativeRate = (double)num / (double)den;
+            }
         }
 
         // Ask for NV12 at the analysis size. Scaling during decode is what keeps the
@@ -144,8 +161,15 @@ private:
             width = (int)w; height = (int)h;
         }
         UINT32 num = 0, den = 0;
-        if (SUCCEEDED(MFGetAttributeRatio(cur, MF_MT_FRAME_RATE, &num, &den)) && den)
+        if (SUCCEEDED(MFGetAttributeRatio(cur, MF_MT_FRAME_RATE, &num, &den)) && num && den)
             rate = (double)num / (double)den;
+        // The stream wins over whatever the output type happens to carry, including
+        // after a mid-stream type change.
+        if (nativeRate > 0.0) rate = nativeRate;
+
+        // Signed: a negative default stride means the rows are stored bottom-up.
+        UINT32 ds = 0;
+        defStride = SUCCEEDED(cur->GetUINT32(MF_MT_DEFAULT_STRIDE, &ds)) ? (int)(INT32)ds : 0;
     }
 
     // Maps the sample's luma plane. Prefers the 2D view, which reports the real stride;
@@ -162,7 +186,10 @@ private:
                 out->y = scan;
                 out->w = width;
                 out->h = height;
-                out->stride = (int)(pitch < 0 ? -pitch : pitch);
+                // Lock2D hands back the top row, so a negative pitch is the step
+                // *down* the image. Taking its absolute value walked up out of the
+                // buffer instead and hashed whatever lay before it.
+                out->stride = (int)pitch;
                 return true;
             }
             two->Release();
@@ -171,12 +198,23 @@ private:
         BYTE*  p = nullptr;
         DWORD  len = 0;
         if (FAILED(buffer->Lock(&p, nullptr, &len)) || !p) return false;
-        if ((int)len < width * height) { buffer->Unlock(); return false; }
+        // A contiguous buffer carries no stride of its own, so take the one the media
+        // type declares. Assuming packed rows was wrong for any padded NV12 buffer, and
+        // the old length check could not catch it: NV12 is w*h*3/2, so a luma plane
+        // padded well past w*h still passed.
+        int stride = defStride < 0 ? -defStride : defStride;
+        if (stride < width) stride = width;
+        if (len / (DWORD)stride < (DWORD)height) { buffer->Unlock(); return false; }
         locked = true;
-        out->y = p;
         out->w = width;
         out->h = height;
-        out->stride = width;
+        if (defStride < 0) {          // bottom-up: start at the last row and step back
+            out->y = p + (ptrdiff_t)stride * (height - 1);
+            out->stride = -stride;
+        } else {
+            out->y = p;
+            out->stride = stride;
+        }
         return true;
     }
 
@@ -194,6 +232,8 @@ private:
     bool             locked = false;
     int              width = 0, height = 0;
     double           rate = 25.0;
+    double           nativeRate = 0.0;   // the stream's own, authoritative
+    int              defStride = 0;      // MF_MT_DEFAULT_STRIDE, signed
     double           dur  = 0.0;
     std::string      err;
 };

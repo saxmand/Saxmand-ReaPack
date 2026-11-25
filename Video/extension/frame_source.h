@@ -26,7 +26,10 @@ struct LumaFrame {
     const uint8_t* y      = nullptr;
     int            w      = 0;
     int            h      = 0;
-    int            stride = 0;    // bytes per row; may exceed w
+    // Bytes from one row to the next. May exceed w for a padded buffer, and may be
+    // negative for a bottom-up one -- y always points at image row 0 either way, so
+    // consumers must step by a signed stride rather than assuming packed rows.
+    int            stride = 0;
     double         ptsSec = 0.0;
 };
 

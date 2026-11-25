@@ -1,6 +1,6 @@
 -- @description Video Preview extension
 -- @author Saxmand
--- @version 1.2.0
+-- @version 1.2.1
 -- @about
 --   # Video Preview extension
 --
@@ -47,8 +47,18 @@
 --   [darwin] reaper_video_preview.dylib
 --   [win64] reaper_video_preview-x64.dll
 -- @changelog
---   + Windows no longer needs FFmpeg. Decoding goes through Media Foundation, which is
---     part of Windows: in-process for both the sequential fingerprint pass and single
---     preview frames, with WIC writing the JPEGs. ffmpeg is kept as a fallback for what
---     Media Foundation cannot read, which in practice means ProRes and DNxHD.
---   + The diagnostics report says which backend answered.
+--   + Fixed: cut detection on Windows found fewer cuts than macOS and put most of them
+--     in the wrong place. Every Windows store was labelled 25 fps whatever the file
+--     was, because the frame rate was read back off the output format rather than the
+--     file's, and cut positions were worked out by dividing a frame number by it. So on
+--     anything that was not 25 fps every cut moved, further the later it sat, and the
+--     ones pushed past the end of the analysed stretch were dropped.
+--   + Cut positions now come from the timestamp each frame carries instead of being
+--     divided out of a frame rate, which is also correct for variable frame rate files
+--     on either platform. The store's frame rate is measured from those timestamps
+--     rather than taken on trust from the decoder.
+--   + Fixed: a padded or bottom-up frame buffer on Windows was read as though its rows
+--     were packed top-down, which fingerprinted rows of the wrong pixels and, for a
+--     bottom-up buffer, read past the end of the buffer.
+--   + VP_StoreInfo reports a store's frame count, declared and measured frame rate,
+--     timestamp spacing and first hashes, for comparing one machine against another.

@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.3.9
+-- @version 0.4.0
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,11 +24,17 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
---   + Fixed, properly this time: "attempt to index a nil value" when analysing a video
---     for the first time. 0.3.7 fixed one of the four things left unset while an
---     analysis runs; the cut collections the UI iterates were the others. It only ever
---     worked on a second attempt because a framestore existed by then, so the path that
---     returns early was never taken.
+--   + Fixed: cut detection on Windows found fewer cuts than macOS and put most of them
+--     in the wrong place. A cut's position was worked out by dividing its frame number
+--     by the frame rate recorded in the fingerprint store, and on Windows that rate was
+--     always 25 whatever the file was. Positions now come from the timestamp each frame
+--     carries, which also makes them right for variable frame rate files. Needs the
+--     Video Preview extension at 1.2.1 or newer; older ones fall back to the division.
+--   + Settings page text wraps inside its column instead of running into the next one.
+--   + "Frame diagnostics" also reports the fingerprint store's frame count, measured
+--     frame rate and frame timing, so the same file can be compared between machines.
+--   + Fixed: the settings page told Windows users the extension was macOS only, which
+--     stopped being true when the Windows build shipped.
 
 
 -------- Possible IDEAS TODO
@@ -1015,8 +1021,13 @@ function vpExtractCuts(IP)
     local t0 = IP.item_area_to_analyze_start or 0
     local t1 = IP.item_area_to_analyze_length
                and (t0 + IP.item_area_to_analyze_length) or math.huge
-    for f, d in blob:gmatch("K (%d+) (%d+) %d+") do
-        local t = tonumber(f) / fps
+    -- The fourth field is the timestamp the frame actually carries, which is the one to
+    -- use: frame/fps is only right for constant-rate material whose rate was read
+    -- correctly, and when it isn't, every cut slides and the late ones fall outside the
+    -- window below and vanish. Older extensions emit three fields, so keep the division
+    -- as the fallback rather than losing cuts to a version mismatch.
+    for f, d, ms in blob:gmatch("K (%d+) (%d+) %d+ ?(%d*)") do
+        local t = (ms ~= "" and tonumber(ms) / 1000) or (tonumber(f) / fps)
         if t >= t0 and t <= t1 then
             out[#out + 1] = { time = t, score = tonumber(d) / 64 * 100, mafd = tonumber(d) }
         end
@@ -9379,6 +9390,17 @@ function undoRedoButtons(IP)
     if not hasRedo then reaper.ImGui_EndDisabled(ctx) end
 end
 
+-- Grey explanatory text inside a settings column. The columns sit posX2 apart and
+-- nothing stops a sentence running on into the next one, so wrap it at this column's
+-- own right edge. Measured from the cursor rather than fixed, so it works in whichever
+-- column it is called from -- and it replaces hand-splitting strings into short lines,
+-- which only ever held for one font size and went stale the moment the wording changed.
+function settingsInfoText(txt, color)
+    reaper.ImGui_PushTextWrapPos(ctx, reaper.ImGui_GetCursorPosX(ctx) + (posX2 or 220) - 16)
+    reaper.ImGui_TextColored(ctx, color or 0xFFFFFF66, txt)
+    reaper.ImGui_PopTextWrapPos(ctx)
+end
+
 function settingButtons(IP)
     
     --[[
@@ -9395,17 +9417,18 @@ function settingButtons(IP)
     -- are separate ReaPack packages and update independently, so "have you got the
     -- latest" is otherwise a question nobody can answer from inside the app.
     reaper.ImGui_TextColored(ctx, 0xFFFFFF66, "Script " .. scriptVersion)
-    reaper.ImGui_SameLine(ctx)
     if reaper.VP_Version then
+        -- Short enough to share the line; the two warnings below are not.
+        reaper.ImGui_SameLine(ctx)
         reaper.ImGui_TextColored(ctx, 0xFFFFFF66, " -  Extension " .. reaper.VP_Version())
         setToolTipFunc("The two are separate ReaPack packages: \"Video Cut Detection Editor\"\n" ..
                        "and \"Video Preview extension\". Update both.")
     elseif vp_available then
-        reaper.ImGui_TextColored(ctx, 0xFFAA44FF, " -  Extension too old to report its version")
+        settingsInfoText("Extension too old to report its version", 0xFFAA44FF)
         setToolTipFunc("Update the \"Video Preview extension\" package in ReaPack,\n" ..
                        "then restart REAPER.")
     else
-        reaper.ImGui_TextColored(ctx, 0xFFAA44FF, " -  Extension not installed")
+        settingsInfoText("Extension not installed", 0xFFAA44FF)
         setToolTipFunc("Install the \"Video Preview extension\" package in ReaPack for\n" ..
                        "cut detection without FFmpeg, and for the Compare Videos tab.\n" ..
                        "Restart REAPER afterwards.")
@@ -9479,19 +9502,13 @@ function settingButtons(IP)
         reaper.ImGui_NewLine(ctx)
     else
         -- No choice to offer, so say why rather than silently showing FFmpeg's settings
-        -- and nothing else. On Windows there is nothing to go and install: the extension
-        -- reads frames through AVFoundation, so it is macOS only and always will be.
+        -- and nothing else. This used to tell Windows users the extension was macOS
+        -- only and always would be, which the Windows build has made untrue.
         reaper.ImGui_TextColored(ctx, colorGrey, "Cut detection method")
-        reaper.ImGui_TextColored(ctx, 0xFFFFFF66, is_windows
-            and "FFmpeg. The faster extension detector is macOS only."
-            or  "FFmpeg. Install the Video Preview extension for the faster detector.")
-        setToolTipFunc(is_windows
-            and "The Video Preview extension reads frames through AVFoundation, which is\n" ..
-                "part of macOS, so there is no Windows build of it. Cut detection here\n" ..
-                "runs through FFmpeg, as it always has, and the Compare Videos tab is\n" ..
-                "unavailable."
-            or  "The Video Preview extension package, in this same repository, detects\n" ..
-                "cuts without FFmpeg and is what the Compare Videos tab runs on.")
+        settingsInfoText("FFmpeg. Install the Video Preview extension for the faster detector.")
+        setToolTipFunc("The Video Preview extension package, in this same repository, detects\n" ..
+                       "cuts without FFmpeg and is what the Compare Videos tab runs on.\n" ..
+                       "There are macOS and Windows builds. Restart REAPER after installing.")
         reaper.ImGui_NewLine(ctx)
     end
 
@@ -9508,10 +9525,9 @@ function settingButtons(IP)
     if not usingExtension or is_windows then
         reaper.ImGui_TextColored(ctx, colorGrey, "FFmpeg")
         if usingExtension and is_windows then
-            reaper.ImGui_TextColored(ctx, 0xFFFFFF66,
-                "Optional. The extension decodes H.264/HEVC itself; ffmpeg covers")
-            reaper.ImGui_TextColored(ctx, 0xFFFFFF66,
-                "ProRes and DNxHD, which Windows has no decoder for.")
+            settingsInfoText("Optional. The extension decodes H.264/HEVC itself; " ..
+                             "ffmpeg covers ProRes and DNxHD, which Windows has no " ..
+                             "decoder for.")
         end
 
         if reaper.ImGui_Button(ctx, "Open FFMPEG Path") then
@@ -9589,6 +9605,20 @@ function settingButtons(IP)
             reaper.ShowConsoleMsg("")
             reaper.ShowConsoleMsg("--- Video Preview diagnostics ---\n")
             reaper.ShowConsoleMsg(reaper.VP_Diag(path) or "(no report)")
+            -- The fingerprint store too, when there is one. Cut positions come out of
+            -- the frame timestamps, so a timing complaint is answered by what the store
+            -- recorded -- the measured frame rate and the gaps between frames -- and by
+            -- nothing visible on screen. This prints it in a form that can be compared
+            -- against the same file analysed on another machine.
+            if reaper.VP_StoreInfo and path ~= "" then
+                local store = path .. ".vpfs"
+                if reaper.file_exists(store) then
+                    reaper.ShowConsoleMsg("\n--- Framestore ---\n")
+                    reaper.ShowConsoleMsg(reaper.VP_StoreInfo(store) or "(no report)")
+                else
+                    reaper.ShowConsoleMsg("\nNo framestore yet -- run Analyse to build one.\n")
+                end
+            end
             if path == "" then
                 reaper.ShowConsoleMsg("\nSelect a video item first to test decoding a frame from it.\n")
             end
@@ -9596,7 +9626,8 @@ function settingButtons(IP)
         setToolTipFunc("Checks everything the preview pictures depend on -- where ffmpeg is,\n" ..
                        "whether the frame cache folder can be written, and whether a frame\n" ..
                        "actually decodes out of the selected item -- and prints the result\n" ..
-                       "to the console.")
+                       "to the console, along with the fingerprint store's frame rate and\n" ..
+                       "timing if the file has been analysed.")
     end
 
     reaper.ImGui_EndGroup(ctx)

@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -57,6 +58,8 @@ static const int GRID_SZ   = FS_GRID_SZ;
 // Area-average resample of an 8-bit single-channel image.  Box filter rather than
 // point sampling: averaging is what makes the fingerprint stable against the pixel
 // jitter that re-encoding introduces.
+// stride may be negative, for a bottom-up buffer whose src already points at image
+// row 0 -- hence ptrdiff_t below rather than size_t, which would wrap.
 static void resampleLuma(const uint8_t* src, int sw, int sh, int stride,
                          uint8_t* dst, int dw, int dh) {
     for (int y = 0; y < dh; y++) {
@@ -67,7 +70,7 @@ static void resampleLuma(const uint8_t* src, int sw, int sh, int stride,
             if (x1 <= x0) x1 = x0 + 1;
             uint32_t sum = 0, n = 0;
             for (int yy = y0; yy < y1 && yy < sh; yy++) {
-                const uint8_t* row = src + (size_t)yy * stride;
+                const uint8_t* row = src + (ptrdiff_t)yy * stride;
                 for (int xx = x0; xx < x1 && xx < sw; xx++) { sum += row[xx]; n++; }
             }
             dst[y * dw + x] = n ? (uint8_t)(sum / n) : 0;
@@ -225,6 +228,19 @@ static void analyzeWorker(AnalyzeJob* job, std::string srcPath, std::string stor
     if (!readErr.empty())   { fail(readErr); return; }
     if (hashes.empty())     { fail("no frames decoded"); return; }
 
+    // Prefer a rate measured from the timestamps over the one the decoder declared.
+    // The timestamps are what the frames actually carry, so this is right even where
+    // the metadata is missing or wrong -- which is how every Windows store came to be
+    // labelled 25 fps. Needs a span worth measuring: two frames a millisecond apart
+    // would divide into nonsense, so fall back to the declared rate below that.
+    if (ptsMs.size() >= 2 && ptsMs.back() > ptsMs.front()) {
+        double span = (double)(ptsMs.back() - ptsMs.front()) / 1000.0;
+        if (span >= 0.5) {
+            double measured = (double)(ptsMs.size() - 1) / span;
+            if (measured > 0.5 && measured < 1000.0) fps = measured;
+        }
+    }
+
     int64_t srcSize = 0, srcMtime = 0;
     {
         uint64_t sz = 0; int64_t mt = 0;
@@ -336,7 +352,13 @@ static const char* VP_Cuts(const char* storePath, int thresh, int ratioPct, int 
     snprintf(line, sizeof(line), "C %d %d %.6f\n", (int)keep.size(), n, fs.h.fps);
     out = line;
     for (const Cand& c : keep) {
-        snprintf(line, sizeof(line), "K %d %d %d\n", c.frame, c.dist, c.med);
+        // The timestamp the frame actually carries, as a fourth field. Dividing the
+        // frame index by a header rate -- which is what the caller had to do before --
+        // is only right for constant-rate material whose rate was read correctly, and
+        // is wrong twice over otherwise: every cut moves, and the ones pushed past the
+        // end of the analysed stretch get discarded as out of range.
+        snprintf(line, sizeof(line), "K %d %d %d %u\n",
+                 c.frame, c.dist, c.med, (unsigned)fs.ptsMs[c.frame]);
         out += line;
     }
     return out.c_str();
@@ -437,6 +459,62 @@ static double VP_StoreFPS(const char* storePath) {
     FSHeader h;
     return (storePath && readHeader(storePath, &h)) ? h.fps : 0.0;
 }
+// A plain-text summary of a store, for comparing the same file across two machines.
+// The header alone cannot settle a timing complaint -- what matters is whether the
+// frames carry sensible timestamps -- so this reports the measured rate and the pts
+// spacing next to the declared one, plus a few hashes to show the pixels agree.
+static const char* VP_StoreInfo(const char* storePath) {
+    static std::string out;
+    out.clear();
+    if (!storePath) { out = "E bad arguments"; return out.c_str(); }
+
+    FrameStore fs;
+    if (!fsLoad(storePath, &fs, false)) { out = "E cannot load store"; return out.c_str(); }
+    const int n = fs.frames();
+
+    char line[512];
+    snprintf(line, sizeof(line),
+             "frames      %d\nfps(header) %.6f\nduration    %.3f\ngrid        %d\n"
+             "srcSize     %lld\nsrcMtime    %lld\n",
+             n, fs.h.fps, fs.h.duration, (int)fs.h.grid,
+             (long long)fs.h.srcSize, (long long)fs.h.srcMtime);
+    out = line;
+
+    if (n >= 2) {
+        double span = (double)(fs.ptsMs[n - 1] - fs.ptsMs[0]) / 1000.0;
+        snprintf(line, sizeof(line),
+                 "pts span    %.3f s (%u..%u ms)\nfps(measured) %.6f\n",
+                 span, (unsigned)fs.ptsMs[0], (unsigned)fs.ptsMs[n - 1],
+                 span > 0.0 ? (double)(n - 1) / span : 0.0);
+        out += line;
+
+        // Irregular spacing is the signature of dropped or duplicated frames, which no
+        // single rate can describe; the gap histogram shows it at a glance.
+        std::map<int, int> gaps;
+        for (int i = 1; i < n; i++) gaps[(int)fs.ptsMs[i] - (int)fs.ptsMs[i - 1]]++;
+        out += "pts gaps    ";
+        int shown = 0;
+        for (auto it = gaps.begin(); it != gaps.end() && shown < 6; ++it, ++shown) {
+            snprintf(line, sizeof(line), "%dms x%d  ", it->first, it->second);
+            out += line;
+        }
+        if (gaps.size() > 6) {
+            snprintf(line, sizeof(line), "(+%d more)", (int)gaps.size() - 6);
+            out += line;
+        }
+        out += "\n";
+    }
+
+    const int dump = n < 8 ? n : 8;
+    out += "hashes      ";
+    for (int i = 0; i < dump; i++) {
+        snprintf(line, sizeof(line), "%016llx ", (unsigned long long)fs.dhash[i]);
+        out += line;
+    }
+    out += "\n";
+    return out.c_str();
+}
+
 // 1 when the store matches the source file's current size+mtime and format version.
 static int    VP_StoreFresh(const char* storePath, const char* filePath) {
     if (!storePath || !filePath) return 0;
@@ -503,6 +581,10 @@ static void* VA_VP_StoreFPS(void** a, int n) {
 static void* VA_VP_StoreFresh(void** a, int n) {
     return (void*)(intptr_t)((n < 2) ? 0 : VP_StoreFresh((const char*)a[0], (const char*)a[1]));
 }
+static void* VA_VP_StoreInfo(void** a, int n) {
+    if (n < 1) return (void*)"E bad arguments";
+    return (void*)VP_StoreInfo((const char*)a[0]);
+}
 static void* VA_VP_Cuts(void** a, int n) {
     if (n < 4) return (void*)"E bad arguments";
     return (void*)VP_Cuts((const char*)a[0], (int)(intptr_t)a[1],
@@ -540,10 +622,15 @@ const VPFunc g_frameStoreFuncs[] = {
     { "VP_StoreFresh", (void*)VP_StoreFresh, (void*)VA_VP_StoreFresh,
       "int", "const char*,const char*", "storePath,filePath",
       "1 if the store was built from this file revision and current format." },
+    { "VP_StoreInfo", (void*)VP_StoreInfo, (void*)VA_VP_StoreInfo,
+      "const char*", "const char*", "storePath",
+      "Plain-text summary of a framestore -- frame count, declared and measured frame "
+      "rate, timestamp span and spacing, and the first few hashes. For comparing the "
+      "same source file between two machines. 'E msg' on error." },
     { "VP_Cuts", (void*)VP_Cuts, (void*)VA_VP_Cuts,
       "const char*", "const char*,int,int,int", "storePath,thresh,ratioPct,minGap",
       "Detect cuts from a framestore, with no decoding. Returns 'C count frames fps' "
-      "then 'K frame dist localMedian' per cut. thresh is the absolute bar in bits of "
+      "then 'K frame dist localMedian ptsMs' per cut. thresh is the absolute bar in bits of "
       "64 (try 18); ratioPct additionally requires the jump to be that percentage of "
       "the local median distance, which is what separates a cut from fast motion (try "
       "250, 0 disables); minGap suppresses a weaker cut within that many frames of a "
