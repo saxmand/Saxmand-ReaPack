@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.8.2
+-- @version 0.9.0
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,12 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + A Help button at the top right of Cut Detection. Resting the pointer on it puts
+--     every keyboard shortcut on screen at once, each over the control it belongs to,
+--     rather than one at a time by hovering and reading tooltips.
+--   + The "nothing to describe" message is larger and orange, having been easy to miss
+--     at body size in white.
+--   + Settings: no gap between "Frame diagnostics" and "Reset all settings".
 --   + Fixed: on Windows, Ollama was reported as installed but not running on machines
 --     that did not have it, so the page offered to start it and Windows answered with
 --     its own "cannot find ollama". Whether a program exists is now read from the exit
@@ -1403,10 +1409,18 @@ function drawTransientMessage(x, y, w, h)
     if not m then return end
     local fade = math.min(1.0, math.max(0.0,
                      (TRANSIENT_SECONDS - (time_precise - m.at)) / 0.5))
+
+    -- Larger than the interface around it, and orange: this is the answer to something
+    -- just asked for, shown for two seconds over a picture, and at body size in white
+    -- it read as part of the page and was missed.
+    local size = 20
+    reaper.ImGui_PushFont(ctx, font, size)
     local tw, th = reaper.ImGui_CalcTextSize(ctx, m.text)
+    reaper.ImGui_PopFont(ctx)
+
     local cx = x + (w - tw) / 2
     local cy = y + (h - th) / 2
-    local pad = 10
+    local pad = 14
     -- Alpha composed here rather than through the withAlpha helper: that one is a local
     -- declared further down the file, so from up here it resolves as a global and is
     -- nil at call time. Colours are 0xRRGGBBAA, so the alpha is the low byte.
@@ -1416,8 +1430,11 @@ function drawTransientMessage(x, y, w, h)
 
     local dl = reaper.ImGui_GetWindowDrawList(ctx)
     reaper.ImGui_DrawList_AddRectFilled(dl, cx - pad, cy - pad, cx + tw + pad, cy + th + pad,
-                                        fadedTo(0x000000FF, 0xDD), 6)
-    reaper.ImGui_DrawList_AddText(dl, cx, cy, fadedTo(colorWhite, 0xFF), m.text)
+                                        fadedTo(0x000000FF, 0xE6), 8)
+    -- AddTextEx rather than AddText, so the size is the one measured above rather than
+    -- whatever font happens to be current when this runs.
+    reaper.ImGui_DrawList_AddTextEx(dl, font, size, cx, cy,
+                                    fadedTo(colorOrange, 0xFF), m.text)
 end
 
 -- Whether the right-hand preview follows the playhead during playback, or stays on the
@@ -6979,7 +6996,64 @@ end
 --------------------------------------------------------
 
 
+-- Shortcut badges, shown while the pointer rests on Help.
+--
+-- Every control with a keyboard shortcut already hands it to setToolTipFunc, so the
+-- information exists -- it is just only ever visible one control at a time, by hovering
+-- and reading. Holding the pointer over Help puts all of them on screen at once, each
+-- over the control it belongs to, which is the question "what are the shortcuts"
+-- answered in one look instead of twenty.
+helpShortcuts = {}      -- rebuilt each frame while Help is hovered
+helpHovered   = false
+
+-- Called from the tooltip helpers, so every control that documents a shortcut is
+-- covered without any of them having to know about this.
+function recordShortcut(shortcut)
+    if not helpHovered or not shortcut or shortcut == "" then return end
+    -- The first, where a control lists several: a badge has room for one, and the first
+    -- is the one its tooltip leads with.
+    local first = tostring(shortcut):match("^[^,]+")
+    if not first then return end
+    first = first:match("^%s*(.-)%s*$")
+    if first == "" then return end
+    local x1, y1 = reaper.ImGui_GetItemRectMin(ctx)
+    local x2, y2 = reaper.ImGui_GetItemRectMax(ctx)
+    if not x1 or not x2 or (x2 - x1) < 8 then return end   -- nothing to label
+    helpShortcuts[#helpShortcuts + 1] = { x1 = x1, y1 = y1, x2 = x2, y2 = y2, key = first }
+end
+
+-- Top right of the tab, drawn first so its hover state is known before anything that
+-- might be labelled. The cursor is put back, so nothing below shifts to make room.
+function helpButton()
+    helpShortcuts = {}
+    local cx, cy = reaper.ImGui_GetCursorPos(ctx)
+    reaper.ImGui_SetCursorPos(ctx, winW - 54, cy)
+    reaper.ImGui_Button(ctx, "Help")
+    helpHovered = reaper.ImGui_IsItemHovered(ctx)
+    setToolTipFunc("Rest here to show every keyboard shortcut on the control it belongs to")
+    reaper.ImGui_SetCursorPos(ctx, cx, cy)
+end
+
+-- After everything else in the tab, so the badges sit over the controls rather than
+-- under them.
+function drawHelpShortcuts()
+    if not helpHovered or #helpShortcuts == 0 then return end
+    local dl = reaper.ImGui_GetWindowDrawList(ctx)
+    local size = 13
+    for _, b in ipairs(helpShortcuts) do
+        reaper.ImGui_PushFont(ctx, font, size)
+        local tw, th = reaper.ImGui_CalcTextSize(ctx, b.key)
+        reaper.ImGui_PopFont(ctx)
+        local x = (b.x1 + b.x2) / 2 - tw / 2
+        local y = (b.y1 + b.y2) / 2 - th / 2
+        reaper.ImGui_DrawList_AddRectFilled(dl, x - 5, y - 2, x + tw + 5, y + th + 2,
+                                            0x000000EE, 3)
+        reaper.ImGui_DrawList_AddTextEx(dl, font, size, x, y, colorOrange, b.key)
+    end
+end
+
 function setToolTipFunc(text, shortcut, color)
+    recordShortcut(shortcut)
     if settings.showToolTip and text and #tostring(text) > 0 and not isMouseDown then
         ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Border(), colorGrey)
         ImGui.PushStyleColor(ctx, reaper.ImGui_Col_Text(), color and color or colorWhite)
@@ -7001,6 +7075,7 @@ end
 -- Built with BeginItemTooltip rather than SetItemTooltip because the two lines are
 -- styled differently, and SetItemTooltip takes one string under one pushed colour.
 function setToolTipWithName(fullName, text, shortcut)
+    recordShortcut(shortcut)
     if not settings.showToolTip or isMouseDown then return end
     if (not fullName or fullName == "") and (not text or text == "") then return end
 
@@ -10084,8 +10159,8 @@ function settingButtons(IP)
     -- Last in the column, because it undoes everything above it: a button that throws
     -- away every choice on this page does not belong at the top of it, where it sat
     -- next to the detector it has nothing to do with. It resets the script's settings,
-    -- not FFmpeg's path -- there is a separate button for that.
-    reaper.ImGui_NewLine(ctx)
+    -- not FFmpeg's path -- there is a separate button for that. No gap above it: the
+    -- space before Frame diagnostics already separates this pair from what is above.
     if reaper.ImGui_Button(ctx, "Reset all settings") then
         settings = deep_copy(defaultSettings)
         settings.tabSelection = 3
@@ -10751,6 +10826,12 @@ local function loop()
         end
         updateTransientMessage()
 
+        -- False unless the Cut Detection tab draws its Help button this frame. Left to
+        -- helpButton alone it would stay true after switching away mid-hover, and
+        -- recordShortcut would then go on collecting rectangles on a tab that never
+        -- draws them.
+        helpHovered = false
+
         -- cmd+w closes the window, as it does everywhere else. Clearing `open` is the
         -- same thing the title bar's close button does: the loop stops deferring, and
         -- the atexit cleanup puts the toolbar button out and stops any preview.
@@ -11012,6 +11093,8 @@ local function loop()
             
             if cutDetection then
                 updateTabSelection(1) 
+
+                helpButton()
                 
                 generalSettingButtons(itemProperties)
 
@@ -11038,6 +11121,8 @@ local function loop()
                 -- next to the frame-stepping arrows they read as part of navigating.
                 reaper.ImGui_SameLine(ctx, winW - 106)
                 undoRedoButtons(itemProperties)
+
+                drawHelpShortcuts()
                 
                 
                 
