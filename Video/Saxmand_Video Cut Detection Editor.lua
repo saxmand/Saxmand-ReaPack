@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.9.0
+-- @version 0.9.1
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,9 +24,16 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
---   + A Help button at the top right of Cut Detection. Resting the pointer on it puts
---     every keyboard shortcut on screen at once, each over the control it belongs to,
---     rather than one at a time by hovering and reading tooltips.
+--   + The Shortcuts button at the top right of Cut Detection (called Help in 0.9.0).
+--     Resting the pointer on it puts every keyboard shortcut on screen at once, each
+--     over the control it belongs to.
+--   + The colour swatches, "next colour" and Describe show their shortcut there too.
+--   + The colour swatches and "only show edited cuts" said to press cmd+1, cmd+o and so
+--     on. The modifier is only needed while the name field has focus, so the tooltips
+--     now give the plain key.
+--   + Where a control lists alternatives, the badge shows the first: Remove reads "r"
+--     rather than "r/backspace/delete".
+--   + Fixed: "Open video path" carried the tooltip belonging to a different button.
 --   + The "nothing to describe" message is larger and orange, having been easy to miss
 --     at body size in white.
 --   + Settings: no gap between "Frame diagnostics" and "Reset all settings".
@@ -7011,8 +7018,10 @@ helpHovered   = false
 function recordShortcut(shortcut)
     if not helpHovered or not shortcut or shortcut == "" then return end
     -- The first, where a control lists several: a badge has room for one, and the first
-    -- is the one its tooltip leads with.
-    local first = tostring(shortcut):match("^[^,]+")
+    -- is the one its tooltip leads with. Alternatives are written either way --
+    -- "r/backspace/delete" is one key with two synonyms, "shift+left, alt+1" is two
+    -- separate bindings -- and in both cases the first is the one to show.
+    local first = tostring(shortcut):match("^[^,/]+")
     if not first then return end
     first = first:match("^%s*(.-)%s*$")
     if first == "" then return end
@@ -7027,8 +7036,13 @@ end
 function helpButton()
     helpShortcuts = {}
     local cx, cy = reaper.ImGui_GetCursorPos(ctx)
-    reaper.ImGui_SetCursorPos(ctx, winW - 54, cy)
-    reaper.ImGui_Button(ctx, "Help")
+    local label  = "Shortcuts"
+    -- Measured rather than a fixed offset, so the button stays against the right edge
+    -- whatever the label or the font size.
+    local tw     = reaper.ImGui_CalcTextSize(ctx, label)
+    local padX   = reaper.ImGui_GetStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding()) or 8
+    reaper.ImGui_SetCursorPos(ctx, winW - (tw + padX * 2) - 16, cy)
+    reaper.ImGui_Button(ctx, label)
     helpHovered = reaper.ImGui_IsItemHovered(ctx)
     setToolTipFunc("Rest here to show every keyboard shortcut on the control it belongs to")
     reaper.ImGui_SetCursorPos(ctx, cx, cy)
@@ -7839,7 +7853,7 @@ function cutEditedNameToggles(IP, IP2)
         find_cut_data(IP)
         find_cut_data(IP2)
     end
-    setToolTipFunc("Hide cuts that does not have an edited name.\n- press " .. MOD_CMD .. "+o to set with keyboard")
+    setToolTipFunc("Hide cuts that does not have an edited name", "o")
 
     if (not markerNameIsFocused or isSuperDown) and isO then
         settings.onlyShowCutsWithEditedName = not settings.onlyShowCutsWithEditedName
@@ -8070,8 +8084,12 @@ function cutColors(IP)
             end
         end
         reaper.ImGui_PopStyleColor(ctx, 4)
-        setToolTipFunc("Set marker color.\n- press " .. MOD_CMD .. "+" ..
-        keyNumber .. " to set with keyboard\n- hold shift to set all markers")
+        -- The number alone: the modifier is only needed while the name field has
+        -- focus, and spelling it as cmd+1 made it look required everywhere. Passed as
+        -- the shortcut rather than written into the text so it also gets a badge under
+        -- Shortcuts.
+        setToolTipFunc("Set marker color\n- hold shift to set all markers",
+                       tostring(keyNumber))
     end
 
     reaper.ImGui_SameLine(ctx)
@@ -8114,7 +8132,7 @@ function cutColors(IP)
             end
         end
     end
-    setToolTipFunc("Set cut to next color.\n- press " .. MOD_CMD .. "+c to set with keyboard\n- hold shift to set all markers")
+    setToolTipFunc("Set cut to next color\n- hold shift to set all markers", "c")
 end
 
 function analyseButton(IP, btnName)
@@ -8246,7 +8264,7 @@ function selectedItemButtons(IP)
                 reaper.CF_ShellExecute(IP.directory)
                 closePopup = true
             end
-            setToolTipFunc("Click to remove generated thumbnails and the thumbnail folder", "o")
+            setToolTipFunc("Open the folder the video is in", "o")
             
             if isEscape then
                 closePopup = true
@@ -8549,6 +8567,9 @@ function selectedCutInfoArea(IP)
                 end
             end
             setToolTipFunc(describeTip)
+            -- Directly, because this tooltip already spells its keys out and passing a
+            -- shortcut would have setToolTipFunc append a second line saying the same.
+            recordShortcut("d")
         else
             --if not cursorOutsideArea then
                 -- Pulsing, for the same reason Analyse does: with no cut selected this
