@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.9.1
+-- @version 0.9.2
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,14 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Shortcut badges read "D" and "Shift+Right Arrow" rather than lower case, and a
+--     dense row of controls fans them out instead of stacking them on top of one
+--     another -- the transport and Undo/Redo were unreadable, their labels being far
+--     wider than the buttons they belong to.
+--   + Fixed: keys pressed with a popup open also reached the page behind it. With the
+--     Extra popup up, r removed the selected cut as well as the thumbnails, and o
+--     toggled "only show edited cuts" as well as opening the folder. Whatever is in
+--     front has the keyboard now.
 --   + The Shortcuts button at the top right of Cut Detection (called Help in 0.9.0).
 --     Resting the pointer on it puts every keyboard shortcut on screen at once, each
 --     over the control it belongs to.
@@ -7025,6 +7033,12 @@ function recordShortcut(shortcut)
     if not first then return end
     first = first:match("^%s*(.-)%s*$")
     if first == "" then return end
+    -- Capitalised the way shortcuts are normally written: each part of the combination,
+    -- so "shift+left arrow" reads "Shift+Left Arrow". A lone lowercase letter beside a
+    -- button is hard to take for a key at all.
+    first = first:gsub("(%a[%w]*)", function(word)
+        return word:sub(1, 1):upper() .. word:sub(2)
+    end)
     local x1, y1 = reaper.ImGui_GetItemRectMin(ctx)
     local x2, y2 = reaper.ImGui_GetItemRectMax(ctx)
     if not x1 or not x2 or (x2 - x1) < 8 then return end   -- nothing to label
@@ -7054,16 +7068,61 @@ function drawHelpShortcuts()
     if not helpHovered or #helpShortcuts == 0 then return end
     local dl = reaper.ImGui_GetWindowDrawList(ctx)
     local size = 13
+
+    -- A badge is usually wider than the control it labels -- "Shift+Right Arrow" over a
+    -- 25 px arrow button -- so centring every one of them puts the transport row and
+    -- Undo/Redo on top of each other and none of them can be read. Each badge takes the
+    -- first position that is clear: centred, then a step above, then a step below, and
+    -- so on outwards, so a dense row fans out instead of piling up.
+    local placed = {}
+    local function clashes(r)
+        for _, o in ipairs(placed) do
+            if r.x1 < o.x2 and r.x2 > o.x1 and r.y1 < o.y2 and r.y2 > o.y1 then return true end
+        end
+        return false
+    end
+
     for _, b in ipairs(helpShortcuts) do
         reaper.ImGui_PushFont(ctx, font, size)
         local tw, th = reaper.ImGui_CalcTextSize(ctx, b.key)
         reaper.ImGui_PopFont(ctx)
-        local x = (b.x1 + b.x2) / 2 - tw / 2
-        local y = (b.y1 + b.y2) / 2 - th / 2
-        reaper.ImGui_DrawList_AddRectFilled(dl, x - 5, y - 2, x + tw + 5, y + th + 2,
-                                            0x000000EE, 3)
-        reaper.ImGui_DrawList_AddTextEx(dl, font, size, x, y, colorOrange, b.key)
+
+        local bw, bh = tw + 10, th + 4
+        local cx = (b.x1 + b.x2) / 2
+        local cy = (b.y1 + b.y2) / 2
+        local step = bh + 2
+
+        local r
+        for attempt = 0, 6 do
+            -- 0, -1, +1, -2, +2 ... in steps of a badge height
+            local n  = math.ceil(attempt / 2)
+            local dy = (attempt % 2 == 1) and -n * step or n * step
+            r = { x1 = cx - bw / 2, y1 = cy - bh / 2 + dy,
+                  x2 = cx + bw / 2, y2 = cy + bh / 2 + dy }
+            if not clashes(r) then break end
+        end
+        placed[#placed + 1] = r
+
+        reaper.ImGui_DrawList_AddRectFilled(dl, r.x1, r.y1, r.x2, r.y2, 0x000000EE, 3)
+        reaper.ImGui_DrawList_AddTextEx(dl, font, size, r.x1 + 5, r.y1 + 2, colorOrange, b.key)
     end
+end
+
+-- True while any popup is open.
+--
+-- The Extra popup's buttons answer to a bare r and a bare o, and so do Remove and
+-- "only show edited cuts" on the page behind it -- so with it open, r removed the
+-- selected cut as well as the thumbnails, and o toggled the filter as well as opening
+-- the folder. Whatever is in front has the keyboard, so the page stands down.
+--
+-- Any popup rather than that one by name: the same reasoning holds for every popup
+-- this script opens, and matching an id means matching the ID stack it was opened in,
+-- which is one more thing to keep in step. Asked of ImGui rather than tracked with a
+-- flag of our own, because popups are drawn further down the frame than these keys are
+-- read, and a flag would be a frame behind.
+function aPopupIsOpen()
+    if not reaper.ImGui_IsPopupOpen then return false end
+    return reaper.ImGui_IsPopupOpen(ctx, "", reaper.ImGui_PopupFlags_AnyPopup())
 end
 
 function setToolTipFunc(text, shortcut, color)
@@ -7855,7 +7914,7 @@ function cutEditedNameToggles(IP, IP2)
     end
     setToolTipFunc("Hide cuts that does not have an edited name", "o")
 
-    if (not markerNameIsFocused or isSuperDown) and isO then
+    if (not markerNameIsFocused or isSuperDown) and isO and not aPopupIsOpen() then
         settings.onlyShowCutsWithEditedName = not settings.onlyShowCutsWithEditedName
         saveSettings()
         find_cut_data(IP)
@@ -8406,7 +8465,9 @@ function selectedCutInfoArea(IP)
         
         
             reaper.ImGui_SameLine(ctx, posX45)
-            if reaper.ImGui_Button(ctx, "Remove") or ((not markerNameIsFocused or isSuperDown) and isR) or (not markerNameIsFocused and (isBackspace or isDelete)) then
+            if reaper.ImGui_Button(ctx, "Remove")
+               or ((not markerNameIsFocused or isSuperDown) and isR and not aPopupIsOpen())
+               or (not markerNameIsFocused and (isBackspace or isDelete)) then
                 undo_redo.save_undo(IP.cut_data)
                 
                 local next_cut_making_threashold
