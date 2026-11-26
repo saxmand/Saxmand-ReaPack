@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" commit="e19aa2b0ad3bb8c0b8e15be149b13a71ee564f29" name="Saxmand ReaPack">
+<index version="1" commit="4084091a31ca8acbcdf076dca57ddc6b3d3b76cf" name="Saxmand ReaPack">
   <category name="Articulation Scripts">
     <reapack name="Articulation Scripts Web Surface.www" type="webinterface" desc="Articulation Scripts Web Surface">
       <version name="0.0.1" author="saxmand" time="2026-02-04T15:26:13Z">
@@ -14707,6 +14707,152 @@ Cut descriptions
         <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/e19aa2b0ad3bb8c0b8e15be149b13a71ee564f29/Video/Helpers/json.lua</source>
         <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/e19aa2b0ad3bb8c0b8e15be149b13a71ee564f29/Video/Helpers/undo_redo.lua</source>
         <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/e19aa2b0ad3bb8c0b8e15be149b13a71ee564f29/Video/Helpers/hosi_exec_hidden.vbs</source>
+      </version>
+      <version name="0.9.2" author="saxmand" time="2026-11-26T01:31:44Z">
+        <changelog><![CDATA[+ Shortcut badges read "D" and "Shift+Right Arrow" rather than lower case, and a
+  dense row of controls fans them out instead of stacking them on top of one
+  another -- the transport and Undo/Redo were unreadable, their labels being far
+  wider than the buttons they belong to.
++ Fixed: keys pressed with a popup open also reached the page behind it. With the
+  Extra popup up, r removed the selected cut as well as the thumbnails, and o
+  toggled "only show edited cuts" as well as opening the folder. Whatever is in
+  front has the keyboard now.
++ The Shortcuts button at the top right of Cut Detection (called Help in 0.9.0).
+  Resting the pointer on it puts every keyboard shortcut on screen at once, each
+  over the control it belongs to.
++ The colour swatches, "next colour" and Describe show their shortcut there too.
++ The colour swatches and "only show edited cuts" said to press cmd+1, cmd+o and so
+  on. The modifier is only needed while the name field has focus, so the tooltips
+  now give the plain key.
++ Where a control lists alternatives, the badge shows the first: Remove reads "r"
+  rather than "r/backspace/delete".
++ Fixed: "Open video path" carried the tooltip belonging to a different button.
++ The "nothing to describe" message is larger and orange, having been easy to miss
+  at body size in white.
++ Settings: no gap between "Frame diagnostics" and "Reset all settings".
++ Fixed: on Windows, Ollama was reported as installed but not running on machines
+  that did not have it, so the page offered to start it and Windows answered with
+  its own "cannot find ollama". Whether a program exists is now read from the exit
+  code rather than from whether anything was printed -- "where" announces a miss on
+  its error output, which counted as output. Starting or pulling now re-checks
+  first and opens the download page instead if it has gone missing.
++ Fixed: showing the "nothing to describe" message raised an error instead of
+  drawing, having called a helper declared further down the file than itself.
++ "Describe cuts" with nothing to describe now says so across the thumbnails for a
+  couple of seconds, instead of a dialog that has to be dismissed. It also goes on
+  the next thing you do, whichever comes first.
++ Fixed: a cut was only selected when the cursor sat on its time exactly. A cut's
+  time comes out of the analysis and has no reason to land on REAPER's frame grid,
+  while the cursor always does -- so stepping a frame off a cut and back again left
+  it unselected despite ending where it started. The cursor now takes the nearest
+  cut within half a frame, nearest rather than first so two cuts closer than a
+  frame cannot both claim it.
++ Fixed: shift-clicking empty timeline with a cut selected took two clicks to let
+  go of it. The cursor position had not caught up within that frame and still held
+  the cut's own time, so the cut was immediately re-selected.
++ A "Video" tick under the right-hand preview, on by default. Off, that picture
+  stays on the selected cut while playing instead of following the playhead, so a
+  cut can be compared against whatever is playing past it.
++ The right-hand caption reads "on playhead" while it is following playback, and
+  "on cut" otherwise.
++ "Insert marker" pulses, as Analyse does: with no cut selected it is what the page
+  is offering.
++ Fixed: on Windows, moving to a cut whose frames were not cached left the previous
+  picture on screen until you moved away and came back. Going there is instant
+  because the decode happens elsewhere, but the thumbnail was only fetched when the
+  playhead moved -- so nothing asked again once the real frame arrived. It now keeps
+  asking while the extension reports the frame as still decoding. Needs the Video
+  Preview extension at 1.7.1.
++ "Describe cuts" leaves alone any cut that already has a name, whether somebody
+  typed it or an earlier run fetched it. Hold alt (opt on macOS) while clicking, or
+  press shift+alt+d, to replace those too. A model run is not deterministic, so
+  describing everything a second time used to quietly reword the lot.
++ Cut Detection: the transport sits on the same row as the thumbnail captions,
+  centred in the gap between the two pictures, rather than on a row of its own.
++ shift+d describes every cut on the timeline, where d describes the selected one.
+  Both Describe buttons say so. Stepping back through descriptions already fetched
+  has moved from shift+d to alt+d -- it is the only way back to one that cost a
+  model run, so it moved rather than went.
++ Cut Detection: one Analyse button instead of two. An unanalysed video showed a
+  second, pulsing one where the cut count goes, a few pixels from the first; the
+  button that is always there now pulses instead.
++ Cut Detection: the thumbnails fill their full width with black, as the Compare
+  tab's do, so a picture that is not the shape of its slot has an edge rather than
+  fading into the page.
++ Cut Detection: italic captions under the thumbnails -- "before cut" on the left,
+  "on cut" on the right. The two pictures are often near-identical and nothing said
+  which was which, that being the reason there are two.
++ Cut Detection: Undo and Redo moved down to the right-hand end of the row of
+  actions, away from the frame-stepping arrows they read as part of.
++ Fixed: on the open tab, the tab's own tooltip appeared over whichever widget its
+  content happened to end with -- on Settings, the third column. The tooltip was
+  being attached after the tab had been closed off, by which point the last item
+  was a widget inside it rather than the tab.
++ Selecting a cut whose frames are not cached no longer stalls, with the Video
+  Preview extension at 1.7.0: the decode moves off the calling thread and the
+  previous frame is held for a moment rather than the window freezing.
++ Keyboard navigation is off. With it on, Tab and the arrow keys moved focus between
+  buttons and space activated whichever had it, so keys this app binds were being
+  swallowed by whatever happened to be focused. It is now cleared every frame, so
+  REAPER's own preference cannot put it back. Typing in a field is unaffected.
++ Opening the Settings tab stops playback. Every transport control is on the other
+  two tabs, so sound that carried on here could not be stopped without navigating
+  back to find the button.
++ The extension is now called "Video Cut Detection Editor extension" in ReaPack,
+  rather than "Video Preview extension" - the same package under a name that says
+  what it belongs to. Update it alongside this script.
++ Settings: a "Max" slider for how much disk the cached frames may use, beside the
+  figure for what they currently occupy. Needs the Video Preview extension at
+  1.5.0, which also brings the read-ahead that Windows previews were missing.
++ Settings: no gap under the divider, "Reset all settings" moved to the end of its
+  column rather than sitting above the settings it discards, a space above "Frame
+  diagnostics", and "Preview resolution" in grey like the other headings.
++ Settings: what the cached preview images occupy, a button to delete them, and a
+  "Clear when closing app" toggle, in the second column. The cache already keeps
+  itself inside a budget, so this is not housekeeping anyone has to do -- it is
+  there to see what it costs and take it back on demand. Deleting them loses
+  nothing: frames are rebuilt from the video as they are needed.
++ Settings: the script and extension versions sit across the top of the page rather
+  than inside the first column, and the "Settings" heading is gone -- the page is
+  plainly the settings page without it.
++ Fixed: cut thumbnails written by an earlier version were kept and shown, so a fix
+  to which frame gets decoded changed nothing on screen. They are named after their
+  time in the file and nothing in the name said which build made them; the folder
+  now records that, and thumbnails from an older one are rebuilt once. Needs the
+  Video Preview extension at 1.3.2, which does the same for its own frame cache and
+  picks the frame nearest the time asked for.
++ Fixed: a console window flashed over REAPER on Windows. The Ollama check ran
+  through a shell, which Windows gives a window, and it ran as soon as a cut was
+  selected whether or not Ollama was wanted at all - so it turned up for people who
+  had nothing to do with it. Everything that runs a command now goes through
+  REAPER's hidden process call, as the thumbnail path already did. The terminal
+  that opens while pulling an Ollama model is still meant to be seen: it is the
+  only progress a multi-gigabyte download has.
++ Fixed: removing an Ollama model did nothing on Windows. The request body was
+  wrapped in single quotes, which cmd.exe does not treat as quoting, so Ollama was
+  sent them literally and rejected the request.
++ Needs the Video Preview extension at 1.3.1, which fixes thumbnails and preview
+  frames on Windows coming from the wrong moment in the file.
++ Needs the Video Preview extension at 1.3.0, which fixes the same file
+  fingerprinting differently on macOS and on Windows -- the remaining reason cut
+  detection disagreed between them once frame timing was sorted out. Fingerprint
+  stores built before it rebuild themselves on first use; nothing to do by hand.
++ Fixed: cut detection on Windows found fewer cuts than macOS and put most of them
+  in the wrong place. A cut's position was worked out by dividing its frame number
+  by the frame rate recorded in the fingerprint store, and on Windows that rate was
+  always 25 whatever the file was. Positions now come from the timestamp each frame
+  carries, which also makes them right for variable frame rate files. Needs the
+  Video Preview extension at 1.2.1 or newer; older ones fall back to the division.
++ Settings page text wraps inside its column instead of running into the next one.
++ "Frame diagnostics" also reports the fingerprint store's frame count, measured
+  frame rate and frame timing, so the same file can be compared between machines.
++ Fixed: the settings page told Windows users the extension was macOS only, which
+  stopped being true when the Windows build shipped.]]></changelog>
+        <source main="main">https://github.com/saxmand/Saxmand-ReaPack/raw/4084091a31ca8acbcdf076dca57ddc6b3d3b76cf/Video/Saxmand_Video%20Cut%20Detection%20Editor.lua</source>
+        <source file="Helpers/ffmpeg.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/4084091a31ca8acbcdf076dca57ddc6b3d3b76cf/Video/Helpers/ffmpeg.lua</source>
+        <source file="Helpers/json.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/4084091a31ca8acbcdf076dca57ddc6b3d3b76cf/Video/Helpers/json.lua</source>
+        <source file="Helpers/undo_redo.lua">https://github.com/saxmand/Saxmand-ReaPack/raw/4084091a31ca8acbcdf076dca57ddc6b3d3b76cf/Video/Helpers/undo_redo.lua</source>
+        <source file="Helpers/hosi_exec_hidden.vbs">https://github.com/saxmand/Saxmand-ReaPack/raw/4084091a31ca8acbcdf076dca57ddc6b3d3b76cf/Video/Helpers/hosi_exec_hidden.vbs</source>
       </version>
     </reapack>
   </category>
