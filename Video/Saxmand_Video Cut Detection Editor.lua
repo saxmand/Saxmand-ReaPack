@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.11.2
+-- @version 0.11.3
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -45,9 +45,14 @@
 --     scroll to reach it is the part you cannot work out by looking.
 --   + The wheel behaves as it does elsewhere: sideways along the timeline with shift or
 --     with a trackpad's horizontal axis, and down through the rows on its own.
---   + The controls are in three rows: the comparison and what to do about it, then the
---     tracks the overview watches, then what to do to one item. "Muted" and "Find cuts"
---     sit with the comparison; hiding the rows is a tick rather than an arrow.
+--   + The controls are in three rows, set tight against each other and indented to the
+--     margin the timelines use: the comparison and what to do about it, then the tracks
+--     the overview watches, then what to do to one item. "Find cuts" sits with the
+--     comparison and "muted" with the items, and the rows are shown by a tick that
+--     reads "Show session tracks" rather than by an arrow.
+--   + Nothing under the last row while nothing is happening. The progress line was
+--     drawn empty so that progress would have somewhere to appear, which left a blank
+--     row below the buttons for all of the time there was no progress to report.
 --   + "Remove tracks" opens a list of what is loaded, indented by folder, each with
 --     its item count, plus "Remove all tracks from overview" at the top. Unticking a
 --     folder takes the tracks inside it as well.
@@ -5377,18 +5382,18 @@ function conformTrackControls()
     -- conform still uses them, only their rows are not drawn. A hundred and twenty
     -- tracks of rows buries the two timelines the page is about.
     if nTracks > 0 then
-        -- Phrased as hiding, and ticked by default, because that is the state the page
-        -- starts in -- a tick that starts clear and means "the thing you are looking at
-        -- is switched off" reads backwards.
-        local hch, hv = reaper.ImGui_Checkbox(ctx, "hide session tracks",
-                                              not settings.conform_lanes_open)
+        -- Phrased as showing: a tick that is on when the thing is on is the way round
+        -- everything else on this page works, and "hide" ticked by default meant the
+        -- page opened with a tick already set for something nobody had asked for.
+        local hch, hv = reaper.ImGui_Checkbox(ctx, "Show session tracks",
+                                              settings.conform_lanes_open and true or false)
         if hch then
-            settings.conform_lanes_open = not hv
+            settings.conform_lanes_open = hv
             saveSettings()
         end
         setToolTipFunc(string.format(
-            "%d track%s loaded. Hiding them leaves them loaded and still part of the\n" ..
-            "conform -- it only stops their rows being drawn, which on a session of\n" ..
+            "%d track%s loaded. Leaving them hidden still keeps them loaded and part of\n" ..
+            "the conform -- it only stops their rows being drawn, which on a session of\n" ..
             "any size is what buries the two timelines.",
             nTracks, nTracks == 1 and "" or "s"))
         reaper.ImGui_SameLine(ctx)
@@ -6688,12 +6693,8 @@ function conformEditButtons()
     -- lane buttons want it up to three times in the same frame.
     local breaks  = laneCtx and conformMapBreaks() or nil
 
-    reaper.ImGui_SameLine(ctx)
-    reaper.ImGui_Dummy(ctx, 8, 1)
-    reaper.ImGui_SameLine(ctx)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_TextColored(ctx, colorGrey, "|")
-    reaper.ImGui_SameLine(ctx)
+    -- No leading separator: these used to run on from the compare buttons and needed a
+    -- bar to tell the two apart. They have a row of their own now, which says it.
 
     -- What the three buttons are pointed at right now.
     reaper.ImGui_AlignTextToFramePadding(ctx)
@@ -6901,13 +6902,21 @@ function conformMatchRow(IP1, IP2)
     conformPlanButtons()
 
     -- Row two: which tracks the overview is watching, and how their rows are drawn.
-    reaper.ImGui_NewLine(ctx)
+    --
+    -- A one-pixel spacer rather than NewLine: NewLine leaves a whole empty text line
+    -- between the rows, which on three rows of buttons reads as three separate things
+    -- rather than one block of controls. The SameLine that follows it starts the row at
+    -- the margin the timeline and the previews use, so the rows line up with the
+    -- picture above them instead of with the window edge.
+    reaper.ImGui_Dummy(ctx, 1, 1)
+    reaper.ImGui_SameLine(ctx, CONFORM_MARGIN)
     conformTrackControls()
 
     -- Row three: what to do to one item. Below the tracks because an item is reached
     -- through them, and separate because these act on a single thing rather than on the
     -- comparison or the session as a whole.
-    reaper.ImGui_NewLine(ctx)
+    reaper.ImGui_Dummy(ctx, 1, 1)
+    reaper.ImGui_SameLine(ctx, CONFORM_MARGIN)
     conformEditButtons()
 
     -- With the item controls, because it is about items: which of them are drawn.
@@ -7641,18 +7650,14 @@ function drawConformSection(IP1, IP2)
     -- Under the timeline: what to do with the comparison, rather than how to play it.
     conformMatchRow(IP1, IP2)
 
-    -- The result is off by default because most of the time the ribbons are the answer
-    -- and the numbers are only wanted when something looks wrong.
-    reaper.ImGui_Dummy(ctx, 1, 2)
-    reaper.ImGui_SameLine(ctx, CONFORM_MARGIN)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_TextColored(ctx, colorGrey, "")
-
-    -- Progress stays outside the tickbox: it is the one thing you need to see while
-    -- waiting, whether or not you asked for the numbers.
+    -- Progress, and only when there is any. This used to be an empty line of text drawn
+    -- unconditionally so the status had somewhere to appear, which cost a blank row
+    -- under the buttons for the whole of the time nothing was happening.
     if conformStatus then
-        reaper.ImGui_SameLine(ctx)
-        reaper.ImGui_TextColored(ctx, colorGrey, "    " .. conformStatus)
+        reaper.ImGui_Dummy(ctx, 1, 2)
+        reaper.ImGui_SameLine(ctx, CONFORM_MARGIN)
+        reaper.ImGui_AlignTextToFramePadding(ctx)
+        reaper.ImGui_TextColored(ctx, colorGrey, conformStatus)
     end
 
     -- The edit plan, when one has been asked for. Shown rather than applied: this says
