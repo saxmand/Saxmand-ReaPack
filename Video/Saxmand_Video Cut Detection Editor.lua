@@ -33,9 +33,10 @@
 --     timeline, so the wheel acts on whatever it is pointing at.
 --   + "Compact" decides how they are laid out: on, items share rows packed into as few
 --     as will hold them; off, each track keeps its own row, named in the header.
---   + A scroll bar down the right of the rows, and a thin strip showing every item on
---     the tracks currently scrolled out of sight -- a hidden track with an item where a
---     cut is about to land is exactly what needs noticing.
+--   + A scroll bar beside the rows, outside the timeline rather than over it, with a
+--     thumb that can be dragged. Clicking the trough jumps to that point.
+--   + A thin strip showing every item on the tracks currently scrolled out of sight --
+--     a hidden track with an item where a cut is about to land is what needs noticing.
 --   + The wheel behaves as it does elsewhere: sideways along the timeline with shift or
 --     with a trackpad's horizontal axis, and down through the rows on its own.
 --   + The controls are in three rows: the comparison and what to do about it, then the
@@ -4505,31 +4506,102 @@ function conformDrawLaneLabels(dl, laneOldY, laneNewY, laneH, visLeft, viewW, he
     end
 end
 
--- How much of the rows are on screen, as a bar down the right-hand edge of each band.
---
--- A thumb rather than a count, because the question while scrolling is "how far
--- through am I", which a position answers and a number does not. It is drawn, not
--- grabbable: the wheel already moves the rows, and a thumb narrow enough to fit beside
--- a 26 px row is not something anyone can reliably catch hold of.
+-- Where the two bands of session rows ended up, recorded while they are drawn and read
+-- afterwards by the scrollbar -- which lives outside the scrolling child, like the
+-- header and the speaker gutter, and so cannot work the positions out for itself.
+conformLaneBands = {}
+
+CONFORM_LANE_SB_W = 10        -- the scrollbar's column, reserved beside the timeline
+
 function conformDrawLaneScroll(dl, laneOldY, laneNewY, laneH, visLeft, viewW, headH)
+    conformLaneBands = {}
+    if (laneH or 0) <= 0 then return end
+    local strip = conformLaneStrip or 0
+    local h = laneH - strip
+    if h <= 0 then return end
+    conformLaneBands[1] = { y = laneOldY + headH + strip, h = h }
+    conformLaneBands[2] = { y = laneNewY + strip,         h = h }
+end
+
+-- The scrollbar itself: a trough beside the rows with a thumb that can be dragged.
+--
+-- Beside rather than over them. It used to be drawn inside the timeline against its
+-- right edge, which put it on top of whatever item was there -- and an item under the
+-- scrollbar is one you cannot see or click, which is the opposite of what a thing for
+-- finding hidden items should do.
+conformSBDrag = nil
+
+-- Where the thumb sits and how big it is: its height is the visible share of the rows,
+-- floored so it stays catchable when there are hundreds, and it travels the leftover
+-- height in step with the scroll position.
+function conformSBThumb(bandH, total, shown, scroll)
+    local frac   = shown / total
+    local thumbH = math.max(14, bandH * frac)
+    local travel = math.max(0, bandH - thumbH)
+    local maxScroll = math.max(1, total - shown)
+    local off = travel * math.max(0, math.min(maxScroll, scroll or 0)) / maxScroll
+    return off, thumbH, travel
+end
+
+-- And the inverse, for dragging: where the top of the thumb has been put, back into a
+-- row. Rounded rather than truncated, so the thumb does not lag half a row behind the
+-- pointer on the way up.
+function conformSBScrollAt(pos, travel, maxScroll)
+    if travel <= 0 then return 0 end
+    local v = math.floor((pos / travel) * maxScroll + 0.5)
+    return math.max(0, math.min(maxScroll, v))
+end
+
+function conformDrawLaneScrollbar(x, w)
     local total = conformLaneRows or 0
     local shown = conformLaneShown or 0
-    if total <= shown or shown <= 0 or (laneH or 0) <= 0 then return end
+    if #conformLaneBands == 0 or total <= shown or shown <= 0 then
+        conformSBDrag = nil
+        return
+    end
 
-    local w  = 4
-    local x2 = visLeft + viewW - 2
-    local x1 = x2 - w
-    local frac  = shown / total
-    local start = (conformLaneScroll or 0) / total
+    local maxScroll = total - shown
+    local mx, my = reaper.ImGui_GetMousePos(ctx)
+    local inWin  = reaper.ImGui_IsWindowHovered(ctx)
 
-    local strip = conformLaneStrip or 0
-    for _, band in ipairs({ { laneOldY + headH + strip, laneH - strip },
-                            { laneNewY + strip,         laneH - strip } }) do
-        local y, h = band[1], band[2]
-        if h <= 0 then break end
-        reaper.ImGui_DrawList_AddRectFilled(dl, x1, y, x2, y + h, 0x00000066, 2)
-        reaper.ImGui_DrawList_AddRectFilled(dl, x1, y + h * start,
-                                            x2, y + h * (start + frac), 0xE5C07BAA, 2)
+    -- Dragging continues wherever the pointer goes, and ends only when the button does,
+    -- so a drag that wanders off the narrow trough is not dropped halfway.
+    if conformSBDrag and not reaper.ImGui_IsMouseDown(ctx, 0) then conformSBDrag = nil end
+
+    for bi, band in ipairs(conformLaneBands) do
+        local off, thumbH, travel = conformSBThumb(band.h, total, shown, conformLaneScroll)
+        local ty = band.y + off
+
+        local overBand  = inWin and mx >= x and mx <= x + w
+                          and my >= band.y and my <= band.y + band.h
+        local overThumb = overBand and my >= ty and my <= ty + thumbH
+        local active    = conformSBDrag and conformSBDrag.band == bi
+
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, x, band.y, x + w, band.y + band.h,
+                                            0x00000066, 3)
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, x + 1, ty, x + w - 1, ty + thumbH,
+                                            (active or overThumb) and 0xE5C07BFF or 0xE5C07B99, 3)
+
+        if overBand and reaper.ImGui_IsMouseClicked(ctx, 0) and not conformSBDrag then
+            if overThumb then
+                conformSBDrag = { band = bi, grab = my - ty }
+            else
+                -- A click in the trough puts the thumb under the pointer, which is what
+                -- every other scrollbar does and is quicker than paging to it.
+                conformSBDrag = { band = bi, grab = thumbH / 2 }
+            end
+        end
+
+        if active then
+            conformLaneScroll = conformSBScrollAt(my - conformSBDrag.grab - band.y,
+                                                  travel, maxScroll)
+        end
+
+        if overBand and not conformSBDrag then
+            reaper.ImGui_SetTooltip(ctx, string.format(
+                "%d of %d rows. Drag to move through them, or use the wheel over the rows.",
+                shown, total))
+        end
     end
 end
 
@@ -5386,7 +5458,15 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
     local nameW   = (settings.conform_lane_compact == false
                      and #conformTracks > 0 and settings.conform_lanes_open)
                     and math.max(60, settings.conform_lane_name_w or 150) or 0
-    local viewW   = math.max(120, winW - 2 * CONFORM_MARGIN - gut - nameW)
+    -- The scrollbar's column, only while there is something to scroll. Taken out of the
+    -- timeline's width like the header is, so the bands stay the width of the ruler
+    -- above them -- and reserved from last frame's row count, since this frame's is not
+    -- known until the items have been gathered. A row count that has just changed
+    -- therefore costs one frame of slightly wrong width, which is invisible, where
+    -- computing it late would cost a layout that disagrees with itself.
+    local sbW     = ((conformLaneRows or 0) > (conformLaneShown or 0)
+                     and (conformLaneShown or 0) > 0) and CONFORM_LANE_SB_W or 0
+    local viewW   = math.max(120, winW - 2 * CONFORM_MARGIN - gut - nameW - sbW)
     conformHeaderW = nameW          -- read by the gutter and the band labels
     local barH    = 22
     -- Constant, not R and 54 or 20: the window is sized to its content every frame, so
@@ -5993,6 +6073,7 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
     -- row positions the child recorded so it still lines up with them.
     conformDrawSpeakerGutter(gutterX, gut)
     conformDrawLaneHeader(headerX, nameW)
+    conformDrawLaneScrollbar(headerX + nameW + viewW + 1, math.max(0, sbW - 2))
 end
 
 local function conformFramePath(filePath, frame, fps, useCutHandle)
