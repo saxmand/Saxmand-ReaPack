@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.11.1
+-- @version 0.11.2
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -38,8 +38,11 @@
 --     as will hold them; off, each track keeps its own row, named in the header.
 --   + A scroll bar beside the rows, outside the timeline rather than over it, with a
 --     thumb that can be dragged. Clicking the trough jumps to that point.
---   + A thin strip showing every item on the tracks currently scrolled out of sight --
---     a hidden track with an item where a cut is about to land is what needs noticing.
+--   + Thin strips for the rows that are out of sight: one above for what is scrolled
+--     off the top, one below for what is past the bottom, each carrying only the items
+--     in its own direction and each there only when something is. A hidden track with
+--     an item where a cut is about to land is what needs noticing, and which way to
+--     scroll to reach it is the part you cannot work out by looking.
 --   + The wheel behaves as it does elsewhere: sideways along the timeline with shift or
 --     with a trackpad's horizontal axis, and down through the rows on its own.
 --   + The controls are in three rows: the comparison and what to do about it, then the
@@ -4534,7 +4537,7 @@ function conformDrawLaneLabels(dl, laneOldY, laneNewY, laneH, visLeft, viewW, he
     for v = 0, shown - 1 do
         local r = plan.rows[firstRow + v]
         if r then
-            local strip = conformLaneStrip or 0
+            local strip = conformLaneStripTop or 0
             conformLaneHeadRows[#conformLaneHeadRows + 1] = {
                 r = r,
                 yOld = laneOldY + headH + strip + v * rowH,
@@ -4555,11 +4558,11 @@ CONFORM_LANE_SB_W = 10        -- the scrollbar's column, reserved beside the tim
 function conformDrawLaneScroll(dl, laneOldY, laneNewY, laneH, visLeft, viewW, headH)
     conformLaneBands = {}
     if (laneH or 0) <= 0 then return end
-    local strip = conformLaneStrip or 0
-    local h = laneH - strip
+    local top = conformLaneStripTop or 0
+    local h = laneH - top - (conformLaneStripBot or 0)
     if h <= 0 then return end
-    conformLaneBands[1] = { y = laneOldY + headH + strip, h = h }
-    conformLaneBands[2] = { y = laneNewY + strip,         h = h }
+    conformLaneBands[1] = { y = laneOldY + headH + top, h = h }
+    conformLaneBands[2] = { y = laneNewY + top,         h = h }
 end
 
 -- The scrollbar itself: a trough beside the rows with a thumb that can be dragged.
@@ -4650,30 +4653,58 @@ end
 -- about to land is exactly what you need to know about. Every off-screen item is drawn
 -- flat into one line, so the strip answers "is there anything up there" at a glance
 -- without pretending to say which track it came from.
+-- Thin strips for the rows the window is not showing: one above for what is scrolled
+-- off the top, one below for what is past the bottom.
+--
+-- Scrolling the rows hides tracks, and a hidden track with an item right where a cut is
+-- about to land is exactly what needs noticing. Each strip carries only the items in
+-- its own direction, flattened into one line, so it answers "is there anything up
+-- there" and "is there anything down there" separately. One strip for both would say
+-- something is hidden without saying which way to scroll, which is the only part that
+-- cannot be worked out by looking.
 function conformDrawOffscreenLane(dl, items, laneOldY, laneNewY, laneH, fx, headH, rowH,
                                   visLeft, viewW)
-    local total = conformLaneRows or 0
-    local shown = conformLaneShown or 0
-    if total <= shown or shown <= 0 or (laneH or 0) <= 0 then return end
+    local top, bot = conformLaneStripTop or 0, conformLaneStripBot or 0
+    if (laneH or 0) <= 0 or (top == 0 and bot == 0) then return end
 
     local firstRow = (conformLaneScroll or 0) + 1
-    local lastRow  = firstRow + shown - 1
-    local h = 5
+    local lastRow  = firstRow + math.max(1, conformLaneShown or 1) - 1
 
-    -- In the space reserved for it at the top of each band, above the first row.
-    local yOld = laneOldY + headH + 1
-    local yNew = laneNewY + 1
-    reaper.ImGui_DrawList_AddRectFilled(dl, visLeft, yOld, visLeft + viewW, yOld + h, 0x00000055)
-    reaper.ImGui_DrawList_AddRectFilled(dl, visLeft, yNew, visLeft + viewW, yNew + h, 0x00000055)
+    -- Each strip's two y positions: the old band's and the new one's, at the matching
+    -- end of each.
+    local strips = {}
+    if top > 0 then
+        strips[#strips + 1] = { h = top, above = true,
+                                ys = { laneOldY + headH, laneNewY } }
+    end
+    if bot > 0 then
+        strips[#strips + 1] = { h = bot, above = false,
+                                ys = { laneOldY + headH + laneH - bot,
+                                       laneNewY + laneH - bot } }
+    end
+
+    for _, st in ipairs(strips) do
+        for _, y in ipairs(st.ys) do
+            reaper.ImGui_DrawList_AddRectFilled(dl, visLeft, y, visLeft + viewW,
+                                                y + st.h - 1, 0x00000055)
+        end
+    end
 
     for _, it in ipairs(items) do
-        if it.row < firstRow or it.row > lastRow then
+        local above = it.row < firstRow
+        local below = it.row > lastRow
+        if above or below then
             local x1, x2 = fx(it.s), fx(it.e)
             if x2 - x1 < 2 then x2 = x1 + 2 end
             if x2 >= visLeft and x1 <= visLeft + viewW then
                 local col = (it.mode == "cut") and 0x56B6C288 or 0x98C37988
-                reaper.ImGui_DrawList_AddRectFilled(dl, x1, yOld, x2, yOld + h, col)
-                reaper.ImGui_DrawList_AddRectFilled(dl, x1, yNew, x2, yNew + h, col)
+                for _, st in ipairs(strips) do
+                    if st.above == above then
+                        for _, y in ipairs(st.ys) do
+                            reaper.ImGui_DrawList_AddRectFilled(dl, x1, y, x2, y + st.h - 1, col)
+                        end
+                    end
+                end
             end
         end
     end
@@ -4873,7 +4904,7 @@ function drawConformLanes(dl, items, laneOldY, laneNewY, laneH, fx, xf,
     for _, it in ipairs(items) do
         if it.row >= firstRow and it.row <= lastRow then
         local vrow   = it.row - firstRow          -- 0-based within the visible window
-        local strip  = conformLaneStrip or 0
+        local strip  = conformLaneStripTop or 0
         local pieces = conformItemPieces(it, breaks)
         local oy     = laneOldY + headH + strip + vrow * rowH
         local ny     = laneNewY + strip + vrow * rowH
@@ -5594,13 +5625,21 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
     else
         conformLaneScroll = 0
     end
-    -- Room for the off-screen strip, only when something is actually off screen. Kept
-    -- here with the rest of the geometry so the bands, the ruler and the waveforms are
-    -- all sized from one place and nothing ends up drawn over anything else.
-    conformLaneStrip = ((conformLaneRows or 0) > (conformLaneShown or 0)
-                        and (conformLaneShown or 0) > 0) and 7 or 0
-    local laneRowsH = conformLaneShown * CONFORM_LANE_ROW
-                      + ((conformLaneShown > 0) and conformLaneStrip or 0)
+    -- Room for the off-screen strips: one above for the rows scrolled off the top, one
+    -- below for the rows past the bottom, each only while there is something in that
+    -- direction. Two strips rather than one, because a single strip says that something
+    -- is hidden without saying which way to go to find it -- and the way to go is the
+    -- only part you cannot work out for yourself.
+    --
+    -- Kept here with the rest of the geometry so the bands, the ruler and the waveforms
+    -- are all sized from one place and nothing ends up drawn over anything else.
+    local shownNow = conformLaneShown or 0
+    local rowsNow  = conformLaneRows or 0
+    conformLaneStripTop = (shownNow > 0 and (conformLaneScroll or 0) > 0) and 7 or 0
+    conformLaneStripBot = (shownNow > 0
+                           and (conformLaneScroll or 0) + shownNow < rowsNow) and 7 or 0
+    local laneRowsH = shownNow * CONFORM_LANE_ROW
+                      + conformLaneStripTop + conformLaneStripBot
     local laneH     = laneRowsH
     local laneOldH  = (laneRowsH > 0) and (laneRowsH + conformLaneHead()) or 0
     local stackH  = rulerH + laneOldH + wfH + barH + connH + barH + wfH + laneH
