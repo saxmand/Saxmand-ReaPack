@@ -45,8 +45,15 @@
 --     its item count, plus "Remove all tracks from overview" at the top. Unticking a
 --     folder takes the tracks inside it as well.
 --   + A header down the left of the rows, when not compact: each row's track name,
---     indented by nesting, with a fold arrow on folders. Folding one draws everything
---     inside it on the folder's own row. Its width is adjustable.
+--     indented by nesting, with a fold arrow on folders, and mute and solo drawn the
+--     way REAPER draws them. Folding a folder puts everything inside it on the folder's
+--     own row. Drag the line at the edge of the header to set how wide the names are.
+--   + Those mutes follow the project while sync is on, since REAPER is the one making
+--     the sound then, and are the editor's own while it is off -- auditioning a conform
+--     should not mute anybody's tracks.
+--   + With a header, "old" and "new" are labelled in it rather than over the picture,
+--     and the four row mutes in the gutter give way to the per-track ones. Without one
+--     they come back, wearing the same square as the rest.
 --   + "Include child tracks" when adding: a folder track carries no children in the
 --     selection, and while it is collapsed they cannot be selected at all, so adding a
 --     folder used to add one empty row and nothing of what is in it.
@@ -3114,6 +3121,76 @@ local function conformResolveTrack(t)
     return nil
 end
 
+-- Mute and solo for an added track.
+--
+-- Two sources, depending on what is making the sound. While sync is on REAPER is
+-- playing the session, so these read and write REAPER's own track state -- anything
+-- else would show one thing and do another. While it is off we are previewing the items
+-- ourselves, so they read and write our own copy, and the project is left alone: it
+-- would be rude to mute somebody's tracks because they wanted to audition a conform.
+--
+-- The names say "effective", because solo is not a property of one track: a track is
+-- heard when nothing is soloed, or when it is one of the soloed ones.
+function conformTrackMuted(i)
+    local t = conformTracks[i]
+    if not t then return false end
+    if conformSyncEnabled() then
+        local tr = conformResolveTrack(t)
+        return tr and reaper.GetMediaTrackInfo_Value(tr, "B_MUTE") > 0.5 or false
+    end
+    return t.mute and true or false
+end
+
+function conformTrackSoloed(i)
+    local t = conformTracks[i]
+    if not t then return false end
+    if conformSyncEnabled() then
+        local tr = conformResolveTrack(t)
+        return tr and reaper.GetMediaTrackInfo_Value(tr, "I_SOLO") > 0 or false
+    end
+    return t.solo and true or false
+end
+
+function conformSetTrackMuted(i, on)
+    local t = conformTracks[i]
+    if not t then return end
+    if conformSyncEnabled() then
+        local tr = conformResolveTrack(t)
+        if tr then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", on and 1 or 0) end
+    else
+        t.mute = on or nil
+        conformTouchState()
+    end
+end
+
+function conformSetTrackSoloed(i, on)
+    local t = conformTracks[i]
+    if not t then return end
+    if conformSyncEnabled() then
+        local tr = conformResolveTrack(t)
+        -- 2 is solo-in-place, which is what REAPER's own button does
+        if tr then reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", on and 2 or 0) end
+    else
+        t.solo = on or nil
+        conformTouchState()
+    end
+end
+
+-- Whether anything is soloed at all, which decides what the unsoloed tracks do.
+function conformAnySolo()
+    for i = 1, #conformTracks do
+        if conformTrackSoloed(i) then return true end
+    end
+    return false
+end
+
+-- The question playback actually asks.
+function conformTrackAudible(i)
+    if conformTrackMuted(i) then return false end
+    if conformAnySolo() then return conformTrackSoloed(i) end
+    return true
+end
+
 -- What the track list needs to draw itself: how deeply each added track is nested,
 -- whether it is a folder, and how many items it holds.
 --
@@ -3482,7 +3559,8 @@ function conformPlayItems(IP1, oldF, newF, fpsA)
         -- playback rather than crash -- which is worse, being invisible. A live take
         -- means a live source.
         if it.src and conformTakeIsLive(it.take)
-           and not it.muted and not conformIgnore[it.guid] then
+           and not it.muted and not conformIgnore[it.guid]
+           and conformTrackAudible(it.trackIdx or 0) then
             local sp = conformItemSourcePos(it, breaks, oldF, newF, fpsA)
             if sp then
                 want[it.guid] = true
@@ -3631,7 +3709,8 @@ function conformSaveState(IP1, IP2)
 
     local tracks = {}
     for _, t in ipairs(conformTracks) do
-        tracks[#tracks + 1] = { guid = t.guid, name = t.name, mode = t.mode or "keep" }
+        tracks[#tracks + 1] = { guid = t.guid, name = t.name, mode = t.mode or "keep",
+                                mute = t.mute or nil, solo = t.solo or nil }
     end
 
     local R = conformResult
@@ -3713,8 +3792,12 @@ function conformLoadState(IP1, IP2)
         -- the track pointer is resolved from the GUID on first use, so a reordered or
         -- reopened project still finds it
         conformTracks[#conformTracks + 1] = { guid = t.guid, name = t.name,
-                                              mode = t.mode or "keep" }
+                                              mode = t.mode or "keep",
+                                              mute = t.mute or nil, solo = t.solo or nil }
     end
+    -- Project order, as when they were added: the state file keeps whatever order it
+    -- was written in, and the indented header only reads correctly in project order.
+    conformSortTracks()
 
     -- A separate audio export is part of how the pair was compared, so it comes back
     -- with it rather than having to be found again.
@@ -4120,6 +4203,10 @@ CONFORM_ROW_LABEL = {
 -- parent window's own layout.
 function conformDrawSpeakerGutter(x, w)
     if #conformSpeakerRows == 0 then return end
+    -- With a header there is a mute per track, which is the finer and more useful
+    -- control; two sets of mutes a centimetre apart meaning different things is worse
+    -- than one. The four-row mutes come back when the header does not.
+    if (conformHeaderW or 0) > 0 then return end
     local mx, my = reaper.ImGui_GetMousePos(ctx)
     local inWin  = reaper.ImGui_IsWindowHovered(ctx)
                    and not reaper.ImGui_IsAnyItemHovered(ctx)
@@ -4132,7 +4219,12 @@ function conformDrawSpeakerGutter(x, w)
                         and my >= r.y and my <= r.y + r.h
             local on  = conformRowAudible(r.row) and not syncing
 
-            conformDrawSpeaker(draw_list, x + w / 2, cy, on, hot)
+            -- The same square as the per-track ones, so a mute looks like a mute
+            -- wherever it is. Lit when muted, as REAPER's is -- the speaker it replaces
+            -- was lit when audible, which is the opposite convention and was only
+            -- defensible while it was the only one on screen.
+            local ms = 14
+            conformDrawMS(draw_list, x + (w - ms) / 2, cy - ms / 2, ms, "M", not on, hot)
 
             if hot then
                 if syncing then
@@ -4159,6 +4251,27 @@ function conformDrawSpeakerGutter(x, w)
             end
         end
     end
+end
+
+-- A mute or solo button the shape REAPER draws them: a bordered square, filled with
+-- the colour when it is on and the letter punched out of it in black, grey with a
+-- coloured letter when it is off. Copied rather than invented because this is the one
+-- control in the window that also exists three inches away in the arrange view, and a
+-- different-looking button for the same job is a question nobody should have to ask.
+CONFORM_MS_RED    = 0xD9433FFF
+CONFORM_MS_YELLOW = 0xE5C07BFF
+
+function conformDrawMS(dl, x, y, size, letter, on, hot)
+    local accent = (letter == "M") and CONFORM_MS_RED or CONFORM_MS_YELLOW
+    local fill   = on and accent or (hot and 0x4A4F57FF or 0x33373DFF)
+    local text   = on and 0x000000FF or accent
+
+    reaper.ImGui_DrawList_AddRectFilled(dl, x, y, x + size, y + size, fill, 2)
+    reaper.ImGui_DrawList_AddRect(dl, x, y, x + size, y + size, 0x000000FF, 2, 0, 1)
+
+    -- Measured rather than centred by eye, so M and S sit the same in the square
+    local tw, th = reaper.ImGui_CalcTextSize(ctx, letter)
+    reaper.ImGui_DrawList_AddText(dl, x + (size - tw) / 2, y + (size - th) / 2, text, letter)
 end
 
 -- A speaker, drawn rather than labelled: a cone, and either waves or a cross.
@@ -4458,59 +4571,112 @@ end
 -- Drawn after the child has closed, so it sits in the window rather than in the
 -- scrolling content. Both bands get one: they are the same rows read against the two
 -- cuts, and a name on only one of them would be a riddle.
+-- Drawn after the child has closed, so it sits in the window rather than in the
+-- scrolling content. Both bands get one: they are the same rows read against the two
+-- cuts, and a name on only one of them would be a riddle.
+--
+-- Each row is a fold arrow where there is a folder, the track's name, then mute and
+-- solo. The buttons are at the right-hand end rather than beside the name so they line
+-- up in a column, which is how they are read -- down the list, not across one row.
+conformNameDrag = nil
+
 function conformDrawLaneHeader(x, w)
     if #conformLaneHeadRows == 0 or (w or 0) <= 0 then return end
     local mx, my = reaper.ImGui_GetMousePos(ctx)
     local inWin  = reaper.ImGui_IsWindowHovered(ctx)
+    local ms     = 14                      -- button size
+    local msW    = ms * 2 + 6              -- the pair, plus the gap between them
+    local syncing = conformSyncEnabled()
 
     for _, e in ipairs(conformLaneHeadRows) do
         local r = e.r
         for _, y in ipairs({ e.yOld, e.yNew }) do
             reaper.ImGui_DrawList_AddRectFilled(draw_list, x, y + 1, x + w, y + e.h - 1,
                                                 0x00000066, 3)
-
             local ind = 6 + (r.level or 0) * 12
-            local hot = inWin and mx >= x and mx <= x + w and my >= y and my <= y + e.h
+            local hotRow = inWin and mx >= x and mx <= x + w and my >= y and my <= y + e.h
 
-            -- The fold arrow, only on folders. Clicking anywhere in the row would be
-            -- easier to hit but would fight with the speaker gutter's habit of being
-            -- clickable, so the arrow is the handle and the rest of the row is quiet.
             if r.isFolder then
                 local cx, cy = x + ind + 4, y + e.h / 2
-                local open = not r.folded
-                local col = hot and colorWhite or colorGrey
-                if open then
-                    reaper.ImGui_DrawList_AddTriangleFilled(draw_list,
-                        cx - 4, cy - 2, cx + 4, cy - 2, cx, cy + 3, col)
-                else
+                local hotArrow = hotRow and mx <= x + ind + 12
+                local col = hotArrow and colorWhite or colorGrey
+                if r.folded then
                     reaper.ImGui_DrawList_AddTriangleFilled(draw_list,
                         cx - 2, cy - 4, cx + 3, cy, cx - 2, cy + 4, col)
+                else
+                    reaper.ImGui_DrawList_AddTriangleFilled(draw_list,
+                        cx - 4, cy - 2, cx + 4, cy - 2, cx, cy + 3, col)
                 end
                 ind = ind + 14
             end
 
-            local label = conformShorten(r.name or "", math.max(4, (w - ind) // 7))
+            -- The name is given whatever is left once the buttons have their column.
+            local room  = math.max(2, (w - ind - msW - 8) // 7)
+            local label = conformShorten(r.name or "", room)
             reaper.ImGui_DrawList_AddText(draw_list, x + ind, y + (e.h - 13) / 2,
                                           r.folded and colorWhite or colorGrey, label)
+
+            local bx = x + w - msW - 4
+            local by = y + (e.h - ms) / 2
+            local hotM = hotRow and mx >= bx and mx <= bx + ms and my >= by and my <= by + ms
+            local hotS = hotRow and mx >= bx + ms + 6 and mx <= bx + msW
+                         and my >= by and my <= by + ms
+            conformDrawMS(draw_list, bx, by, ms, "M", conformTrackMuted(r.idx), hotM)
+            conformDrawMS(draw_list, bx + ms + 6, by, ms, "S", conformTrackSoloed(r.idx), hotS)
+
+            if (hotM or hotS) then
+                reaper.ImGui_SetTooltip(ctx, (hotM and "Mute " or "Solo ") .. (r.name or "") ..
+                    (syncing and "\n\nSync is on, so this is the track's own mute in REAPER."
+                              or "\n\nSync is off, so this only affects what is previewed\n" ..
+                                 "here. The project's own tracks are left alone."))
+                if reaper.ImGui_IsMouseClicked(ctx, 0) then
+                    if hotM then conformSetTrackMuted(r.idx, not conformTrackMuted(r.idx))
+                    else         conformSetTrackSoloed(r.idx, not conformTrackSoloed(r.idx)) end
+                    conformStopItemPreviews()
+                end
+            elseif hotRow and r.isFolder and mx <= x + 6 + (r.level or 0) * 12 + 12
+                   and reaper.ImGui_IsMouseClicked(ctx, 0) and r.guid then
+                local f = settings.conform_lane_folds or {}
+                f[r.guid] = (not r.folded) or nil
+                settings.conform_lane_folds = f
+                saveSettings()
+                conformLaneKey = nil
+            end
         end
     end
 
-    -- One invisible button over the whole header, so the click can be read without
-    -- putting a widget on every row of a hundred-track session.
-    if inWin and reaper.ImGui_IsMouseClicked(ctx, 0) then
-        for _, e in ipairs(conformLaneHeadRows) do
-            if e.r.isFolder and e.r.guid then
-                for _, y in ipairs({ e.yOld, e.yNew }) do
-                    if mx >= x and mx <= x + w and my >= y and my <= y + e.h then
-                        local f = settings.conform_lane_folds or {}
-                        f[e.r.guid] = (not e.r.folded) or nil
-                        settings.conform_lane_folds = f
-                        saveSettings()
-                        conformLaneKey = nil
-                    end
-                end
-            end
-        end
+    -- Which band is which, in the header rather than over the timeline: with a header
+    -- there is a left margin to put it in, and inside the picture it was sitting on the
+    -- first item of whatever started at zero.
+    local first, last = conformLaneHeadRows[1], conformLaneHeadRows[#conformLaneHeadRows]
+    if first then
+        reaper.ImGui_DrawList_AddText(draw_list, x + 4, first.yOld - 15, colorGrey, "old")
+        reaper.ImGui_DrawList_AddText(draw_list, x + 4, first.yNew - 15, colorGrey, "new")
+    end
+
+    -- The divider, dragged to set the width. Picked up anywhere within a few pixels of
+    -- the edge and followed until the button is let go, so the pointer may wander off
+    -- the line mid-drag without dropping it.
+    local edge = x + w
+    local top  = math.min(first.yOld, first.yNew)
+    local bot  = math.max(last.yOld, last.yNew) + last.h
+    local nearEdge = inWin and mx >= edge - 4 and mx <= edge + 4 and my >= top and my <= bot
+    if nearEdge and reaper.ImGui_IsMouseClicked(ctx, 0) then
+        conformNameDrag = mx - w
+    end
+    if conformNameDrag and not reaper.ImGui_IsMouseDown(ctx, 0) then
+        conformNameDrag = nil
+        saveSettings()
+    end
+    if conformNameDrag then
+        local v = math.max(60, math.min(480, mx - conformNameDrag))
+        settings.conform_lane_name_w = math.floor(v + 0.5)
+    end
+    if nearEdge or conformNameDrag then
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, edge - 1, top, edge + 1, bot, colorWhite)
+        if nearEdge then reaper.ImGui_SetTooltip(ctx, "Drag to set how wide the names are") end
+    else
+        reaper.ImGui_DrawList_AddRectFilled(draw_list, edge - 1, top, edge, bot, 0xFFFFFF22)
     end
 end
 
@@ -5084,18 +5250,6 @@ function conformTrackControls()
         setToolTipFunc("How many rows of session items are visible at once.\n" ..
                        "The rest scroll -- put the pointer over them and use the wheel.")
 
-        -- Only meaningful with a header to be wide
-        if settings.conform_lane_compact == false then
-            reaper.ImGui_SameLine(ctx)
-            reaper.ImGui_SetNextItemWidth(ctx, 90)
-            local nch, nv = reaper.ImGui_SliderInt(ctx, "names##cflanenamew",
-                                settings.conform_lane_name_w or 150, 60, 400)
-            if nch then
-                settings.conform_lane_name_w = nv
-                saveSettings()
-            end
-            setToolTipFunc("Width of the track-name header on the left of the rows")
-        end
     end
 
     if reaper.ImGui_BeginPopup(ctx, "##cflaneopts") then
@@ -5233,6 +5387,7 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
                      and #conformTracks > 0 and settings.conform_lanes_open)
                     and math.max(60, settings.conform_lane_name_w or 150) or 0
     local viewW   = math.max(120, winW - 2 * CONFORM_MARGIN - gut - nameW)
+    conformHeaderW = nameW          -- read by the gutter and the band labels
     local barH    = 22
     -- Constant, not R and 54 or 20: the window is sized to its content every frame, so
     -- a height that changes when a match arrives reads as the whole UI jumping.
@@ -5795,11 +5950,15 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
         end
 
         -- Pinned to the visible left edge rather than to frame 0, so they stay readable
-        -- at any scroll position.
-        reaper.ImGui_DrawList_AddText(dl, visLeft + 4, topY + 4,
-            conformFocusSide() == "old" and colorWhite or colorGrey, "old")
-        reaper.ImGui_DrawList_AddText(dl, visLeft + 4, botY + 4,
-            conformFocusSide() == "new" and colorWhite or colorGrey, "new")
+        -- at any scroll position -- but only while there is no header to put them in.
+        -- Over the picture they sit on whatever item starts at the left edge; in the
+        -- header there is a margin that exists for exactly this.
+        if (conformHeaderW or 0) <= 0 then
+            reaper.ImGui_DrawList_AddText(dl, visLeft + 4, topY + 4,
+                conformFocusSide() == "old" and colorWhite or colorGrey, "old")
+            reaper.ImGui_DrawList_AddText(dl, visLeft + 4, botY + 4,
+                conformFocusSide() == "new" and colorWhite or colorGrey, "new")
+        end
 
         -- One SetTooltip call with the text assembled up front, matching how the rest of
         -- the script does tooltips. No Begin/End pair to get wrong.
@@ -6527,18 +6686,6 @@ function conformMatchRow(IP1, IP2)
     -- Row one is the comparison: what it found, and what to do about it as a whole.
     -- "muted" belongs here rather than with the tracks -- it decides what is drawn, like
     -- the other view settings, not which tracks are involved.
-    if #conformTracks > 0 then
-        reaper.ImGui_SameLine(ctx)
-        local mch2, mv2 = reaper.ImGui_Checkbox(ctx, "muted",
-                                                settings.conform_lane_muted or false)
-        if mch2 then
-            settings.conform_lane_muted = mv2
-            saveSettings()
-            conformLaneKey = nil
-        end
-        setToolTipFunc("Draw muted items as well. They are left out of the conform either\n" ..
-                       "way -- this only decides whether you can see them.")
-    end
     conformPlanButtons()
 
     -- Row two: which tracks the overview is watching, and how their rows are drawn.
@@ -6550,6 +6697,22 @@ function conformMatchRow(IP1, IP2)
     -- comparison or the session as a whole.
     reaper.ImGui_NewLine(ctx)
     conformEditButtons()
+
+    -- With the item controls, because it is about items: which of them are drawn.
+    if #conformTracks > 0 then
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_Dummy(ctx, 6, 1)
+        reaper.ImGui_SameLine(ctx)
+        local mch2, mv2 = reaper.ImGui_Checkbox(ctx, "muted",
+                                                settings.conform_lane_muted or false)
+        if mch2 then
+            settings.conform_lane_muted = mv2
+            saveSettings()
+            conformLaneKey = nil
+        end
+        setToolTipFunc("Draw muted items as well. They are left out of the conform either\n" ..
+                       "way -- this only decides whether you can see them.")
+    end
 end
 
 function conformComparePopup(IP1, IP2)
