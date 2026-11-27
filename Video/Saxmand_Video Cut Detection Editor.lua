@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.10.0
+-- @version 0.10.1
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,12 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Fixed: "bad argument #1 to 'GetMediaItemTake_Peaks'" after editing the session
+--     while a comparison was open. The list of session items is cached, and the cache
+--     could not tell that items had changed, so it went on holding takes that no longer
+--     existed -- and a pointer to a take that has been freed is not nil, it is a number
+--     that means nothing. Takes are now checked against REAPER before being used, for
+--     waveforms and for playback.
 --   + Fixed: "bad argument #4 to 'format'" when a session contained items that do not
 --     sit on a frame boundary, which audio and MIDI items generally do not. The conform
 --     works in whole frames throughout, but item edges were converted to frames without
@@ -3076,6 +3082,15 @@ end
 -- The items on those tracks, placed on the same frame axis as the old video. The old
 -- video item sits somewhere on the project timeline with its own source offset, and
 -- conformFrameToTime is the forward direction of exactly this conversion.
+-- Whether a take pointer still refers to a take. The same guard conformResolveTrack
+-- uses for tracks, for the same reason: these are raw pointers into REAPER's own
+-- structures, and anything held across an edit can be pointing at nothing.
+function conformTakeIsLive(take)
+    if not take then return false end
+    if not reaper.ValidatePtr2 then return true end
+    return reaper.ValidatePtr2(0, take, "MediaItem_Take*")
+end
+
 function conformLaneItems(IP1, fpsA)
     if not IP1 or not IP1.item then return {} end
     local key = string.format("%d|%s|%s|%.4f|%s", #conformTracks,
@@ -3205,7 +3220,13 @@ function conformPlayItems(IP1, oldF, newF, fpsA)
     local want   = {}
 
     for _, it in ipairs(items) do
-        if it.src and not it.muted and not conformIgnore[it.guid] then
+        -- Checked through the take rather than the source. A source pointer could be
+        -- validated directly, but "MediaItem_Take*" is the type this script already
+        -- relies on elsewhere, and a false negative here would silently drop items from
+        -- playback rather than crash -- which is worse, being invisible. A live take
+        -- means a live source.
+        if it.src and conformTakeIsLive(it.take)
+           and not it.muted and not conformIgnore[it.guid] then
             local sp = conformItemSourcePos(it, breaks, oldF, newF, fpsA)
             if sp then
                 want[it.guid] = true
@@ -4009,7 +4030,13 @@ end
 conformItemWave = {}
 
 function conformItemPeaks(it, fromSec, lenSec, n)
-    if not it.take or n < 1 or lenSec <= 0 or not reaper.GetMediaItemTake_Peaks then
+    -- Validated, not just checked for nil. The item list is cached, and its key does
+    -- not notice the session's items changing -- so after an edit this can hold a take
+    -- that no longer exists. A pointer to a freed take is not nil, it is a number that
+    -- means nothing, and GetMediaItemTake_Peaks answers that with an error that takes
+    -- the whole script down.
+    if not conformTakeIsLive(it.take) or n < 1 or lenSec <= 0
+       or not reaper.GetMediaItemTake_Peaks then
         return nil
     end
     local key = string.format("%.4f|%.4f|%d", fromSec, lenSec, n)
