@@ -32,11 +32,21 @@
 --     them and the wheel moves through them; anywhere else it still moves along the
 --     timeline, so the wheel acts on whatever it is pointing at.
 --   + "Compact" decides how they are laid out: on, items share rows packed into as few
---     as will hold them; off, each track keeps its own row in the order it was added,
---     labelled with the track's name on the right.
---   + "Muted" is on the row now rather than hidden behind a right-click.
---   + "Remove all" takes every track out of the overview at once. The project's own
---     tracks and items are untouched.
+--     as will hold them; off, each track keeps its own row, named in the header.
+--   + A scroll bar down the right of the rows, and a thin strip showing every item on
+--     the tracks currently scrolled out of sight -- a hidden track with an item where a
+--     cut is about to land is exactly what needs noticing.
+--   + The wheel behaves as it does elsewhere: sideways along the timeline with shift or
+--     with a trackpad's horizontal axis, and down through the rows on its own.
+--   + The controls are in three rows: the comparison and what to do about it, then the
+--     tracks the overview watches, then what to do to one item. "Muted" and "Find cuts"
+--     sit with the comparison; hiding the rows is a tick rather than an arrow.
+--   + "Remove tracks" opens a list of what is loaded, indented by folder, each with
+--     its item count, plus "Remove all tracks from overview" at the top. Unticking a
+--     folder takes the tracks inside it as well.
+--   + A header down the left of the rows, when not compact: each row's track name,
+--     indented by nesting, with a fold arrow on folders. Folding one draws everything
+--     inside it on the folder's own row. Its width is adjustable.
 --   + "Include child tracks" when adding: a folder track carries no children in the
 --     selection, and while it is collapsed they cannot be selected at all, so adding a
 --     folder used to add one empty row and nothing of what is in it.
@@ -44,8 +54,6 @@
 --     not tell items had changed, so they described whatever was there when the
 --     comparison was set up. The project's change counter is in the key now, so a
 --     rebuild happens when something actually changes rather than on every frame.
---   + Every track control is on a row of its own, rather than running on from the
---     compare and edit buttons and off the edge of a narrow window.
 --   + Fixed: "bad argument #1 to 'GetMediaItemTake_Peaks'" after editing the session
 --     while a comparison was open. The list of session items is cached, and the cache
 --     could not tell that items had changed, so it went on holding takes that no longer
@@ -487,6 +495,9 @@ local defaultSettings = {
     conform_lane_compact  = true,  -- fewest rows, versus one row per track with a name
     conform_lane_rows     = 6,     -- rows visible at once; the rest scroll
     conform_add_children  = true,  -- adding a folder adds the tracks inside it
+    conform_lane_name_w   = 150,   -- width of the track-name header, in pixels
+    conform_lane_folds    = {},    -- [track guid] = true means that folder is folded,
+                                   -- its children drawn on its own row
 }
 
 local function saveSettings()
@@ -3088,6 +3099,94 @@ function conformFolderChildren(tr)
     return out
 end
 
+-- A track pointer goes stale on undo, on reload, and whenever REAPER frees one, so it
+-- is re-found from its GUID whenever it no longer checks out. Declared above everything
+-- that calls it: as a local it is only visible to what comes after, and from above it
+-- would silently be a nil global.
+local function conformResolveTrack(t)
+    if t.track and reaper.ValidatePtr2(0, t.track, "MediaTrack*") and trackGUID(t.track) == t.guid then
+        return t.track
+    end
+    for i = 0, reaper.CountTracks(0) - 1 do
+        local tr = reaper.GetTrack(0, i)
+        if trackGUID(tr) == t.guid then t.track = tr; return tr end
+    end
+    return nil
+end
+
+-- What the track list needs to draw itself: how deeply each added track is nested,
+-- whether it is a folder, and how many items it holds.
+--
+-- Nesting is read from the project rather than stored with the track, because the
+-- project is where it can change: moving a track in or out of a folder after it was
+-- added should be reflected, and nothing about our own copy would notice.
+--
+-- Rebuilt only when the project changes, by the same counter the lane cache uses -- a
+-- hundred tracks means a hundred CountTrackMediaItems calls and this is wanted while
+-- drawing a popup, which is every frame it is open.
+conformTrackInfoCache, conformTrackInfoKey = nil, nil
+
+function conformTrackInfo()
+    local stateCount = reaper.GetProjectStateChangeCount
+                       and reaper.GetProjectStateChangeCount(0) or 0
+    local key = string.format("%d|%d", #conformTracks, stateCount)
+    if conformTrackInfoKey == key and conformTrackInfoCache then return conformTrackInfoCache end
+
+    -- One walk of the project, accumulating folder depth, so every track's level is
+    -- known in a single pass rather than one search per added track.
+    local level, isFolder = {}, {}
+    local depth = 0
+    for i = 0, reaper.CountTracks(0) - 1 do
+        local tr = reaper.GetTrack(0, i)
+        local g  = trackGUID(tr)
+        local d  = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+        if g then
+            level[g]    = depth
+            isFolder[g] = d >= 1
+        end
+        depth = depth + d
+        if depth < 0 then depth = 0 end        -- a malformed project cannot push it under
+    end
+
+    local out = {}
+    for i, t in ipairs(conformTracks) do
+        local tr = conformResolveTrack(t)
+        out[i] = {
+            level    = (t.guid and level[t.guid]) or 0,
+            isFolder = (t.guid and isFolder[t.guid]) or false,
+            items    = tr and reaper.CountTrackMediaItems(tr) or 0,
+            present  = tr ~= nil,
+        }
+    end
+    conformTrackInfoCache, conformTrackInfoKey = out, key
+    return out
+end
+
+-- The added tracks that sit inside a given added folder, by index into conformTracks.
+-- Used both to remove a folder's contents with it and to fold its rows into its own.
+--
+-- Decided from the project, not from where the entries happen to sit in our own list.
+-- Walking the list for a run of deeper levels would only be right while the list is in
+-- project order, and would quietly do the wrong thing the moment it is not.
+function conformAddedChildren(idx)
+    local t = conformTracks[idx]
+    if not t then return {} end
+    local tr = conformResolveTrack(t)
+    if not tr then return {} end
+
+    local want = {}
+    for _, c in ipairs(conformFolderChildren(tr)) do
+        local g = trackGUID(c)
+        if g then want[g] = true end
+    end
+
+    local out = {}
+    for j, tt in ipairs(conformTracks) do
+        if j ~= idx and tt.guid and want[tt.guid] then out[#out + 1] = j end
+    end
+    return out
+end
+
 function conformAddSelectedTracks()
     local added = 0
 
@@ -3123,26 +3222,33 @@ function conformAddSelectedTracks()
             end
         end
     end
+    -- Sorted into project order. They arrive in selection order, and a folder's
+    -- children are appended behind it, so a later addition could otherwise land between
+    -- a folder and its contents and make the indented list read as nonsense.
+    conformSortTracks()
+
     conformLaneKey = nil
     conformTouchState()
     return added
+end
+
+-- Project order, resolving each track once. Tracks that no longer exist keep their
+-- relative position rather than being dropped: they are shown as missing, and silently
+-- removing somebody's row because a track is temporarily gone is worse than saying so.
+function conformSortTracks()
+    local ord = {}
+    for i, t in ipairs(conformTracks) do
+        local tr = conformResolveTrack(t)
+        ord[t] = tr and reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") or (1e9 + i)
+    end
+    table.sort(conformTracks, function(a, b) return (ord[a] or 0) < (ord[b] or 0) end)
+    conformTrackInfoKey = nil
 end
 
 function conformRemoveTrack(i)
     table.remove(conformTracks, i)
     conformLaneKey = nil
     conformTouchState()
-end
-
-local function conformResolveTrack(t)
-    if t.track and reaper.ValidatePtr2(0, t.track, "MediaTrack*") and trackGUID(t.track) == t.guid then
-        return t.track
-    end
-    for i = 0, reaper.CountTracks(0) - 1 do
-        local tr = reaper.GetTrack(0, i)
-        if trackGUID(tr) == t.guid then t.track = tr; return tr end
-    end
-    return nil
 end
 
 -- The items on those tracks, placed on the same frame axis as the old video. The old
@@ -3155,6 +3261,56 @@ function conformTakeIsLive(take)
     if not take then return false end
     if not reaper.ValidatePtr2 then return true end
     return reaper.ValidatePtr2(0, take, "MediaItem_Take*")
+end
+
+-- Which row each added track draws on, when every track has its own row.
+--
+-- A folded folder keeps its row and its children lose theirs: their items are drawn on
+-- the folder's row instead. That is the useful meaning of folding here -- the folder
+-- stands for everything inside it, in one lane, which is what you want when the
+-- question is "does anything in this group get cut".
+--
+-- Nesting comes from the project, so folding a folder that contains folders hides the
+-- whole subtree under the outermost folded one.
+function conformLaneRowPlan()
+    local info = conformTrackInfo()
+    local folds = settings.conform_lane_folds or {}
+    local plan = { rows = {}, rowOf = {} }
+    local stack = {}
+
+    for i, t in ipairs(conformTracks) do
+        local nf = info[i] or { level = 0 }
+        while #stack > 0 and (nf.level or 0) <= stack[#stack].level do
+            table.remove(stack)
+        end
+
+        -- The outermost folded ancestor wins: folding a parent swallows whatever its
+        -- children were doing, folded or not.
+        local under = nil
+        for _, a in ipairs(stack) do
+            if a.folded then under = a.row break end
+        end
+
+        if under then
+            plan.rowOf[i] = under
+        else
+            plan.rows[#plan.rows + 1] = {
+                name     = t.name,
+                level    = nf.level or 0,
+                isFolder = nf.isFolder or false,
+                folded   = (t.guid and folds[t.guid]) and true or false,
+                idx      = i,
+                guid     = t.guid,
+            }
+            plan.rowOf[i] = #plan.rows
+        end
+
+        if nf.isFolder then
+            stack[#stack + 1] = { level = nf.level or 0, row = plan.rowOf[i],
+                                  folded = (t.guid and folds[t.guid]) and true or false }
+        end
+    end
+    return plan
 end
 
 function conformLaneItems(IP1, fpsA)
@@ -3174,6 +3330,11 @@ function conformLaneItems(IP1, fpsA)
         tostring(IP1.item_pos), tostring(IP1.item_offset), fpsA,
         tostring(settings.conform_lane_muted), tostring(settings.conform_lane_compact),
         stateCount)
+    for _, t in ipairs(conformTracks) do
+        if t.guid and (settings.conform_lane_folds or {})[t.guid] then
+            key = key .. "|f" .. t.guid           -- folded folders change the rows
+        end
+    end
     for _, t in ipairs(conformTracks) do key = key .. "|" .. (t.mode or "keep") end
     if conformLaneKey == key and conformLaneCache then return conformLaneCache end
 
@@ -3233,10 +3394,12 @@ function conformLaneItems(IP1, fpsA)
     -- the row is labelled -- which is what you want when the question is "what happens
     -- to THIS track" rather than "what happens around here".
     if settings.conform_lane_compact == false then
-        for _, it in ipairs(out) do it.row = it.trackIdx or 1 end
-        conformLaneRows = math.max(1, #conformTracks)
-        conformLaneRowTrack = {}
-        for ti, t in ipairs(conformTracks) do conformLaneRowTrack[ti] = t.name end
+        local plan = conformLaneRowPlan()
+        for _, it in ipairs(out) do
+            it.row = plan.rowOf[it.trackIdx or 1] or 1
+        end
+        conformLaneRows     = math.max(1, #plan.rows)
+        conformLaneRowPlanC = plan           -- the header draws from this
     else
         -- Greedy packing over items already sorted by start: each goes in the first row
         -- whose last item has finished, which is the fewest rows that can hold them.
@@ -3248,8 +3411,8 @@ function conformLaneItems(IP1, fpsA)
             end
             if not it.row then rowEnd[#rowEnd + 1] = it.e; it.row = #rowEnd end
         end
-        conformLaneRows = math.max(1, #rowEnd)
-        conformLaneRowTrack = nil
+        conformLaneRows     = math.max(1, #rowEnd)
+        conformLaneRowPlanC = nil
     end
 
     conformLaneCache, conformLaneKey = out, key
@@ -4200,37 +4363,154 @@ end
 --
 -- Nothing is drawn in compact mode: a row there holds whatever fitted and belongs to no
 -- particular track, so a name would be a lie.
+-- The header down the left of the session rows: each row's track, indented by how
+-- deeply it is nested, with a fold arrow on folders.
+--
+-- Recorded here while the rows are being laid out and drawn afterwards outside the
+-- scrolling child, the same way the speaker gutter is -- a header that scrolled
+-- sideways with the timeline would be useless.
+conformLaneHeadRows = {}
+
 function conformDrawLaneLabels(dl, laneOldY, laneNewY, laneH, visLeft, viewW, headH, rowH)
-    local names = conformLaneRowTrack
-    if not names or (laneH or 0) <= 0 then return end
+    conformLaneHeadRows = {}
+    local plan = conformLaneRowPlanC
+    if not plan or (laneH or 0) <= 0 then return end
+
     local firstRow = (conformLaneScroll or 0) + 1
     local shown    = math.max(1, conformLaneShown or 1)
-
     for v = 0, shown - 1 do
-        local nm = names[firstRow + v]
-        if nm then
-            local label = conformShorten(nm, 22)
-            local tw = reaper.ImGui_CalcTextSize(ctx, label)
-            local x  = visLeft + viewW - tw - 10
-            for _, y in ipairs({ laneOldY + headH + v * rowH, laneNewY + v * rowH }) do
-                reaper.ImGui_DrawList_AddRectFilled(dl, x - 5, y + 2,
-                                                    visLeft + viewW - 2, y + rowH - 2,
-                                                    0x000000CC, 3)
-                reaper.ImGui_DrawList_AddText(dl, x, y + (rowH - 13) / 2, colorGrey, label)
+        local r = plan.rows[firstRow + v]
+        if r then
+            local strip = conformLaneStrip or 0
+            conformLaneHeadRows[#conformLaneHeadRows + 1] = {
+                r = r,
+                yOld = laneOldY + headH + strip + v * rowH,
+                yNew = laneNewY + strip + v * rowH,
+                h = rowH,
+            }
+        end
+    end
+end
+
+-- How much of the rows are on screen, as a bar down the right-hand edge of each band.
+--
+-- A thumb rather than a count, because the question while scrolling is "how far
+-- through am I", which a position answers and a number does not. It is drawn, not
+-- grabbable: the wheel already moves the rows, and a thumb narrow enough to fit beside
+-- a 26 px row is not something anyone can reliably catch hold of.
+function conformDrawLaneScroll(dl, laneOldY, laneNewY, laneH, visLeft, viewW, headH)
+    local total = conformLaneRows or 0
+    local shown = conformLaneShown or 0
+    if total <= shown or shown <= 0 or (laneH or 0) <= 0 then return end
+
+    local w  = 4
+    local x2 = visLeft + viewW - 2
+    local x1 = x2 - w
+    local frac  = shown / total
+    local start = (conformLaneScroll or 0) / total
+
+    local strip = conformLaneStrip or 0
+    for _, band in ipairs({ { laneOldY + headH + strip, laneH - strip },
+                            { laneNewY + strip,         laneH - strip } }) do
+        local y, h = band[1], band[2]
+        if h <= 0 then break end
+        reaper.ImGui_DrawList_AddRectFilled(dl, x1, y, x2, y + h, 0x00000066, 2)
+        reaper.ImGui_DrawList_AddRectFilled(dl, x1, y + h * start,
+                                            x2, y + h * (start + frac), 0xE5C07BAA, 2)
+    end
+end
+
+-- A thin strip for everything the window is not showing.
+--
+-- Scrolling the rows hides tracks, and a hidden track with an item right where a cut is
+-- about to land is exactly what you need to know about. Every off-screen item is drawn
+-- flat into one line, so the strip answers "is there anything up there" at a glance
+-- without pretending to say which track it came from.
+function conformDrawOffscreenLane(dl, items, laneOldY, laneNewY, laneH, fx, headH, rowH,
+                                  visLeft, viewW)
+    local total = conformLaneRows or 0
+    local shown = conformLaneShown or 0
+    if total <= shown or shown <= 0 or (laneH or 0) <= 0 then return end
+
+    local firstRow = (conformLaneScroll or 0) + 1
+    local lastRow  = firstRow + shown - 1
+    local h = 5
+
+    -- In the space reserved for it at the top of each band, above the first row.
+    local yOld = laneOldY + headH + 1
+    local yNew = laneNewY + 1
+    reaper.ImGui_DrawList_AddRectFilled(dl, visLeft, yOld, visLeft + viewW, yOld + h, 0x00000055)
+    reaper.ImGui_DrawList_AddRectFilled(dl, visLeft, yNew, visLeft + viewW, yNew + h, 0x00000055)
+
+    for _, it in ipairs(items) do
+        if it.row < firstRow or it.row > lastRow then
+            local x1, x2 = fx(it.s), fx(it.e)
+            if x2 - x1 < 2 then x2 = x1 + 2 end
+            if x2 >= visLeft and x1 <= visLeft + viewW then
+                local col = (it.mode == "cut") and 0x56B6C288 or 0x98C37988
+                reaper.ImGui_DrawList_AddRectFilled(dl, x1, yOld, x2, yOld + h, col)
+                reaper.ImGui_DrawList_AddRectFilled(dl, x1, yNew, x2, yNew + h, col)
             end
         end
     end
+end
 
-    -- A plain count of what is not on screen, rather than a scrollbar: the rows scroll
-    -- by whole rows and there are rarely many, so the number is more use than a thumb
-    -- too small to grab.
-    local total = conformLaneRows or 0
-    if total > shown then
-        local hidden = total - shown - (conformLaneScroll or 0)
-        local txt = string.format("%d of %d rows%s", shown, total,
-                                  hidden > 0 and ("  -  " .. hidden .. " below") or "")
-        reaper.ImGui_DrawList_AddText(dl, visLeft + 6, laneNewY + laneH - 14,
-                                      colorGrey, txt)
+-- Drawn after the child has closed, so it sits in the window rather than in the
+-- scrolling content. Both bands get one: they are the same rows read against the two
+-- cuts, and a name on only one of them would be a riddle.
+function conformDrawLaneHeader(x, w)
+    if #conformLaneHeadRows == 0 or (w or 0) <= 0 then return end
+    local mx, my = reaper.ImGui_GetMousePos(ctx)
+    local inWin  = reaper.ImGui_IsWindowHovered(ctx)
+
+    for _, e in ipairs(conformLaneHeadRows) do
+        local r = e.r
+        for _, y in ipairs({ e.yOld, e.yNew }) do
+            reaper.ImGui_DrawList_AddRectFilled(draw_list, x, y + 1, x + w, y + e.h - 1,
+                                                0x00000066, 3)
+
+            local ind = 6 + (r.level or 0) * 12
+            local hot = inWin and mx >= x and mx <= x + w and my >= y and my <= y + e.h
+
+            -- The fold arrow, only on folders. Clicking anywhere in the row would be
+            -- easier to hit but would fight with the speaker gutter's habit of being
+            -- clickable, so the arrow is the handle and the rest of the row is quiet.
+            if r.isFolder then
+                local cx, cy = x + ind + 4, y + e.h / 2
+                local open = not r.folded
+                local col = hot and colorWhite or colorGrey
+                if open then
+                    reaper.ImGui_DrawList_AddTriangleFilled(draw_list,
+                        cx - 4, cy - 2, cx + 4, cy - 2, cx, cy + 3, col)
+                else
+                    reaper.ImGui_DrawList_AddTriangleFilled(draw_list,
+                        cx - 2, cy - 4, cx + 3, cy, cx - 2, cy + 4, col)
+                end
+                ind = ind + 14
+            end
+
+            local label = conformShorten(r.name or "", math.max(4, (w - ind) // 7))
+            reaper.ImGui_DrawList_AddText(draw_list, x + ind, y + (e.h - 13) / 2,
+                                          r.folded and colorWhite or colorGrey, label)
+        end
+    end
+
+    -- One invisible button over the whole header, so the click can be read without
+    -- putting a widget on every row of a hundred-track session.
+    if inWin and reaper.ImGui_IsMouseClicked(ctx, 0) then
+        for _, e in ipairs(conformLaneHeadRows) do
+            if e.r.isFolder and e.r.guid then
+                for _, y in ipairs({ e.yOld, e.yNew }) do
+                    if mx >= x and mx <= x + w and my >= y and my <= y + e.h then
+                        local f = settings.conform_lane_folds or {}
+                        f[e.r.guid] = (not e.r.folded) or nil
+                        settings.conform_lane_folds = f
+                        saveSettings()
+                        conformLaneKey = nil
+                    end
+                end
+            end
+        end
     end
 end
 
@@ -4263,9 +4543,10 @@ function drawConformLanes(dl, items, laneOldY, laneNewY, laneH, fx, xf,
     for _, it in ipairs(items) do
         if it.row >= firstRow and it.row <= lastRow then
         local vrow   = it.row - firstRow          -- 0-based within the visible window
+        local strip  = conformLaneStrip or 0
         local pieces = conformItemPieces(it, breaks)
-        local oy     = laneOldY + headH + vrow * rowH
-        local ny     = laneNewY + vrow * rowH
+        local oy     = laneOldY + headH + strip + vrow * rowH
+        local ny     = laneNewY + strip + vrow * rowH
         local x1, x2 = fx(it.s), fx(it.e)
         if x2 - x1 < 2 then x2 = x1 + 2 end
         laid[#laid + 1] = { it = it, pieces = pieces, oy = oy, ny = ny, x1 = x1, x2 = x2 }
@@ -4484,6 +4765,9 @@ function drawConformLanes(dl, items, laneOldY, laneNewY, laneH, fx, xf,
     end
 
     conformDrawLaneLabels(dl, laneOldY, laneNewY, laneH, visLeft, viewW, headH, rowH)
+    conformDrawLaneScroll(dl, laneOldY, laneNewY, laneH, visLeft, viewW, headH)
+    conformDrawOffscreenLane(dl, items, laneOldY, laneNewY, laneH, fx, headH, rowH,
+                             visLeft, viewW)
 
     if not hoverItem then return end
 
@@ -4616,6 +4900,115 @@ end
 -- Add tracks, list what has been added, and the muted-items toggle. Right clicking the
 -- add button is where the toggle lives, as asked; it is also on the list row so it can
 -- be found without knowing that.
+-- Taking tracks back out of the overview.
+--
+-- A popup rather than a bare "remove all", because with a hundred tracks the useful
+-- question is usually "not this folder" rather than "none of it", and a list that can
+-- only be reached by right-clicking a button called Add is not a list anybody finds.
+--
+-- The ticks read as "in the overview": unticking removes. Unticking a folder takes the
+-- tracks inside it as well, which is the only reading that matches how it was added.
+function conformRemoveTracksPopup()
+    if not reaper.ImGui_BeginPopup(ctx, "##cflanermmenu") then return end
+
+    if reaper.ImGui_Button(ctx, "Remove all tracks from overview##cflaneclear", 260, 0) then
+        conformTracks = {}
+        conformLaneKey = nil
+        conformTrackInfoKey = nil
+        conformTouchState()
+        reaper.ImGui_CloseCurrentPopup(ctx)
+    end
+    setToolTipFunc("Empties the overview. The project is untouched.")
+
+    reaper.ImGui_Separator(ctx)
+
+    local info = conformTrackInfo()
+    -- Collected before anything is removed: removing while walking would renumber the
+    -- list under the loop, and a folder removes several at once.
+    local drop = nil
+    for i, t in ipairs(conformTracks) do
+        local nf = info[i] or {}
+        reaper.ImGui_Dummy(ctx, 1, 1)
+        reaper.ImGui_SameLine(ctx, 8 + (nf.level or 0) * 14)   -- nesting, as in arrange
+
+        local label = (nf.isFolder and "[+] " or "") .. conformShorten(t.name, 30)
+        local _, keep = reaper.ImGui_Checkbox(ctx, label .. "##cfrmtr" .. i, true)
+        if keep == false then drop = i end
+        setToolTipFunc(nf.isFolder
+            and "Remove this folder and the tracks inside it from the overview"
+            or  "Remove this track from the overview")
+
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_AlignTextToFramePadding(ctx)
+        if not nf.present then
+            reaper.ImGui_TextColored(ctx, 0xE06C75FF, "missing from the project")
+        else
+            reaper.ImGui_TextColored(ctx, colorGrey,
+                string.format("%d item%s", nf.items or 0, (nf.items == 1) and "" or "s"))
+        end
+    end
+
+    if drop then
+        -- The folder's contents go with it, and the indices are removed from the back so
+        -- that each removal cannot shift the ones still to come.
+        local kill = { drop }
+        for _, j in ipairs(conformAddedChildren(drop)) do kill[#kill + 1] = j end
+        table.sort(kill, function(a, b) return a > b end)
+        for _, j in ipairs(kill) do table.remove(conformTracks, j) end
+        conformLaneKey = nil
+        conformTrackInfoKey = nil
+        conformTouchState()
+    end
+
+    reaper.ImGui_EndPopup(ctx)
+end
+
+-- Working out and applying the edits. Up with the comparison rather than down among
+-- the track controls: these act on the match as a whole, and the tracks only supply
+-- the items they have to satisfy.
+function conformPlanButtons()
+    if #conformTracks == 0 then return end
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_Dummy(ctx, 6, 1)
+        reaper.ImGui_SameLine(ctx)
+        if reaper.ImGui_Button(ctx, "Find cuts##cffind") then
+            local fpsA = (conformResult and conformResult.info and conformResult.info.fpsA) or 25
+            local c, p, n = conformFindCuts(conformIP1, fpsA)
+            conformCutPlan = { cuts = c, problems = p, kept = n }
+        end
+        setToolTipFunc("Work out the fewest edits to the old timeline that put every kept\n" ..
+                       "item where it needs to be. One edit per change of offset, each placed\n" ..
+                       "in a gap so nothing has to be cut through.")
+
+        -- Only once there is a plan: this applies that plan, and a button that first
+        -- works out what to do and then does it would leave nothing to look at in
+        -- between -- which is the one step worth looking at.
+        if conformCutPlan and #conformCutPlan.cuts > 0 then
+            -- Read before the button: pressing it clears the plan, and a tooltip built
+            -- afterwards would be formatting a count that no longer exists.
+            local nCuts = #conformCutPlan.cuts
+            reaper.ImGui_SameLine(ctx)
+            if reaper.ImGui_Button(ctx, "Cut##cfcut") then
+                local fpsA = (conformResult and conformResult.info and conformResult.info.fpsA) or 25
+                local n = conformApplyCuts(conformIP1, fpsA, conformCutPlan.cuts)
+                conformLaneNote = string.format("cut: %d edit%s applied", n, n == 1 and "" or "s")
+                -- The session has moved under the lanes, so everything derived from item
+                -- positions is stale. The plan goes too: it described a timeline that no
+                -- longer exists, and so do the undo steps, which hold offsets measured
+                -- against it.
+                conformCutPlan = nil
+                conformLaneKey = nil
+                conformClearUndo()
+            end
+            setToolTipFunc(string.format(
+                "Apply those %d edit%s to the session: insert or remove time at each one,\n" ..
+                "rippling every track so automation moves with the items.\n\n" ..
+                "Items sitting across an edit are cut into more pieces -- pin an item\n" ..
+                "first if it must survive whole. One REAPER undo step covers the lot.",
+                nCuts, nCuts == 1 and "" or "s"))
+        end
+end
+
 function conformTrackControls()
     local nTracks = #conformTracks
 
@@ -4623,19 +5016,20 @@ function conformTrackControls()
     -- conform still uses them, only their rows are not drawn. A hundred and twenty
     -- tracks of rows buries the two timelines the page is about.
     if nTracks > 0 then
-        local open = settings.conform_lanes_open and true or false
-        if reaper.ImGui_Button(ctx, (open and "v" or ">") .. "##cflanetoggle", 22, 0) then
-            settings.conform_lanes_open = not open
+        -- Phrased as hiding, and ticked by default, because that is the state the page
+        -- starts in -- a tick that starts clear and means "the thing you are looking at
+        -- is switched off" reads backwards.
+        local hch, hv = reaper.ImGui_Checkbox(ctx, "hide session tracks",
+                                              not settings.conform_lanes_open)
+        if hch then
+            settings.conform_lanes_open = not hv
             saveSettings()
         end
-        setToolTipFunc(open and "Hide the session rows. The tracks stay loaded."
-                            or  "Show the session rows")
-        reaper.ImGui_SameLine(ctx)
-        reaper.ImGui_AlignTextToFramePadding(ctx)
-        reaper.ImGui_TextColored(ctx, colorGrey,
-            string.format("%d track%s", nTracks, nTracks == 1 and "" or "s"))
-        setToolTipFunc("Right click Add to list them, set whether each is kept whole or\n" ..
-                       "follows the picture, or remove one")
+        setToolTipFunc(string.format(
+            "%d track%s loaded. Hiding them leaves them loaded and still part of the\n" ..
+            "conform -- it only stops their rows being drawn, which on a session of\n" ..
+            "any size is what buries the two timelines.",
+            nTracks, nTracks == 1 and "" or "s"))
         reaper.ImGui_SameLine(ctx)
         reaper.ImGui_Dummy(ctx, 6, 1)
         reaper.ImGui_SameLine(ctx)
@@ -4658,15 +5052,12 @@ function conformTrackControls()
 
     if nTracks > 0 then
         reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, "Remove all##cflaneclear") then
-            -- Removing them one at a time through the list is fine for three and absurd
-            -- for a hundred, which is how many a real session has.
-            conformTracks = {}
-            conformLaneKey = nil
-            conformTouchState()
+        if reaper.ImGui_Button(ctx, "Remove tracks##cflanerm") then
+            reaper.ImGui_OpenPopup(ctx, "##cflanermmenu")
         end
-        setToolTipFunc("Take every track out of the overview.\n" ..
-                       "The project's own tracks and items are untouched.")
+        setToolTipFunc("Take tracks out of the overview. The project's own tracks and\n" ..
+                       "items are never touched.")
+        conformRemoveTracksPopup()
 
         reaper.ImGui_SameLine(ctx)
         reaper.ImGui_Dummy(ctx, 6, 1)
@@ -4679,19 +5070,7 @@ function conformTrackControls()
             conformLaneKey = nil
         end
         setToolTipFunc("On: items share rows, packed into as few as will hold them.\n" ..
-                       "Off: one row per track, in the order they were added, each\n" ..
-                       "labelled with the track's name on the right.")
-
-        reaper.ImGui_SameLine(ctx)
-        local mch2, mv2 = reaper.ImGui_Checkbox(ctx, "muted",
-                                                settings.conform_lane_muted or false)
-        if mch2 then
-            settings.conform_lane_muted = mv2
-            saveSettings()
-            conformLaneKey = nil
-        end
-        setToolTipFunc("Draw muted items as well. They are left out of the conform either\n" ..
-                       "way -- this only decides whether you can see them.")
+                       "Off: one row per track, with a header of names on the left.")
 
         -- How tall the area is, in rows. Anything past that scrolls.
         reaper.ImGui_SameLine(ctx)
@@ -4704,6 +5083,19 @@ function conformTrackControls()
         end
         setToolTipFunc("How many rows of session items are visible at once.\n" ..
                        "The rest scroll -- put the pointer over them and use the wheel.")
+
+        -- Only meaningful with a header to be wide
+        if settings.conform_lane_compact == false then
+            reaper.ImGui_SameLine(ctx)
+            reaper.ImGui_SetNextItemWidth(ctx, 90)
+            local nch, nv = reaper.ImGui_SliderInt(ctx, "names##cflanenamew",
+                                settings.conform_lane_name_w or 150, 60, 400)
+            if nch then
+                settings.conform_lane_name_w = nv
+                saveSettings()
+            end
+            setToolTipFunc("Width of the track-name header on the left of the rows")
+        end
     end
 
     if reaper.ImGui_BeginPopup(ctx, "##cflaneopts") then
@@ -4750,47 +5142,6 @@ function conformTrackControls()
         reaper.ImGui_EndPopup(ctx)
     end
 
-    if #conformTracks > 0 then
-        reaper.ImGui_SameLine(ctx)
-        reaper.ImGui_Dummy(ctx, 6, 1)
-        reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, "Find cuts##cffind") then
-            local fpsA = (conformResult and conformResult.info and conformResult.info.fpsA) or 25
-            local c, p, n = conformFindCuts(conformIP1, fpsA)
-            conformCutPlan = { cuts = c, problems = p, kept = n }
-        end
-        setToolTipFunc("Work out the fewest edits to the old timeline that put every kept\n" ..
-                       "item where it needs to be. One edit per change of offset, each placed\n" ..
-                       "in a gap so nothing has to be cut through.")
-
-        -- Only once there is a plan: this applies that plan, and a button that first
-        -- works out what to do and then does it would leave nothing to look at in
-        -- between -- which is the one step worth looking at.
-        if conformCutPlan and #conformCutPlan.cuts > 0 then
-            -- Read before the button: pressing it clears the plan, and a tooltip built
-            -- afterwards would be formatting a count that no longer exists.
-            local nCuts = #conformCutPlan.cuts
-            reaper.ImGui_SameLine(ctx)
-            if reaper.ImGui_Button(ctx, "Cut##cfcut") then
-                local fpsA = (conformResult and conformResult.info and conformResult.info.fpsA) or 25
-                local n = conformApplyCuts(conformIP1, fpsA, conformCutPlan.cuts)
-                conformLaneNote = string.format("cut: %d edit%s applied", n, n == 1 and "" or "s")
-                -- The session has moved under the lanes, so everything derived from item
-                -- positions is stale. The plan goes too: it described a timeline that no
-                -- longer exists, and so do the undo steps, which hold offsets measured
-                -- against it.
-                conformCutPlan = nil
-                conformLaneKey = nil
-                conformClearUndo()
-            end
-            setToolTipFunc(string.format(
-                "Apply those %d edit%s to the session: insert or remove time at each one,\n" ..
-                "rippling every track so automation moves with the items.\n\n" ..
-                "Items sitting across an edit are cut into more pieces -- pin an item\n" ..
-                "first if it must survive whole. One REAPER undo step covers the lot.",
-                nCuts, nCuts == 1 and "" or "s"))
-        end
-    end
 
     if conformLaneNote then
         reaper.ImGui_SameLine(ctx)
@@ -4875,7 +5226,13 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
     -- this much -- the two were never on a shared axis anyway, since the previews are
     -- two slots with a gap and this is one continuous scale.
     local gut     = CONFORM_SPEAKER_W
-    local viewW   = math.max(120, winW - 2 * CONFORM_MARGIN - gut)
+    -- The track-name header, when there is one. It takes its width out of the timeline
+    -- rather than out of the window, so the two bands stay the same width as each other
+    -- and as the ruler above them.
+    local nameW   = (settings.conform_lane_compact == false
+                     and #conformTracks > 0 and settings.conform_lanes_open)
+                    and math.max(60, settings.conform_lane_name_w or 150) or 0
+    local viewW   = math.max(120, winW - 2 * CONFORM_MARGIN - gut - nameW)
     local barH    = 22
     -- Constant, not R and 54 or 20: the window is sized to its content every frame, so
     -- a height that changes when a match arrives reads as the whole UI jumping.
@@ -4910,7 +5267,13 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
     else
         conformLaneScroll = 0
     end
+    -- Room for the off-screen strip, only when something is actually off screen. Kept
+    -- here with the rest of the geometry so the bands, the ruler and the waveforms are
+    -- all sized from one place and nothing ends up drawn over anything else.
+    conformLaneStrip = ((conformLaneRows or 0) > (conformLaneShown or 0)
+                        and (conformLaneShown or 0) > 0) and 7 or 0
     local laneRowsH = conformLaneShown * CONFORM_LANE_ROW
+                      + ((conformLaneShown > 0) and conformLaneStrip or 0)
     local laneH     = laneRowsH
     local laneOldH  = (laneRowsH > 0) and (laneRowsH + conformLaneHead()) or 0
     local stackH  = rulerH + laneOldH + wfH + barH + connH + barH + wfH + laneH
@@ -4931,8 +5294,9 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
     end
 
     reaper.ImGui_Dummy(ctx, 1, 12)
-    reaper.ImGui_SameLine(ctx, CONFORM_MARGIN + gut)
-    local gutterX = reaper.ImGui_GetCursorScreenPos(ctx) - gut
+    reaper.ImGui_SameLine(ctx, CONFORM_MARGIN + gut + nameW)
+    local gutterX = reaper.ImGui_GetCursorScreenPos(ctx) - gut - nameW
+    local headerX = gutterX + gut
     conformSpeakerRows = {}
     -- NoScrollWithMouse so the wheel is ours to interpret: ImGui would otherwise spend
     -- it scrolling this child, and opt+wheel would both zoom and pan. The wheel it
@@ -5118,7 +5482,7 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
         -- the playhead: when the wheel is driving, the cursor is what you are pointing
         -- at, and keeping that frame still is what makes zooming feel like moving a
         -- loupe rather than being thrown around the timeline.
-        if hovered and scrollVertical and scrollVertical ~= 0 then
+        if hovered and ((scrollVertical or 0) ~= 0 or (scrollHorizontal or 0) ~= 0) then
             if isOptionDown and isShiftDown then
                 local g = (settings.conform_peak_gain or 1.0) * (1.0 + 0.15 * scrollVertical)
                 if g < 1.0  then g = 1.0  end
@@ -5136,23 +5500,32 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
                     -- child's left edge stays where it is
                     conformScrollTo(visLeft + (anchor / maxFrames) * viewW * z - mouseX)
                 end
-            elseif conformPointerOverLanes(mouseY, laneOldY, laneNewY, laneH)
-                   and (conformLaneRows or 1) > (conformLaneShown or 0) then
-                -- Over the session rows, with more of them than fit: the wheel moves
-                -- through the rows. Everywhere else it still moves along the timeline.
-                -- The wheel acts on whatever it is pointing at, which is the only rule
-                -- that does not have to be learned.
-                local maxScroll = (conformLaneRows or 1) - (conformLaneShown or 1)
-                local v = (conformLaneScroll or 0) - (scrollVertical > 0 and 1 or -1)
-                if v < 0 then v = 0 end
-                if v > maxScroll then v = maxScroll end
-                conformLaneScroll = v
             else
-                local lim = math.max(0, contentW - viewW)
-                local v   = scrollX - scrollVertical * (viewW * 0.12)
-                if v < 0   then v = 0 end
-                if v > lim then v = lim end
-                conformScrollTo(v)
+                -- Along the timeline, or down the rows, the way every other application
+                -- does it: the wheel's own horizontal axis moves sideways, shift with
+                -- the vertical one moves sideways, and the vertical one on its own
+                -- moves down. A trackpad gives the horizontal axis directly; a mouse
+                -- with one wheel has shift.
+                local hz = (scrollHorizontal or 0)
+                if isShiftDown then hz = hz + (scrollVertical or 0) end
+                if hz ~= 0 then
+                    local lim = math.max(0, contentW - viewW)
+                    local v   = scrollX - hz * (viewW * 0.12)
+                    if v < 0   then v = 0 end
+                    if v > lim then v = lim end
+                    conformScrollTo(v)
+                end
+
+                -- The vertical wheel moves through the session rows, and only there:
+                -- it is the one place in this view with more content than height.
+                local vt = (not isShiftDown) and (scrollVertical or 0) or 0
+                if vt ~= 0 and (conformLaneRows or 1) > (conformLaneShown or 0) then
+                    local maxScroll = (conformLaneRows or 1) - (conformLaneShown or 1)
+                    local v = (conformLaneScroll or 0) - (vt > 0 and 1 or -1)
+                    if v < 0 then v = 0 end
+                    if v > maxScroll then v = maxScroll end
+                    conformLaneScroll = v
+                end
             end
         end
 
@@ -5460,6 +5833,7 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
     -- Outside the child, so it does not scroll with the timeline, but drawn from the
     -- row positions the child recorded so it still lines up with them.
     conformDrawSpeakerGutter(gutterX, gut)
+    conformDrawLaneHeader(headerX, nameW)
 end
 
 local function conformFramePath(filePath, frame, fps, useCutHandle)
@@ -6148,14 +6522,34 @@ function conformMatchRow(IP1, IP2)
             "and the thresholds it uses")
     conformComparePopup(IP1, IP2)
 
-    conformEditButtons()
+    -- Three rows, each answering one question.
+    --
+    -- Row one is the comparison: what it found, and what to do about it as a whole.
+    -- "muted" belongs here rather than with the tracks -- it decides what is drawn, like
+    -- the other view settings, not which tracks are involved.
+    if #conformTracks > 0 then
+        reaper.ImGui_SameLine(ctx)
+        local mch2, mv2 = reaper.ImGui_Checkbox(ctx, "muted",
+                                                settings.conform_lane_muted or false)
+        if mch2 then
+            settings.conform_lane_muted = mv2
+            saveSettings()
+            conformLaneKey = nil
+        end
+        setToolTipFunc("Draw muted items as well. They are left out of the conform either\n" ..
+                       "way -- this only decides whether you can see them.")
+    end
+    conformPlanButtons()
 
-    -- The session tracks get a row of their own. They used to run on from the compare
-    -- and edit buttons, which made one long row of controls answering two unrelated
-    -- questions -- what the comparison found, and what the session does about it -- and
-    -- pushed the later ones off the edge on a narrow window.
+    -- Row two: which tracks the overview is watching, and how their rows are drawn.
     reaper.ImGui_NewLine(ctx)
     conformTrackControls()
+
+    -- Row three: what to do to one item. Below the tracks because an item is reached
+    -- through them, and separate because these act on a single thing rather than on the
+    -- comparison or the session as a whole.
+    reaper.ImGui_NewLine(ctx)
+    conformEditButtons()
 end
 
 function conformComparePopup(IP1, IP2)
