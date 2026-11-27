@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.11.0
+-- @version 0.11.1
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,9 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Fixed: "attempt to index a nil value (global 'first')" as soon as the Compare tab
+--     drew a track-name header. Moving the band labels out of that function took the
+--     line declaring two variables with them, while the code below went on using them.
 --   + The session rows under the Compare timelines start closed, with a toggle beside
 --     the track count. Closed is not idle: the tracks stay loaded and the conform still
 --     uses them, only their rows are not drawn -- a hundred and twenty tracks of rows
@@ -4812,6 +4815,12 @@ function conformDrawLaneHeader(x, w)
     -- The divider, dragged to set the width. Picked up anywhere within a few pixels of
     -- the edge and followed until the button is let go, so the pointer may wander off
     -- the line mid-drag without dropping it.
+    --
+    -- It runs the height of the rows, so it needs the first and the last of them. These
+    -- were read further up until the band labels moved out of this function and took
+    -- the line that declared them with it.
+    local first = conformLaneHeadRows[1]
+    local last  = conformLaneHeadRows[#conformLaneHeadRows]
     local edge = x + w
     local top  = math.min(first.yOld, first.yNew)
     local bot  = math.max(last.yOld, last.yNew) + last.h
