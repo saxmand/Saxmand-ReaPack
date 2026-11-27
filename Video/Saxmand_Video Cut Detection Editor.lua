@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.10.1
+-- @version 0.11.0
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,28 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + The session rows under the Compare timelines start closed, with a toggle beside
+--     the track count. Closed is not idle: the tracks stay loaded and the conform still
+--     uses them, only their rows are not drawn -- a hundred and twenty tracks of rows
+--     otherwise buries the two timelines the page is about.
+--   + The rows are now a fixed height, set in rows, and scroll. Put the pointer over
+--     them and the wheel moves through them; anywhere else it still moves along the
+--     timeline, so the wheel acts on whatever it is pointing at.
+--   + "Compact" decides how they are laid out: on, items share rows packed into as few
+--     as will hold them; off, each track keeps its own row in the order it was added,
+--     labelled with the track's name on the right.
+--   + "Muted" is on the row now rather than hidden behind a right-click.
+--   + "Remove all" takes every track out of the overview at once. The project's own
+--     tracks and items are untouched.
+--   + "Include child tracks" when adding: a folder track carries no children in the
+--     selection, and while it is collapsed they cannot be selected at all, so adding a
+--     folder used to add one empty row and nothing of what is in it.
+--   + The rows follow the session as it is edited. They were cached on a key that could
+--     not tell items had changed, so they described whatever was there when the
+--     comparison was set up. The project's change counter is in the key now, so a
+--     rebuild happens when something actually changes rather than on every frame.
+--   + Every track control is on a row of its own, rather than running on from the
+--     compare and edit buttons and off the edge of a narrow window.
 --   + Fixed: "bad argument #1 to 'GetMediaItemTake_Peaks'" after editing the session
 --     while a comparison was open. The list of session items is cached, and the cache
 --     could not tell that items had changed, so it went on holding takes that no longer
@@ -458,6 +480,13 @@ local defaultSettings = {
     clearCacheOnExit = false,     -- decoded frames are kept between sessions by default
     cacheBudgetMB = 256,          -- ceiling for the decoded-frame cache; see the slider
     previewLiveVideo = true,      -- right preview follows the playhead while playing
+
+    -- The session lanes under the Compare timelines
+    conform_lanes_open    = false, -- collapsed to start: 120 tracks of rows buries the
+                                  -- timelines the page is actually about
+    conform_lane_compact  = true,  -- fewest rows, versus one row per track with a name
+    conform_lane_rows     = 6,     -- rows visible at once; the rest scroll
+    conform_add_children  = true,  -- adding a folder adds the tracks inside it
 }
 
 local function saveSettings()
@@ -3034,10 +3063,47 @@ local function mediaItemGUID(it)
     return (ok and g ~= "") and g or nil
 end
 
+-- Every track inside a folder, however deep, in project order.
+--
+-- A folder track carries no children in the selection, and while it is collapsed its
+-- children cannot be selected at all -- so adding a folder got you the folder and none
+-- of what is in it, which is the one thing nobody wants. REAPER describes nesting with
+-- I_FOLDERDEPTH on each track: +1 opens a folder, -1 closes one (and -2 closes two), so
+-- walking forward and keeping count finds the subtree without needing the folder open.
+function conformFolderChildren(tr)
+    local out = {}
+    local depth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+    if depth < 1 then return out end                 -- not a folder
+    local idx = math.floor(reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER"))
+    local level = 1
+    local n = reaper.CountTracks(0)
+    for i = idx, n - 1 do                            -- IP_TRACKNUMBER is 1-based
+        local t = reaper.GetTrack(0, i)
+        if not t then break end
+        out[#out + 1] = t
+        local d = reaper.GetMediaTrackInfo_Value(t, "I_FOLDERDEPTH")
+        level = level + d
+        if level <= 0 then break end                 -- the subtree ended on this track
+    end
+    return out
+end
+
 function conformAddSelectedTracks()
     local added = 0
+
+    -- Selected tracks, plus the contents of any folder among them. Gathered first and
+    -- de-duplicated by the loop below, since selecting a folder and one of its children
+    -- would otherwise offer the same track twice.
+    local wanted = {}
     for i = 0, reaper.CountSelectedTracks(0) - 1 do
         local tr = reaper.GetSelectedTrack(0, i)
+        wanted[#wanted + 1] = tr
+        if settings.conform_add_children ~= false then
+            for _, c in ipairs(conformFolderChildren(tr)) do wanted[#wanted + 1] = c end
+        end
+    end
+
+    for _, tr in ipairs(wanted) do
         local g  = trackGUID(tr)
         if g then
             local dup = false
@@ -3093,15 +3159,27 @@ end
 
 function conformLaneItems(IP1, fpsA)
     if not IP1 or not IP1.item then return {} end
-    local key = string.format("%d|%s|%s|%.4f|%s", #conformTracks,
+    -- The project's change counter is in the key, so editing the session rebuilds this
+    -- list rather than leaving it describing what used to be there. Nothing else in the
+    -- key notices an item moving, being added or being deleted -- which is both why the
+    -- lanes went stale and why a freed take could still be handed to REAPER.
+    --
+    -- It counts undoable changes, so it moves when the session is edited and not while
+    -- merely playing or moving the cursor. One rebuild per edit is the cost; with a
+    -- hundred tracks that is tens of milliseconds, paid when something actually changed
+    -- rather than every frame.
+    local stateCount = reaper.GetProjectStateChangeCount
+                       and reaper.GetProjectStateChangeCount(0) or 0
+    local key = string.format("%d|%s|%s|%.4f|%s|%s|%d", #conformTracks,
         tostring(IP1.item_pos), tostring(IP1.item_offset), fpsA,
-        tostring(settings.conform_lane_muted))
+        tostring(settings.conform_lane_muted), tostring(settings.conform_lane_compact),
+        stateCount)
     for _, t in ipairs(conformTracks) do key = key .. "|" .. (t.mode or "keep") end
     if conformLaneKey == key and conformLaneCache then return conformLaneCache end
 
     local out = {}
     local base = (IP1.item_pos or 0) - (IP1.item_offset or 0)
-    for _, t in ipairs(conformTracks) do
+    for ti, t in ipairs(conformTracks) do
         local tr = conformResolveTrack(t)
         if tr then
             for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
@@ -3117,6 +3195,7 @@ function conformLaneItems(IP1, fpsA)
                         guid  = mediaItemGUID(it),
                         name  = (nm ~= "") and nm or t.name,
                         track = t.name,
+                        trackIdx = ti,              -- for one-row-per-track
                         mode  = t.mode or "keep",
                         muted = muted,
                         -- Whole frames. The conform works in frames throughout -- an
@@ -3146,18 +3225,32 @@ function conformLaneItems(IP1, fpsA)
     end
     table.sort(out, function(x, y) return x.s < y.s end)
 
-    -- Overlapping items get their own row rather than being drawn on top of each
-    -- other. Greedy packing over items already sorted by start: each goes in the first
-    -- row whose last item has finished, which is the fewest rows that can hold them.
-    local rowEnd = {}
-    for _, it in ipairs(out) do
-        it.row = nil
-        for r = 1, #rowEnd do
-            if it.s >= rowEnd[r] then it.row = r; rowEnd[r] = it.e; break end
+    -- Two ways to lay the items out.
+    --
+    -- Compact packs them into as few rows as will hold them without overlap, which is
+    -- the most timeline in the least height and says nothing about where anything came
+    -- from. Otherwise each track keeps its own row, in the order they were added, and
+    -- the row is labelled -- which is what you want when the question is "what happens
+    -- to THIS track" rather than "what happens around here".
+    if settings.conform_lane_compact == false then
+        for _, it in ipairs(out) do it.row = it.trackIdx or 1 end
+        conformLaneRows = math.max(1, #conformTracks)
+        conformLaneRowTrack = {}
+        for ti, t in ipairs(conformTracks) do conformLaneRowTrack[ti] = t.name end
+    else
+        -- Greedy packing over items already sorted by start: each goes in the first row
+        -- whose last item has finished, which is the fewest rows that can hold them.
+        local rowEnd = {}
+        for _, it in ipairs(out) do
+            it.row = nil
+            for r = 1, #rowEnd do
+                if it.s >= rowEnd[r] then it.row = r; rowEnd[r] = it.e; break end
+            end
+            if not it.row then rowEnd[#rowEnd + 1] = it.e; it.row = #rowEnd end
         end
-        if not it.row then rowEnd[#rowEnd + 1] = it.e; it.row = #rowEnd end
+        conformLaneRows = math.max(1, #rowEnd)
+        conformLaneRowTrack = nil
     end
-    conformLaneRows = math.max(1, #rowEnd)
 
     conformLaneCache, conformLaneKey = out, key
     return out
@@ -4090,6 +4183,57 @@ end
 -- Hit tested before anything is drawn, so the block under the cursor can be brought
 -- forward and the rest pushed back in the same pass -- the same reason the match
 -- ribbons do it, and the only way the correspondence is readable in a crowd.
+-- Whether the pointer is inside either band of session rows. Both bands, because they
+-- are the same rows seen against the two cuts and the wheel should do the same thing
+-- over either of them.
+function conformPointerOverLanes(mouseY, laneOldY, laneNewY, laneH)
+    if not mouseY or not laneOldY or not laneNewY or (laneH or 0) <= 0 then return false end
+    local headH = conformLaneHead()
+    if mouseY >= laneOldY and mouseY <= laneOldY + laneH + headH then return true end
+    if mouseY >= laneNewY and mouseY <= laneNewY + laneH then return true end
+    return false
+end
+
+-- One row per track means the rows mean something, so they are named. Drawn at the
+-- right-hand edge over a panel, because the left of a row is where its earliest item
+-- usually is and a label there would sit on top of the material.
+--
+-- Nothing is drawn in compact mode: a row there holds whatever fitted and belongs to no
+-- particular track, so a name would be a lie.
+function conformDrawLaneLabels(dl, laneOldY, laneNewY, laneH, visLeft, viewW, headH, rowH)
+    local names = conformLaneRowTrack
+    if not names or (laneH or 0) <= 0 then return end
+    local firstRow = (conformLaneScroll or 0) + 1
+    local shown    = math.max(1, conformLaneShown or 1)
+
+    for v = 0, shown - 1 do
+        local nm = names[firstRow + v]
+        if nm then
+            local label = conformShorten(nm, 22)
+            local tw = reaper.ImGui_CalcTextSize(ctx, label)
+            local x  = visLeft + viewW - tw - 10
+            for _, y in ipairs({ laneOldY + headH + v * rowH, laneNewY + v * rowH }) do
+                reaper.ImGui_DrawList_AddRectFilled(dl, x - 5, y + 2,
+                                                    visLeft + viewW - 2, y + rowH - 2,
+                                                    0x000000CC, 3)
+                reaper.ImGui_DrawList_AddText(dl, x, y + (rowH - 13) / 2, colorGrey, label)
+            end
+        end
+    end
+
+    -- A plain count of what is not on screen, rather than a scrollbar: the rows scroll
+    -- by whole rows and there are rarely many, so the number is more use than a thumb
+    -- too small to grab.
+    local total = conformLaneRows or 0
+    if total > shown then
+        local hidden = total - shown - (conformLaneScroll or 0)
+        local txt = string.format("%d of %d rows%s", shown, total,
+                                  hidden > 0 and ("  -  " .. hidden .. " below") or "")
+        reaper.ImGui_DrawList_AddText(dl, visLeft + 6, laneNewY + laneH - 14,
+                                      colorGrey, txt)
+    end
+end
+
 function drawConformLanes(dl, items, laneOldY, laneNewY, laneH, fx, xf,
                           visLeft, viewW, maxFrames, fpsA)
     local rowH   = CONFORM_LANE_ROW
@@ -4110,10 +4254,18 @@ function drawConformLanes(dl, items, laneOldY, laneNewY, laneH, fx, xf,
     -- ---- pass one: geometry and what the cursor is over ---------------------
     local laid = {}
     local hoverItem, hoverFrame, hoverPiece, hoverLane
+    -- Only the rows inside the window are laid out at all. Skipping them here rather
+    -- than drawing them and letting ImGui clip keeps them out of the hit testing too,
+    -- so a row scrolled out of sight cannot be hovered, dragged or pinned by accident
+    -- through the rows that replaced it.
+    local firstRow = (conformLaneScroll or 0) + 1
+    local lastRow  = firstRow + math.max(1, conformLaneShown or 1) - 1
     for _, it in ipairs(items) do
+        if it.row >= firstRow and it.row <= lastRow then
+        local vrow   = it.row - firstRow          -- 0-based within the visible window
         local pieces = conformItemPieces(it, breaks)
-        local oy     = laneOldY + headH + (it.row - 1) * rowH
-        local ny     = laneNewY + (it.row - 1) * rowH
+        local oy     = laneOldY + headH + vrow * rowH
+        local ny     = laneNewY + vrow * rowH
         local x1, x2 = fx(it.s), fx(it.e)
         if x2 - x1 < 2 then x2 = x1 + 2 end
         laid[#laid + 1] = { it = it, pieces = pieces, oy = oy, ny = ny, x1 = x1, x2 = x2 }
@@ -4133,6 +4285,7 @@ function drawConformLanes(dl, items, laneOldY, laneNewY, laneH, fx, xf,
                 hoverItem, hoverFrame, hoverPiece, hoverLane = it, xf(mouseX), pc, "new"
             end
         end
+        end   -- row inside the visible window
     end
 
     conformLaneHit = hoverItem and { item = hoverItem, frame = hoverFrame,
@@ -4330,6 +4483,8 @@ function drawConformLanes(dl, items, laneOldY, laneNewY, laneH, fx, xf,
         end
     end
 
+    conformDrawLaneLabels(dl, laneOldY, laneNewY, laneH, visLeft, viewW, headH, rowH)
+
     if not hoverItem then return end
 
     local pieces = conformItemPieces(hoverItem, breaks)
@@ -4462,13 +4617,38 @@ end
 -- add button is where the toggle lives, as asked; it is also on the list row so it can
 -- be found without knowing that.
 function conformTrackControls()
-    reaper.ImGui_SameLine(ctx)
-    reaper.ImGui_Dummy(ctx, 8, 1)
-    reaper.ImGui_SameLine(ctx)
-    if reaper.ImGui_Button(ctx, "Add tracks to overview##cflaneadd") then
+    local nTracks = #conformTracks
+
+    -- Open or shut. Shut to start, and shut is not idle: the tracks stay loaded and the
+    -- conform still uses them, only their rows are not drawn. A hundred and twenty
+    -- tracks of rows buries the two timelines the page is about.
+    if nTracks > 0 then
+        local open = settings.conform_lanes_open and true or false
+        if reaper.ImGui_Button(ctx, (open and "v" or ">") .. "##cflanetoggle", 22, 0) then
+            settings.conform_lanes_open = not open
+            saveSettings()
+        end
+        setToolTipFunc(open and "Hide the session rows. The tracks stay loaded."
+                            or  "Show the session rows")
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_AlignTextToFramePadding(ctx)
+        reaper.ImGui_TextColored(ctx, colorGrey,
+            string.format("%d track%s", nTracks, nTracks == 1 and "" or "s"))
+        setToolTipFunc("Right click Add to list them, set whether each is kept whole or\n" ..
+                       "follows the picture, or remove one")
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_Dummy(ctx, 6, 1)
+        reaper.ImGui_SameLine(ctx)
+    end
+
+    if reaper.ImGui_Button(ctx, "Add tracks##cflaneadd") then
         local n = conformAddSelectedTracks()
         conformLaneNote = (n > 0) and string.format("added %d", n)
                           or "select the tracks in the arrange view first"
+        if n > 0 then
+            settings.conform_lanes_open = true   -- adding is a request to see them
+            saveSettings()
+        end
     end
     setToolTipFunc("Show the items on the selected tracks against the conform, and what\n" ..
                    "would happen to them. Right click for options.")
@@ -4476,14 +4656,70 @@ function conformTrackControls()
         reaper.ImGui_OpenPopup(ctx, "##cflaneopts")
     end
 
-    if reaper.ImGui_BeginPopup(ctx, "##cflaneopts") then
-        local mch, mv = reaper.ImGui_Checkbox(ctx, "show muted items",
-                                              settings.conform_lane_muted or false)
-        if mch then
-            settings.conform_lane_muted = mv
+    if nTracks > 0 then
+        reaper.ImGui_SameLine(ctx)
+        if reaper.ImGui_Button(ctx, "Remove all##cflaneclear") then
+            -- Removing them one at a time through the list is fine for three and absurd
+            -- for a hundred, which is how many a real session has.
+            conformTracks = {}
+            conformLaneKey = nil
+            conformTouchState()
+        end
+        setToolTipFunc("Take every track out of the overview.\n" ..
+                       "The project's own tracks and items are untouched.")
+
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_Dummy(ctx, 6, 1)
+        reaper.ImGui_SameLine(ctx)
+        local cch, cv = reaper.ImGui_Checkbox(ctx, "compact",
+                                              settings.conform_lane_compact ~= false)
+        if cch then
+            settings.conform_lane_compact = cv
             saveSettings()
             conformLaneKey = nil
         end
+        setToolTipFunc("On: items share rows, packed into as few as will hold them.\n" ..
+                       "Off: one row per track, in the order they were added, each\n" ..
+                       "labelled with the track's name on the right.")
+
+        reaper.ImGui_SameLine(ctx)
+        local mch2, mv2 = reaper.ImGui_Checkbox(ctx, "muted",
+                                                settings.conform_lane_muted or false)
+        if mch2 then
+            settings.conform_lane_muted = mv2
+            saveSettings()
+            conformLaneKey = nil
+        end
+        setToolTipFunc("Draw muted items as well. They are left out of the conform either\n" ..
+                       "way -- this only decides whether you can see them.")
+
+        -- How tall the area is, in rows. Anything past that scrolls.
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_SetNextItemWidth(ctx, 90)
+        local rch, rv = reaper.ImGui_SliderInt(ctx, "rows##cflanerows",
+                            settings.conform_lane_rows or 6, 2, 24)
+        if rch then
+            settings.conform_lane_rows = rv
+            saveSettings()
+        end
+        setToolTipFunc("How many rows of session items are visible at once.\n" ..
+                       "The rest scroll -- put the pointer over them and use the wheel.")
+    end
+
+    if reaper.ImGui_BeginPopup(ctx, "##cflaneopts") then
+        -- An option about adding, so it lives with Add rather than on the row: a folder
+        -- track selected in the arrange view does not carry its children in the
+        -- selection, and while it is collapsed they cannot be selected at all -- so
+        -- adding a folder used to add one empty row and nothing of what is in it.
+        local kch, kv = reaper.ImGui_Checkbox(ctx, "include child tracks",
+                                              settings.conform_add_children ~= false)
+        if kch then
+            settings.conform_add_children = kv
+            saveSettings()
+        end
+        setToolTipFunc("When a folder track is selected, add the tracks inside it too,\n" ..
+                       "however deeply nested, whether or not the folder is open.")
+
         if #conformTracks > 0 then
             reaper.ImGui_Separator(ctx)
             reaper.ImGui_TextColored(ctx, colorGrey, "keep whole / follow the picture")
@@ -4516,12 +4752,7 @@ function conformTrackControls()
 
     if #conformTracks > 0 then
         reaper.ImGui_SameLine(ctx)
-        reaper.ImGui_AlignTextToFramePadding(ctx)
-        reaper.ImGui_TextColored(ctx, colorGrey,
-            string.format("%d track%s", #conformTracks, #conformTracks == 1 and "" or "s"))
-        setToolTipFunc("Right click the button to list them, set whether each is kept\n" ..
-                       "whole or follows the picture, or remove one")
-
+        reaper.ImGui_Dummy(ctx, 6, 1)
         reaper.ImGui_SameLine(ctx)
         if reaper.ImGui_Button(ctx, "Find cuts##cffind") then
             local fpsA = (conformResult and conformResult.info and conformResult.info.fpsA) or 25
@@ -4660,8 +4891,26 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
     -- As many rows as it takes to show overlapping items side by side rather than one
     -- on top of the other. conformLaneItems works the packing out; it is read here from
     -- the previous pass, which is a frame stale only on the frame a track is added.
-    local laneRowsH = (#conformTracks > 0)
-                      and (math.max(1, conformLaneRows or 1) * CONFORM_LANE_ROW) or 0
+    -- How tall the session rows get.
+    --
+    -- Nothing when shut, which is how the page starts: the tracks stay loaded and the
+    -- conform still uses them, only their rows are not drawn. And capped at the number
+    -- of rows asked for, whatever the session holds -- a hundred and twenty tracks
+    -- would otherwise push the timelines off the screen entirely. Anything past the cap
+    -- scrolls; conformLaneShown is what the drawing reads.
+    conformLaneShown = 0
+    if #conformTracks > 0 and settings.conform_lanes_open then
+        local have = math.max(1, conformLaneRows or 1)
+        conformLaneShown = math.min(have, math.max(2, settings.conform_lane_rows or 6))
+        -- Clamped here rather than where the wheel is read: the row count changes under
+        -- it as items are edited or compact is switched, and a scroll position left
+        -- past the end would show an empty lane with no way back.
+        conformLaneScroll = math.max(0, math.min(conformLaneScroll or 0,
+                                                 have - conformLaneShown))
+    else
+        conformLaneScroll = 0
+    end
+    local laneRowsH = conformLaneShown * CONFORM_LANE_ROW
     local laneH     = laneRowsH
     local laneOldH  = (laneRowsH > 0) and (laneRowsH + conformLaneHead()) or 0
     local stackH  = rulerH + laneOldH + wfH + barH + connH + barH + wfH + laneH
@@ -4887,6 +5136,17 @@ function drawConformTimelines(IP1, IP2, framesA, framesB, fpsA, fpsB)
                     -- child's left edge stays where it is
                     conformScrollTo(visLeft + (anchor / maxFrames) * viewW * z - mouseX)
                 end
+            elseif conformPointerOverLanes(mouseY, laneOldY, laneNewY, laneH)
+                   and (conformLaneRows or 1) > (conformLaneShown or 0) then
+                -- Over the session rows, with more of them than fit: the wheel moves
+                -- through the rows. Everywhere else it still moves along the timeline.
+                -- The wheel acts on whatever it is pointing at, which is the only rule
+                -- that does not have to be learned.
+                local maxScroll = (conformLaneRows or 1) - (conformLaneShown or 1)
+                local v = (conformLaneScroll or 0) - (scrollVertical > 0 and 1 or -1)
+                if v < 0 then v = 0 end
+                if v > maxScroll then v = maxScroll end
+                conformLaneScroll = v
             else
                 local lim = math.max(0, contentW - viewW)
                 local v   = scrollX - scrollVertical * (viewW * 0.12)
@@ -5889,6 +6149,12 @@ function conformMatchRow(IP1, IP2)
     conformComparePopup(IP1, IP2)
 
     conformEditButtons()
+
+    -- The session tracks get a row of their own. They used to run on from the compare
+    -- and edit buttons, which made one long row of controls answering two unrelated
+    -- questions -- what the comparison found, and what the session does about it -- and
+    -- pushed the later ones off the edge on a narrow window.
+    reaper.ImGui_NewLine(ctx)
     conformTrackControls()
 end
 
