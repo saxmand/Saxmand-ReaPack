@@ -1,6 +1,6 @@
 -- @description Find and edit cuts in videos using an editor and precise cut detection
 -- @author saxmand
--- @version 0.9.2
+-- @version 0.10.0
 -- @provides
 --   Helpers/*.lua
 --   Helpers/hosi_exec_hidden.vbs
@@ -24,6 +24,24 @@
 --
 --   Optional: Ollama running locally, to label cuts from their picture.
 -- @changelog
+--   + Fixed: "bad argument #4 to 'format'" when a session contained items that do not
+--     sit on a frame boundary, which audio and MIDI items generally do not. The conform
+--     works in whole frames throughout, but item edges were converted to frames without
+--     rounding, so the offsets derived from them were fractional and could not be
+--     printed with %d. One of the four places that prints them is inside the timeline's
+--     scroll area, which is why the error arrived together with ReaImGui's complaint
+--     about a missing EndChild: the frame was abandoned with the child still open.
+--   + Removed the Re-compare button. It could not do anything: a fingerprint is a
+--     deterministic function of the file and the match a deterministic function of the
+--     fingerprints and the settings, and changing a setting already re-matches on its
+--     own -- so re-running with everything unchanged reproduced exactly what was
+--     already on screen. A file that has genuinely been re-exported is picked up
+--     without being asked, since its size and date no longer match the stored
+--     fingerprints.
+--   + In its place, once a comparison exists: "Clear and compare again", which throws
+--     away the pins, nudges and ignored items, including the copy saved beside the
+--     video, and compares again from the stored fingerprints. The track list and the
+--     chosen audio sources are kept.
 --   + Shortcut badges read "D" and "Shift+Right Arrow" rather than lower case, and a
 --     dense row of controls fans them out instead of stacking them on top of one
 --     another -- the transport and Undo/Redo were unreadable, their labels being far
@@ -2079,7 +2097,8 @@ function startConform(IP1, IP2, keepResult)
     end
 
     -- force=0: a store already matching the file's size and mtime is reused, so the
-    -- decode cost is only paid the first time a version is seen.
+    -- decode cost is only paid the first time a version is seen -- and a file that has
+    -- been re-exported since no longer matches, so it is rebuilt without being asked.
     conformJobA = reaper.VP_Analyze(IP1.filePath, conformStoreA, 0)
     conformJobB = reaper.VP_Analyze(IP2.filePath, conformStoreB, 0)
     if conformJobA == 0 or conformJobB == 0 then
@@ -3085,8 +3104,17 @@ function conformLaneItems(IP1, fpsA)
                         track = t.name,
                         mode  = t.mode or "keep",
                         muted = muted,
-                        s     = (pos - base) * fpsA,
-                        e     = (pos + len - base) * fpsA,
+                        -- Whole frames. The conform works in frames throughout -- an
+                        -- edit is placed at a frame, offsets are counted in frames, and
+                        -- the plan is printed with %d -- so an item edge that is not on
+                        -- a frame boundary cannot be represented in it anyway. Audio
+                        -- and MIDI items sit wherever they were recorded, so leaving
+                        -- these unrounded produced fractional offsets that crashed the
+                        -- plan panel on string.format, and crashed it inside the scroll
+                        -- child, which left ReaImGui complaining about a missing
+                        -- EndChild on top of the error itself.
+                        s     = math.floor((pos - base) * fpsA + 0.5),
+                        e     = math.floor((pos + len - base) * fpsA + 0.5),
                         -- what playing it back needs. The take's source is used as-is
                         -- and never destroyed: CF_CreatePreview's own note is "don't
                         -- forget to destroy it unless it came from a take".
@@ -3361,6 +3389,32 @@ function conformSaveState(IP1, IP2)
     saveFile(path, json.encodeToJson(all))
 end
 
+-- Throws away everything built on top of a match for this pair: the pins, the nudges,
+-- the ignored items, and the copy of all of it saved beside the video. The fingerprints
+-- are deliberately left where they are -- the same file always produces the same ones,
+-- so deleting them would cost minutes of decoding to arrive back at identical data.
+--
+-- The track list and the chosen audio sources survive. Those describe how the
+-- comparison was set up rather than anything it worked out, and rebuilding a list of a
+-- hundred tracks by hand is not a reasonable price for undoing a few pins.
+function conformClearState(IP1, IP2)
+    conformProtect, conformShift, conformIgnore = {}, {}, {}
+    conformLaneKey, conformLaneSel, conformLanePick = nil, nil, nil
+    conformCutPlan = nil
+    conformResult, conformSelectedIdx = nil, nil
+    conformClearUndo()
+
+    local path = conformStatePath(IP1)
+    local key  = conformStateKey(IP2)
+    if not path or key == "" then return end
+    local all = conformReadAll(path)
+    if all[key] == nil then return end
+    all[key] = nil
+    -- Only this pair's entry goes; the file holds one per pair compared against this
+    -- video, and the others have nothing to do with this.
+    saveFile(path, json.encodeToJson(all))
+end
+
 -- Called when the pair changes. Returns true if anything was restored.
 function conformLoadState(IP1, IP2)
     conformProtect, conformShift, conformTracks = {}, {}, {}
@@ -3530,7 +3584,12 @@ function conformFindCuts(IP1, fpsA)
             if #pcs > 0 then
                 keep[#keep + 1] = {
                     it = it, s = it.s, e = it.e,
-                    d = pcs[1].newS - it.s,       -- the offset this item needs
+                    -- Rounded again here as well as at the source. Everything feeding
+                    -- it is whole frames now, so this changes nothing -- but four
+                    -- places print this number with %d, two of them inside the scroll
+                    -- child, and a fraction reaching any of them takes the whole script
+                    -- down rather than misprinting a label.
+                    d = math.floor(pcs[1].newS - it.s + 0.5),
                     split = #pcs > 1,             -- the conform would still cut it
                 }
             end
@@ -5811,18 +5870,47 @@ function conformComparePopup(IP1, IP2)
 
     local ready = IP1 and IP2 and IP1.filePath and IP2.filePath
                   and IP1.filePath ~= "" and IP2.filePath ~= ""
-    local label = conformResult and "Re-compare" or "Compare"
 
-    if not ready then reaper.ImGui_BeginDisabled(ctx) end
-    if reaper.ImGui_Button(ctx, label .. "##cfmatch", 160, 0) and ready then
-        startConform(IP1, IP2)
-        reaper.ImGui_CloseCurrentPopup(ctx)
+    -- Compare only while there is nothing to show.
+    --
+    -- There used to be a Re-compare here, and it could not do anything: a fingerprint
+    -- is a deterministic function of the file, the match is a deterministic function of
+    -- the fingerprints and the parameters, and changing a parameter already re-matches
+    -- on its own further down this popup. So re-running with everything unchanged
+    -- reproduced the same result and read as a dead button. Rebuilding the fingerprints
+    -- first would not have helped either -- same file, same fingerprints.
+    --
+    -- A file that has actually been re-exported is picked up without asking: its size
+    -- and mtime no longer match the store, so the next comparison rebuilds it.
+    if not conformResult then
+        if not ready then reaper.ImGui_BeginDisabled(ctx) end
+        if reaper.ImGui_Button(ctx, "Compare##cfmatch", 160, 0) and ready then
+            startConform(IP1, IP2)
+            reaper.ImGui_CloseCurrentPopup(ctx)
+        end
+        if not ready then reaper.ImGui_EndDisabled(ctx) end
+        setToolTipFunc(ready
+            and ("Fingerprints every frame of both files; the first run takes roughly 3 min\n" ..
+                 "per hour of footage, after which the result is cached next to the video.")
+            or "Pick a video for both sides first")
+    else
+        -- What was actually wanted by "start fresh": not new fingerprints, but to be rid
+        -- of the pins, nudges and ignores built up on top of the match, and of the copy
+        -- of all that saved beside the video. The comparison then runs again from the
+        -- stored fingerprints, which is instant.
+        if reaper.ImGui_Button(ctx, "Clear and compare again##cfclear", 160, 0) and ready then
+            conformClearState(IP1, IP2)
+            startConform(IP1, IP2)
+            setTransientMessage("Cleared every correction and compared again")
+            reaper.ImGui_CloseCurrentPopup(ctx)
+        end
+        setToolTipFunc("Throws away the pins, nudges and ignored items -- including the\n" ..
+                       "copy saved beside the video -- and compares again from the stored\n" ..
+                       "fingerprints.\n" ..
+                       "The track list and the chosen audio sources are kept.\n" ..
+                       "The fingerprints are not rebuilt: the same file always produces\n" ..
+                       "the same ones, so there would be nothing to gain.")
     end
-    if not ready then reaper.ImGui_EndDisabled(ctx) end
-    setToolTipFunc(ready
-        and ("Fingerprints every frame of both files; the first run takes roughly 3 min\n" ..
-             "per hour of footage, after which the result is cached next to the video.")
-        or "Pick a video for both sides first")
 
     reaper.ImGui_Separator(ctx)
 
@@ -6024,6 +6112,11 @@ function drawConformPreviews(IP1, IP2, oldF, newF, fpsA, fpsB, matched)
     setToolTipFunc("Swap which version counts as the old one")
 
     slot("new", IP2, x1)
+
+    -- The same brief message the Cut Detection tab shows, over this tab's own pair of
+    -- pictures: actions on this tab raise them too, and a message drawn only on the
+    -- other tab would never be seen.
+    drawTransientMessage(bx, by, dx + slotW, slotH)
 
     -- While fingerprinting, the frames behind are stale and nothing can be done with
     -- them, so the progress goes over them rather than somewhere else on the page.
