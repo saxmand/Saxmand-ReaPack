@@ -52,9 +52,15 @@
 --   + Those mutes follow the project while sync is on, since REAPER is the one making
 --     the sound then, and are the editor's own while it is off -- auditioning a conform
 --     should not mute anybody's tracks.
---   + With a header, "old" and "new" are labelled in it rather than over the picture,
---     and the four row mutes in the gutter give way to the per-track ones. Without one
---     they come back, wearing the same square as the rest.
+--   + With a header, "old" and "new" are labelled in it beside the video they name,
+--     each with its own mute and solo, rather than printed over the picture. The four
+--     row mutes in the gutter give way to those and to the per-track ones; without a
+--     header they come back, wearing the same square as the rest.
+--   + Those four rows can be soloed as well as muted, so a source can be set up before
+--     switching to it.
+--   + The window moves from its title bar only. Dragging anywhere in the body used to
+--     carry it off, which is easy to do by two pixels when reaching for the header's
+--     width handle or the scrollbar's thumb.
 --   + "Include child tracks" when adding: a folder track carries no children in the
 --     selection, and while it is collapsed they cannot be selected at all, so adding a
 --     folder used to add one empty row and nothing of what is in it.
@@ -480,6 +486,7 @@ local defaultSettings = {
     -- [row] = true means muted, so a row absent from here is audible: the speakers
     -- default to on, and adding a track starts making sound rather than silently not.
     conform_row_mute = {},
+    conform_row_solo = {},        -- the same four rows; soloing one quiets the others
     conform_heal_spread = 5.0,    -- s; pieces further apart than this are not averaged
     conform_heal_gap = 50,        -- frames; widest gap two matches are joined across
 
@@ -4161,9 +4168,38 @@ end
 CONFORM_SPEAKER_W = 22        -- gutter width; the sync button above it sets the column
 
 -- Defaults to on, so adding a track starts audible rather than silently doing nothing.
-function conformRowAudible(row)
+--
+-- Solo across the four rows means what it means everywhere: with one soloed, the others
+-- go quiet. It is worth having even though only the driving row is heard at a time --
+-- it is how you set up which source you want before switching to it, and it is the
+-- same gesture as the per-track solo a few pixels away.
+function conformRowMuted(row)
     local m = settings.conform_row_mute
-    return not (m and m[row])
+    return (m and m[row]) and true or false
+end
+
+function conformRowSoloed(row)
+    local sset = settings.conform_row_solo
+    return (sset and sset[row]) and true or false
+end
+
+function conformAnyRowSolo()
+    for _, r in pairs(settings.conform_row_solo or {}) do
+        if r then return true end
+    end
+    return false
+end
+
+function conformRowAudible(row)
+    if conformRowMuted(row) then return false end
+    if conformAnyRowSolo() then return conformRowSoloed(row) end
+    return true
+end
+
+function conformSetRowSoloed(row, on)
+    settings.conform_row_solo = settings.conform_row_solo or {}
+    settings.conform_row_solo[row] = on or nil
+    saveSettings()
 end
 
 function conformSetRowAudible(row, on)
@@ -4652,6 +4688,52 @@ end
 -- up in a column, which is how they are read -- down the list, not across one row.
 conformNameDrag = nil
 
+-- The header rows for the two video bands: the version's name, and the mute and solo
+-- for its own sound. Drawn from the positions the speaker gutter used to use, which are
+-- recorded while the bands are drawn.
+function conformDrawVideoHeadRows(x, w, ms, msW, mx, my, inWin, syncing)
+    for _, r in ipairs(conformSpeakerRows) do
+        if (r.row == "old" or r.row == "new") and r.h >= 14 then
+            local y = r.y
+            reaper.ImGui_DrawList_AddRectFilled(draw_list, x, y + 1, x + w, y + r.h - 1,
+                                                0x00000066, 3)
+            reaper.ImGui_DrawList_AddText(draw_list, x + 6, y + 4,
+                conformFocusSide() == r.row and colorWhite or colorGrey, r.row)
+
+            -- At the top of the band rather than its middle: a waveform band is tall,
+            -- and a button floating in the centre of it reads as belonging to nothing.
+            local bx = x + w - msW - 4
+            local by = y + 3
+            local hotRow = inWin and mx >= x and mx <= x + w and my >= y and my <= y + r.h
+            local hotM = hotRow and mx >= bx and mx <= bx + ms and my >= by and my <= by + ms
+            local hotS = hotRow and mx >= bx + ms + 6 and mx <= bx + msW
+                         and my >= by and my <= by + ms
+
+            conformDrawMS(draw_list, bx, by, ms, "M", conformRowMuted(r.row), hotM)
+            conformDrawMS(draw_list, bx + ms + 6, by, ms, "S", conformRowSoloed(r.row), hotS)
+
+            if hotM or hotS then
+                if syncing then
+                    reaper.ImGui_SetTooltip(ctx,
+                        "Nothing is previewed from here while sync is on: REAPER is playing\n" ..
+                        "the session itself, so this would be the same material twice.")
+                else
+                    reaper.ImGui_SetTooltip(ctx, (hotM and "Mute " or "Solo ") ..
+                        (CONFORM_ROW_LABEL[r.row] or r.row))
+                    if reaper.ImGui_IsMouseClicked(ctx, 0) then
+                        if hotM then
+                            conformSetRowAudible(r.row, conformRowMuted(r.row))
+                        else
+                            conformSetRowSoloed(r.row, not conformRowSoloed(r.row))
+                        end
+                        conformStopPreview()
+                    end
+                end
+            end
+        end
+    end
+end
+
 function conformDrawLaneHeader(x, w)
     if #conformLaneHeadRows == 0 or (w or 0) <= 0 then return end
     local mx, my = reaper.ImGui_GetMousePos(ctx)
@@ -4717,14 +4799,15 @@ function conformDrawLaneHeader(x, w)
         end
     end
 
-    -- Which band is which, in the header rather than over the timeline: with a header
-    -- there is a left margin to put it in, and inside the picture it was sitting on the
-    -- first item of whatever started at zero.
-    local first, last = conformLaneHeadRows[1], conformLaneHeadRows[#conformLaneHeadRows]
-    if first then
-        reaper.ImGui_DrawList_AddText(draw_list, x + 4, first.yOld - 15, colorGrey, "old")
-        reaper.ImGui_DrawList_AddText(draw_list, x + 4, first.yNew - 15, colorGrey, "new")
-    end
+    -- The two video bands get a header row of their own: which version it is, and the
+    -- mute and solo for that version's own sound.
+    --
+    -- Beside the video, not beside the session rows. "old" and "new" name the two cuts
+    -- of the film, which are the waveform and the bar -- putting the words next to the
+    -- session items said they were labelling those instead, which is a different thing
+    -- entirely. conformSpeakerRows already knows where those bands are, having recorded
+    -- it while they were drawn.
+    conformDrawVideoHeadRows(x, w, ms, msW, mx, my, inWin, syncing)
 
     -- The divider, dragged to set the width. Picked up anywhere within a few pixels of
     -- the edge and followed until the button is let go, so the pointer may wander off
@@ -11866,6 +11949,14 @@ local function loop()
     -- is why it is not the flag used here. An earlier attempt at this sat commented out
     -- below for good reason: it passed the flag itself as the config variable, so it
     -- was writing 0 into whatever variable happens to share that number.
+    -- The window moves from its title bar only.
+    --
+    -- Otherwise a drag anywhere in the body moves the whole window, and this page is
+    -- now full of things that are dragged in place -- the header's width handle, the
+    -- scrollbar's thumb, items on the timeline. Missing one of those by two pixels
+    -- should do nothing, not pick the window up and carry it across the screen.
+    reaper.ImGui_SetConfigVar(ctx, reaper.ImGui_ConfigVar_WindowsMoveFromTitleBarOnly(), 1)
+
     local cfgFlags = ImGui.GetConfigVar(ctx, ImGui.ConfigVar_Flags)
     if (cfgFlags & ImGui.ConfigFlags_NavEnableKeyboard) ~= 0 then
         ImGui.SetConfigVar(ctx, ImGui.ConfigVar_Flags,
